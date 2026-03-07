@@ -1,8 +1,8 @@
 #pragma once
 
-#include <map>
-#include <set>
 #include <string>
+
+#include "mpfem/mesh/mesh.hpp"
 
 namespace mpfem {
 
@@ -17,7 +17,11 @@ struct ComsolMeshSummary {
 
 class ComsolMeshReader {
  public:
+  // 读取网格摘要信息
   ComsolMeshSummary ReadSummary(const std::string& mesh_path) const;
+
+  // 读取完整网格数据
+  Mesh Read(const std::string& mesh_path) const;
 
  private:
   static bool IsBoundaryType(const std::string& type_name, int sdim);

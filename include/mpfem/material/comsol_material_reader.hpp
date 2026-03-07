@@ -11,7 +11,7 @@ struct MaterialProperty {
   double si_value = 0.0;
 };
 
-struct ComsolMaterial {
+struct Material {
   std::string tag;
   std::string label;
   std::map<std::string, MaterialProperty> properties;
@@ -19,7 +19,7 @@ struct ComsolMaterial {
 
 class ComsolMaterialReader {
  public:
-  std::vector<ComsolMaterial> Read(const std::string& xml_path) const;
+  std::vector<Material> Read(const std::string& xml_path) const;
 
  private:
   static std::string Trim(const std::string& value);
