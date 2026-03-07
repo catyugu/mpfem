@@ -8,6 +8,16 @@ include(CompilerOptions)
 option(MPFEM_BUILD_TESTS "Build mpfem tests" ON)
 option(MPFEM_BUILD_EXAMPLES "Build mpfem examples" ON)
 
+# Fetch Eigen (header-only library)
+include(FetchContent)
+FetchContent_Declare(
+  eigen
+  GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
+  GIT_TAG 3.4.0
+  GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(eigen)
+
 add_subdirectory(src)
 
 if(MPFEM_BUILD_EXAMPLES)

@@ -16,4 +16,7 @@ target_include_directories(mpfem
     ${CMAKE_CURRENT_SOURCE_DIR}/../external/tinyxml2
 )
 
+# Link Eigen (header-only)
+target_link_libraries(mpfem PUBLIC Eigen3::Eigen)
+
 mpfem_set_default_compiler_options(mpfem)
