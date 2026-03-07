@@ -1,0 +1,3 @@
+add_executable(mpfem_busbar_inspect busbar_inspect.cpp)
+target_link_libraries(mpfem_busbar_inspect PRIVATE mpfem::mpfem)
+mpfem_set_default_compiler_options(mpfem_busbar_inspect)
