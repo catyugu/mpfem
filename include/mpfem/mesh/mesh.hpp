@@ -2,9 +2,11 @@
 
 #include <map>
 #include <vector>
+#include <memory>
 
 #include "mpfem/core/eigen_types.hpp"
 #include "mpfem/mesh/element.hpp"
+#include "mpfem/mesh/boundary_topology.hpp"
 
 namespace mpfem {
 
@@ -22,26 +24,6 @@ struct NodeCoordinates {
     x.resize(n);
     y.resize(n);
     z.resize(n);
-  }
-};
-
-// 单元组（按类型分组存储）
-struct ElementGroup {
-  GeometryType type = GeometryType::kPoint;
-  std::vector<int> vertices;      // 连续存储所有单元的顶点
-  std::vector<int> entity_ids;    // 每个单元的几何实体ID
-  std::vector<int> offsets;       // 每个单元的起始偏移
-
-  int Count() const { return static_cast<int>(entity_ids.size()); }
-
-  int VertsPerElement() const { return geom::NumVerts(type); }
-
-  // 获取第i个单元的顶点索引
-  std::vector<int> GetElementVertices(int i) const {
-    const int n = VertsPerElement();
-    const int offset = offsets[i];
-    return std::vector<int>(vertices.begin() + offset,
-                            vertices.begin() + offset + n);
   }
 };
 
@@ -108,11 +90,53 @@ class Mesh {
 
   void SetSpaceDim(int dim) { space_dim_ = dim; }
 
+  // ==================== 边界拓扑相关方法 ====================
+  
+  // 构建边界拓扑（区分内边界和外边界）
+  void BuildBoundaryTopology() {
+    boundary_topology_.Build(domain_elements_, boundary_elements_);
+  }
+  
+  // 获取边界拓扑
+  const BoundaryTopology& GetBoundaryTopology() const {
+    return boundary_topology_;
+  }
+  
+  BoundaryTopology& GetBoundaryTopology() {
+    return boundary_topology_;
+  }
+  
+  // 判断边界是否为外边界
+  bool IsExternalBoundary(int boundary_id) const {
+    return boundary_topology_.IsExternalBoundary(boundary_id);
+  }
+  
+  // 判断边界是否为内边界
+  bool IsInternalBoundary(int boundary_id) const {
+    return boundary_topology_.IsInternalBoundary(boundary_id);
+  }
+  
+  // 获取外边界ID列表
+  std::vector<int> GetExternalBoundaryIds() const {
+    return boundary_topology_.GetExternalBoundaryIds();
+  }
+  
+  // 获取内边界ID列表
+  std::vector<int> GetInternalBoundaryIds() const {
+    return boundary_topology_.GetInternalBoundaryIds();
+  }
+  
+  // 获取边界面的详细信息
+  const BoundaryFaceInfo* GetBoundaryFaceInfo(int boundary_id) const {
+    return boundary_topology_.GetBoundaryFace(boundary_id);
+  }
+
  private:
   int space_dim_ = 3;
   NodeCoordinates nodes_;
   std::vector<ElementGroup> domain_elements_;
   std::vector<ElementGroup> boundary_elements_;
+  BoundaryTopology boundary_topology_;
 };
 
 }  // namespace mpfem

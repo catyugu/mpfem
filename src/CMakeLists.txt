@@ -1,5 +1,6 @@
 set(MPFEM_SOURCES
   mesh/comsol_mesh_reader.cpp
+  mesh/boundary_topology.cpp
   material/comsol_material_reader.cpp
   config/problem_config_loader.cpp
   core/logger.cpp

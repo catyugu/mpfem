@@ -125,11 +125,24 @@ constexpr double HexReferenceVolume = 8.0;
 
 }  // namespace geom
 
-// 单元索引结构
-struct ElementIndex {
+// 单元组（按类型分组存储）
+struct ElementGroup {
   GeometryType type = GeometryType::kPoint;
-  int entity_id = -1;   // 域ID或边界ID
-  std::vector<int> vertices;
+  std::vector<int> vertices;      // 连续存储所有单元的顶点
+  std::vector<int> entity_ids;    // 每个单元的几何实体ID
+  std::vector<int> offsets;       // 每个单元的起始偏移
+
+  int Count() const { return static_cast<int>(entity_ids.size()); }
+
+  int VertsPerElement() const { return geom::NumVerts(type); }
+
+  // 获取第i个单元的顶点索引
+  std::vector<int> GetElementVertices(int i) const {
+    const int n = VertsPerElement();
+    const int offset = offsets[i];
+    return std::vector<int>(vertices.begin() + offset,
+                            vertices.begin() + offset + n);
+  }
 };
 
 // 从字符串解析几何类型
