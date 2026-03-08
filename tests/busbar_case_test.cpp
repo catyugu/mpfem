@@ -8,6 +8,12 @@
 #include "mpfem/core/logger.hpp"
 #include "mpfem/material/comsol_material_reader.hpp"
 #include "mpfem/mesh/comsol_mesh_reader.hpp"
+#include "mpfem/fem/fe.hpp"
+#include "mpfem/fem/fe_space.hpp"
+#include "mpfem/fem/grid_function.hpp"
+#include "mpfem/fem/coefficient.hpp"
+#include "mpfem/solver/coupled_solver.hpp"
+#include "mpfem/io/vtk_writer.hpp"
 
 namespace {
 
@@ -162,19 +168,75 @@ int TestProblemDefinition(const mpfem::ProblemDefinition& problem) {
   return 0;
 }
 
+int TestCoupledSimulation(const mpfem::Mesh& mesh,
+                           const std::map<int, std::string>& domain_materials,
+                           const std::vector<mpfem::Material>& materials,
+                           const mpfem::ProblemDefinition& problem,
+                           const std::filesystem::path& output_dir) {
+  std::cout << "\n=== Testing coupled simulation ===" << std::endl;
+
+  try {
+    // Build boundary topology
+    const_cast<mpfem::Mesh&>(mesh).BuildBoundaryTopology();
+
+    // Create coupled solver
+    mpfem::CoupledSolver solver;
+    solver.Setup(&mesh, domain_materials, materials, problem);
+
+    // Solve
+    solver.Solve();
+
+    // Get results
+    auto* V = solver.GetElectricPotential();
+    auto* T = solver.GetTemperature();
+    auto* u = solver.GetDisplacement();
+
+    std::cout << "\nResults:" << std::endl;
+    std::cout << "  Electric potential: [" << V->Min() << ", " << V->Max() << "] V" << std::endl;
+    std::cout << "  Temperature: [" << T->Min() << ", " << T->Max() << "] K" << std::endl;
+    std::cout << "  Displacement norm: " << u->Data().norm() << " m" << std::endl;
+
+    // Write VTU output
+    mpfem::VTKWriter vtk_writer;
+    std::vector<std::pair<std::string, const mpfem::GridFunction*>> fields = {
+        {"ElectricPotential", V},
+        {"Temperature", T},
+        {"Displacement", u}
+    };
+    vtk_writer.WriteVTU((output_dir / "busbar_result.vtu").string(), mesh, fields);
+
+    // Compare with COMSOL results
+    if (!problem.reference_result_path.empty()) {
+      auto comparison = mpfem::ResultValidator::CompareWithComsol(
+          *V, *T, *u, problem.reference_result_path);
+      mpfem::ResultValidator::PrintReport(comparison);
+    }
+
+    std::cout << "[PASS] Coupled simulation test" << std::endl;
+    return 0;
+
+  } catch (const std::exception& ex) {
+    return Fail(std::string("Coupled simulation failed: ") + ex.what());
+  }
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
-  // 设置日志级别（启用 DEBUG 输出）
-  mpfem::Logger::Instance().SetLevel(mpfem::LogLevel::kDebug);
+  // 设置日志级别
+  mpfem::Logger::Instance().SetLevel(mpfem::LogLevel::kInfo);
 
   const std::filesystem::path root =
       (argc > 1) ? std::filesystem::path(argv[1]) : std::filesystem::path(".");
 
   const std::filesystem::path case_path = root / "cases" / "busbar" / "case.xml";
+  const std::filesystem::path output_dir = root / "build" / "output";
 
   try {
     MPFEM_INFO("Starting busbar case test");
+
+    // Create output directory
+    std::filesystem::create_directories(output_dir);
 
     // 加载配置
     mpfem::ProblemConfigLoader config_loader;
@@ -199,6 +261,16 @@ int main(int argc, char** argv) {
 
     // 测试问题定义
     result = TestProblemDefinition(problem);
+    if (result != 0) return result;
+
+    // 构建域到材料的映射
+    std::map<int, std::string> domain_materials;
+    for (const auto& assignment : problem.materials) {
+      domain_materials[assignment.domain_id] = assignment.material_tag;
+    }
+
+    // 运行耦合仿真
+    result = TestCoupledSimulation(mesh, domain_materials, materials, problem, output_dir);
     if (result != 0) return result;
 
     MPFEM_INFO("All busbar case tests passed");

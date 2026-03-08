@@ -4,6 +4,16 @@ set(MPFEM_SOURCES
   material/comsol_material_reader.cpp
   config/problem_config_loader.cpp
   core/logger.cpp
+  fem/fe.cpp
+  fem/fe_space.cpp
+  fem/coefficient.cpp
+  fem/grid_function.cpp
+  fem/integrators.cpp
+  fem/bilinear_form.cpp
+  solver/linear_solver.cpp
+  solver/physics_solver.cpp
+  solver/coupled_solver.cpp
+  io/vtk_writer.cpp
   ../external/tinyxml2/tinyxml2.cpp
 )
 

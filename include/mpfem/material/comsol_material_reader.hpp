@@ -1,21 +1,10 @@
 #pragma once
 
-#include <map>
-#include <string>
+#include "mpfem/material/material.hpp"
+
 #include <vector>
 
 namespace mpfem {
-
-struct MaterialProperty {
-  std::string raw_value;
-  double si_value = 0.0;
-};
-
-struct Material {
-  std::string tag;
-  std::string label;
-  std::map<std::string, MaterialProperty> properties;
-};
 
 class ComsolMaterialReader {
  public:
