@@ -328,7 +328,7 @@ void IntegrationRules::InitPyramidRules() {
   // Reference pyramid: square base [0,1]^2 at z=0, apex at (0.5, 0.5, 1)
   // Volume = 1/3
 
-  pyr_rules_.resize(2);
+  pyr_rules_.resize(3);
 
   // Order 1: 1-point (centroid approximation)
   {
