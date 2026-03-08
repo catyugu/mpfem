@@ -7,9 +7,12 @@ namespace mpfem {
 
 // 动态大小向量
 using Vector = Eigen::VectorXd;
+using VectorXd = Eigen::VectorXd;  // 兼容别名
 
 // 动态大小稠密矩阵
 using DenseMatrix = Eigen::MatrixXd;
+using MatXd = Eigen::MatrixXd;  // 兼容别名
+using MatrixXd = Eigen::MatrixXd;  // 兼容别名
 
 // 稀疏矩阵 (CSR 格式)
 using SparseMatrix = Eigen::SparseMatrix<double, Eigen::RowMajor>;
