@@ -8,7 +8,7 @@ namespace mpfem {
 // ============================================================================
 
 void SparseLUSolver::SetOperator(const SparseMatrix& A) {
-  MPFEM_INFO("SparseLUSolver: analyzing matrix %dx%d with %d non-zeros",
+  MPFEM_INFO("SparseLUSolver: computing factorization for %dx%d matrix with %d non-zeros",
              static_cast<int>(A.rows()), static_cast<int>(A.cols()),
              static_cast<int>(A.nonZeros()));
 
@@ -23,22 +23,12 @@ void SparseLUSolver::SetOperator(const SparseMatrix& A) {
   SparseMatrix A_copy = A;
   A_copy.makeCompressed();
 
-  // Analyze pattern
-  solver_.analyzePattern(A_copy);
-  if (solver_.info() != Eigen::Success) {
-    MPFEM_ERROR("SparseLU analyzePattern failed with info = %d",
-                static_cast<int>(solver_.info()));
-    info_ = static_cast<int>(solver_.info());
-    return;
-  }
-  MPFEM_INFO("SparseLU analyzePattern successful");
-
-  // Factorize
-  solver_.factorize(A_copy);
+  // Use compute() which handles analyzePattern + factorize internally
+  solver_.compute(A_copy);
   info_ = static_cast<int>(solver_.info());
 
   if (info_ != Eigen::Success) {
-    MPFEM_ERROR("SparseLU factorization failed with info = %d", info_);
+    MPFEM_ERROR("SparseLU compute failed with info = %d", info_);
   } else {
     MPFEM_INFO("SparseLU factorization successful");
   }

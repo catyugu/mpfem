@@ -39,7 +39,7 @@ void ElectrostaticsSolver::Setup(const Mesh* mesh,
         auto it = mat.properties.find("electricconductivity");
         if (it != mat.properties.end()) {
           conductivity_values[domain_id] = it->second.si_value;
-          MPFEM_INFO("Domain {}: conductivity = {} S/m", domain_id, it->second.si_value);
+          MPFEM_INFO("Domain %d: conductivity = %g S/m", domain_id, it->second.si_value);
         }
         break;
       }
@@ -172,7 +172,7 @@ void HeatTransferSolver::Setup(const Mesh* mesh,
         auto it = mat.properties.find("thermalconductivity");
         if (it != mat.properties.end()) {
           k_values[domain_id] = it->second.si_value;
-          MPFEM_INFO("Domain {}: thermal conductivity = {} W/(m·K)", domain_id, it->second.si_value);
+          MPFEM_INFO("Domain %d: thermal conductivity = %g W/(m·K)", domain_id, it->second.si_value);
         }
         break;
       }
@@ -185,7 +185,7 @@ void HeatTransferSolver::Setup(const Mesh* mesh,
   int max_bdr_id = bdr_ids.empty() ? 0 : *std::max_element(bdr_ids.begin(), bdr_ids.end());
   ess_bdr_marker_.resize(max_bdr_id, 0);
 
-  MPFEM_INFO("HeatTransferSolver setup complete: {} DOFs", fes_->GetNDofs());
+  MPFEM_INFO("HeatTransferSolver setup complete: %d DOFs", fes_->GetNDofs());
 }
 
 void HeatTransferSolver::SetTemperatureBC(int boundary_id, double temperature) {
@@ -272,7 +272,7 @@ void HeatTransferSolver::Solve() {
     }
   }
 
-  MPFEM_INFO("HeatTransfer solved: T_min = {} K, T_max = {} K", T_->Min(), T_->Max());
+  MPFEM_INFO("HeatTransfer solved: T_min = %g K, T_max = %g K", T_->Min(), T_->Max());
 }
 
 // ============================================================================
@@ -309,7 +309,7 @@ void SolidMechanicsSolver::Setup(const Mesh* mesh,
         if (nu_it != mat.properties.end()) {
           nu_values[domain_id] = nu_it->second.si_value;
         }
-        MPFEM_INFO("Domain {}: E = {} Pa, nu = {}", domain_id,
+        MPFEM_INFO("Domain %d: E = %g Pa, nu = %g", domain_id,
                    E_it != mat.properties.end() ? E_it->second.si_value : 0,
                    nu_it != mat.properties.end() ? nu_it->second.si_value : 0);
         break;
@@ -332,7 +332,7 @@ void SolidMechanicsSolver::Setup(const Mesh* mesh,
   int max_bdr_id = bdr_ids.empty() ? 0 : *std::max_element(bdr_ids.begin(), bdr_ids.end());
   ess_bdr_marker_.resize(max_bdr_id, 0);
 
-  MPFEM_INFO("SolidMechanicsSolver setup complete: {} DOFs", fes_->GetNDofs());
+  MPFEM_INFO("SolidMechanicsSolver setup complete: %d DOFs", fes_->GetNDofs());
 }
 
 void SolidMechanicsSolver::SetFixedBC(const std::vector<int>& boundary_ids) {
@@ -425,7 +425,7 @@ void SolidMechanicsSolver::Solve() {
     }
   }
 
-  MPFEM_INFO("SolidMechanics solved: displacement magnitude range = [{}, {}]",
+  MPFEM_INFO("SolidMechanics solved: displacement magnitude range = [%g, %g]",
              u_data.head(fes_->GetNDofs()).norm(),
              u_data.tail(fes_->GetNDofs() * 2).norm());
 }

@@ -63,8 +63,8 @@ void FiniteElementSpace::BuildDofTableFromMesh() {
 
     // Skip unsupported geometry types
     if (!fe) {
-      MPFEM_DEBUG("Skipping domain group {} with unsupported geometry type: {}",
-                  g, static_cast<int>(group.type));
+      MPFEM_DEBUG("Skipping domain group %d with unsupported geometry type: %d",
+                  static_cast<int>(g), static_cast<int>(group.type));
       continue;
     }
 
@@ -117,8 +117,8 @@ void FiniteElementSpace::BuildDofTableFromMesh() {
 
     // Skip unsupported geometry types (e.g., kPoint)
     if (!fe) {
-      MPFEM_DEBUG("Skipping boundary group {} with unsupported geometry type: {}",
-                  g, static_cast<int>(group.type));
+      MPFEM_DEBUG("Skipping boundary group %d with unsupported geometry type: %d",
+                  static_cast<int>(g), static_cast<int>(group.type));
       continue;
     }
 

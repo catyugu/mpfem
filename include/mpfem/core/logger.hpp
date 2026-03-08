@@ -24,8 +24,8 @@ enum class LogLevel {
 ///
 /// 示例:
 /// @code
-/// MPFEM_INFO("Starting computation with {} elements", n_elements);
-/// MPFEM_ERROR("Failed to open file: {}", filename);
+/// MPFEM_INFO("Starting computation with %d elements", n_elements);
+/// MPFEM_ERROR("Failed to open file: %s", filename);
 /// @endcode
 class Logger {
  public:

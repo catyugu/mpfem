@@ -14,6 +14,8 @@ IntegrationRules::IntegrationRules() {
   InitTetrahedronRules();
   InitTriangleRules();
   InitSegmentRules();
+  InitHexahedronRules();
+  InitPyramidRules();
 }
 
 const IntegrationRule& IntegrationRules::Get(GeometryType geom,
@@ -25,8 +27,7 @@ const IntegrationRule& IntegrationRules::Get(GeometryType geom,
       int idx = order;
       if (idx < 0) idx = 0;
       if (idx >= static_cast<int>(tet_rules_.size())) {
-        MPFEM_WARN("Integration order {} for tetrahedron not available, "
-                   "using highest order.",
+        MPFEM_WARN("Integration order %d for tetrahedron not available, using highest order.",
                    order);
         idx = static_cast<int>(tet_rules_.size()) - 1;
       }
@@ -48,8 +49,24 @@ const IntegrationRule& IntegrationRules::Get(GeometryType geom,
       }
       return seg_rules_[idx].empty() ? empty_rule : seg_rules_[idx][0];
     }
+    case GeometryType::kHexahedron: {
+      int idx = order;
+      if (idx < 0) idx = 0;
+      if (idx >= static_cast<int>(hex_rules_.size())) {
+        idx = static_cast<int>(hex_rules_.size()) - 1;
+      }
+      return hex_rules_[idx].empty() ? empty_rule : hex_rules_[idx][0];
+    }
+    case GeometryType::kPyramid: {
+      int idx = order;
+      if (idx < 0) idx = 0;
+      if (idx >= static_cast<int>(pyr_rules_.size())) {
+        idx = static_cast<int>(pyr_rules_.size()) - 1;
+      }
+      return pyr_rules_[idx].empty() ? empty_rule : pyr_rules_[idx][0];
+    }
     default:
-      MPFEM_ERROR("Integration rule not implemented for geometry type: {}",
+      MPFEM_ERROR("Integration rule not implemented for geometry type: %d",
                   static_cast<int>(geom));
       return empty_rule;
   }
@@ -273,6 +290,73 @@ void IntegrationRules::InitSegmentRules() {
   }
 }
 
+void IntegrationRules::InitHexahedronRules() {
+  // Reference hexahedron: [0,1]^3
+  // Volume = 1
+
+  hex_rules_.resize(3);
+
+  // Order 1: 1-point (centroid)
+  {
+    IntegrationRule rule(1);
+    rule.AddPoint(IntegrationPoint(0.5, 0.5, 0.5, 1.0));
+    hex_rules_[1].push_back(rule);
+  }
+
+  // Order 2: 8-point Gauss (2x2x2)
+  {
+    IntegrationRule rule(2);
+    double a = 0.5 - std::sqrt(3.0) / 6.0;
+    double b = 0.5 + std::sqrt(3.0) / 6.0;
+    double w = 0.125;  // 1/8
+
+    for (int i = 0; i < 2; ++i) {
+      for (int j = 0; j < 2; ++j) {
+        for (int k = 0; k < 2; ++k) {
+          double x = (i == 0) ? a : b;
+          double y = (j == 0) ? a : b;
+          double z = (k == 0) ? a : b;
+          rule.AddPoint(IntegrationPoint(x, y, z, w));
+        }
+      }
+    }
+    hex_rules_[2].push_back(rule);
+  }
+}
+
+void IntegrationRules::InitPyramidRules() {
+  // Reference pyramid: square base [0,1]^2 at z=0, apex at (0.5, 0.5, 1)
+  // Volume = 1/3
+
+  pyr_rules_.resize(2);
+
+  // Order 1: 1-point (centroid approximation)
+  {
+    IntegrationRule rule(1);
+    // Approximate centroid of pyramid
+    rule.AddPoint(IntegrationPoint(0.5, 0.5, 0.25, 1.0 / 3.0));
+    pyr_rules_[1].push_back(rule);
+  }
+
+  // Order 2: 5-point rule
+  {
+    IntegrationRule rule(2);
+    // Based on collapsed coordinate formulation
+    double w = 1.0 / 5.0;  // Equal weights for 5 points
+
+    // Base center
+    rule.AddPoint(IntegrationPoint(0.5, 0.5, 0.0, w));
+    // Apex
+    rule.AddPoint(IntegrationPoint(0.5, 0.5, 0.75, w));
+    // Three points on base corners region
+    rule.AddPoint(IntegrationPoint(0.25, 0.25, 0.25, w));
+    rule.AddPoint(IntegrationPoint(0.75, 0.25, 0.25, w));
+    rule.AddPoint(IntegrationPoint(0.5, 0.75, 0.25, w));
+
+    pyr_rules_[2].push_back(rule);
+  }
+}
+
 // ============================================================================
 // ElementTransformation implementation
 // ============================================================================
@@ -371,6 +455,10 @@ std::unique_ptr<H1FiniteElement> H1FiniteElement::Create(GeometryType geom,
       return std::make_unique<H1_TriangleElement>(order);
     case GeometryType::kSegment:
       return std::make_unique<H1_SegmentElement>(order);
+    case GeometryType::kHexahedron:
+      return std::make_unique<H1_HexahedronElement>(order);
+    case GeometryType::kPyramid:
+      return std::make_unique<H1_PyramidElement>(order);
     default:
       throw std::runtime_error("H1 element not implemented for geometry type: " +
                                std::to_string(static_cast<int>(geom)));
@@ -673,6 +761,175 @@ void H1_SegmentElement::CalcDShape(const IntegrationPoint& ip,
 }
 
 // ============================================================================
+// H1_HexahedronElement implementation
+// ============================================================================
+
+H1_HexahedronElement::H1_HexahedronElement(int order)
+    : H1FiniteElement(GeometryType::kHexahedron, 3, (order + 1) * (order + 1) * (order + 1), order) {
+  Init(order);
+}
+
+void H1_HexahedronElement::Init(int order) {
+  // Reference hexahedron [0,1]^3
+  // Node ordering: vertices first, then edges, faces, interior
+  nodes_.reserve(dof_);
+
+  if (order == 1) {
+    // 8 vertices of the unit cube
+    nodes_.push_back({0.0, 0.0, 0.0});  // 0
+    nodes_.push_back({1.0, 0.0, 0.0});  // 1
+    nodes_.push_back({1.0, 1.0, 0.0});  // 2
+    nodes_.push_back({0.0, 1.0, 0.0});  // 3
+    nodes_.push_back({0.0, 0.0, 1.0});  // 4
+    nodes_.push_back({1.0, 0.0, 1.0});  // 5
+    nodes_.push_back({1.0, 1.0, 1.0});  // 6
+    nodes_.push_back({0.0, 1.0, 1.0});  // 7
+  }
+}
+
+void H1_HexahedronElement::CalcShape(const IntegrationPoint& ip,
+                                     double* shape) const {
+  double x = ip.x;
+  double y = ip.y;
+  double z = ip.z;
+
+  if (order_ == 1) {
+    // Bilinear interpolation in 3D
+    // N_i = (1/8)(1 ± x)(1 ± y)(1 ± z) scaled to [0,1]
+    // Actually for unit cube [0,1]^3:
+    shape[0] = (1.0 - x) * (1.0 - y) * (1.0 - z);
+    shape[1] = x * (1.0 - y) * (1.0 - z);
+    shape[2] = x * y * (1.0 - z);
+    shape[3] = (1.0 - x) * y * (1.0 - z);
+    shape[4] = (1.0 - x) * (1.0 - y) * z;
+    shape[5] = x * (1.0 - y) * z;
+    shape[6] = x * y * z;
+    shape[7] = (1.0 - x) * y * z;
+  }
+}
+
+void H1_HexahedronElement::CalcDShape(const IntegrationPoint& ip,
+                                      double* dshape) const {
+  double x = ip.x;
+  double y = ip.y;
+  double z = ip.z;
+
+  if (order_ == 1) {
+    // dN_i/dx
+    dshape[0] = -(1.0 - y) * (1.0 - z);
+    dshape[1] = (1.0 - y) * (1.0 - z);
+    dshape[2] = y * (1.0 - z);
+    dshape[3] = -y * (1.0 - z);
+    dshape[4] = -(1.0 - y) * z;
+    dshape[5] = (1.0 - y) * z;
+    dshape[6] = y * z;
+    dshape[7] = -y * z;
+
+    // dN_i/dy
+    dshape[8] = -(1.0 - x) * (1.0 - z);
+    dshape[9] = -x * (1.0 - z);
+    dshape[10] = x * (1.0 - z);
+    dshape[11] = (1.0 - x) * (1.0 - z);
+    dshape[12] = -(1.0 - x) * z;
+    dshape[13] = -x * z;
+    dshape[14] = x * z;
+    dshape[15] = (1.0 - x) * z;
+
+    // dN_i/dz
+    dshape[16] = -(1.0 - x) * (1.0 - y);
+    dshape[17] = -x * (1.0 - y);
+    dshape[18] = -x * y;
+    dshape[19] = -(1.0 - x) * y;
+    dshape[20] = (1.0 - x) * (1.0 - y);
+    dshape[21] = x * (1.0 - y);
+    dshape[22] = x * y;
+    dshape[23] = (1.0 - x) * y;
+  }
+}
+
+// ============================================================================
+// H1_PyramidElement implementation
+// ============================================================================
+
+H1_PyramidElement::H1_PyramidElement(int order)
+    : H1FiniteElement(GeometryType::kPyramid, 3, (order + 1) * (order + 2) * (2 * order + 3) / 6, order) {
+  Init(order);
+}
+
+void H1_PyramidElement::Init(int order) {
+  // Reference pyramid with square base [0,1]^2 at z=0 and apex at (0.5, 0.5, 1)
+  nodes_.reserve(dof_);
+
+  if (order == 1) {
+    // 5 vertices: 4 base corners + apex
+    nodes_.push_back({0.0, 0.0, 0.0});  // 0
+    nodes_.push_back({1.0, 0.0, 0.0});  // 1
+    nodes_.push_back({1.0, 1.0, 0.0});  // 2
+    nodes_.push_back({0.0, 1.0, 0.0});  // 3
+    nodes_.push_back({0.5, 0.5, 1.0});  // 4 (apex)
+    // Recalculate dof for linear pyramid (5 vertices)
+    dof_ = 5;
+  }
+}
+
+void H1_PyramidElement::CalcShape(const IntegrationPoint& ip,
+                                  double* shape) const {
+  double x = ip.x;
+  double y = ip.y;
+  double z = ip.z;
+
+  if (order_ == 1) {
+    // For pyramid with apex at (0.5, 0.5, 1):
+    // Use collapsed coordinate transformation
+    // Shape functions:
+    double eps = 1e-12;
+    double zm = std::max(z, eps);  // Avoid division by zero at z=0
+    double one_minus_z = 1.0 - z;
+    
+    // Base vertices (z=0)
+    shape[0] = (1.0 - x - y + x * y) * one_minus_z;  // (0,0,0)
+    shape[1] = (x - x * y) * one_minus_z;            // (1,0,0)
+    shape[2] = x * y * one_minus_z;                   // (1,1,0)
+    shape[3] = (y - x * y) * one_minus_z;            // (0,1,0)
+    
+    // Apex
+    shape[4] = z;                                     // (0.5,0.5,1)
+  }
+}
+
+void H1_PyramidElement::CalcDShape(const IntegrationPoint& ip,
+                                   double* dshape) const {
+  double x = ip.x;
+  double y = ip.y;
+  double z = ip.z;
+
+  if (order_ == 1) {
+    double one_minus_z = 1.0 - z;
+
+    // dN_i/dx
+    dshape[0] = (-1.0 + y) * one_minus_z;
+    dshape[1] = (1.0 - y) * one_minus_z;
+    dshape[2] = y * one_minus_z;
+    dshape[3] = -y * one_minus_z;
+    dshape[4] = 0.0;
+
+    // dN_i/dy
+    dshape[5] = (-1.0 + x) * one_minus_z;
+    dshape[6] = -x * one_minus_z;
+    dshape[7] = x * one_minus_z;
+    dshape[8] = (1.0 - x) * one_minus_z;
+    dshape[9] = 0.0;
+
+    // dN_i/dz
+    dshape[10] = -(1.0 - x - y + x * y);
+    dshape[11] = -(x - x * y);
+    dshape[12] = -x * y;
+    dshape[13] = -(y - x * y);
+    dshape[14] = 1.0;
+  }
+}
+
+// ============================================================================
 // H1_FECollection implementation
 // ============================================================================
 
@@ -682,6 +939,8 @@ H1_FECollection::H1_FECollection(int order, int dim)
   tet_fe_ = std::make_unique<H1_TetrahedronElement>(order);
   tri_fe_ = std::make_unique<H1_TriangleElement>(order);
   seg_fe_ = std::make_unique<H1_SegmentElement>(order);
+  hex_fe_ = std::make_unique<H1_HexahedronElement>(order);
+  pyr_fe_ = std::make_unique<H1_PyramidElement>(order);
 }
 
 const FiniteElement* H1_FECollection::GetFiniteElement(GeometryType geom) const {
@@ -692,9 +951,13 @@ const FiniteElement* H1_FECollection::GetFiniteElement(GeometryType geom) const 
       return tri_fe_.get();
     case GeometryType::kSegment:
       return seg_fe_.get();
+    case GeometryType::kHexahedron:
+      return hex_fe_.get();
+    case GeometryType::kPyramid:
+      return pyr_fe_.get();
     default:
-      // Return nullptr for unsupported types (e.g., kPoint)
-      MPFEM_DEBUG("H1_FECollection does not support geometry type: {}",
+      // Return nullptr for unsupported types (e.g., kPoint, kWedge)
+      MPFEM_DEBUG("H1_FECollection does not support geometry type: %d",
                   static_cast<int>(geom));
       return nullptr;
   }

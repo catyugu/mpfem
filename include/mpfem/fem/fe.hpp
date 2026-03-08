@@ -76,11 +76,15 @@ class IntegrationRules {
   void InitTetrahedronRules();
   void InitTriangleRules();
   void InitSegmentRules();
+  void InitHexahedronRules();
+  void InitPyramidRules();
 
   // [geometry_type][order] -> rule
   std::vector<std::vector<IntegrationRule>> tet_rules_;
   std::vector<std::vector<IntegrationRule>> tri_rules_;
   std::vector<std::vector<IntegrationRule>> seg_rules_;
+  std::vector<std::vector<IntegrationRule>> hex_rules_;
+  std::vector<std::vector<IntegrationRule>> pyr_rules_;
 };
 
 // ============================================================================
@@ -225,6 +229,42 @@ class H1_SegmentElement : public H1FiniteElement {
 };
 
 // ============================================================================
+// H1_HexahedronElement - 六面体 Lagrange 元
+// ============================================================================
+
+class H1_HexahedronElement : public H1FiniteElement {
+ public:
+  explicit H1_HexahedronElement(int order);
+
+  void CalcShape(const IntegrationPoint& ip, double* shape) const override;
+  void CalcDShape(const IntegrationPoint& ip, double* dshape) const override;
+
+ private:
+  void Init(int order);
+
+  // Node positions in reference hexahedron [0,1]^3
+  std::vector<std::array<double, 3>> nodes_;
+};
+
+// ============================================================================
+// H1_PyramidElement - 金字塔 Lagrange 元
+// ============================================================================
+
+class H1_PyramidElement : public H1FiniteElement {
+ public:
+  explicit H1_PyramidElement(int order);
+
+  void CalcShape(const IntegrationPoint& ip, double* shape) const override;
+  void CalcDShape(const IntegrationPoint& ip, double* dshape) const override;
+
+ private:
+  void Init(int order);
+
+  // Node positions in reference pyramid
+  std::vector<std::array<double, 3>> nodes_;
+};
+
+// ============================================================================
 // FiniteElementCollection - 有限元集合
 // ============================================================================
 
@@ -256,6 +296,8 @@ class H1_FECollection : public FiniteElementCollection {
   std::unique_ptr<H1_TetrahedronElement> tet_fe_;
   std::unique_ptr<H1_TriangleElement> tri_fe_;
   std::unique_ptr<H1_SegmentElement> seg_fe_;
+  std::unique_ptr<H1_HexahedronElement> hex_fe_;
+  std::unique_ptr<H1_PyramidElement> pyr_fe_;
 };
 
 // ============================================================================

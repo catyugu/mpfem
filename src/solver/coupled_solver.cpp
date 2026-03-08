@@ -133,13 +133,13 @@ void CoupledSolver::ApplyBoundaryConditions(const ProblemDefinition& problem) {
             try {
               voltage = std::stod(bc.value_expr);
             } catch (...) {
-              MPFEM_WARN("Could not parse voltage value: {}", bc.value_expr);
+              MPFEM_WARN("Could not parse voltage value: %s", bc.value_expr.c_str());
             }
           }
 
           for (int id : bc.boundary_ids) {
             electrostatics_->SetVoltageBC(id, voltage);
-            MPFEM_INFO("Electrostatics: boundary {} voltage = {} V", id, voltage);
+            MPFEM_INFO("Electrostatics: boundary %d voltage = %g V", id, voltage);
           }
         }
       }
@@ -169,7 +169,7 @@ void CoupledSolver::ApplyBoundaryConditions(const ProblemDefinition& problem) {
           }
 
           heat_->SetConvectionBC(bc.boundary_ids, h, T_ext);
-          MPFEM_INFO("HeatTransfer: convection BC on boundaries, h = {}, T_ext = {} K",
+          MPFEM_INFO("HeatTransfer: convection BC on boundaries, h = %g, T_ext = %g K",
                      h, T_ext);
         }
       }
@@ -186,7 +186,7 @@ void CoupledSolver::ApplyBoundaryConditions(const ProblemDefinition& problem) {
 }
 
 void CoupledSolver::Solve(int max_iterations, double tolerance) {
-  MPFEM_INFO("Starting coupled solve with max {} iterations", max_iterations);
+  MPFEM_INFO("Starting coupled solve with max %d iterations", max_iterations);
 
   // For this steady-state weakly-coupled problem, one iteration is typically enough
   // since Joule heating depends on V, and thermal expansion depends on T
@@ -230,9 +230,9 @@ void CoupledSolver::Solve(int max_iterations, double tolerance) {
   auto* u = GetDisplacement();
 
   MPFEM_INFO("Results:");
-  MPFEM_INFO("  Electric potential: [{}, {}] V", V->Min(), V->Max());
-  MPFEM_INFO("  Temperature: [{}, {}] K", T->Min(), T->Max());
-  MPFEM_INFO("  Displacement magnitude: {}", u->Data().norm());
+  MPFEM_INFO("  Electric potential: [%g, %g] V", V->Min(), V->Max());
+  MPFEM_INFO("  Temperature: [%g, %g] K", T->Min(), T->Max());
+  MPFEM_INFO("  Displacement magnitude: %g", u->Data().norm());
 }
 
 }  // namespace mpfem

@@ -16,7 +16,7 @@ void VTKWriter::WriteVTU(const std::string& filename, const Mesh& mesh,
                           const std::vector<std::pair<std::string, const GridFunction*>>& fields) {
   std::ofstream ofs(filename, std::ios::binary);
   if (!ofs.is_open()) {
-    MPFEM_ERROR("Failed to open file for writing: {}", filename);
+    MPFEM_ERROR("Failed to open file for writing: %s", filename.c_str());
     return;
   }
 
@@ -49,7 +49,7 @@ void VTKWriter::WriteVTU(const std::string& filename, const Mesh& mesh,
   ofs << "</VTKFile>\n";
 
   ofs.close();
-  MPFEM_INFO("VTU file written: {}", filename);
+  MPFEM_INFO("VTU file written: %s", filename.c_str());
 }
 
 void VTKWriter::WriteMesh(const std::string& filename, const Mesh& mesh) {
@@ -204,7 +204,7 @@ bool ResultValidator::LoadComsolResult(const std::string& filename,
                                         std::vector<double>& disp) {
   std::ifstream ifs(filename);
   if (!ifs.is_open()) {
-    MPFEM_ERROR("Failed to open COMSOL result file: {}", filename);
+    MPFEM_ERROR("Failed to open COMSOL result file: %s", filename.c_str());
     return false;
   }
 
@@ -244,7 +244,7 @@ bool ResultValidator::LoadComsolResult(const std::string& filename,
   }
 
   ifs.close();
-  MPFEM_INFO("Loaded COMSOL result: {} points", num_points);
+  MPFEM_INFO("Loaded COMSOL result: %d points", num_points);
   return true;
 }
 
@@ -257,7 +257,7 @@ ResultValidator::ComparisonResult ResultValidator::CompareField(
   result.num_points = static_cast<int>(computed.size());
 
   if (computed.size() != reference.size()) {
-    MPFEM_ERROR("Size mismatch in comparison: {} vs {}", computed.size(), reference.size());
+    MPFEM_ERROR("Size mismatch in comparison: %d vs %d", static_cast<int>(computed.size()), static_cast<int>(reference.size()));
     return result;
   }
 
@@ -299,8 +299,8 @@ std::vector<ResultValidator::ComparisonResult> ResultValidator::CompareWithComso
   // (This is typically true for COMSOL export)
   int num_nodes = mesh->NodeCount();
   if (static_cast<int>(points.size()) != num_nodes) {
-    MPFEM_WARN("Point count mismatch: {} vs {}, assuming same ordering",
-               points.size(), num_nodes);
+    MPFEM_WARN("Point count mismatch: %d vs %d, assuming same ordering",
+               static_cast<int>(points.size()), num_nodes);
   }
 
   const VectorXd& V_data = V.Data();
@@ -328,11 +328,11 @@ std::vector<ResultValidator::ComparisonResult> ResultValidator::CompareWithComso
 void ResultValidator::PrintReport(const std::vector<ComparisonResult>& results) {
   MPFEM_INFO("\n========== Result Comparison Report ==========");
   for (const auto& r : results) {
-    MPFEM_INFO("\nField: {}", r.field_name);
-    MPFEM_INFO("  Number of points: {}", r.num_points);
-    MPFEM_INFO("  Maximum error:    {:.6e}", r.max_error);
-    MPFEM_INFO("  Mean error:       {:.6e}", r.mean_error);
-    MPFEM_INFO("  Relative error:   {:.6e}", r.relative_error);
+    MPFEM_INFO("\nField: %s", r.field_name.c_str());
+    MPFEM_INFO("  Number of points: %d", r.num_points);
+    MPFEM_INFO("  Maximum error:    %.6e", r.max_error);
+    MPFEM_INFO("  Mean error:       %.6e", r.mean_error);
+    MPFEM_INFO("  Relative error:   %.6e", r.relative_error);
   }
   MPFEM_INFO("\n==============================================");
 }

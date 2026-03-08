@@ -205,10 +205,12 @@ void BilinearForm::FormLinearSystem(const std::vector<int>& ess_dofs,
     B(i) = b(dof);
 
     // Subtract contribution from essential DOFs
-    for (SparseMatrix::InnerIterator it(mat_, dof); it; ++it) {
-      int col = it.col();
-      if (is_essential[col]) {
-        B(i) -= it.value() * x(col);
+    // For ColMajor matrix, we need to find mat_(dof, col) for each essential col
+    for (int col = 0; col < ndofs; ++col) {
+      if (!is_essential[col]) continue;
+      double val = mat_.coeff(dof, col);
+      if (std::abs(val) > 1e-15) {
+        B(i) -= val * x(col);
       }
     }
   }
@@ -324,7 +326,7 @@ void LinearForm::Assemble() {
     }
   }
 
-  MPFEM_INFO("LinearForm assembled: vector of size {}", vec_.size());
+  MPFEM_INFO("LinearForm assembled: vector of size %d", static_cast<int>(vec_.size()));
 }
 
 }  // namespace mpfem
