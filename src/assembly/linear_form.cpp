@@ -4,63 +4,55 @@
  */
 
 #include "linear_form.hpp"
+#include "fe_values.hpp"
+#include "fem/fe_collection.hpp"
 #include "core/logger.hpp"
+#include "mesh/element.hpp"
 #include <algorithm>
 
 namespace mpfem {
 
-LinearForm::LinearForm(const DoFHandler* dof_handler)
-    : dof_handler_(dof_handler)
-    , mesh_(dof_handler ? dof_handler->fe_space()->mesh() : nullptr)
-    , fe_space_(dof_handler ? dof_handler->fe_space() : nullptr)
-    , update_flags_(UpdateFlags::UpdateDefault)
+LinearForm::LinearForm(const FieldSpace* field)
+    : field_(field)
+    , mesh_(field ? field->mesh() : nullptr)
 {
 }
 
-void LinearForm::assemble(LocalVectorAssembler local_assembler,
-                         DynamicVector& vector) {
-    if (!dof_handler_ || !mesh_ || !fe_space_) {
-        MPFEM_ERROR("LinearForm: DoFHandler not initialized");
+void LinearForm::assemble(LocalVectorAssembler local_assembler, DynamicVector& vector) {
+    if (!field_ || !mesh_) {
+        MPFEM_ERROR("LinearForm: Field not initialized");
         return;
     }
     
-    Index n_dofs = dof_handler_->n_dofs();
+    Index n_dofs = field_->n_dofs();
     vector.setZero(n_dofs);
     
     DynamicVector local_vector;
-    std::vector<Index> local_dofs;
     
-    Index global_cell_idx = 0;
-    for (SizeType block_idx = 0; block_idx < mesh_->num_cell_blocks(); ++block_idx) {
-        const auto& block = mesh_->cell_blocks()[block_idx];
-        
-        const FiniteElement* fe = fe_space_->get_fe(global_cell_idx);
+    Index cell_id = 0;
+    for (const auto& block : mesh_->cell_blocks()) {
+        GeometryType geom_type = to_geometry_type(block.type());
+        auto fe = create_fe(geom_type, field_->order(), field_->n_components());
         if (!fe) {
-            global_cell_idx += block.size();
+            cell_id += static_cast<Index>(block.size());
             continue;
         }
         
-        FEValues fe_values(fe, update_flags_);
-        int n_local = fe->dofs_per_cell();
-        local_vector.setZero(n_local);
+        FEValues fe_values(fe.get(), update_flags_);
         
-        for (SizeType e = 0; e < block.size(); ++e) {
-            fe_values.reinit(*mesh_, global_cell_idx);
-            dof_handler_->get_cell_dofs(global_cell_idx, local_dofs);
+        for (SizeType e = 0; e < block.size(); ++e, ++cell_id) {
+            fe_values.reinit(*field_, cell_id);
             
-            local_vector.setZero();
-            local_assembler(global_cell_idx, fe_values, local_vector);
+            int n_local = fe_values.dofs_per_cell();
+            local_vector.setZero(n_local);
+            local_assembler(cell_id, fe_values, local_vector);
             
-            // Assemble into global vector
+            std::vector<Index> cell_dofs;
+            field_->get_cell_dofs(cell_id, cell_dofs);
+            
             for (int i = 0; i < n_local; ++i) {
-                Index gi = local_dofs[i];
-                if (gi >= n_dofs) continue;
-                if (dof_handler_->is_constrained(gi)) continue;
-                
-                vector[gi] += local_vector[i];
+                vector[cell_dofs[i]] += local_vector(i);
             }
-            
-            ++global_cell_idx;
         }
     }
 }
@@ -70,65 +62,48 @@ void LinearForm::assemble_with_source(
     DynamicVector& vector,
     const std::unordered_map<Index, Scalar>& sources) {
     
-    if (!dof_handler_ || !mesh_ || !fe_space_) {
-        MPFEM_ERROR("LinearForm: DoFHandler not initialized");
-        return;
-    }
+    if (!field_ || !mesh_) return;
     
-    Index n_dofs = dof_handler_->n_dofs();
+    Index n_dofs = field_->n_dofs();
     vector.setZero(n_dofs);
     
     DynamicVector local_vector;
-    std::vector<Index> local_dofs;
     
-    Index global_cell_idx = 0;
-    for (SizeType block_idx = 0; block_idx < mesh_->num_cell_blocks(); ++block_idx) {
-        const auto& block = mesh_->cell_blocks()[block_idx];
-        
-        const FiniteElement* fe = fe_space_->get_fe(global_cell_idx);
+    Index cell_id = 0;
+    for (const auto& block : mesh_->cell_blocks()) {
+        GeometryType geom_type = to_geometry_type(block.type());
+        auto fe = create_fe(geom_type, field_->order(), field_->n_components());
         if (!fe) {
-            global_cell_idx += block.size();
+            cell_id += static_cast<Index>(block.size());
             continue;
         }
         
-        FEValues fe_values(fe, update_flags_);
-        int n_local = fe->dofs_per_cell();
-        local_vector.setZero(n_local);
+        FEValues fe_values(fe.get(), update_flags_);
         
-        for (SizeType e = 0; e < block.size(); ++e) {
-            // Get domain ID for this cell
-            Index domain_id = block.entity_id(e);
+        for (SizeType e = 0; e < block.size(); ++e, ++cell_id) {
+            Index domain_id = mesh_->get_cell_domain_id(cell_id);
             
-            // Get source for this domain
             Scalar source_val = 0.0;
             auto it = sources.find(domain_id);
             if (it != sources.end()) {
                 source_val = it->second;
             }
             
-            if (std::abs(source_val) < 1e-15) {
-                ++global_cell_idx;
-                continue;  // Skip if no source
-            }
+            if (std::abs(source_val) < 1e-15) continue;
             
-            fe_values.reinit(*mesh_, global_cell_idx);
-            dof_handler_->get_cell_dofs(global_cell_idx, local_dofs);
+            fe_values.reinit(*field_, cell_id);
             
-            local_vector.setZero();
-            local_assembler(global_cell_idx, fe_values, local_vector);
-            
-            // Scale by source value
+            int n_local = fe_values.dofs_per_cell();
+            local_vector.setZero(n_local);
+            local_assembler(cell_id, fe_values, local_vector);
             local_vector *= source_val;
             
-            for (int i = 0; i < n_local; ++i) {
-                Index gi = local_dofs[i];
-                if (gi >= n_dofs) continue;
-                if (dof_handler_->is_constrained(gi)) continue;
-                
-                vector[gi] += local_vector[i];
-            }
+            std::vector<Index> cell_dofs;
+            field_->get_cell_dofs(cell_id, cell_dofs);
             
-            ++global_cell_idx;
+            for (int i = 0; i < n_local; ++i) {
+                vector[cell_dofs[i]] += local_vector(i);
+            }
         }
     }
 }
@@ -136,88 +111,48 @@ void LinearForm::assemble_with_source(
 void LinearForm::assemble_boundary(Index boundary_id,
                                   LocalVectorAssembler local_assembler,
                                   DynamicVector& vector) {
-    if (!dof_handler_ || !mesh_ || !fe_space_) {
-        MPFEM_ERROR("LinearForm: DoFHandler not initialized");
-        return;
-    }
+    if (!field_ || !mesh_) return;
     
-    // Get faces belonging to this boundary
     const auto& face_topos = mesh_->face_topologies();
     
     DynamicVector local_vector;
-    std::vector<Index> local_dofs;
     
-    Index global_face_idx = 0;
-    for (SizeType block_idx = 0; block_idx < mesh_->num_face_blocks(); ++block_idx) {
-        const auto& block = mesh_->face_blocks()[block_idx];
+    for (Index face_id = 0; face_id < static_cast<Index>(face_topos.size()); ++face_id) {
+        const auto& face_topo = face_topos[face_id];
+        if (!face_topo.is_boundary || face_topo.boundary_entity_id != boundary_id) continue;
         
-        // Need to get FE from adjacent cell
-        for (SizeType e = 0; e < block.size(); ++e) {
-            // Check if this face belongs to the specified boundary
-            if (global_face_idx >= static_cast<Index>(face_topos.size())) {
-                ++global_face_idx;
-                continue;
+        Index cell_id = face_topo.cell_id;
+        int local_face = face_topo.local_face_index;
+        
+        // 获取单元的几何类型
+        GeometryType geom_type = GeometryType::Invalid;
+        Index remaining = cell_id;
+        for (const auto& block : mesh_->cell_blocks()) {
+            if (remaining < static_cast<Index>(block.size())) {
+                geom_type = to_geometry_type(block.type());
+                break;
             }
-            
-            const auto& face_topo = face_topos[global_face_idx];
-            if (!face_topo.is_boundary || face_topo.boundary_entity_id != boundary_id) {
-                ++global_face_idx;
-                continue;
-            }
-            
-            // Get the adjacent cell
-            Index cell_id = face_topo.cell_id;
-            int local_face = face_topo.local_face_index;
-            
-            const FiniteElement* fe = fe_space_->get_fe(cell_id);
-            if (!fe) {
-                ++global_face_idx;
-                continue;
-            }
-            
-            // Create FEValues for face integration
-            FEValues fe_values(fe, update_flags_ | UpdateFlags::UpdateNormals);
-            fe_values.reinit_face(*mesh_, global_face_idx, cell_id, local_face);
-            
-            dof_handler_->get_cell_dofs(cell_id, local_dofs);
-            
-            int n_local = fe->dofs_per_cell();
-            local_vector.setZero(n_local);
-            local_assembler(global_face_idx, fe_values, local_vector);
-            
-            Index n_dofs = dof_handler_->n_dofs();
-            for (int i = 0; i < n_local; ++i) {
-                Index gi = local_dofs[i];
-                if (gi >= n_dofs) continue;
-                if (dof_handler_->is_constrained(gi)) continue;
-                
-                vector[gi] += local_vector[i];
-            }
-            
-            ++global_face_idx;
+            remaining -= static_cast<Index>(block.size());
+        }
+        
+        auto fe = create_fe(geom_type, field_->order(), field_->n_components());
+        if (!fe) continue;
+        
+        FEValues fe_values(fe.get(), update_flags_ | UpdateFlags::UpdateNormals);
+        fe_values.reinit_face(*field_, face_id, cell_id, local_face);
+        
+        int n_local = fe_values.dofs_per_cell();
+        local_vector.setZero(n_local);
+        local_assembler(face_id, fe_values, local_vector);
+        
+        std::vector<Index> cell_dofs;
+        field_->get_cell_dofs(cell_id, cell_dofs);
+        
+        for (int i = 0; i < n_local; ++i) {
+            vector[cell_dofs[i]] += local_vector(i);
         }
     }
 }
-
-void LinearForm::assemble_boundary_with_value(
-    Index boundary_id,
-    Scalar value,
-    LocalVectorAssembler local_assembler,
-    DynamicVector& vector) {
-    
-    // Create a wrapper assembler that scales by value
-    auto wrapped_assembler = [value, &local_assembler](
-        Index cell_id, const FEValues& fe, DynamicVector& local_vec) {
-        local_assembler(cell_id, fe, local_vec);
-        local_vec *= value;
-    };
-    
-    assemble_boundary(boundary_id, wrapped_assembler, vector);
-}
-
-// ============================================================
-// Predefined linear forms
-// ============================================================
 
 namespace LinearForms {
 
@@ -228,7 +163,6 @@ LocalVectorAssembler source(Scalar source_val) {
         
         for (int q = 0; q < fe.n_quadrature_points(); ++q) {
             Scalar jxw = fe.JxW(q);
-            
             for (int i = 0; i < n; ++i) {
                 F_local[i] += source_val * fe.shape_value(i, q) * jxw;
             }
@@ -244,7 +178,6 @@ LocalVectorAssembler source_function(SourceFunction source_func) {
         for (int q = 0; q < fe.n_quadrature_points(); ++q) {
             Scalar jxw = fe.JxW(q);
             const auto& pt = fe.quadrature_point(q);
-            
             Scalar f_val = source_func(pt.x(), pt.y(), pt.z());
             
             for (int i = 0; i < n; ++i) {
@@ -261,7 +194,6 @@ LocalVectorAssembler neumann_flux(Scalar flux) {
         
         for (int q = 0; q < fe.n_quadrature_points(); ++q) {
             Scalar jxw = fe.JxW(q);
-            
             for (int i = 0; i < n; ++i) {
                 F_local[i] += flux * fe.shape_value(i, q) * jxw;
             }
@@ -274,13 +206,10 @@ LocalVectorAssembler convection_rhs(Scalar h, Scalar T_inf) {
         int n = fe.dofs_per_cell();
         F_local.setZero(n);
         
-        Scalar h_Tinf = h * T_inf;
-        
         for (int q = 0; q < fe.n_quadrature_points(); ++q) {
             Scalar jxw = fe.JxW(q);
-            
             for (int i = 0; i < n; ++i) {
-                F_local[i] += h_Tinf * fe.shape_value(i, q) * jxw;
+                F_local[i] += h * T_inf * fe.shape_value(i, q) * jxw;
             }
         }
     };
@@ -291,51 +220,26 @@ LocalVectorAssembler thermal_strain(Scalar alpha, Scalar delta_T,
     return [alpha, delta_T, E, nu, dim](Index, const FEValues& fe, DynamicVector& F_local) {
         int n_comp = fe.n_components();
         int n = fe.dofs_per_cell();
-        
-        if (n_comp != dim) {
-            return;
-        }
+        if (n_comp != dim) return;
         
         F_local.setZero(n);
         
-        // Elasticity parameters
         Scalar lambda = E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu));
         Scalar mu = E / (2.0 * (1.0 + nu));
-        
-        // Thermal strain
         Scalar eps_th = alpha * delta_T;
-        
-        // Thermal stress (for plane strain / 3D)
-        Scalar sigma_th = -(3 * lambda + 2 * mu) * eps_th;  // Hydrostatic stress
-        
-        int n_strain = (dim == 3) ? 6 : 3;
         
         for (int q = 0; q < fe.n_quadrature_points(); ++q) {
             Scalar jxw = fe.JxW(q);
-            
             int n_nodes = n / dim;
             
             for (int a = 0; a < n_nodes; ++a) {
                 const auto& grad_a = fe.shape_grad(a, q);
+                Scalar coeff = (dim == 3) ? 
+                    (3 * lambda + 2 * mu) * eps_th * jxw :
+                    (2 * lambda + 2 * mu) * eps_th * jxw;
                 
-                if (dim == 3) {
-                    // For 3D: thermal strain is [eps_th, eps_th, eps_th, 0, 0, 0]
-                    // Thermal stress: sigma_th = -E * alpha * dT / (1-2nu) for each normal component
-                    Scalar coeff = (3 * lambda + 2 * mu) * eps_th * jxw;
-                    
-                    // F = int(B^T * sigma_th)
-                    // sigma_th = [sigma_th, sigma_th, sigma_th, 0, 0, 0]
-                    // B_a^T * sigma_th = [sigma_th * dN/dx, sigma_th * dN/dy, sigma_th * dN/dz]
-                    
-                    F_local[a*dim + 0] -= coeff * grad_a.x();
-                    F_local[a*dim + 1] -= coeff * grad_a.y();
-                    F_local[a*dim + 2] -= coeff * grad_a.z();
-                } else {
-                    // 2D plane strain
-                    Scalar coeff = (2 * lambda + 2 * mu) * eps_th * jxw;
-                    
-                    F_local[a*dim + 0] -= coeff * grad_a.x();
-                    F_local[a*dim + 1] -= coeff * grad_a.y();
+                for (int d = 0; d < dim; ++d) {
+                    F_local[a*dim + d] -= coeff * grad_a[d];
                 }
             }
         }

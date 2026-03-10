@@ -5,18 +5,18 @@
 
 #include "electrostatics.hpp"
 #include "assembly/fe_values.hpp"
-#include "fem/fe_base.hpp"
+#include "fem/fe_collection.hpp"
+#include "material/material_database.hpp"
 #include <Eigen/Sparse>
 
 namespace mpfem {
 
 void ElectrostaticsAssembly::initialize(const Mesh* mesh,
-                                        const DoFHandler* dof_handler,
+                                        const FieldSpace* field,
                                         const MaterialDB* mat_db,
                                         const PhysicsConfig& config) {
-    PhysicsAssembly::initialize(mesh, dof_handler, mat_db);
+    PhysicsAssembly::initialize(mesh, field, mat_db);
     
-    // Copy boundary conditions
     for (const auto& bc : config.boundaries) {
         bcs_.push_back(bc);
     }
@@ -25,101 +25,85 @@ void ElectrostaticsAssembly::initialize(const Mesh* mesh,
 }
 
 void ElectrostaticsAssembly::assemble_stiffness(SparseMatrix& K) {
-    const FESpace* fe_space = dof_handler_->fe_space();
-    Index n_dofs = dof_handler_->n_dofs();
+    if (!field_ || !mesh_) {
+        MPFEM_ERROR("Electrostatics: field not initialized");
+        return;
+    }
     
-    // Use triplet list for assembly
-    std::vector<Eigen::Triplet<Scalar>> triplets;
-    triplets.reserve(n_dofs * 20);
+    Index n_dofs = field_->n_dofs();
+    K.resize(n_dofs, n_dofs);
+    K.setZero();
     
-    // Create FEValues for gradient computation
-    UpdateFlags flags = UpdateFlags::UpdateDefault;
-    FEValues fe_values(nullptr, flags);
+    auto fe = create_fe(GeometryType::Tetrahedron, field_->order(), field_->n_components());
+    if (!fe) {
+        MPFEM_ERROR("Electrostatics: No FE available");
+        return;
+    }
     
-    std::vector<Index> cell_dofs;
+    FEValues fe_values(fe.get(), UpdateFlags::UpdateDefault);
+    if (field_registry_) {
+        fe_values.set_field_registry(field_registry_);
+    }
+    
     DynamicMatrix K_local;
+    std::vector<Eigen::Triplet<Scalar>> triplets;
     
-    // Iterate over all cell blocks
-    SizeType global_cell_idx = 0;
-    for (const auto& block : mesh_->cell_blocks()) {
-        int dim = element_dimension(block.type());
-        if (dim < 3) continue;  // Skip non-3D elements
+    for (Index cell_id = 0; cell_id < static_cast<Index>(mesh_->num_cells()); ++cell_id) {
+        Index domain_id = mesh_->get_cell_domain_id(cell_id);
         
-        GeometryType geom_type = to_geometry_type(block.type());
-        const FiniteElement* fe = fe_space->get_fe(static_cast<Index>(global_cell_idx));
-        if (!fe) {
-            global_cell_idx += block.size();
-            continue;
-        }
+        auto mat_it = domain_material_map_.find(domain_id);
+        if (mat_it == domain_material_map_.end()) continue;
         
-        fe_values = FEValues(fe, flags);
+        const Material* material = mat_db_->get(mat_it->second);
+        if (!material) continue;
         
-        for (SizeType e = 0; e < block.size(); ++e, ++global_cell_idx) {
-            // Get cell DoFs
-            dof_handler_->get_cell_dofs(static_cast<Index>(global_cell_idx), cell_dofs);
-            if (cell_dofs.empty()) continue;
+        fe_values.reinit(*field_, cell_id);
+        
+        int n = fe_values.dofs_per_cell();
+        K_local.setZero(n, n);
+        
+        // 逐积分点计算
+        for (int q = 0; q < fe_values.n_quadrature_points(); ++q) {
+            Scalar jxw = fe_values.JxW(q);
             
-            // Initialize FEValues for this cell
-            fe_values.reinit(*mesh_, static_cast<Index>(global_cell_idx));
-            
-            // Get domain ID and material
-            Index domain_id = block.entity_id(e);
-            auto mat_it = domain_material_map_.find(domain_id);
-            if (mat_it == domain_material_map_.end()) continue;
-            
-            const Material* material = mat_db_->get(mat_it->second);
-            if (!material) continue;
-            
-            // Get conductivity
+            // 在该积分点获取温度（如果温度场存在）
             MaterialEvaluator evaluator;
-            if (temperature_field_) {
-                // Get average temperature for this cell
-                Scalar avg_temp = 0.0;
-                for (Index dof : cell_dofs) {
-                    if (dof < temperature_field_->size()) {
-                        avg_temp += (*temperature_field_)[dof];
-                    }
-                }
-                avg_temp /= cell_dofs.size();
-                evaluator.set_temperature(avg_temp);
+            if (field_registry_) {
+                Scalar T = fe_values.field_value("temperature", q);
+                evaluator.set_temperature(T);
             }
+            
+            // 基于该积分点的温度计算电导率
             Tensor<2, 3> sigma = material->get_conductivity(evaluator);
             
-            // Assemble local stiffness matrix
-            int n = fe->dofs_per_cell();
-            K_local.setZero(n, n);
-            
-            for (int q = 0; q < fe_values.n_quadrature_points(); ++q) {
-                Scalar jxw = fe_values.JxW(q);
-                
-                for (int i = 0; i < n; ++i) {
-                    const auto& grad_i = fe_values.shape_grad(i, q);
-                    for (int j = 0; j < n; ++j) {
-                        const auto& grad_j = fe_values.shape_grad(j, q);
-                        
-                        // K_ij = ∫ (σ ∇N_i · ∇N_j) dx
-                        Scalar val = 0.0;
-                        for (int d1 = 0; d1 < 3; ++d1) {
-                            for (int d2 = 0; d2 < 3; ++d2) {
-                                val += sigma(d1, d2) * grad_i[d1] * grad_j[d2];
-                            }
+            for (int i = 0; i < n; ++i) {
+                const auto& grad_i = fe_values.shape_grad(i, q);
+                for (int j = 0; j < n; ++j) {
+                    const auto& grad_j = fe_values.shape_grad(j, q);
+                    
+                    Scalar val = 0.0;
+                    for (int d1 = 0; d1 < 3; ++d1) {
+                        for (int d2 = 0; d2 < 3; ++d2) {
+                            val += sigma(d1, d2) * grad_i[d1] * grad_j[d2];
                         }
-                        K_local(i, j) += val * jxw;
                     }
+                    K_local(i, j) += val * jxw;
                 }
             }
-            
-            // Add to global matrix
-            for (int i = 0; i < n; ++i) {
-                for (int j = 0; j < n; ++j) {
+        }
+        
+        std::vector<Index> cell_dofs;
+        field_->get_cell_dofs(cell_id, cell_dofs);
+        
+        for (int i = 0; i < n; ++i) {
+            for (int j = 0; j < n; ++j) {
+                if (std::abs(K_local(i, j)) > 1e-15) {
                     triplets.emplace_back(cell_dofs[i], cell_dofs[j], K_local(i, j));
                 }
             }
         }
     }
     
-    // Build sparse matrix
-    K.resize(n_dofs, n_dofs);
     K.setFromTriplets(triplets.begin(), triplets.end());
     K.makeCompressed();
     
@@ -127,60 +111,38 @@ void ElectrostaticsAssembly::assemble_stiffness(SparseMatrix& K) {
 }
 
 void ElectrostaticsAssembly::assemble_rhs(DynamicVector& f) {
-    Index n_dofs = dof_handler_->n_dofs();
-    f.setZero(n_dofs);
-    
-    // No source terms for steady-state electrostatics
-    // RHS contributions come from Neumann BCs
+    f.setZero(field_->n_dofs());
 }
 
 void ElectrostaticsAssembly::apply_boundary_conditions(SparseMatrix& K, DynamicVector& f) {
-    // Apply Dirichlet boundary conditions
-    // For each BC, set the diagonal to 1 and RHS to the prescribed value
-    
     std::vector<Eigen::Triplet<Scalar>> triplets;
     triplets.reserve(K.nonZeros());
     
-    // Copy existing matrix
     for (int k = 0; k < K.outerSize(); ++k) {
         for (SparseMatrix::InnerIterator it(K, k); it; ++it) {
             triplets.emplace_back(it.row(), it.col(), it.value());
         }
     }
     
-    // Track constrained DoFs
     std::unordered_set<Index> constrained_dofs;
     
     for (const auto& bc : bcs_) {
         if (bc.kind == "voltage") {
-            // Get voltage value from params
             Scalar value = 0.0;
             auto it = bc.params.find("value");
             if (it != bc.params.end()) {
-                // Parse the value (could be a variable name or number)
-                try {
-                    value = std::stod(it->second);
-                } catch (...) {
-                    // Keep default 0.0
-                }
+                try { value = std::stod(it->second); } catch (...) {}
             }
             
-            // Get boundary vertices
             for (Index bnd_id : bc.ids) {
-                // Find faces with this boundary ID
                 for (const auto& block : mesh_->face_blocks()) {
                     for (SizeType e = 0; e < block.size(); ++e) {
                         if (block.entity_id(e) == bnd_id) {
-                            // Get vertices of this face
                             auto verts = block.element_vertices(e);
                             for (Index v : verts) {
-                                // For scalar field, DoF = vertex ID
-                                Index dof = v;
-                                if (constrained_dofs.insert(dof).second) {
-                                    // Set diagonal to 1
-                                    triplets.emplace_back(dof, dof, 1.0);
-                                    // Set RHS to prescribed value
-                                    f[dof] = value;
+                                if (constrained_dofs.insert(v).second) {
+                                    triplets.emplace_back(v, v, 1.0);
+                                    f[v] = value;
                                 }
                             }
                         }
@@ -190,8 +152,7 @@ void ElectrostaticsAssembly::apply_boundary_conditions(SparseMatrix& K, DynamicV
         }
     }
     
-    // Rebuild matrix with modifications
-    Index n_dofs = dof_handler_->n_dofs();
+    Index n_dofs = field_->n_dofs();
     K.resize(n_dofs, n_dofs);
     K.setFromTriplets(triplets.begin(), triplets.end());
     K.makeCompressed();
@@ -199,20 +160,77 @@ void ElectrostaticsAssembly::apply_boundary_conditions(SparseMatrix& K, DynamicV
     MPFEM_INFO("Applied " << constrained_dofs.size() << " Dirichlet BCs for electrostatics");
 }
 
-DynamicVector ElectrostaticsAssembly::get_field_gradient(const DynamicVector& solution) const {
-    // Compute electric field E = -∇V at each node
-    // This is a simplified version - proper implementation would
-    // project from quadrature points to nodes
-    
-    DynamicVector grad;
+std::vector<Scalar> ElectrostaticsAssembly::compute_joule_heating(const FieldRegistry& registry) const {
     Index n_nodes = mesh_->num_vertices();
-    grad.resize(n_nodes * 3);
-    grad.setZero();
+    std::vector<Scalar> Q(n_nodes, 0.0);
     
-    // TODO: Implement proper gradient projection
-    // For now, return zeros
+    const FieldSpace* V_field = registry.get_field("electric_potential");
+    if (!V_field) {
+        MPFEM_WARN("Electric potential field not found for Joule heating computation");
+        return Q;
+    }
     
-    return grad;
+    auto fe = create_fe(GeometryType::Tetrahedron, V_field->order(), V_field->n_components());
+    if (!fe) return Q;
+    
+    FEValues fe_values(fe.get(), UpdateFlags::UpdateDefault);
+    fe_values.set_field_registry(&registry);
+    
+    std::vector<Scalar> node_weights(n_nodes, 0.0);
+    
+    for (Index cell_id = 0; cell_id < static_cast<Index>(mesh_->num_cells()); ++cell_id) {
+        Index domain_id = mesh_->get_cell_domain_id(cell_id);
+        
+        auto mat_it = domain_material_map_.find(domain_id);
+        if (mat_it == domain_material_map_.end()) continue;
+        
+        const Material* material = mat_db_->get(mat_it->second);
+        if (!material) continue;
+        
+        fe_values.reinit(*V_field, cell_id);
+        
+        std::vector<Index> vertices = mesh_->get_cell_vertices(cell_id);
+        
+        for (int q = 0; q < fe_values.n_quadrature_points(); ++q) {
+            Scalar jxw = fe_values.JxW(q);
+            
+            // 获取该积分点的温度
+            MaterialEvaluator evaluator;
+            Scalar T = fe_values.field_value("temperature", q);
+            evaluator.set_temperature(T);
+            
+            // 获取电导率
+            Tensor<2, 3> sigma = material->get_conductivity(evaluator);
+            
+            // 计算电场强度 E = -∇V
+            Tensor<1, 3> E = fe_values.gradient(q);
+            
+            // 焦耳热 Q = σ|E|²
+            Scalar q_joule = 0.0;
+            for (int i = 0; i < 3; ++i) {
+                for (int j = 0; j < 3; ++j) {
+                    q_joule += sigma(i, j) * E[i] * E[j];
+                }
+            }
+            
+            // 分配到节点
+            for (size_t i = 0; i < vertices.size(); ++i) {
+                Index node = vertices[i];
+                Scalar N_i = fe_values.shape_value(static_cast<int>(i), q);
+                Q[node] += q_joule * N_i * jxw;
+                node_weights[node] += N_i * jxw;
+            }
+        }
+    }
+    
+    // 归一化
+    for (Index n = 0; n < n_nodes; ++n) {
+        if (node_weights[n] > 1e-15) {
+            Q[n] /= node_weights[n];
+        }
+    }
+    
+    return Q;
 }
 
 } // namespace mpfem

@@ -10,31 +10,22 @@
 #define MPFEM_PHYSICS_ELECTROSTATICS_HPP
 
 #include "physics_assembly.hpp"
-#include "assembly/bilinear_form.hpp"
-#include "assembly/linear_form.hpp"
 #include "config/case_config.hpp"
 #include "core/logger.hpp"
+#include "dof/field_registry.hpp"
 #include <unordered_map>
 
 namespace mpfem {
 
 /**
  * @brief Electrostatics field assembly
- * 
- * Solves the steady-state electric potential distribution:
- * -∇·(σ∇V) = 0
- * 
- * where σ is the electric conductivity.
  */
 class ElectrostaticsAssembly : public PhysicsAssembly {
 public:
     ElectrostaticsAssembly() = default;
     
-    /**
-     * @brief Initialize with physics config
-     */
     void initialize(const Mesh* mesh,
-                   const DoFHandler* dof_handler,
+                   const FieldSpace* field,
                    const MaterialDB* mat_db,
                    const PhysicsConfig& config);
     
@@ -44,39 +35,26 @@ public:
     
     std::string field_name() const override { return "electrostatics"; }
     
-    /**
-     * @brief Set temperature field for temperature-dependent conductivity
-     */
-    void set_external_field(const std::string& field_name,
-                           const DynamicVector& values) override {
-        if (field_name == "temperature" || field_name == "T") {
-            temperature_field_ = &values;
-        }
+    void set_field_registry(const FieldRegistry* registry) {
+        field_registry_ = registry;
     }
     
-    /**
-     * @brief Set domain material mapping
-     */
     void set_domain_materials(const std::unordered_map<Index, std::string>& mapping) {
         domain_material_map_ = mapping;
     }
     
     /**
-     * @brief Get electric field gradient at nodes
-     * @param solution Electric potential solution
-     * @return Gradient vector (3 components per node)
+     * @brief Compute Joule heating source term
+     * Q = σ|E|² = σ|∇V|²
+     * @param registry Field registry containing electric potential
+     * @return Joule heating values at each node
      */
-    DynamicVector get_field_gradient(const DynamicVector& solution) const;
-    
+    std::vector<Scalar> compute_joule_heating(const FieldRegistry& registry) const;
+
 private:
     std::vector<BoundaryConditionConfig> bcs_;
     std::unordered_map<Index, std::string> domain_material_map_;
-    const DynamicVector* temperature_field_ = nullptr;
-    
-    // Precomputed conductivity values per domain
-    std::unordered_map<Index, Tensor<2, 3>> conductivity_;
-    
-    void compute_conductivities();
+    const FieldRegistry* field_registry_ = nullptr;
 };
 
 } // namespace mpfem

@@ -22,63 +22,92 @@ FieldSpace::FieldSpace(const FieldID& name, const Mesh* mesh,
         return;
     }
     
-    // For Lagrange elements on vertices: n_dofs = n_nodes * n_components
     n_dofs_ = static_cast<Index>(mesh_->num_vertices()) * n_components_;
-    
-    // Initialize solution vector
     solution_.setZero(n_dofs_);
-    
-    // Build cell DoF table
     build_cell_dof_table();
     
     MPFEM_INFO("Created field '" << name_ << "' with " << n_dofs_ 
                << " DoFs (" << n_components_ << " components, order " << order_ << ")");
 }
 
-void FieldSpace::get_cell_dofs(Index cell_id, std::vector<Index>& dofs) const {
-    dofs.clear();
-    
-    if (cell_id < 0 || cell_id >= static_cast<Index>(cell_dof_table_.n_cells())) {
-        return;
-    }
-    
-    // Get vertex DoFs for this cell
-    SizeType n = cell_dof_table_.dofs_per_cell(static_cast<SizeType>(cell_id));
-    dofs.reserve(n);
-    
-    for (SizeType i = 0; i < n; ++i) {
-        dofs.push_back(cell_dof_table_(static_cast<SizeType>(cell_id), static_cast<int>(i)));
+// ============================================================
+// Solution Value Access
+// ============================================================
+
+Scalar FieldSpace::value_at_node(Index node_id) const {
+    if (n_components_ != 1) return 0.0;
+    Index dof = node_dof(node_id, 0);
+    return (dof >= 0 && dof < solution_.size()) ? solution_[dof] : 0.0;
+}
+
+void FieldSpace::set_value_at_node(Index node_id, Scalar value) {
+    if (n_components_ != 1) return;
+    Index dof = node_dof(node_id, 0);
+    if (dof >= 0 && dof < solution_.size()) {
+        solution_[dof] = value;
     }
 }
 
-int FieldSpace::dofs_per_cell() const {
-    // For Lagrange elements: number of vertices * n_components
-    // This is approximate - actual value depends on cell type
-    if (mesh_->cell_blocks().empty()) return 0;
-    
-    // Get average vertices per cell (rough estimate)
-    SizeType total_cells = mesh_->num_cells();
-    if (total_cells == 0) return 0;
-    
-    // Count vertices for first cell type
-    for (const auto& block : mesh_->cell_blocks()) {
-        if (block.size() > 0) {
-            int verts_per_cell = block.nodes_per_element();
-            return verts_per_cell * n_components_;
+Tensor<1, 3> FieldSpace::vector_at_node(Index node_id) const {
+    Tensor<1, 3> result = Tensor<1, 3>::Zero();
+    for (int c = 0; c < n_components_ && c < 3; ++c) {
+        Index dof = node_dof(node_id, c);
+        if (dof >= 0 && dof < solution_.size()) {
+            result[c] = solution_[dof];
         }
     }
-    return 0;
+    return result;
+}
+
+void FieldSpace::set_vector_at_node(Index node_id, const Tensor<1, 3>& value) {
+    for (int c = 0; c < n_components_ && c < 3; ++c) {
+        Index dof = node_dof(node_id, c);
+        if (dof >= 0 && dof < solution_.size()) {
+            solution_[dof] = value[c];
+        }
+    }
+}
+
+Scalar FieldSpace::component_at_node(Index node_id, int component) const {
+    if (component < 0 || component >= n_components_) return 0.0;
+    Index dof = node_dof(node_id, component);
+    return (dof >= 0 && dof < solution_.size()) ? solution_[dof] : 0.0;
+}
+
+void FieldSpace::set_component_at_node(Index node_id, int component, Scalar value) {
+    if (component < 0 || component >= n_components_) return;
+    Index dof = node_dof(node_id, component);
+    if (dof >= 0 && dof < solution_.size()) {
+        solution_[dof] = value;
+    }
+}
+
+// ============================================================
+// Boundary Conditions
+// ============================================================
+
+bool FieldSpace::is_node_constrained(Index node_id) const {
+    for (int c = 0; c < n_components_; ++c) {
+        if (is_constrained(node_dof(node_id, c))) return true;
+    }
+    return false;
+}
+
+Index FieldSpace::n_constrained_nodes() const {
+    std::unordered_set<Index> nodes;
+    for (const auto& [dof, value] : dirichlet_bcs_) {
+        nodes.insert(dof / n_components_);
+    }
+    return static_cast<Index>(nodes.size());
 }
 
 void FieldSpace::add_dirichlet_bc(Index boundary_id, Scalar value, int component) {
-    // Find all nodes on this boundary
     for (const auto& block : mesh_->face_blocks()) {
         for (SizeType e = 0; e < block.size(); ++e) {
             if (block.entity_id(e) == boundary_id) {
                 auto verts = block.element_vertices(e);
                 for (Index v : verts) {
                     if (component < 0) {
-                        // All components
                         for (int c = 0; c < n_components_; ++c) {
                             Index dof = node_dof(v, c);
                             if (constrained_dofs_.insert(dof).second) {
@@ -98,39 +127,65 @@ void FieldSpace::add_dirichlet_bc(Index boundary_id, Scalar value, int component
 }
 
 void FieldSpace::apply_bcs_to_system(SparseMatrix& K, DynamicVector& f) const {
-    // Apply Dirichlet BCs by modifying matrix diagonal and RHS
-    // This is a simplified approach - for proper implementation,
-    // we would zero out rows and set diagonal to 1
-    
     std::vector<Eigen::Triplet<Scalar>> triplets;
     triplets.reserve(K.nonZeros());
     
-    // Copy existing matrix
     for (int k = 0; k < K.outerSize(); ++k) {
         for (SparseMatrix::InnerIterator it(K, k); it; ++it) {
-            // Skip rows for constrained DoFs (will be overwritten)
             if (!is_constrained(it.row())) {
                 triplets.emplace_back(it.row(), it.col(), it.value());
             }
         }
     }
     
-    // Add diagonal entries for constrained DoFs
     for (const auto& [dof, value] : dirichlet_bcs_) {
         triplets.emplace_back(dof, dof, 1.0);
         f[dof] = value;
     }
     
-    // Rebuild matrix
     K.setFromTriplets(triplets.begin(), triplets.end());
     K.makeCompressed();
 }
+
+// ============================================================
+// DoF Index Access
+// ============================================================
+
+void FieldSpace::get_cell_dofs(Index cell_id, std::vector<Index>& dofs) const {
+    dofs.clear();
+    
+    if (cell_id < 0 || cell_id >= static_cast<Index>(cell_dof_table_.n_cells())) {
+        return;
+    }
+    
+    SizeType n = cell_dof_table_.dofs_per_cell(static_cast<SizeType>(cell_id));
+    dofs.reserve(n);
+    
+    for (SizeType i = 0; i < n; ++i) {
+        dofs.push_back(cell_dof_table_(static_cast<SizeType>(cell_id), static_cast<int>(i)));
+    }
+}
+
+int FieldSpace::dofs_per_cell() const {
+    if (mesh_->cell_blocks().empty()) return 0;
+    
+    for (const auto& block : mesh_->cell_blocks()) {
+        if (block.size() > 0) {
+            int verts_per_cell = block.nodes_per_element();
+            return verts_per_cell * n_components_;
+        }
+    }
+    return 0;
+}
+
+// ============================================================
+// Private Implementation
+// ============================================================
 
 void FieldSpace::build_cell_dof_table() {
     SizeType n_cells = mesh_->num_cells();
     if (n_cells == 0) return;
     
-    // Build DoF table for each cell
     std::vector<int> dofs_per_cell_vec;
     dofs_per_cell_vec.reserve(n_cells);
     
@@ -148,7 +203,6 @@ void FieldSpace::build_cell_dof_table() {
     
     cell_dof_table_ = DoFTable(dofs_per_cell_vec);
     
-    // Fill DoF indices
     SizeType cell_idx = 0;
     for (const auto& block : mesh_->cell_blocks()) {
         int dim = element_dimension(block.type());

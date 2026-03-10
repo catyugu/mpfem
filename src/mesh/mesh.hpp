@@ -313,6 +313,61 @@ public:
         return cell_topologies_;
     }
 
+    // ============================================================
+    // Cell Queries (for physics assembly)
+    // ============================================================
+
+    /**
+     * @brief Get domain ID (geometric entity) for a cell
+     * @param cell_id Global cell index
+     * @return Domain ID
+     */
+    Index get_cell_domain_id(Index cell_id) const {
+        Index remaining = cell_id;
+        for (const auto& block : cell_blocks_) {
+            if (remaining < static_cast<Index>(block.size())) {
+                return block.entity_id(static_cast<SizeType>(remaining));
+            }
+            remaining -= static_cast<Index>(block.size());
+        }
+        return InvalidIndex;
+    }
+
+    /**
+     * @brief Get vertices of a cell
+     * @param cell_id Global cell index
+     * @return Vector of vertex indices
+     */
+    std::vector<Index> get_cell_vertices(Index cell_id) const {
+        std::vector<Index> vertices;
+        Index remaining = cell_id;
+        for (const auto& block : cell_blocks_) {
+            if (remaining < static_cast<Index>(block.size())) {
+                auto span = block.element_vertices(static_cast<SizeType>(remaining));
+                vertices.assign(span.begin(), span.end());
+                return vertices;
+            }
+            remaining -= static_cast<Index>(block.size());
+        }
+        return vertices;
+    }
+
+    /**
+     * @brief Get element type for a cell
+     * @param cell_id Global cell index
+     * @return Element type
+     */
+    ElementType get_cell_type(Index cell_id) const {
+        Index remaining = cell_id;
+        for (const auto& block : cell_blocks_) {
+            if (remaining < static_cast<Index>(block.size())) {
+                return block.type();
+            }
+            remaining -= static_cast<Index>(block.size());
+        }
+        return ElementType::Unknown;
+    }
+
 private:
     int dim_;
     SizeType num_vertices_;

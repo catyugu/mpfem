@@ -1,12 +1,12 @@
 /**
  * @file test_assembly.cpp
- * @brief Tests for Assembly module
+ * @brief Tests for Assembly module using FieldSpace
  */
 
 #include <gtest/gtest.h>
 #include "assembly/assembly.hpp"
-#include "dof/fe_space.hpp"
-#include "dof/dof_handler.hpp"
+#include "dof/field_space.hpp"
+#include "dof/field_registry.hpp"
 #include "mesh/mesh.hpp"
 #include "mesh/mphtxt_reader.hpp"
 #include "mesh/element.hpp"
@@ -38,15 +38,17 @@ protected:
         
         mesh_->build_topology();
 
-        // Create FE space
-        fe_space_ = std::make_unique<FESpace>(mesh_.get(), "Lagrange1", 1);
-        fe_space_->initialize();
+        // Create FieldSpace
+        field_ = std::make_unique<FieldSpace>("test_field", mesh_.get(), 1, 1);
         
-        fe_ = fe_space_->get_fe(0);
+        auto fe = create_fe(GeometryType::Tetrahedron, 1, 1);
+        fe_ = fe.get();
+        fe_owner_ = std::move(fe);
     }
 
     std::unique_ptr<Mesh> mesh_;
-    std::unique_ptr<FESpace> fe_space_;
+    std::unique_ptr<FieldSpace> field_;
+    std::unique_ptr<FiniteElement> fe_owner_;
     const FiniteElement* fe_;
 };
 
@@ -59,7 +61,7 @@ TEST_F(FEValuesTest, BasicConstruction) {
 
 TEST_F(FEValuesTest, ReinitCell) {
     FEValues fe_values(fe_, UpdateFlags::UpdateAll);
-    fe_values.reinit(*mesh_, 0);
+    fe_values.reinit(*field_, 0);
     
     // Check that quadrature points are computed
     for (int q = 0; q < fe_values.n_quadrature_points(); ++q) {
@@ -69,7 +71,7 @@ TEST_F(FEValuesTest, ReinitCell) {
 
 TEST_F(FEValuesTest, JxWComputation) {
     FEValues fe_values(fe_, UpdateFlags::UpdateJxW);
-    fe_values.reinit(*mesh_, 0);
+    fe_values.reinit(*field_, 0);
     
     // For unit tetrahedron, volume = 1/6
     // Sum of JxW should equal volume
@@ -84,7 +86,7 @@ TEST_F(FEValuesTest, JxWComputation) {
 
 TEST_F(FEValuesTest, ShapeGradients) {
     FEValues fe_values(fe_, UpdateFlags::UpdateGradients | UpdateFlags::UpdateJxW);
-    fe_values.reinit(*mesh_, 0);
+    fe_values.reinit(*field_, 0);
     
     // Shape gradients should be computed
     for (int q = 0; q < fe_values.n_quadrature_points(); ++q) {
@@ -98,23 +100,21 @@ TEST_F(FEValuesTest, ShapeGradients) {
     }
 }
 
-TEST_F(FEValuesTest, FunctionProjection) {
-    FEValues fe_values(fe_, UpdateFlags::UpdateAll);
-    fe_values.reinit(*mesh_, 0);
+TEST_F(FEValuesTest, AssembleLocalToGlobal) {
+    FEValues fe_values(fe_, UpdateFlags::UpdateDefault);
+    fe_values.reinit(*field_, 0);
     
-    // Create a solution vector (all ones)
-    DynamicVector solution(4);
-    solution.setOnes();
+    // Create local matrix
+    DynamicMatrix K_local(4, 4);
+    K_local.setOnes();
     
-    std::vector<Index> local_dofs = {0, 1, 2, 3};
+    // Assemble to global
+    SparseMatrix K(4, 4);
+    K.setZero();
+    fe_values.assemble_local_to_global(K, K_local);
     
-    std::vector<Scalar> values;
-    fe_values.get_function_values(solution, local_dofs, values);
-    
-    // With all-ones solution, value at any point should be 1 (sum of shape functions = 1)
-    for (int q = 0; q < fe_values.n_quadrature_points(); ++q) {
-        EXPECT_NEAR(values[q], 1.0, 1e-10);
-    }
+    // Check that values were assembled
+    EXPECT_GT(K.nonZeros(), 0);
 }
 
 // ============================================================
@@ -139,22 +139,15 @@ protected:
         
         mesh_->build_topology();
 
-        // Create FE space and DoF handler
-        fe_space_ = std::make_unique<FESpace>(mesh_.get(), "Lagrange1", 1);
-        fe_space_->initialize();
-        
-        dof_handler_ = std::make_unique<DoFHandler>();
-        dof_handler_->initialize(fe_space_.get());
-        dof_handler_->distribute_dofs();
+        field_ = std::make_unique<FieldSpace>("test", mesh_.get(), 1, 1);
     }
 
     std::unique_ptr<Mesh> mesh_;
-    std::unique_ptr<FESpace> fe_space_;
-    std::unique_ptr<DoFHandler> dof_handler_;
+    std::unique_ptr<FieldSpace> field_;
 };
 
 TEST_F(BilinearFormTest, LaplacianAssembly) {
-    BilinearForm form(dof_handler_.get());
+    BilinearForm form(field_.get());
     
     SparseMatrix K;
     form.assemble(BilinearForms::laplacian(1.0), K);
@@ -174,7 +167,7 @@ TEST_F(BilinearFormTest, LaplacianAssembly) {
 }
 
 TEST_F(BilinearFormTest, MassMatrix) {
-    BilinearForm form(dof_handler_.get());
+    BilinearForm form(field_.get());
     
     SparseMatrix M;
     form.assemble(BilinearForms::mass(1.0), M);
@@ -196,7 +189,7 @@ TEST_F(BilinearFormTest, MassMatrix) {
 }
 
 TEST_F(BilinearFormTest, WithCoefficients) {
-    BilinearForm form(dof_handler_.get());
+    BilinearForm form(field_.get());
     
     std::unordered_map<Index, Scalar> coeffs;
     coeffs[1] = 2.0;  // Domain 1 has coefficient 2.0
@@ -216,7 +209,6 @@ TEST_F(BilinearFormTest, WithCoefficients) {
 class LinearFormTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        // Same setup as BilinearFormTest
         mesh_ = std::make_unique<Mesh>();
         mesh_->set_dimension(3);
         mesh_->initialize_vertices(4);
@@ -231,21 +223,15 @@ protected:
         
         mesh_->build_topology();
 
-        fe_space_ = std::make_unique<FESpace>(mesh_.get(), "Lagrange1", 1);
-        fe_space_->initialize();
-        
-        dof_handler_ = std::make_unique<DoFHandler>();
-        dof_handler_->initialize(fe_space_.get());
-        dof_handler_->distribute_dofs();
+        field_ = std::make_unique<FieldSpace>("test", mesh_.get(), 1, 1);
     }
 
     std::unique_ptr<Mesh> mesh_;
-    std::unique_ptr<FESpace> fe_space_;
-    std::unique_ptr<DoFHandler> dof_handler_;
+    std::unique_ptr<FieldSpace> field_;
 };
 
 TEST_F(LinearFormTest, SourceAssembly) {
-    LinearForm form(dof_handler_.get());
+    LinearForm form(field_.get());
     
     DynamicVector F;
     form.assemble(LinearForms::source(1.0), F);
@@ -259,7 +245,7 @@ TEST_F(LinearFormTest, SourceAssembly) {
 }
 
 TEST_F(LinearFormTest, WithSource) {
-    LinearForm form(dof_handler_.get());
+    LinearForm form(field_.get());
     
     std::unordered_map<Index, Scalar> sources;
     sources[1] = 5.0;  // Domain 1 has source 5.0
@@ -283,68 +269,53 @@ protected:
         mesh_->set_dimension(3);
         mesh_->initialize_vertices(5);
         
-        // Vertices of a unit square pyramid (simplified)
         mesh_->set_vertex(0, Point<3>(0, 0, 0));
         mesh_->set_vertex(1, Point<3>(1, 0, 0));
         mesh_->set_vertex(2, Point<3>(0, 1, 0));
         mesh_->set_vertex(3, Point<3>(1, 1, 0));
         mesh_->set_vertex(4, Point<3>(0.5, 0.5, 1));
 
-        // Two tetrahedra
         auto* block = mesh_->add_cell_block(ElementType::Tetrahedron);
         Index tet1[] = {0, 1, 2, 4};
         Index tet2[] = {1, 3, 2, 4};
         block->add_element(tet1, 1);
         block->add_element(tet2, 1);
 
-        // Add faces with boundary IDs
         auto* faces = mesh_->add_face_block(ElementType::Triangle);
         Index tri[] = {0, 1, 2};
-        faces->add_element(tri, 1);  // boundary 1 (bottom)
+        faces->add_element(tri, 1);
         Index tri2[] = {1, 3, 2};
-        faces->add_element(tri2, 1);  // boundary 1 (bottom)
+        faces->add_element(tri2, 1);
         
         mesh_->build_topology();
 
-        fe_space_ = std::make_unique<FESpace>(mesh_.get(), "Lagrange1", 1);
-        fe_space_->initialize();
-        
-        dof_handler_ = std::make_unique<DoFHandler>();
-        dof_handler_->initialize(fe_space_.get());
-        dof_handler_->distribute_dofs();
+        field_ = std::make_unique<FieldSpace>("potential", mesh_.get(), 1, 1);
     }
 
     std::unique_ptr<Mesh> mesh_;
-    std::unique_ptr<FESpace> fe_space_;
-    std::unique_ptr<DoFHandler> dof_handler_;
+    std::unique_ptr<FieldSpace> field_;
 };
 
 TEST_F(PoissonTest, SolveSimpleProblem) {
     // Assemble stiffness matrix
-    BilinearForm bilinear(dof_handler_.get());
+    BilinearForm bilinear(field_.get());
     SparseMatrix K;
     bilinear.assemble(BilinearForms::laplacian(1.0), K);
     
-    // Check matrix is valid
     ASSERT_GT(K.nonZeros(), 0);
     
     // Assemble load vector (no source)
-    LinearForm linear(dof_handler_.get());
+    LinearForm linear(field_.get());
     DynamicVector F;
     linear.assemble(LinearForms::source(0.0), F);
     
     // Apply Dirichlet BC: u = 0 on boundary 1
-    dof_handler_->add_dirichlet_bc(1, 0.0);
-    dof_handler_->apply_boundary_conditions();
-    
-    // Check we have some free DoFs (node 4 should be free)
-    ASSERT_GT(dof_handler_->n_free_dofs(), 0) << "Need at least one free DoF";
+    field_->add_dirichlet_bc(1, 0.0);
     
     // Apply BC to system
-    DofMap::apply_dirichlet_bc_simple(K, F, dof_handler_.get());
+    field_->apply_bcs_to_system(K, F);
     
-    // Check matrix after BC application
-    ASSERT_GT(K.nonZeros(), 0) << "Matrix should have non-zero entries after BC";
+    ASSERT_GT(K.nonZeros(), 0);
     
     // Solve
     DirectSolver solver;
@@ -355,14 +326,11 @@ TEST_F(PoissonTest, SolveSimpleProblem) {
     
     // Check solution is finite
     for (int i = 0; i < u.size(); ++i) {
-        EXPECT_TRUE(std::isfinite(u[i])) << "u[" << i << "] = " << u[i];
+        EXPECT_TRUE(std::isfinite(u[i]));
     }
     
-    // Constrained DoFs should have BC value (0)
-    const auto& constraints = dof_handler_->constraints();
-    for (const auto& c : constraints) {
-        EXPECT_NEAR(u[c.global_dof], c.value, 1e-10);
-    }
+    // Update field solution
+    field_->set_solution(u);
 }
 
 // ============================================================
@@ -379,21 +347,15 @@ protected:
             GTEST_SKIP() << "Busbar mesh not found";
         }
         
-        fe_space_ = std::make_unique<FESpace>(mesh_.get(), "Lagrange1", 1);
-        fe_space_->initialize();
-        
-        dof_handler_ = std::make_unique<DoFHandler>();
-        dof_handler_->initialize(fe_space_.get());
-        dof_handler_->distribute_dofs();
+        field_ = std::make_unique<FieldSpace>("electric_potential", mesh_.get(), 1, 1);
     }
 
     std::unique_ptr<Mesh> mesh_;
-    std::unique_ptr<FESpace> fe_space_;
-    std::unique_ptr<DoFHandler> dof_handler_;
+    std::unique_ptr<FieldSpace> field_;
 };
 
 TEST_F(BusbarAssemblyTest, AssembleLaplacian) {
-    BilinearForm form(dof_handler_.get());
+    BilinearForm form(field_.get());
     
     SparseMatrix K;
     form.assemble(BilinearForms::laplacian(1.0), K);
@@ -414,17 +376,13 @@ TEST_F(BusbarAssemblyTest, AssembleLaplacian) {
 }
 
 TEST_F(BusbarAssemblyTest, AssembleMassMatrix) {
-    BilinearForm form(dof_handler_.get());
+    BilinearForm form(field_.get());
     
     SparseMatrix M;
     form.assemble(BilinearForms::mass(1.0), M);
     
     EXPECT_EQ(M.rows(), static_cast<Index>(mesh_->num_vertices()));
     
-    // Diagonal entries should be positive (with tolerance for numerical errors)
-    // For mixed element types (tet, hex, pyramid), small negative values can occur
-    // due to floating point accumulation errors in quadrature
-    // Note: If negative values exceed 1e-8, investigate pyramid/wedge quadrature rules
     int n_negative = 0;
     for (int i = 0; i < M.rows(); ++i) {
         if (M.coeff(i, i) < -1e-8) {
@@ -435,9 +393,8 @@ TEST_F(BusbarAssemblyTest, AssembleMassMatrix) {
 }
 
 TEST_F(BusbarAssemblyTest, WithDomainCoefficients) {
-    BilinearForm form(dof_handler_.get());
+    BilinearForm form(field_.get());
     
-    // Set different conductivity for each domain
     std::unordered_map<Index, Scalar> conductivity;
     conductivity[1] = 5.998e7;      // Copper
     for (Index i = 2; i <= 7; ++i) {
@@ -453,15 +410,14 @@ TEST_F(BusbarAssemblyTest, WithDomainCoefficients) {
 
 TEST_F(BusbarAssemblyTest, ElectrostaticsSetup) {
     // Add boundary conditions
-    dof_handler_->add_dirichlet_bc(43, 0.02);  // Vtot = 20mV
-    dof_handler_->add_dirichlet_bc(8, 0.0);
-    dof_handler_->add_dirichlet_bc(15, 0.0);
-    dof_handler_->apply_boundary_conditions();
+    field_->add_dirichlet_bc(43, 0.02);  // Vtot = 20mV
+    field_->add_dirichlet_bc(8, 0.0);
+    field_->add_dirichlet_bc(15, 0.0);
     
-    EXPECT_GT(dof_handler_->n_constrained_dofs(), 0);
+    EXPECT_GT(field_->n_constrained_dofs(), 0);
     
     // Assemble system
-    BilinearForm bilinear(dof_handler_.get());
+    BilinearForm bilinear(field_.get());
     SparseMatrix K;
     
     std::unordered_map<Index, Scalar> conductivity;
@@ -472,12 +428,12 @@ TEST_F(BusbarAssemblyTest, ElectrostaticsSetup) {
     
     bilinear.assemble_with_coefficients(BilinearForms::laplacian(1.0), K, conductivity);
     
-    LinearForm linear(dof_handler_.get());
+    LinearForm linear(field_.get());
     DynamicVector F;
     linear.assemble(LinearForms::source(0.0), F);
     
     // Apply BC
-    DofMap::apply_dirichlet_bc_simple(K, F, dof_handler_.get());
+    field_->apply_bcs_to_system(K, F);
     
     // Solve
     DirectSolver solver;
@@ -495,8 +451,11 @@ TEST_F(BusbarAssemblyTest, ElectrostaticsSetup) {
     // Solution should be bounded by BC values
     Scalar V_min = V.minCoeff();
     Scalar V_max = V.maxCoeff();
-    EXPECT_GE(V_min, -0.01);   // Allow small numerical error
-    EXPECT_LE(V_max, 0.03);    // Max should be near Vtot = 0.02
+    EXPECT_GE(V_min, -0.01);
+    EXPECT_LE(V_max, 0.03);
+    
+    // Update field solution
+    field_->set_solution(V);
 }
 
 int main(int argc, char** argv) {

@@ -147,6 +147,33 @@ enum class GeometryType {
 };
 
 // ============================================================
+// Update Flags for FEValues
+// ============================================================
+
+enum class UpdateFlags : int {
+    None = 0,
+    UpdateJxW = 1 << 0,
+    UpdateGradients = 1 << 1,
+    UpdateValues = 1 << 2,
+    UpdateQuadraturePoints = 1 << 3,
+    UpdateNormals = 1 << 4,
+    UpdateDefault = UpdateValues | UpdateGradients | UpdateJxW,
+    UpdateAll = UpdateValues | UpdateGradients | UpdateJxW | UpdateQuadraturePoints | UpdateNormals
+};
+
+inline UpdateFlags operator|(UpdateFlags a, UpdateFlags b) {
+    return static_cast<UpdateFlags>(static_cast<int>(a) | static_cast<int>(b));
+}
+
+inline UpdateFlags operator&(UpdateFlags a, UpdateFlags b) {
+    return static_cast<UpdateFlags>(static_cast<int>(a) & static_cast<int>(b));
+}
+
+inline bool has_flag(UpdateFlags flags, UpdateFlags flag) {
+    return (flags & flag) == flag;
+}
+
+// ============================================================
 // Constants
 // ============================================================
 

@@ -8,7 +8,7 @@
 
 #include "core/types.hpp"
 #include "mesh/mesh.hpp"
-#include "dof/dof_handler.hpp"
+#include "dof/field_space.hpp"
 #include "material/material_database.hpp"
 #include "linalg/solver_base.hpp"
 #include <memory>
@@ -38,14 +38,14 @@ public:
     /**
      * @brief Initialize the physics
      * @param mesh The mesh
-     * @param dof_handler DoF handler for this field
+     * @param field Field space for this physics
      * @param mat_db Material database
      */
     virtual void initialize(const Mesh* mesh,
-                           const DoFHandler* dof_handler,
+                           const FieldSpace* field,
                            const MaterialDB* mat_db) {
         mesh_ = mesh;
-        dof_handler_ = dof_handler;
+        field_ = field;
         mat_db_ = mat_db;
     }
     
@@ -76,15 +76,13 @@ public:
     virtual PhysicsResult solve(SolverBase& solver) {
         PhysicsResult result;
         
-        // Assemble
         SparseMatrix K;
         DynamicVector f;
         assemble_stiffness(K);
         assemble_rhs(f);
         apply_boundary_conditions(K, f);
         
-        // Solve
-        result.solution.resize(dof_handler_->n_dofs());
+        result.solution.resize(field_->n_dofs());
         result.status = solver.solve(K, f, result.solution);
         result.iterations = solver.iterations();
         result.residual = solver.residual();
@@ -109,14 +107,13 @@ public:
      */
     virtual void set_external_field(const std::string& field_name,
                                    const DynamicVector& values) {
-        // Default: do nothing
         (void)field_name;
         (void)values;
     }
     
 protected:
     const Mesh* mesh_ = nullptr;
-    const DoFHandler* dof_handler_ = nullptr;
+    const FieldSpace* field_ = nullptr;
     const MaterialDB* mat_db_ = nullptr;
 };
 

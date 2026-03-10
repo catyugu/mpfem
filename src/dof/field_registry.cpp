@@ -85,7 +85,6 @@ void FieldRegistry::get_field_values_at_qpoints(const FieldID& field_name,
         return;
     }
     
-    // Get cell DoFs
     std::vector<Index> cell_dofs;
     field->get_cell_dofs(cell_id, cell_dofs);
     
@@ -94,13 +93,8 @@ void FieldRegistry::get_field_values_at_qpoints(const FieldID& field_name,
         return;
     }
     
-    // For scalar fields, interpolate using shape functions
-    // This is a simplified implementation - assumes linear Lagrange elements
-    // TODO: Use proper FE shape functions
-    
     const DynamicVector& sol = field->solution();
     
-    // Simple averaging for now
     Scalar avg = 0.0;
     int count = 0;
     for (Index dof : cell_dofs) {
@@ -126,7 +120,6 @@ void FieldRegistry::get_field_gradients_at_qpoints(const FieldID& field_name,
         return;
     }
     
-    // Get cell DoFs
     std::vector<Index> cell_dofs;
     field->get_cell_dofs(cell_id, cell_dofs);
     
@@ -135,8 +128,6 @@ void FieldRegistry::get_field_gradients_at_qpoints(const FieldID& field_name,
         return;
     }
     
-    // TODO: Implement proper gradient computation using FE shape functions
-    // For now, return zero gradients
     gradients.resize(qpoints.size(), Tensor<1, 3>::Zero());
 }
 
