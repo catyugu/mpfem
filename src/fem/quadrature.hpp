@@ -239,6 +239,64 @@ public:
     }
 };
 
+/**
+ * @brief Quadrature points and weights for reference pyramid
+ * Reference pyramid: base on z=0 with corners (-1,-1,0), (1,-1,0), (1,1,0), (-1,1,0), apex at (0,0,1)
+ */
+class PyramidQuadrature {
+public:
+    static std::pair<std::vector<Point<3>>, std::vector<Scalar>> get(int order) {
+        std::vector<Point<3>> points;
+        std::vector<Scalar> weights;
+        
+        // Order 1: single point at centroid
+        if (order <= 1) {
+            points.push_back(Point<3>(0.0, 0.0, 0.25));
+            weights.push_back(4.0/3.0);  // Volume of reference pyramid = 4/3
+        }
+        // Order 2: 5-point rule (exact for linear)
+        else if (order <= 2) {
+            // Witherden-Vincent rule for pyramid
+            const Scalar a = 0.5;
+            const Scalar w1 = 16.0/45.0;
+            const Scalar w2 = 4.0/45.0;
+            
+            points = {
+                {0.0, 0.0, 0.5},      // Apex region
+                {-a, -a, 0.0},        // Base corners
+                { a, -a, 0.0},
+                { a,  a, 0.0},
+                {-a,  a, 0.0}
+            };
+            weights = {w1, w2, w2, w2, w2};
+        }
+        // Order 3+: 8-point rule (exact for quadratic)
+        else {
+            // Higher order rule
+            const Scalar a = std::sqrt(2.0/3.0);
+            const Scalar b = std::sqrt(1.0/3.0);
+            const Scalar w = 1.0/6.0;
+            
+            // 8 points on the pyramid
+            points = {
+                {-b, -b, a},
+                { b, -b, a},
+                { b,  b, a},
+                {-b,  b, a},
+                {-b, -b, 0.0},
+                { b, -b, 0.0},
+                { b,  b, 0.0},
+                {-b,  b, 0.0}
+            };
+            for (int i = 0; i < 8; ++i) {
+                weights.push_back(w);
+            }
+        }
+        
+        return {points, weights};
+    }
+};
+
 }  // namespace mpfem
 
 #endif  // MPFEM_FEM_QUADRATURE_HPP

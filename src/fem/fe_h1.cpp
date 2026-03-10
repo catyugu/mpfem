@@ -553,17 +553,74 @@ void FE_Wedge::setup_quadrature() {
 
 void FE_Wedge::shape_values(const Point<3>& xi, std::vector<Scalar>& values) const {
     values.resize(dofs_per_cell_);
-    // TODO: Implement wedge shape functions
-    for (int i = 0; i < dofs_per_cell_; ++i) {
-        values[i] = 0.0;
+    
+    // Wedge reference element: triangle (xi, eta) x line (zeta)
+    // Triangle: xi >= 0, eta >= 0, xi + eta <= 1
+    // Line: zeta in [-1, 1]
+    Scalar x = xi.x(), y = xi.y(), z = xi.z();
+    Scalar l0 = 1.0 - x - y;  // Triangle barycentric coordinates
+    Scalar l1 = x;
+    Scalar l2 = y;
+    Scalar h0 = 0.5 * (1.0 - z);  // Linear in z
+    Scalar h1 = 0.5 * (1.0 + z);
+    
+    // Linear wedge: 6 nodes
+    // Bottom triangle: nodes 0,1,2 at z=-1
+    // Top triangle: nodes 3,4,5 at z=+1
+    int idx = 0;
+    values[idx++] = l0 * h0;  // Node 0: (0,0,-1)
+    values[idx++] = l1 * h0;  // Node 1: (1,0,-1)
+    values[idx++] = l2 * h0;  // Node 2: (0,1,-1)
+    values[idx++] = l0 * h1;  // Node 3: (0,0,+1)
+    values[idx++] = l1 * h1;  // Node 4: (1,0,+1)
+    values[idx++] = l2 * h1;  // Node 5: (0,1,+1)
+    
+    // Vector element: repeat for each component
+    if (n_components_ > 1) {
+        int scalar_dofs = 6;
+        for (int c = 1; c < n_components_; ++c) {
+            for (int i = 0; i < scalar_dofs; ++i) {
+                values[c * scalar_dofs + i] = values[i];
+            }
+        }
     }
 }
 
 void FE_Wedge::shape_gradients(const Point<3>& xi, std::vector<Tensor<1, 3>>& grads) const {
     grads.resize(dofs_per_cell_);
-    // TODO: Implement wedge shape gradients
-    for (int i = 0; i < dofs_per_cell_; ++i) {
-        grads[i] = Tensor<1, 3>(0, 0, 0);
+    
+    Scalar x = xi.x(), y = xi.y(), z = xi.z();
+    Scalar l0 = 1.0 - x - y;
+    Scalar l1 = x;
+    Scalar l2 = y;
+    Scalar h0 = 0.5 * (1.0 - z);
+    Scalar h1 = 0.5 * (1.0 + z);
+    
+    // Gradients of barycentric coords: dl0/dx=-1, dl0/dy=-1, dl1/dx=1, dl1/dy=0, dl2/dx=0, dl2/dy=1
+    // Gradients of h coords: dh0/dz=-0.5, dh1/dz=0.5
+    
+    int idx = 0;
+    // Node 0: N0 = l0 * h0
+    grads[idx++] = Tensor<1, 3>(-h0, -h0, -0.5 * l0);
+    // Node 1: N1 = l1 * h0
+    grads[idx++] = Tensor<1, 3>(h0, 0.0, -0.5 * l1);
+    // Node 2: N2 = l2 * h0
+    grads[idx++] = Tensor<1, 3>(0.0, h0, -0.5 * l2);
+    // Node 3: N3 = l0 * h1
+    grads[idx++] = Tensor<1, 3>(-h1, -h1, 0.5 * l0);
+    // Node 4: N4 = l1 * h1
+    grads[idx++] = Tensor<1, 3>(h1, 0.0, 0.5 * l1);
+    // Node 5: N5 = l2 * h1
+    grads[idx++] = Tensor<1, 3>(0.0, h1, 0.5 * l2);
+    
+    if (n_components_ > 1) {
+        int scalar_dofs = 6;
+        std::vector<Tensor<1, 3>> scalar_grads(grads.begin(), grads.begin() + scalar_dofs);
+        for (int c = 1; c < n_components_; ++c) {
+            for (int i = 0; i < scalar_dofs; ++i) {
+                grads[c * scalar_dofs + i] = scalar_grads[i];
+            }
+        }
     }
 }
 
@@ -583,36 +640,97 @@ FE_Pyramid::FE_Pyramid(int degree, int n_components) {
 }
 
 void FE_Pyramid::setup_quadrature() {
-    // Simplified: use degenerate hexahedron quadrature
-    auto [points1, weights1] = GaussLegendre1D::get(degree_ + 1);
-    n_qpoints_ = static_cast<int>(points1.size() * points1.size() * points1.size());
+    auto [pts, wts] = PyramidQuadrature::get(2 * degree_);
+    n_qpoints_ = static_cast<int>(pts.size());
     qpoints_.resize(n_qpoints_);
     
-    int q = 0;
-    for (size_t i = 0; i < points1.size(); ++i) {
-        for (size_t j = 0; j < points1.size(); ++j) {
-            for (size_t k = 0; k < points1.size(); ++k) {
-                qpoints_[q].coord = Point<3>(points1[i], points1[j], points1[k]);
-                qpoints_[q].weight = weights1[i] * weights1[j] * weights1[k];
-                ++q;
-            }
-        }
+    for (size_t q = 0; q < pts.size(); ++q) {
+        qpoints_[q].coord = pts[q];
+        qpoints_[q].weight = wts[q];
     }
 }
 
 void FE_Pyramid::shape_values(const Point<3>& xi, std::vector<Scalar>& values) const {
     values.resize(dofs_per_cell_);
-    // TODO: Implement pyramid shape functions (Fuentes method)
-    for (int i = 0; i < dofs_per_cell_; ++i) {
-        values[i] = 0.0;
+    
+    // Pyramid reference element:
+    // Base: square on z=0 plane, corners at (-1,-1,0), (1,-1,0), (1,1,0), (-1,1,0)
+    // Apex: (0,0,1)
+    Scalar x = xi.x(), y = xi.y(), z = xi.z();
+    
+    // Handle the apex case (z=1) specially
+    if (std::abs(z - 1.0) < 1e-14) {
+        values[0] = 0.0; values[1] = 0.0; values[2] = 0.0; values[3] = 0.0;
+        values[4] = 1.0;
+    } else {
+        // Using virtual node formulation:
+        // N_i = (1/4) * (1 + xi_i*x) * (1 + eta_i*y) * (1-z) for base nodes
+        // N_4 = z for apex
+        Scalar omz = 1.0 - z;
+        
+        values[0] = 0.25 * (1.0 - x) * (1.0 - y) * omz;  // (-1,-1)
+        values[1] = 0.25 * (1.0 + x) * (1.0 - y) * omz;  // (1,-1)
+        values[2] = 0.25 * (1.0 + x) * (1.0 + y) * omz;  // (1,1)
+        values[3] = 0.25 * (1.0 - x) * (1.0 + y) * omz;  // (-1,1)
+        values[4] = z;                                     // Apex
+    }
+    
+    // Vector element
+    if (n_components_ > 1) {
+        int scalar_dofs = 5;
+        for (int c = 1; c < n_components_; ++c) {
+            for (int i = 0; i < scalar_dofs; ++i) {
+                values[c * scalar_dofs + i] = values[i];
+            }
+        }
     }
 }
 
 void FE_Pyramid::shape_gradients(const Point<3>& xi, std::vector<Tensor<1, 3>>& grads) const {
     grads.resize(dofs_per_cell_);
-    // TODO: Implement pyramid shape gradients
-    for (int i = 0; i < dofs_per_cell_; ++i) {
-        grads[i] = Tensor<1, 3>(0, 0, 0);
+    
+    Scalar x = xi.x(), y = xi.y(), z = xi.z();
+    
+    // Handle the apex case specially
+    if (std::abs(z - 1.0) < 1e-14) {
+        // At apex: gradients are defined by limit
+        grads[0] = Tensor<1, 3>(-0.25, -0.25, 0.5);
+        grads[1] = Tensor<1, 3>(0.25, -0.25, 0.5);
+        grads[2] = Tensor<1, 3>(0.25, 0.25, 0.5);
+        grads[3] = Tensor<1, 3>(-0.25, 0.25, 0.5);
+        grads[4] = Tensor<1, 3>(0.0, 0.0, 1.0);
+    } else {
+        // Pyramid shape functions for base nodes (using virtual node formulation):
+        // N_i = (1/4) * (1 + xi_i*x) * (1 + eta_i*y) * (1-z)
+        // where (xi_i, eta_i) are the corner coordinates: (-1,-1), (1,-1), (1,1), (-1,1)
+        // N_4 = z (apex)
+        
+        Scalar omz = 1.0 - z;
+        
+        // Node 0: (-1, -1) -> N_0 = (1/4) * (1-x) * (1-y) * (1-z)
+        grads[0] = Tensor<1, 3>(-0.25 * (1-y) * omz, -0.25 * (1-x) * omz, -0.25 * (1-x) * (1-y));
+        
+        // Node 1: (1, -1) -> N_1 = (1/4) * (1+x) * (1-y) * (1-z)
+        grads[1] = Tensor<1, 3>(0.25 * (1-y) * omz, -0.25 * (1+x) * omz, -0.25 * (1+x) * (1-y));
+        
+        // Node 2: (1, 1) -> N_2 = (1/4) * (1+x) * (1+y) * (1-z)
+        grads[2] = Tensor<1, 3>(0.25 * (1+y) * omz, 0.25 * (1+x) * omz, -0.25 * (1+x) * (1+y));
+        
+        // Node 3: (-1, 1) -> N_3 = (1/4) * (1-x) * (1+y) * (1-z)
+        grads[3] = Tensor<1, 3>(-0.25 * (1+y) * omz, 0.25 * (1-x) * omz, -0.25 * (1-x) * (1+y));
+        
+        // Node 4 (apex): N_4 = z
+        grads[4] = Tensor<1, 3>(0.0, 0.0, 1.0);
+    }
+    
+    if (n_components_ > 1) {
+        int scalar_dofs = 5;
+        std::vector<Tensor<1, 3>> scalar_grads(grads.begin(), grads.begin() + scalar_dofs);
+        for (int c = 1; c < n_components_; ++c) {
+            for (int i = 0; i < scalar_dofs; ++i) {
+                grads[c * scalar_dofs + i] = scalar_grads[i];
+            }
+        }
     }
 }
 
