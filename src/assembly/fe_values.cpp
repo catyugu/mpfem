@@ -32,6 +32,7 @@ void FEValues::reinit(const Mesh& mesh, Index cell_id) {
     is_face_ = false;
     current_face_id_ = InvalidIndex;
     current_local_face_ = -1;
+    current_cell_id_ = cell_id;
     
     compute_cell_data(mesh, cell_id);
 }
@@ -312,6 +313,194 @@ void FEValues::get_vector_values(const DynamicVector& global_solution,
             }
         }
         qpoint_values[q] = val;
+    }
+}
+
+// ============================================================
+// Field-based Value Access
+// ============================================================
+
+Scalar FEValues::field_value(const FieldID& field_name, int q) const {
+    if (!field_registry_) {
+        MPFEM_WARN("Field registry not set, cannot query field '" << field_name << "'");
+        return 0.0;
+    }
+    
+    const FieldSpace* field = field_registry_->get_field(field_name);
+    if (!field) {
+        MPFEM_WARN("Field '" << field_name << "' not found in registry");
+        return 0.0;
+    }
+    
+    // Get cell DoFs for this field
+    std::vector<Index> cell_dofs;
+    field->get_cell_dofs(current_cell_id_, cell_dofs);
+    
+    if (cell_dofs.empty()) {
+        return 0.0;
+    }
+    
+    // Interpolate using shape functions
+    const DynamicVector& sol = field->solution();
+    Scalar value = 0.0;
+    
+    int n_shape = std::min(static_cast<int>(cell_dofs.size()), dofs_per_cell_);
+    for (int i = 0; i < n_shape; ++i) {
+        if (cell_dofs[i] < sol.size()) {
+            value += qp_data_[q].shape_values[i] * sol[cell_dofs[i]];
+        }
+    }
+    
+    return value;
+}
+
+void FEValues::field_values(const FieldID& field_name, std::vector<Scalar>& values) const {
+    values.resize(n_qpoints_, 0.0);
+    
+    if (!field_registry_) {
+        MPFEM_WARN("Field registry not set");
+        return;
+    }
+    
+    const FieldSpace* field = field_registry_->get_field(field_name);
+    if (!field) {
+        MPFEM_WARN("Field '" << field_name << "' not found");
+        return;
+    }
+    
+    std::vector<Index> cell_dofs;
+    field->get_cell_dofs(current_cell_id_, cell_dofs);
+    
+    if (cell_dofs.empty()) return;
+    
+    const DynamicVector& sol = field->solution();
+    int n_shape = std::min(static_cast<int>(cell_dofs.size()), dofs_per_cell_);
+    
+    for (int q = 0; q < n_qpoints_; ++q) {
+        Scalar val = 0.0;
+        for (int i = 0; i < n_shape; ++i) {
+            if (cell_dofs[i] < sol.size()) {
+                val += qp_data_[q].shape_values[i] * sol[cell_dofs[i]];
+            }
+        }
+        values[q] = val;
+    }
+}
+
+Tensor<1, 3> FEValues::field_vector(const FieldID& field_name, int q) const {
+    if (!field_registry_) {
+        return Tensor<1, 3>::Zero();
+    }
+    
+    const FieldSpace* field = field_registry_->get_field(field_name);
+    if (!field || field->type() != FieldType::Vector) {
+        return Tensor<1, 3>::Zero();
+    }
+    
+    std::vector<Index> cell_dofs;
+    field->get_cell_dofs(current_cell_id_, cell_dofs);
+    
+    if (cell_dofs.empty()) return Tensor<1, 3>::Zero();
+    
+    const DynamicVector& sol = field->solution();
+    int n_comp = field->n_components();
+    int n_nodes_per_cell = cell_dofs.size() / n_comp;
+    
+    Tensor<1, 3> value = Tensor<1, 3>::Zero();
+    
+    for (int c = 0; c < n_comp && c < 3; ++c) {
+        for (int i = 0; i < n_nodes_per_cell && i < dofs_per_cell_; ++i) {
+            Index dof = cell_dofs[i * n_comp + c];
+            if (dof < sol.size()) {
+                value[c] += qp_data_[q].shape_values[i] * sol[dof];
+            }
+        }
+    }
+    
+    return value;
+}
+
+void FEValues::field_vectors(const FieldID& field_name, std::vector<Tensor<1, 3>>& values) const {
+    values.resize(n_qpoints_, Tensor<1, 3>::Zero());
+    
+    if (!field_registry_) return;
+    
+    const FieldSpace* field = field_registry_->get_field(field_name);
+    if (!field || field->type() != FieldType::Vector) return;
+    
+    std::vector<Index> cell_dofs;
+    field->get_cell_dofs(current_cell_id_, cell_dofs);
+    
+    if (cell_dofs.empty()) return;
+    
+    const DynamicVector& sol = field->solution();
+    int n_comp = field->n_components();
+    int n_nodes_per_cell = cell_dofs.size() / n_comp;
+    
+    for (int q = 0; q < n_qpoints_; ++q) {
+        for (int c = 0; c < n_comp && c < 3; ++c) {
+            for (int i = 0; i < n_nodes_per_cell && i < dofs_per_cell_; ++i) {
+                Index dof = cell_dofs[i * n_comp + c];
+                if (dof < sol.size()) {
+                    values[q][c] += qp_data_[q].shape_values[i] * sol[dof];
+                }
+            }
+        }
+    }
+}
+
+Tensor<1, 3> FEValues::field_gradient(const FieldID& field_name, int q) const {
+    if (!field_registry_) {
+        return Tensor<1, 3>::Zero();
+    }
+    
+    const FieldSpace* field = field_registry_->get_field(field_name);
+    if (!field) {
+        return Tensor<1, 3>::Zero();
+    }
+    
+    std::vector<Index> cell_dofs;
+    field->get_cell_dofs(current_cell_id_, cell_dofs);
+    
+    if (cell_dofs.empty()) return Tensor<1, 3>::Zero();
+    
+    const DynamicVector& sol = field->solution();
+    
+    // For scalar fields, compute gradient using shape function gradients
+    Tensor<1, 3> grad = Tensor<1, 3>::Zero();
+    int n_shape = std::min(static_cast<int>(cell_dofs.size()), dofs_per_cell_);
+    
+    for (int i = 0; i < n_shape; ++i) {
+        if (cell_dofs[i] < sol.size()) {
+            grad += qp_data_[q].shape_gradients[i] * sol[cell_dofs[i]];
+        }
+    }
+    
+    return grad;
+}
+
+void FEValues::field_gradients(const FieldID& field_name, std::vector<Tensor<1, 3>>& gradients) const {
+    gradients.resize(n_qpoints_, Tensor<1, 3>::Zero());
+    
+    if (!field_registry_) return;
+    
+    const FieldSpace* field = field_registry_->get_field(field_name);
+    if (!field) return;
+    
+    std::vector<Index> cell_dofs;
+    field->get_cell_dofs(current_cell_id_, cell_dofs);
+    
+    if (cell_dofs.empty()) return;
+    
+    const DynamicVector& sol = field->solution();
+    int n_shape = std::min(static_cast<int>(cell_dofs.size()), dofs_per_cell_);
+    
+    for (int q = 0; q < n_qpoints_; ++q) {
+        for (int i = 0; i < n_shape; ++i) {
+            if (cell_dofs[i] < sol.size()) {
+                gradients[q] += qp_data_[q].shape_gradients[i] * sol[cell_dofs[i]];
+            }
+        }
     }
 }
 

@@ -7,6 +7,7 @@
  * - Jacobian transformation and integration weights (JxW)
  * - Physical gradients (transformed from reference gradients)
  * - Projection of global solution to local quadrature points
+ * - Field value queries by name (for coupled physics)
  */
 
 #ifndef MPFEM_ASSEMBLY_FE_VALUES_HPP
@@ -16,6 +17,7 @@
 #include "fem/fe_base.hpp"
 #include "fem/element_transformation.hpp"
 #include "mesh/mesh.hpp"
+#include "dof/field_registry.hpp"
 #include <vector>
 #include <memory>
 
@@ -213,6 +215,63 @@ public:
                            std::vector<Tensor<1, 3>>& qpoint_values) const;
     
     // ============================================================
+    // Field-based Value Access (recommended for coupled physics)
+    // ============================================================
+    
+    /**
+     * @brief Set the field registry for field value queries
+     * @param registry Pointer to field registry
+     */
+    void set_field_registry(const FieldRegistry* registry) {
+        field_registry_ = registry;
+    }
+    
+    /**
+     * @brief Get scalar field value at a quadrature point by field name
+     * @param field_name Name of the field
+     * @param q Quadrature point index
+     * @return Field value at the quadrature point
+     */
+    Scalar field_value(const FieldID& field_name, int q) const;
+    
+    /**
+     * @brief Get scalar field values at all quadrature points
+     * @param field_name Name of the field
+     * @param values Output: values at each quadrature point
+     */
+    void field_values(const FieldID& field_name, std::vector<Scalar>& values) const;
+    
+    /**
+     * @brief Get vector field value at a quadrature point by field name
+     * @param field_name Name of the field
+     * @param q Quadrature point index
+     * @return Vector value at the quadrature point
+     */
+    Tensor<1, 3> field_vector(const FieldID& field_name, int q) const;
+    
+    /**
+     * @brief Get vector field values at all quadrature points
+     * @param field_name Name of the field
+     * @param values Output: vectors at each quadrature point
+     */
+    void field_vectors(const FieldID& field_name, std::vector<Tensor<1, 3>>& values) const;
+    
+    /**
+     * @brief Get field gradient at a quadrature point by field name
+     * @param field_name Name of the field
+     * @param q Quadrature point index
+     * @return Gradient at the quadrature point
+     */
+    Tensor<1, 3> field_gradient(const FieldID& field_name, int q) const;
+    
+    /**
+     * @brief Get field gradients at all quadrature points
+     * @param field_name Name of the field
+     * @param gradients Output: gradients at each quadrature point
+     */
+    void field_gradients(const FieldID& field_name, std::vector<Tensor<1, 3>>& gradients) const;
+    
+    // ============================================================
     // Element Transformation Access
     // ============================================================
     
@@ -240,6 +299,12 @@ private:
     bool is_face_;
     Index current_face_id_;
     int current_local_face_;
+    
+    // Field registry for name-based field access
+    const FieldRegistry* field_registry_ = nullptr;
+    
+    // Current cell for field value queries
+    Index current_cell_id_ = InvalidIndex;
     
     void compute_cell_data(const Mesh& mesh, Index cell_id);
     void compute_face_data(const Mesh& mesh, Index face_id, Index cell_id, int local_face);

@@ -45,11 +45,15 @@ set(MPFEM_FEM_HEADERS
 set(MPFEM_DOF_SOURCES
     dof/dof_handler.cpp
     dof/fe_space.cpp
+    dof/field_space.cpp
+    dof/field_registry.cpp
 )
 set(MPFEM_DOF_HEADERS
     dof/dof_handler.hpp
     dof/dof_table.hpp
     dof/fe_space.hpp
+    dof/field_space.hpp
+    dof/field_registry.hpp
 )
 
 # Assembly module
@@ -107,6 +111,19 @@ set(MPFEM_MATERIAL_HEADERS
     material/material_database.hpp
 )
 
+# Physics module
+set(MPFEM_PHYSICS_SOURCES
+    physics/electrostatics.cpp
+    physics/heat_transfer.cpp
+    physics/solid_mechanics.cpp
+)
+set(MPFEM_PHYSICS_HEADERS
+    physics/physics_assembly.hpp
+    physics/electrostatics.hpp
+    physics/heat_transfer.hpp
+    physics/solid_mechanics.hpp
+)
+
 # Combine all sources and headers
 set(MPFEM_ALL_SOURCES
     ${MPFEM_CORE_SOURCES}
@@ -118,6 +135,7 @@ set(MPFEM_ALL_SOURCES
     ${MPFEM_IO_SOURCES}
     ${MPFEM_CONFIG_SOURCES}
     ${MPFEM_MATERIAL_SOURCES}
+    ${MPFEM_PHYSICS_SOURCES}
 )
 
 set(MPFEM_ALL_HEADERS
@@ -130,6 +148,7 @@ set(MPFEM_ALL_HEADERS
     ${MPFEM_IO_HEADERS}
     ${MPFEM_CONFIG_HEADERS}
     ${MPFEM_MATERIAL_HEADERS}
+    ${MPFEM_PHYSICS_HEADERS}
 )
 
 # ============================================================
