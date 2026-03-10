@@ -95,19 +95,19 @@ set(MPFEM_DOF_HEADERS
 #     physics/multiphysics.hpp
 # )
 
-# # IO module
-# set(MPFEM_IO_SOURCES
-#     io/xml_reader.cpp
-#     io/material_reader.cpp
-#     io/result_writer.cpp
-#     io/variable_system.cpp
-# )
-# set(MPFEM_IO_HEADERS
-#     io/xml_reader.hpp
-#     io/material_reader.hpp
-#     io/result_writer.hpp
-#     io/variable_system.hpp
-# )
+# IO module
+set(MPFEM_IO_SOURCES
+    io/variable_system.cpp
+    io/xml_reader.cpp
+    io/material_reader.cpp
+    io/result_writer.cpp
+)
+set(MPFEM_IO_HEADERS
+    io/variable_system.hpp
+    io/xml_reader.hpp
+    io/material_reader.hpp
+    io/result_writer.hpp
+)
 
 # Combine all sources and headers
 set(MPFEM_ALL_SOURCES
@@ -118,7 +118,7 @@ set(MPFEM_ALL_SOURCES
     # ${MPFEM_ASSEMBLY_SOURCES}
     # ${MPFEM_LINALG_SOURCES}
     # ${MPFEM_PHYSICS_SOURCES}
-    # ${MPFEM_IO_SOURCES}
+    ${MPFEM_IO_SOURCES}
 )
 
 set(MPFEM_ALL_HEADERS
@@ -129,7 +129,7 @@ set(MPFEM_ALL_HEADERS
     # ${MPFEM_ASSEMBLY_HEADERS}
     # ${MPFEM_LINALG_HEADERS}
     # ${MPFEM_PHYSICS_HEADERS}
-    # ${MPFEM_IO_HEADERS}
+    ${MPFEM_IO_HEADERS}
 )
 
 # ============================================================
