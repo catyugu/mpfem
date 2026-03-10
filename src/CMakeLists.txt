@@ -79,6 +79,34 @@ set(MPFEM_LINALG_HEADERS
     linalg/pardiso_solver.hpp
 )
 
+# IO module
+set(MPFEM_IO_SOURCES
+    io/vtu_writer.cpp
+    io/comsol_writer.cpp
+)
+set(MPFEM_IO_HEADERS
+    io/vtu_writer.hpp
+    io/comsol_writer.hpp
+)
+
+# Config module
+set(MPFEM_CONFIG_SOURCES
+    config/case_parser.cpp
+)
+set(MPFEM_CONFIG_HEADERS
+    config/case_config.hpp
+    config/case_parser.hpp
+)
+
+# Material module
+set(MPFEM_MATERIAL_SOURCES
+    material/material_database.cpp
+)
+set(MPFEM_MATERIAL_HEADERS
+    material/material_property.hpp
+    material/material_database.hpp
+)
+
 # Combine all sources and headers
 set(MPFEM_ALL_SOURCES
     ${MPFEM_CORE_SOURCES}
@@ -87,6 +115,9 @@ set(MPFEM_ALL_SOURCES
     ${MPFEM_DOF_SOURCES}
     ${MPFEM_ASSEMBLY_SOURCES}
     ${MPFEM_LINALG_SOURCES}
+    ${MPFEM_IO_SOURCES}
+    ${MPFEM_CONFIG_SOURCES}
+    ${MPFEM_MATERIAL_SOURCES}
 )
 
 set(MPFEM_ALL_HEADERS
@@ -96,6 +127,9 @@ set(MPFEM_ALL_HEADERS
     ${MPFEM_DOF_HEADERS}
     ${MPFEM_ASSEMBLY_HEADERS}
     ${MPFEM_LINALG_HEADERS}
+    ${MPFEM_IO_HEADERS}
+    ${MPFEM_CONFIG_HEADERS}
+    ${MPFEM_MATERIAL_HEADERS}
 )
 
 # ============================================================

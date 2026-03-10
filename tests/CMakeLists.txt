@@ -34,6 +34,9 @@ mpfem_add_test(test_dof)
 # Assembly test
 mpfem_add_test(test_assembly)
 
+# Config test
+mpfem_add_test(test_config)
+
 # Tests will be uncommented as modules are implemented
 # mpfem_add_test(test_types)
 # mpfem_add_test(test_fe)
