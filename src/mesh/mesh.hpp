@@ -8,13 +8,45 @@
 
 #include "element.hpp"
 #include "geometry.hpp"
+#include "connectivity.hpp"
 #include "core/types.hpp"
 #include "core/logger.hpp"
 
 #include <span>
 #include <vector>
+#include <unordered_map>
 
 namespace mpfem {
+
+// ============================================================
+// Face Topology Information
+// ============================================================
+
+/**
+ * @brief Information about a face in the mesh topology
+ */
+struct FaceTopology {
+    Index face_id;           ///< Global face index
+    Index cell_id;           ///< First adjacent cell
+    Index neighbor_cell_id;  ///< Second adjacent cell (InvalidIndex if boundary face)
+    int local_face_index;    ///< Face index in first cell
+    int neighbor_local_face; ///< Face index in neighbor cell
+    bool is_boundary;        ///< True if this is an external boundary face
+    Index boundary_entity_id;///< Boundary entity ID (from geometry)
+
+    FaceTopology()
+        : face_id(InvalidIndex), cell_id(InvalidIndex),
+          neighbor_cell_id(InvalidIndex), local_face_index(-1),
+          neighbor_local_face(-1), is_boundary(true), boundary_entity_id(InvalidIndex) {}
+};
+
+/**
+ * @brief Cell topology information
+ */
+struct CellTopology {
+    std::vector<Index> face_ids;  ///< Faces of this cell
+    std::vector<Index> neighbor_cells; ///< Neighboring cells (via faces)
+};
 
 /**
  * @brief Main mesh class
@@ -218,7 +250,67 @@ public:
         face_blocks_.clear();
         edge_blocks_.clear();
         geometry_.clear();
+        topology_built_ = false;
+        face_topologies_.clear();
+        cell_topologies_.clear();
         num_vertices_ = 0;
+    }
+
+    // ============================================================
+    // Topology (face-cell connectivity)
+    // ============================================================
+
+    /// Build mesh topology (face-cell connectivity)
+    /// Must be called after mesh is fully loaded
+    void build_topology();
+
+    /// Check if topology has been built
+    bool topology_built() const { return topology_built_; }
+
+    /// Get face topology by face index
+    const FaceTopology& face_topology(Index face_id) const {
+        static FaceTopology invalid;
+        if (face_id < 0 || static_cast<SizeType>(face_id) >= face_topologies_.size()) {
+            return invalid;
+        }
+        return face_topologies_[face_id];
+    }
+
+    /// Get cell topology by cell index
+    const CellTopology& cell_topology(Index cell_id) const {
+        static CellTopology invalid;
+        if (cell_id < 0 || static_cast<SizeType>(cell_id) >= cell_topologies_.size()) {
+            return invalid;
+        }
+        return cell_topologies_[cell_id];
+    }
+
+    /// Get number of boundary faces
+    SizeType num_boundary_faces() const {
+        SizeType count = 0;
+        for (const auto& ft : face_topologies_) {
+            if (ft.is_boundary) ++count;
+        }
+        return count;
+    }
+
+    /// Get number of internal faces
+    SizeType num_internal_faces() const {
+        SizeType count = 0;
+        for (const auto& ft : face_topologies_) {
+            if (!ft.is_boundary) ++count;
+        }
+        return count;
+    }
+
+    /// Get all face topologies
+    const std::vector<FaceTopology>& face_topologies() const {
+        return face_topologies_;
+    }
+
+    /// Get all cell topologies
+    const std::vector<CellTopology>& cell_topologies() const {
+        return cell_topologies_;
     }
 
 private:
@@ -231,6 +323,11 @@ private:
     std::vector<ElementBlock> edge_blocks_;
 
     GeometryManager geometry_;
+
+    // Topology data
+    bool topology_built_ = false;
+    std::vector<FaceTopology> face_topologies_;
+    std::vector<CellTopology> cell_topologies_;
 };
 
 }  // namespace mpfem

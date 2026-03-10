@@ -178,6 +178,89 @@ TEST_F(MeshTest, GeometryManager) {
     }
 }
 
+TEST_F(MeshTest, BuildTopology) {
+    MphtxtReader reader;
+    auto mesh = reader.read("cases/busbar/mesh.mphtxt");
+
+    // Build topology
+    mesh->build_topology();
+
+    // Check that topology is built
+    EXPECT_TRUE(mesh->topology_built());
+
+    // Check number of faces
+    SizeType total_faces = mesh->face_topologies().size();
+    EXPECT_GT(total_faces, 0);
+
+    // Check boundary faces count (should match number of external faces)
+    SizeType boundary_faces = mesh->num_boundary_faces();
+    SizeType internal_faces = mesh->num_internal_faces();
+
+    EXPECT_GT(boundary_faces, 0);
+    EXPECT_GT(internal_faces, 0);
+    EXPECT_EQ(boundary_faces + internal_faces, total_faces);
+
+    // Verify each face topology has valid cell_id
+    for (const auto& ft : mesh->face_topologies()) {
+        EXPECT_NE(ft.cell_id, InvalidIndex);
+        EXPECT_GE(ft.local_face_index, 0);
+        EXPECT_LT(ft.local_face_index, 6);  // Max 6 faces per element
+
+        if (ft.is_boundary) {
+            EXPECT_EQ(ft.neighbor_cell_id, InvalidIndex);
+        } else {
+            EXPECT_NE(ft.neighbor_cell_id, InvalidIndex);
+        }
+    }
+
+    // Verify cell topologies
+    for (Index cell_id = 0; cell_id < static_cast<Index>(mesh->num_cells()); ++cell_id) {
+        const auto& ct = mesh->cell_topology(cell_id);
+        EXPECT_GT(ct.face_ids.size(), 0);
+
+        // Each face should be valid
+        for (Index face_id : ct.face_ids) {
+            EXPECT_LT(face_id, total_faces);
+        }
+    }
+
+    MPFEM_INFO("Topology: " << total_faces << " faces, "
+               << boundary_faces << " boundary, "
+               << internal_faces << " internal");
+}
+
+TEST_F(MeshTest, BoundaryFaceEntityIDs) {
+    MphtxtReader reader;
+    auto mesh = reader.read("cases/busbar/mesh.mphtxt");
+    mesh->build_topology();
+
+    // Count boundary faces and those with entity IDs
+    Index num_boundary = 0;
+    Index num_with_entity_id = 0;
+    std::set<Index> boundary_entity_ids;
+    
+    for (const auto& ft : mesh->face_topologies()) {
+        if (ft.is_boundary) {
+            num_boundary++;
+            if (ft.boundary_entity_id != InvalidIndex) {
+                num_with_entity_id++;
+                boundary_entity_ids.insert(ft.boundary_entity_id);
+            }
+        }
+    }
+
+    MPFEM_INFO("Boundary faces: " << num_boundary << ", with entity ID: " << num_with_entity_id);
+    MPFEM_INFO("Unique boundary entity IDs: " << boundary_entity_ids.size());
+    
+    // Verify basic statistics
+    EXPECT_GT(num_boundary, 0);
+    EXPECT_GT(num_with_entity_id, 0);
+    
+    // The original mesh has 43 boundaries, but not all may be represented
+    // by boundary faces (some may be interior boundaries or edges)
+    EXPECT_GE(boundary_entity_ids.size(), 20);
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

@@ -47,7 +47,6 @@ public:
         }
 
         MPFEM_INFO("Mesh loaded successfully");
-        mesh->print_info();
 
         return mesh;
     }
@@ -82,8 +81,6 @@ private:
         line = skip_to_data(file);
         SizeType num_vertices = 0;
         std::istringstream(line) >> num_vertices;
-        MPFEM_INFO("num_vertices: " << num_vertices << ", dimension: " << sdim);
-
         mesh.initialize_vertices(num_vertices);
 
         // Skip lowest vertex index
@@ -110,8 +107,6 @@ private:
         line = skip_to_data(file);
         int num_element_types = 0;
         std::istringstream(line) >> num_element_types;
-        MPFEM_INFO("Number of element types: " << num_element_types);
-
         // Track global cell/face indices across all blocks
         Index global_cell_idx = 0;
         Index global_face_idx = 0;
@@ -141,8 +136,6 @@ private:
 
         ElementType etype = mpfem::parse_element_type(type_name);
         int elem_dim = element_dimension(etype);
-        MPFEM_INFO("Element type: " << type_name << " -> " << static_cast<int>(etype)
-                   << ", dimension: " << elem_dim);
 
         // Read vertices per element
         line = skip_to_data(file);
@@ -153,7 +146,6 @@ private:
         line = skip_to_data(file);
         SizeType num_elements = 0;
         std::istringstream(line) >> num_elements;
-        MPFEM_INFO("Elements: " << num_elements);
 
         // Skip "# Elements" comment
         std::getline(file, line);
