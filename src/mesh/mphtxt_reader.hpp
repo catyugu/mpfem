@@ -197,10 +197,15 @@ private:
         std::getline(file, line);
 
         // Read geometric entity indices and register with GeometryManager
+        // Note: COMSOL mphtxt uses 0-based entity indices, but case.xml uses 1-based
+        // Convert to 1-based to match COMSOL's user-facing numbering
         for (SizeType i = 0; i < num_entities; ++i) {
             std::getline(file, line);
             Index entity_id = 0;
             std::istringstream(line) >> entity_id;
+            
+            // Convert from 0-based to 1-based to match COMSOL GUI numbering
+            entity_id += 1;
 
             if (block) {
                 block->set_entity_id(i, entity_id);
