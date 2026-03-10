@@ -27,10 +27,10 @@ include(cmake/CompilerOptions.cmake)
 # ============================================================
 include(cmake/CPM.cmake)
 
-# Eigen - Linear algebra library
+# Eigen - Linear algebra library (from GitLab mirror)
 CPMAddPackage(
     NAME Eigen3
-    GITHUB_REPOSITORY libigl/eigen
+    GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
     GIT_TAG 3.4.0
     OPTIONS
         "BUILD_TESTING OFF"
