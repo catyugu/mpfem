@@ -18,50 +18,6 @@ BilinearForm::BilinearForm(const DoFHandler* dof_handler)
 {
 }
 
-void BilinearForm::build_sparsity_pattern(SparseMatrix& matrix) {
-    Index n_dofs = dof_handler_->n_dofs();
-    
-    // Count non-zeros per row (estimate)
-    std::vector<int> nnz_per_row(n_dofs, 0);
-    
-    std::vector<Index> local_dofs;
-    
-    // Iterate over all cells and mark DoF connections
-    for (const auto& block : mesh_->cell_blocks()) {
-        int dofs_per_elem = fe_space_->dofs_per_cell(to_geometry_type(block.type()));
-        
-        for (SizeType e = 0; e < block.size(); ++e) {
-            // Get cell DoFs (simplified - need proper implementation)
-            // TODO: Properly implement this function
-            local_dofs.clear();
-            
-            // For now, estimate using vertices
-            auto verts = block.element_vertices(e);
-            for (auto v : verts) {
-                for (int c = 0; c < fe_space_->n_components(); ++c) {
-                    Index dof = v * fe_space_->n_components() + c;
-                    if (dof < n_dofs) {
-                        local_dofs.push_back(dof);
-                    }
-                }
-            }
-            
-            // Mark all-to-all connections within this element
-            for (auto i : local_dofs) {
-                for (auto j : local_dofs) {
-                    if (i < static_cast<Index>(nnz_per_row.size()) && j < static_cast<Index>(nnz_per_row.size())) {
-                        nnz_per_row[i] = std::max(nnz_per_row[i], static_cast<int>(local_dofs.size()));
-                    }
-                }
-            }
-        }
-    }
-    
-    // Reserve space
-    matrix.resize(n_dofs, n_dofs);
-    matrix.reserve(nnz_per_row);
-}
-
 void BilinearForm::assemble(LocalMatrixAssembler local_assembler,
                             SparseMatrix& matrix,
                             bool symmetrize) {

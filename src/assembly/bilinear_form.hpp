@@ -109,9 +109,6 @@ private:
     
     UpdateFlags update_flags_;
     size_t n_entries_;
-    
-    // Preallocate sparsity pattern
-    void build_sparsity_pattern(SparseMatrix& matrix);
 };
 
 /**
