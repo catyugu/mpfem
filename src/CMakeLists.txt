@@ -52,10 +52,19 @@ set(MPFEM_DOF_HEADERS
     dof/fe_space.hpp
 )
 
-# Assembly module (to be implemented)
+# Assembly module
 set(MPFEM_ASSEMBLY_SOURCES
+    assembly/fe_values.cpp
+    assembly/bilinear_form.cpp
+    assembly/linear_form.cpp
+    assembly/dof_map.cpp
 )
 set(MPFEM_ASSEMBLY_HEADERS
+    assembly/assembly.hpp
+    assembly/fe_values.hpp
+    assembly/bilinear_form.hpp
+    assembly/linear_form.hpp
+    assembly/dof_map.hpp
 )
 
 # Linalg module

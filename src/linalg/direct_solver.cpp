@@ -16,6 +16,10 @@ void DirectSolver::analyze_pattern(const SparseMatrix& A) {
     }
     
     n_dofs_ = A.rows();
+    
+    // Make sure matrix is compressed
+    const_cast<SparseMatrix&>(A).makeCompressed();
+    
     solver_.analyzePattern(A);
     
     if (solver_.info() != Eigen::Success) {
@@ -25,6 +29,7 @@ void DirectSolver::analyze_pattern(const SparseMatrix& A) {
     }
     
     analyzed_ = true;
+    status_ = SolverStatus::Success;  // Mark success
     
     if (print_level_ >= 1) {
         MPFEM_INFO("DirectSolver: Pattern analysis complete, size=" << n_dofs_);
@@ -39,6 +44,9 @@ void DirectSolver::factorize(const SparseMatrix& A) {
         }
     }
     
+    // Make sure matrix is compressed
+    const_cast<SparseMatrix&>(A).makeCompressed();
+    
     solver_.factorize(A);
     
     if (solver_.info() != Eigen::Success) {
@@ -48,6 +56,7 @@ void DirectSolver::factorize(const SparseMatrix& A) {
     }
     
     factorized_ = true;
+    status_ = SolverStatus::Success;
     
     if (print_level_ >= 1) {
         MPFEM_INFO("DirectSolver: Factorization complete");
@@ -78,17 +87,17 @@ SolverStatus DirectSolver::solve(const SparseMatrix& A,
         x.resize(A.cols());
     }
     
-    // Perform factorization if not done
-    if (!factorized_) {
-        if (!analyzed_) {
-            analyze_pattern(A);
-        }
-        factorize(A);
-        
-        if (status_ != SolverStatus::Success) {
-            MPFEM_ERROR("DirectSolver: Factorization failed with status " << static_cast<int>(status_));
-            return status_;
-        }
+    // Make a compressed copy of the matrix
+    SparseMatrix A_compressed = A;
+    A_compressed.makeCompressed();
+    
+    // Use compute() which handles analyzePattern and factorize together
+    solver_.compute(A_compressed);
+    
+    if (solver_.info() != Eigen::Success) {
+        status_ = SolverStatus::NumericalIssue;
+        MPFEM_ERROR("DirectSolver: Compute failed");
+        return status_;
     }
     
     // Solve

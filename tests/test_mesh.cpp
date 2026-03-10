@@ -182,9 +182,6 @@ TEST_F(MeshTest, BuildTopology) {
     MphtxtReader reader;
     auto mesh = reader.read("cases/busbar/mesh.mphtxt");
 
-    // Build topology
-    mesh->build_topology();
-
     // Check that topology is built
     EXPECT_TRUE(mesh->topology_built());
 
@@ -232,7 +229,6 @@ TEST_F(MeshTest, BuildTopology) {
 TEST_F(MeshTest, BoundaryFaceEntityIDs) {
     MphtxtReader reader;
     auto mesh = reader.read("cases/busbar/mesh.mphtxt");
-    mesh->build_topology();
 
     // Count boundary faces and those with entity IDs
     Index num_boundary = 0;

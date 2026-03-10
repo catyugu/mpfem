@@ -46,6 +46,8 @@ public:
             }
         }
 
+        mesh->build_topology();
+
         MPFEM_INFO("Mesh loaded successfully");
 
         return mesh;
