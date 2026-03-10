@@ -7,6 +7,7 @@
 #define MPFEM_CORE_TYPES_HPP
 
 #include <Eigen/Dense>
+#include <Eigen/Sparse>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -46,7 +47,9 @@ using SquareMatrix = Eigen::Matrix<Scalar, Size, Size>;
 // Dynamic size versions
 using DynamicVector = Eigen::Matrix<Scalar, Eigen::Dynamic, 1>;
 using DynamicMatrix = Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic>;
-using DynamicSquareMatrix = Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic>;
+
+// Sparse matrix type
+using SparseMatrix = Eigen::SparseMatrix<Scalar>;
 
 // Common fixed-size types
 using Vector2 = Vector<2>;
