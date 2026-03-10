@@ -32,8 +32,9 @@ enum class LogLevel : int {
 };
 
 // Compile-time log level (set via compile definition)
+// Use integer values: 0=INFO, 1=WARN, 2=ERROR, 99=NONE
 #ifndef MPFEM_LOG_LEVEL
-#define MPFEM_LOG_LEVEL LogLevel::INFO
+#define MPFEM_LOG_LEVEL 0  // INFO
 #endif
 
 // ============================================================
@@ -128,7 +129,7 @@ public:
     }
 
 private:
-    Logger() : min_level_(MPFEM_LOG_LEVEL) {}
+    Logger() : min_level_(static_cast<LogLevel>(MPFEM_LOG_LEVEL)) {}
     Logger(const Logger&) = delete;
     Logger& operator=(const Logger&) = delete;
 
@@ -162,8 +163,7 @@ inline std::string_view extract_filename(std::string_view path) {
 // Main logging macros
 #define MPFEM_INFO(msg)                                            \
     do {                                                           \
-        if (static_cast<int>(mpfem::LogLevel::INFO) >=             \
-            static_cast<int>(MPFEM_LOG_LEVEL)) {                   \
+        if (0 >= MPFEM_LOG_LEVEL) {                                \
             std::ostringstream _oss;                               \
             _oss << msg;                                           \
             mpfem::Logger::instance().log(                         \
@@ -175,8 +175,7 @@ inline std::string_view extract_filename(std::string_view path) {
 
 #define MPFEM_WARN(msg)                                            \
     do {                                                           \
-        if (static_cast<int>(mpfem::LogLevel::WARN) >=             \
-            static_cast<int>(MPFEM_LOG_LEVEL)) {                   \
+        if (1 >= MPFEM_LOG_LEVEL) {                                \
             std::ostringstream _oss;                               \
             _oss << msg;                                           \
             mpfem::Logger::instance().log(                         \
@@ -188,8 +187,7 @@ inline std::string_view extract_filename(std::string_view path) {
 
 #define MPFEM_ERROR(msg)                                           \
     do {                                                           \
-        if (static_cast<int>(mpfem::LogLevel::ERROR) >=            \
-            static_cast<int>(MPFEM_LOG_LEVEL)) {                   \
+        if (2 >= MPFEM_LOG_LEVEL) {                                \
             std::ostringstream _oss;                               \
             _oss << msg;                                           \
             mpfem::Logger::instance().log(                         \

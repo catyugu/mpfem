@@ -61,6 +61,7 @@ void FESpace::get_cell_dofs(SizeType block_idx, SizeType local_elem_idx,
     dofs.clear();
 
     if (block_idx >= mesh_->num_cell_blocks()) {
+        MPFEM_WARN("Invalid block_idx: " << block_idx << " >= " << mesh_->num_cell_blocks());
         return;
     }
 
@@ -109,23 +110,32 @@ void FESpace::initialize() {
 
 void FESpace::build_cell_map() {
     SizeType n_cells = mesh_->num_cells();
-    cell_locations_.resize(n_cells);
+    cell_locations_.clear();
+    cell_locations_.reserve(n_cells);
 
-    Index global_idx = 0;
     const auto& blocks = mesh_->cell_blocks();
 
     for (SizeType b = 0; b < blocks.size(); ++b) {
         const auto& block = blocks[b];
+        
+        // Only process 3D elements
+        int dim = element_dimension(block.type());
+        if (dim < 3) {
+            continue;
+        }
+        
         GeometryType geom_type = to_geometry_type(block.type());
 
-        for (SizeType i = 0; i < block.size(); ++i, ++global_idx) {
-            cell_locations_[global_idx].block_idx = b;
-            cell_locations_[global_idx].local_idx = i;
-            cell_locations_[global_idx].geom_type = geom_type;
+        for (SizeType i = 0; i < block.size(); ++i) {
+            CellLocation loc;
+            loc.block_idx = b;
+            loc.local_idx = i;
+            loc.geom_type = geom_type;
+            cell_locations_.push_back(loc);
         }
     }
 
-    MPFEM_INFO("Built cell map: " << cell_locations_.size() << " cells");
+    MPFEM_INFO("Built cell map: " << cell_locations_.size() << " cells (3D only)");
 }
 
 } // namespace mpfem

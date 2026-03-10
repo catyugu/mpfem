@@ -104,6 +104,32 @@ struct Tensor<2, Dim> : public SquareMatrix<Dim> {
     }
 };
 
+/// Rank-4 Tensor (for elasticity tensor)
+template <int Dim>
+struct Tensor<4, Dim> {
+    Scalar data[Dim][Dim][Dim][Dim];
+
+    Tensor() {
+        for (int i = 0; i < Dim; ++i)
+            for (int j = 0; j < Dim; ++j)
+                for (int k = 0; k < Dim; ++k)
+                    for (int l = 0; l < Dim; ++l)
+                        data[i][j][k][l] = 0.0;
+    }
+
+    Scalar& operator()(int i, int j, int k, int l) {
+        return data[i][j][k][l];
+    }
+
+    Scalar operator()(int i, int j, int k, int l) const {
+        return data[i][j][k][l];
+    }
+
+    static Tensor Zero() {
+        return Tensor();
+    }
+};
+
 // ============================================================
 // Geometry Type Enumeration
 // ============================================================

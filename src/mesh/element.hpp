@@ -318,6 +318,9 @@ public:
     /// Get element type
     ElementType type() const { return type_; }
 
+    /// Get geometry type
+    GeometryType geometry_type() const { return to_geometry_type(type_); }
+
     /// Get number of elements in block
     SizeType size() const { return entity_ids_.size(); }
 

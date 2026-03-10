@@ -47,15 +47,17 @@ public:
     /// Transform physical gradient to reference gradient
     Tensor<1, 3> inverse_transform_gradient(const Tensor<1, 3>& grad_phys) const;
     
-    /// Transform reference point to physical point
-    Point<3> transform(const Point<3>& xi) const;
+        /// Transform reference point to physical point
+        Point<3> transform(const Point<3>& xi) const;
+        
+        /// Set current reference point and recompute Jacobian
+        void set_reference_point(const Point<3>& xi);
+        
+        /// Get cell vertices (for reference)
+        const std::vector<Point<3>>& vertex_coords() const { return vertex_coords_; }
     
-    /// Get cell vertices (for reference)
-    const std::vector<Point<3>>& vertex_coords() const { return vertex_coords_; }
-    
-private:
-    void compute_jacobian(const Point<3>& xi);
-    
+    private:
+        void compute_jacobian(const Point<3>& xi);    
     Tensor<2, 3> J_;           ///< Jacobian matrix
     Tensor<2, 3> invJ_;        ///< Inverse Jacobian
     Scalar detJ_ = 1.0;        ///< Determinant of Jacobian
@@ -465,6 +467,10 @@ inline void ElementTransformation::reinit_face(const Mesh& mesh, Index face_id) 
     }
     
     compute_jacobian(Point<3>(1.0/3.0, 1.0/3.0, 0.0));
+}
+
+inline void ElementTransformation::set_reference_point(const Point<3>& xi) {
+    compute_jacobian(xi);
 }
 
 }  // namespace mpfem

@@ -180,13 +180,14 @@ private:
                                 is_surface ? global_face_idx : 0;
 
         // Read element connectivity
+        // Note: COMSOL mphtxt format uses 0-based vertex indices
         std::vector<Index> vertices(vertices_per_element);
         for (SizeType i = 0; i < num_elements; ++i) {
             std::getline(file, line);
             std::istringstream iss2(line);
             for (int j = 0; j < vertices_per_element; ++j) {
                 iss2 >> vertices[j];
-                --vertices[j];  // 1-based to 0-based
+                // Vertex indices are already 0-based in mphtxt format
             }
             if (block) {
                 block->add_element(vertices, 0);

@@ -120,13 +120,22 @@ void DoFHandler::build_dof_table() {
     // Count dofs per cell
     std::vector<int> dp_cell;
     dp_cell.reserve(n_cells);
+    
+    Index valid_cells = 0;
 
     for (const auto& block : blocks) {
+        // Only process 3D elements (tetrahedra, hexahedra, pyramids, wedges)
+        int dim = element_dimension(block.type());
+        if (dim < 3) {
+            continue;  // Skip 0D, 1D, 2D elements
+        }
+        
         GeometryType geom_type = to_geometry_type(block.type());
         int dp = fe_space_->dofs_per_cell(geom_type);
         for (SizeType i = 0; i < block.size(); ++i) {
             dp_cell.push_back(dp);
         }
+        valid_cells += block.size();
     }
 
     dof_table_ = DoFTable(dp_cell);
@@ -137,13 +146,20 @@ void DoFHandler::build_dof_table() {
 
     for (SizeType b = 0; b < blocks.size(); ++b) {
         const auto& block = blocks[b];
+        
+        // Skip non-3D elements
+        int dim = element_dimension(block.type());
+        if (dim < 3) {
+            continue;
+        }
+        
         for (SizeType i = 0; i < block.size(); ++i, ++cell_idx) {
             fe_space_->get_cell_dofs(b, i, cell_dofs);
             dof_table_.set_cell_dofs(cell_idx, cell_dofs);
         }
     }
 
-    MPFEM_INFO("Built DoF table: " << n_cells << " cells, "
+    MPFEM_INFO("Built DoF table: " << valid_cells << " cells (3D only), "
                << dof_table_.total_entries() << " entries");
 }
 

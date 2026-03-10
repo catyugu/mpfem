@@ -66,9 +66,12 @@ SolverStatus DirectSolver::solve(const SparseMatrix& A,
     
     if (b.size() != A.rows()) {
         status_ = SolverStatus::InvalidInput;
-        MPFEM_ERROR("DirectSolver: RHS size mismatch");
+        MPFEM_ERROR("DirectSolver: RHS size mismatch: b.size()=" << b.size() << " A.rows()=" << A.rows());
         return status_;
     }
+    
+    MPFEM_INFO("DirectSolver: Matrix size " << A.rows() << "x" << A.cols() 
+               << ", non-zeros=" << A.nonZeros());
     
     // Resize solution vector if needed
     if (x.size() != A.cols()) {
@@ -83,6 +86,7 @@ SolverStatus DirectSolver::solve(const SparseMatrix& A,
         factorize(A);
         
         if (status_ != SolverStatus::Success) {
+            MPFEM_ERROR("DirectSolver: Factorization failed with status " << static_cast<int>(status_));
             return status_;
         }
     }

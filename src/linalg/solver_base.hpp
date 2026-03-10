@@ -8,6 +8,7 @@
 
 #include "core/types.hpp"
 #include <string>
+#include <memory>
 
 namespace mpfem {
 
