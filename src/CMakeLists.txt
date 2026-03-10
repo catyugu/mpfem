@@ -71,8 +71,6 @@ set(MPFEM_DOF_HEADERS
 #     linalg/iterative_solver.cpp
 # )
 # set(MPFEM_LINALG_HEADERS
-#     linalg/vector.hpp
-#     linalg/sparse_matrix.hpp
 #     linalg/solver_base.hpp
 #     linalg/direct_solver.hpp
 #     linalg/iterative_solver.hpp
