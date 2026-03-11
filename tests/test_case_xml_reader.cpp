@@ -16,7 +16,7 @@ TEST_F(CaseXmlReaderTest, ReadBusbarCase) {
     
     // Read the actual case file (relative to project root)
     ASSERT_NO_THROW({
-        CaseXmlReader::readFromFile("../cases/busbar/case.xml", caseDef);
+        CaseXmlReader::readFromFile("cases/busbar/case.xml", caseDef);
     });
 
     // Verify case name
@@ -106,7 +106,7 @@ TEST_F(CaseXmlReaderTest, ReadBusbarOrder2Case) {
     CaseDefinition caseDef;
     
     ASSERT_NO_THROW({
-        CaseXmlReader::readFromFile("../cases/busbar_order2/case.xml", caseDef);
+        CaseXmlReader::readFromFile("cases/busbar_order2/case.xml", caseDef);
     });
 
     // Should have order 2 for all physics
@@ -117,7 +117,7 @@ TEST_F(CaseXmlReaderTest, ReadBusbarOrder2Case) {
 
 TEST_F(CaseXmlReaderTest, GetVariableMap) {
     CaseDefinition caseDef;
-    CaseXmlReader::readFromFile("../cases/busbar/case.xml", caseDef);
+    CaseXmlReader::readFromFile("cases/busbar/case.xml", caseDef);
 
     auto varMap = caseDef.getVariableMap();
     
@@ -128,7 +128,7 @@ TEST_F(CaseXmlReaderTest, GetVariableMap) {
 
 TEST_F(CaseXmlReaderTest, BoundaryConditionParsing) {
     CaseDefinition caseDef;
-    CaseXmlReader::readFromFile("../cases/busbar/case.xml", caseDef);
+    CaseXmlReader::readFromFile("cases/busbar/case.xml", caseDef);
 
     // Find the electrostatics physics and check voltage boundary
     for (const auto& physics : caseDef.physicsDefinitions) {
@@ -148,7 +148,7 @@ TEST_F(CaseXmlReaderTest, BoundaryConditionParsing) {
 
 TEST_F(CaseXmlReaderTest, MaterialAssignmentParsing) {
     CaseDefinition caseDef;
-    CaseXmlReader::readFromFile("../cases/busbar/case.xml", caseDef);
+    CaseXmlReader::readFromFile("cases/busbar/case.xml", caseDef);
 
     // Domain 1 should have mat1 (Copper)
     bool foundCopper = false;

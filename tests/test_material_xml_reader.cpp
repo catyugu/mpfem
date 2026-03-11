@@ -15,7 +15,7 @@ TEST_F(MaterialXmlReaderTest, ReadBusbarMaterials) {
     MaterialDatabase database;
     
     ASSERT_NO_THROW({
-        MaterialXmlReader::readFromFile("../cases/busbar/material.xml", database);
+        MaterialXmlReader::readFromFile("cases/busbar/material.xml", database);
     });
 
     // Should have 2 materials
@@ -49,7 +49,7 @@ TEST_F(MaterialXmlReaderTest, ReadBusbarMaterials) {
 
 TEST_F(MaterialXmlReaderTest, MaterialPropertyAccess) {
     MaterialDatabase database;
-    MaterialXmlReader::readFromFile("../cases/busbar/material.xml", database);
+    MaterialXmlReader::readFromFile("cases/busbar/material.xml", database);
 
     const MaterialPropertyModel* copper = database.getMaterial("mat1");
     ASSERT_NE(copper, nullptr);
@@ -65,7 +65,7 @@ TEST_F(MaterialXmlReaderTest, MaterialPropertyAccess) {
 
 TEST_F(MaterialXmlReaderTest, TemperatureDependentConductivity) {
     MaterialDatabase database;
-    MaterialXmlReader::readFromFile("../cases/busbar/material.xml", database);
+    MaterialXmlReader::readFromFile("cases/busbar/material.xml", database);
 
     const MaterialPropertyModel* copper = database.getMaterial("mat1");
     ASSERT_NE(copper, nullptr);
@@ -83,7 +83,7 @@ TEST_F(MaterialXmlReaderTest, TemperatureDependentConductivity) {
 
 TEST_F(MaterialXmlReaderTest, MaterialNotFound) {
     MaterialDatabase database;
-    MaterialXmlReader::readFromFile("../cases/busbar/material.xml", database);
+    MaterialXmlReader::readFromFile("cases/busbar/material.xml", database);
 
     const MaterialPropertyModel* notFound = database.getMaterial("nonexistent");
     EXPECT_EQ(notFound, nullptr);
@@ -95,7 +95,7 @@ TEST_F(MaterialXmlReaderTest, MaterialNotFound) {
 
 TEST_F(MaterialXmlReaderTest, MaterialTags) {
     MaterialDatabase database;
-    MaterialXmlReader::readFromFile("../cases/busbar/material.xml", database);
+    MaterialXmlReader::readFromFile("cases/busbar/material.xml", database);
 
     auto tags = database.getMaterialTags();
     EXPECT_EQ(tags.size(), 2);
@@ -114,7 +114,7 @@ TEST_F(MaterialXmlReaderTest, ReadOrder2Materials) {
     MaterialDatabase database;
     
     ASSERT_NO_THROW({
-        MaterialXmlReader::readFromFile("../cases/busbar_order2/material.xml", database);
+        MaterialXmlReader::readFromFile("cases/busbar_order2/material.xml", database);
     });
 
     // Should have same materials as order 1 case
