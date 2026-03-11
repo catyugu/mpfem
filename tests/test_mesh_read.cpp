@@ -14,7 +14,7 @@ protected:
 
 TEST_F(MeshReadTest, ReadBusbarMesh) {
     // Test mesh file path
-    std::string meshPath = "external/hpc-fem-playground/cases/busbar/mesh.mphtxt";
+    std::string meshPath = "cases/busbar/mesh.mphtxt";
     
     // Read mesh
     Mesh mesh = MphtxtReader::read(meshPath);
