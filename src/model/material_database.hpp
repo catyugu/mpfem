@@ -128,6 +128,22 @@ public:
      */
     void clear() { materials_.clear(); }
 
+    /**
+     * @brief Get a property from a material by tag and property name.
+     * @param tag Material tag.
+     * @param propName Property name.
+     * @param defaultValue Default value if property not found.
+     * @return Property value, or defaultValue if not found.
+     */
+    double getProperty(const std::string& tag, const std::string& propName, 
+                       double defaultValue = 0.0) const {
+        auto* mat = getMaterial(tag);
+        if (!mat) return defaultValue;
+        
+        auto it = mat->properties.find(propName);
+        return it != mat->properties.end() ? it->second : defaultValue;
+    }
+
     // Iterator access
     auto begin() const { return materials_.begin(); }
     auto end() const { return materials_.end(); }

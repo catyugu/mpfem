@@ -7,6 +7,21 @@ namespace mpfem {
 // ElementTransform Implementation
 // =============================================================================
 
+Index ElementTransform::elementAttribute() const {
+    if (!mesh_) return 0;
+    
+    if (isBoundary_) {
+        if (elemIdx_ < mesh_->numBdrElements()) {
+            return mesh_->bdrElement(elemIdx_).attribute();
+        }
+    } else {
+        if (elemIdx_ < mesh_->numElements()) {
+            return mesh_->element(elemIdx_).attribute();
+        }
+    }
+    return 0;
+}
+
 void ElementTransform::computeGeometryInfo() {
     if (!mesh_) return;
     
@@ -237,6 +252,18 @@ void ElementTransform::evalInverse() const {
     evalState_ |= INVERSE_MASK;
 }
 
+void ElementTransform::evalInvJacobianT() const {
+    if (evalState_ & INV_JACOBIAN_T_MASK) return;
+    
+    // Ensure inverse Jacobian is computed
+    evalInverse();
+    
+    // invJacobianT_ = invJacobian_^T
+    invJacobianT_ = invJacobian_.transpose();
+    
+    evalState_ |= INV_JACOBIAN_T_MASK;
+}
+
 // =============================================================================
 // Transform implementations
 // =============================================================================
@@ -325,15 +352,14 @@ void ElementTransform::transform(const Real* xi, Real* x) const {
 
 void ElementTransform::transformGradient(const Real* refGrad, Real* physGrad) const {
     // grad_x(phi) = J^{-T} * grad_xi(phi)
-    // = (J^{-1})^T * refGrad
-    // = invJacobian^T * refGrad
+    // Using cached invJacobianT_ for efficiency
     
-    const Matrix& invJ = invJacobian();
+    const Matrix& invJT = invJacobianT();
     
     for (int i = 0; i < dim_; ++i) {
         physGrad[i] = 0.0;
         for (int j = 0; j < dim_; ++j) {
-            physGrad[i] += invJ(j, i) * refGrad[j];
+            physGrad[i] += invJT(i, j) * refGrad[j];
         }
     }
 }

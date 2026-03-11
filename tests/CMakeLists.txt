@@ -108,3 +108,46 @@ target_link_libraries(mpfem_test_material_xml_reader
 )
 
 add_test(NAME MaterialXmlReader COMMAND mpfem_test_material_xml_reader)
+
+# =============================================================================
+# Grid Function Tests
+# =============================================================================
+add_executable(mpfem_test_grid_function
+    test_grid_function.cpp
+)
+
+target_link_libraries(mpfem_test_grid_function
+    PRIVATE mpfem::fe
+    PRIVATE GTest::gtest_main
+)
+
+add_test(NAME GridFunction COMMAND mpfem_test_grid_function)
+
+# =============================================================================
+# FE Values Tests
+# =============================================================================
+add_executable(mpfem_test_fe_values
+    test_fe_values.cpp
+)
+
+target_link_libraries(mpfem_test_fe_values
+    PRIVATE mpfem::fe
+    PRIVATE GTest::gtest_main
+)
+
+add_test(NAME FEValues COMMAND mpfem_test_fe_values)
+
+# =============================================================================
+# Coefficient Tests
+# =============================================================================
+add_executable(mpfem_test_coefficient
+    test_coefficient.cpp
+)
+
+target_link_libraries(mpfem_test_coefficient
+    PRIVATE mpfem::coefficient
+    PRIVATE mpfem::mesh
+    PRIVATE GTest::gtest_main
+)
+
+add_test(NAME Coefficient COMMAND mpfem_test_coefficient)

@@ -62,6 +62,9 @@ public:
     /// Get the mesh
     const Mesh* mesh() const { return mesh_; }
     
+    /// Get the element attribute (domain ID for volume elements, boundary ID for boundary elements)
+    Index elementAttribute() const;
+    
     // -------------------------------------------------------------------------
     // Transformation
     // -------------------------------------------------------------------------
@@ -85,6 +88,9 @@ public:
     
     /// Get the inverse Jacobian matrix
     const Matrix& invJacobian() const;
+    
+    /// Get the transpose of inverse Jacobian matrix (J^{-T}) for gradient transformation
+    const Matrix& invJacobianT() const;
     
     /// Get the Jacobian determinant
     Real detJ() const;
@@ -135,10 +141,11 @@ private:
     // Evaluation state management (MFEM-style)
     // -------------------------------------------------------------------------
     enum EvalMask {
-        JACOBIAN_MASK = 1,
-        WEIGHT_MASK   = 2,
-        ADJUGATE_MASK = 4,
-        INVERSE_MASK  = 8
+        JACOBIAN_MASK    = 1,
+        WEIGHT_MASK      = 2,
+        ADJUGATE_MASK    = 4,
+        INVERSE_MASK     = 8,
+        INV_JACOBIAN_T_MASK = 16
     };
     
     void computeGeometryInfo();
@@ -146,6 +153,7 @@ private:
     void evalWeight() const;
     void evalAdjugate() const;
     void evalInverse() const;
+    void evalInvJacobianT() const;
     
     // -------------------------------------------------------------------------
     // Member variables
@@ -164,6 +172,7 @@ private:
     // Mutable for lazy evaluation
     mutable Matrix jacobian_;
     mutable Matrix invJacobian_;
+    mutable Matrix invJacobianT_;  // J^{-T} for gradient transformation
     mutable Matrix adjJacobian_;
     mutable Real detJ_ = 0.0;
     mutable Real weight_ = 0.0;
@@ -222,6 +231,11 @@ inline const Matrix& ElementTransform::jacobian() const {
 inline const Matrix& ElementTransform::invJacobian() const {
     evalInverse();
     return invJacobian_;
+}
+
+inline const Matrix& ElementTransform::invJacobianT() const {
+    evalInvJacobianT();
+    return invJacobianT_;
 }
 
 inline Real ElementTransform::detJ() const {
