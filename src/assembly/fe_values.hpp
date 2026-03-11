@@ -14,6 +14,7 @@
 #include "dof/field_space.hpp"
 #include <vector>
 #include <memory>
+#include <unordered_map>
 
 namespace mpfem {
 
@@ -33,6 +34,10 @@ struct QuadraturePointData {
  * 2. Access quadrature point data (JxW, shape_grad, etc.)
  * 3. Query coupled field values (field_value, field_gradient)
  * 4. Assemble to global system (assemble_local_to_global)
+ * 
+ * PERFORMANCE:
+ * - Field DoFs are cached per cell to avoid repeated queries
+ * - Use field_values() instead of multiple field_value() calls when possible
  */
 class FEValues {
 public:
@@ -125,8 +130,14 @@ private:
     std::vector<Index> cell_dofs_;  // Cached DoF indices for current cell
     const FieldRegistry* field_registry_ = nullptr;
     
+    // PERFORMANCE: Cache field DoFs to avoid repeated get_cell_dofs() calls
+    mutable std::unordered_map<FieldID, std::vector<Index>> cached_field_dofs_;
+    
     void compute_cell_data(const Mesh& mesh, Index cell_id);
     void compute_face_data(const Mesh& mesh, Index face_id, Index cell_id, int local_face);
+    
+    /// Get cached field DoFs (fetches and caches if not present)
+    const std::vector<Index>& get_cached_field_dofs(const FieldID& field_name) const;
 };
 
 }  // namespace mpfem

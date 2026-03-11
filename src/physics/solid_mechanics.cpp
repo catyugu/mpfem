@@ -5,6 +5,7 @@
 
 #include "solid_mechanics.hpp"
 #include "assembly/fe_values.hpp"
+#include "fem/fe_cache.hpp"
 #include "fem/fe_collection.hpp"
 #include "material/material_database.hpp"
 #include <Eigen/Sparse>
@@ -31,64 +32,87 @@ void SolidMechanicsAssembly::assemble_stiffness(SparseMatrix& K) {
     K.resize(n_dofs, n_dofs);
     K.setZero();
     
-    auto fe = create_fe(GeometryType::Tetrahedron, field_->order(), field_->n_components());
-    if (!fe) return;
+    // Use FECache to avoid repeated FE creation
+    auto& fe_cache = FECache::instance();
+    const int order = field_->order();
+    const int n_comp = field_->n_components();
     
-    FEValues fe_values(fe.get(), UpdateFlags::UpdateDefault);
+    // Pre-get FE for each geometry type
+    std::unordered_map<GeometryType, std::shared_ptr<const FiniteElement>> fe_map;
+    for (const auto& block : mesh_->cell_blocks()) {
+        GeometryType geom_type = to_geometry_type(block.type());
+        if (fe_map.find(geom_type) == fe_map.end()) {
+            fe_map[geom_type] = fe_cache.get(geom_type, order, n_comp);
+        }
+    }
+    
     DynamicMatrix K_local;
-    
     std::vector<Eigen::Triplet<Scalar>> triplets;
+    std::vector<Index> cell_dofs;
+    cell_dofs.reserve(81);  // Max for Hex27 * 3 components
     
-    for (Index cell_id = 0; cell_id < static_cast<Index>(mesh_->num_cells()); ++cell_id) {
-        Index domain_id = mesh_->get_cell_domain_id(cell_id);
+    Index cell_id = 0;
+    for (const auto& block : mesh_->cell_blocks()) {
+        GeometryType geom_type = to_geometry_type(block.type());
+        auto fe = fe_map[geom_type];
+        if (!fe) {
+            cell_id += static_cast<Index>(block.size());
+            continue;
+        }
         
-        auto mat_it = domain_material_map_.find(domain_id);
-        if (mat_it == domain_material_map_.end()) continue;
+        FEValues fe_values(fe.get(), UpdateFlags::UpdateDefault);
         
-        const Material* material = mat_db_->get(mat_it->second);
-        if (!material) continue;
-        
-        Scalar E = material->get_youngs_modulus();
-        Scalar nu = material->get_poissons_ratio();
-        
-        fe_values.reinit(*field_, cell_id);
-        
-        int n = fe_values.dofs_per_cell();
-        int dim = 3;
-        int n_nodes = n / dim;
-        
-        K_local.setZero(n, n);
-        
-        Scalar lambda = E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu));
-        Scalar mu = E / (2.0 * (1.0 + nu));
-        
-        for (int q = 0; q < fe_values.n_quadrature_points(); ++q) {
-            Scalar jxw = fe_values.JxW(q);
+        for (SizeType e = 0; e < block.size(); ++e, ++cell_id) {
+            Index domain_id = mesh_->get_cell_domain_id(cell_id);
             
-            for (int a = 0; a < n_nodes; ++a) {
-                const auto& grad_a = fe_values.shape_grad(a, q);
+            auto mat_it = domain_material_map_.find(domain_id);
+            if (mat_it == domain_material_map_.end()) continue;
+            
+            const Material* material = mat_db_->get(mat_it->second);
+            if (!material) continue;
+            
+            Scalar E = material->get_youngs_modulus();
+            Scalar nu = material->get_poissons_ratio();
+            
+            fe_values.reinit(*field_, cell_id);
+            
+            int n = fe_values.dofs_per_cell();
+            int dim = 3;
+            int n_nodes = n / dim;
+            
+            K_local.setZero(n, n);
+            
+            Scalar lambda = E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu));
+            Scalar mu = E / (2.0 * (1.0 + nu));
+            
+            for (int q = 0; q < fe_values.n_quadrature_points(); ++q) {
+                Scalar jxw = fe_values.JxW(q);
                 
-                for (int b = 0; b < n_nodes; ++b) {
-                    const auto& grad_b = fe_values.shape_grad(b, q);
+                for (int a = 0; a < n_nodes; ++a) {
+                    const auto& grad_a = fe_values.shape_grad(a, q);
                     
-                    for (int i = 0; i < dim; ++i) {
-                        for (int j = 0; j < dim; ++j) {
-                            Scalar val = lambda * grad_a[i] * grad_b[j];
-                            val += mu * (grad_a[j] * grad_b[i] + grad_a[i] * grad_b[j]);
-                            K_local(a*dim + i, b*dim + j) += val * jxw;
+                    for (int b = 0; b < n_nodes; ++b) {
+                        const auto& grad_b = fe_values.shape_grad(b, q);
+                        
+                        for (int i = 0; i < dim; ++i) {
+                            for (int j = 0; j < dim; ++j) {
+                                Scalar val = lambda * grad_a[i] * grad_b[j];
+                                val += mu * (grad_a[j] * grad_b[i] + grad_a[i] * grad_b[j]);
+                                K_local(a*dim + i, b*dim + j) += val * jxw;
+                            }
                         }
                     }
                 }
             }
-        }
-        
-        std::vector<Index> cell_dofs;
-        field_->get_cell_dofs(cell_id, cell_dofs);
-        
-        for (int i = 0; i < n; ++i) {
-            for (int j = 0; j < n; ++j) {
-                if (std::abs(K_local(i, j)) > 1e-15) {
-                    triplets.emplace_back(cell_dofs[i], cell_dofs[j], K_local(i, j));
+            
+            cell_dofs.clear();
+            field_->get_cell_dofs(cell_id, cell_dofs);
+            
+            for (int i = 0; i < n; ++i) {
+                for (int j = 0; j < n; ++j) {
+                    if (std::abs(K_local(i, j)) > 1e-15) {
+                        triplets.emplace_back(cell_dofs[i], cell_dofs[j], K_local(i, j));
+                    }
                 }
             }
         }
@@ -104,9 +128,118 @@ void SolidMechanicsAssembly::assemble_rhs(DynamicVector& f) {
     Index n_dofs = field_->n_dofs();
     f.setZero(n_dofs);
     
-    if (temperature_field_) {
-        MPFEM_INFO("Thermal strain contribution not yet implemented");
+    if (!field_registry_) {
+        return;
     }
+    
+    // Thermal strain contribution
+    // ε_th = α(T - T_ref)I
+    // σ_th = 3K α(T - T_ref) I = E α(T - T_ref) / (1 - 2ν) I
+    // For equilibrium: f = ∫ σ_th : ∇N dV
+    // For isotropic: f_i = ∫ σ_th_ii * ∂N/∂x_i dV
+    
+    // Use FECache
+    auto& fe_cache = FECache::instance();
+    const int order = field_->order();
+    const int n_comp = field_->n_components();
+    
+    // Pre-get FE for each geometry type
+    std::unordered_map<GeometryType, std::shared_ptr<const FiniteElement>> fe_map;
+    for (const auto& block : mesh_->cell_blocks()) {
+        GeometryType geom_type = to_geometry_type(block.type());
+        if (fe_map.find(geom_type) == fe_map.end()) {
+            fe_map[geom_type] = fe_cache.get(geom_type, order, n_comp);
+        }
+    }
+    
+    std::vector<Index> cell_dofs;
+    DynamicVector f_local;
+    
+    Index cell_id = 0;
+    for (const auto& block : mesh_->cell_blocks()) {
+        GeometryType geom_type = to_geometry_type(block.type());
+        auto fe = fe_map[geom_type];
+        if (!fe) {
+            cell_id += static_cast<Index>(block.size());
+            continue;
+        }
+        
+        FEValues fe_values(fe.get(), UpdateFlags::UpdateDefault);
+        if (field_registry_) {
+            fe_values.set_field_registry(field_registry_);
+        }
+        
+        for (SizeType e = 0; e < block.size(); ++e, ++cell_id) {
+            Index domain_id = mesh_->get_cell_domain_id(cell_id);
+            
+            auto mat_it = domain_material_map_.find(domain_id);
+            if (mat_it == domain_material_map_.end()) continue;
+            
+            const Material* material = mat_db_->get(mat_it->second);
+            if (!material) continue;
+            
+            // Get material properties
+            Scalar E = material->get_youngs_modulus();
+            Scalar nu = material->get_poissons_ratio();
+            Tensor<2, 3> alpha_tensor = material->get_thermal_expansion();
+            
+            // Check if thermal expansion is zero
+            bool has_thermal = false;
+            for (int i = 0; i < 3; ++i) {
+                if (std::abs(alpha_tensor(i, i)) > 1e-15) {
+                    has_thermal = true;
+                    break;
+                }
+            }
+            if (!has_thermal) continue;
+            
+            // Bulk modulus contribution: 3K = E / (1 - 2ν)
+            Scalar bulk_factor = E / (1.0 - 2.0 * nu);
+            
+            fe_values.reinit(*field_, cell_id);
+            
+            int n = fe_values.dofs_per_cell();
+            int dim = 3;
+            int n_nodes = n / dim;
+            
+            f_local.setZero(n);
+            
+            for (int q = 0; q < fe_values.n_quadrature_points(); ++q) {
+                Scalar jxw = fe_values.JxW(q);
+                
+                // Get temperature at this quadrature point
+                Scalar T = fe_values.field_value("temperature", q);
+                Scalar dT = T - T_ref_;
+                
+                if (std::abs(dT) < 1e-10) continue;
+                
+                for (int a = 0; a < n_nodes; ++a) {
+                    const auto& grad_a = fe_values.shape_grad(a, q);
+                    
+                    // For each displacement component
+                    for (int i = 0; i < dim; ++i) {
+                        // Thermal stress contribution for isotropic material
+                        // σ_th_ii = E * α_i * (T - T_ref) / (1 - 2ν)
+                        // f_{a,i} = -σ_th_ii * ∂N_a/∂x_i
+                        Scalar sigma_th_ii = bulk_factor * alpha_tensor(i, i) * dT;
+                        f_local(a * dim + i) -= sigma_th_ii * grad_a[i] * jxw;
+                    }
+                }
+            }
+            
+            // Assemble to global
+            cell_dofs.clear();
+            field_->get_cell_dofs(cell_id, cell_dofs);
+            
+            for (int i = 0; i < n; ++i) {
+                if (cell_dofs[i] < n_dofs) {
+                    f[cell_dofs[i]] += f_local[i];
+                }
+            }
+        }
+    }
+    
+    MPFEM_INFO("Thermal strain contribution assembled");
 }
 
 void SolidMechanicsAssembly::apply_boundary_conditions(SparseMatrix& K, DynamicVector& f) {

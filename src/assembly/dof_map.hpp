@@ -94,6 +94,27 @@ public:
         const DoFHandler* dof_handler);
     
     /**
+     * @brief Apply Dirichlet BC efficiently (no matrix rebuild)
+     * 
+     * Fast method that operates directly on triplets before matrix assembly.
+     * This should be called BEFORE setFromTriplets().
+     * 
+     * For each constrained DoF:
+     * - Remove all existing entries in the row
+     * - Add diagonal entry (dof, dof, 1.0)
+     * 
+     * @param triplets Matrix triplets (modified in place)
+     * @param constrained_dofs Set of constrained DoF indices
+     * @param bc_values Map from DoF to prescribed value
+     * @param rhs Right-hand side vector (modified in place)
+     */
+    static void apply_dirichlet_bc_fast(
+        std::vector<Eigen::Triplet<Scalar>>& triplets,
+        const std::unordered_set<Index>& constrained_dofs,
+        const std::unordered_map<Index, Scalar>& bc_values,
+        DynamicVector& rhs);
+    
+    /**
      * @brief Extract local solution from global solution
      * 
      * @param global_solution Global solution vector

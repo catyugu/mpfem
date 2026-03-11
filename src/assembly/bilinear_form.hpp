@@ -21,6 +21,13 @@ using LocalMatrixAssembler = std::function<void(
     const FEValues& fe_values,
     DynamicMatrix& local_matrix)>;
 
+/**
+ * @brief Bilinear form assembler with workspace optimization
+ * 
+ * PERFORMANCE:
+ * - Pre-allocates local matrix and DoF vectors to reduce memory allocation
+ * - Reuses triplet storage across assemble calls
+ */
 class BilinearForm {
 public:
     explicit BilinearForm(const FieldSpace* field);
@@ -42,6 +49,11 @@ private:
     const Mesh* mesh_;
     UpdateFlags update_flags_ = UpdateFlags::UpdateDefault;
     size_t n_entries_;
+    
+    // PERFORMANCE: Pre-allocated workspace to avoid repeated allocation
+    DynamicMatrix local_matrix_;
+    std::vector<Index> cell_dofs_;
+    std::vector<Eigen::Triplet<Scalar>> triplets_;
 };
 
 namespace BilinearForms {

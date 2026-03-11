@@ -38,6 +38,9 @@ void FEValues::reinit(const FieldSpace& field, Index cell_id) {
     // Get cell DoFs (using FieldSpace's low-level API - appropriate for framework code)
     field.get_cell_dofs(cell_id, cell_dofs_);
     
+    // Clear cached field DoFs for new cell
+    cached_field_dofs_.clear();
+    
     compute_cell_data(*field.mesh(), cell_id);
 }
 
@@ -50,7 +53,28 @@ void FEValues::reinit_face(const FieldSpace& field, Index face_id, Index cell_id
     
     field.get_cell_dofs(cell_id, cell_dofs_);
     
+    // Clear cached field DoFs for new cell
+    cached_field_dofs_.clear();
+    
     compute_face_data(*field.mesh(), face_id, cell_id, local_face_index);
+}
+
+const std::vector<Index>& FEValues::get_cached_field_dofs(const FieldID& field_name) const {
+    auto it = cached_field_dofs_.find(field_name);
+    if (it != cached_field_dofs_.end()) {
+        return it->second;
+    }
+    
+    // Fetch and cache
+    const FieldSpace* field = field_registry_ ? field_registry_->get_field(field_name) : nullptr;
+    if (!field) {
+        static const std::vector<Index> empty;
+        return empty;
+    }
+    
+    auto& dofs = cached_field_dofs_[field_name];
+    field->get_cell_dofs(current_cell_id_, dofs);
+    return dofs;
 }
 
 void FEValues::assemble_local_to_global(SparseMatrix& K, const DynamicMatrix& local_K) const {
@@ -151,9 +175,8 @@ Scalar FEValues::field_value(const FieldID& field_name, int q) const {
         return 0.0;
     }
     
-    std::vector<Index> field_dofs;
-    field->get_cell_dofs(current_cell_id_, field_dofs);
-    
+    // Use cached DoFs for performance
+    const auto& field_dofs = get_cached_field_dofs(field_name);
     if (field_dofs.empty()) return 0.0;
     
     const DynamicVector& sol = field->solution();
@@ -183,9 +206,8 @@ void FEValues::field_values(const FieldID& field_name, std::vector<Scalar>& valu
         return;
     }
     
-    std::vector<Index> field_dofs;
-    field->get_cell_dofs(current_cell_id_, field_dofs);
-    
+    // Use cached DoFs for performance
+    const auto& field_dofs = get_cached_field_dofs(field_name);
     if (field_dofs.empty()) return;
     
     const DynamicVector& sol = field->solution();
@@ -208,9 +230,8 @@ Tensor<1, 3> FEValues::field_vector(const FieldID& field_name, int q) const {
     const FieldSpace* field = field_registry_->get_field(field_name);
     if (!field || field->type() != FieldType::Vector) return Tensor<1, 3>::Zero();
     
-    std::vector<Index> field_dofs;
-    field->get_cell_dofs(current_cell_id_, field_dofs);
-    
+    // Use cached DoFs for performance
+    const auto& field_dofs = get_cached_field_dofs(field_name);
     if (field_dofs.empty()) return Tensor<1, 3>::Zero();
     
     const DynamicVector& sol = field->solution();
@@ -239,9 +260,8 @@ void FEValues::field_vectors(const FieldID& field_name, std::vector<Tensor<1, 3>
     const FieldSpace* field = field_registry_->get_field(field_name);
     if (!field || field->type() != FieldType::Vector) return;
     
-    std::vector<Index> field_dofs;
-    field->get_cell_dofs(current_cell_id_, field_dofs);
-    
+    // Use cached DoFs for performance
+    const auto& field_dofs = get_cached_field_dofs(field_name);
     if (field_dofs.empty()) return;
     
     const DynamicVector& sol = field->solution();
@@ -266,9 +286,8 @@ Tensor<1, 3> FEValues::field_gradient(const FieldID& field_name, int q) const {
     const FieldSpace* field = field_registry_->get_field(field_name);
     if (!field) return Tensor<1, 3>::Zero();
     
-    std::vector<Index> field_dofs;
-    field->get_cell_dofs(current_cell_id_, field_dofs);
-    
+    // Use cached DoFs for performance
+    const auto& field_dofs = get_cached_field_dofs(field_name);
     if (field_dofs.empty()) return Tensor<1, 3>::Zero();
     
     const DynamicVector& sol = field->solution();
@@ -292,9 +311,8 @@ void FEValues::field_gradients(const FieldID& field_name, std::vector<Tensor<1, 
     const FieldSpace* field = field_registry_->get_field(field_name);
     if (!field) return;
     
-    std::vector<Index> field_dofs;
-    field->get_cell_dofs(current_cell_id_, field_dofs);
-    
+    // Use cached DoFs for performance
+    const auto& field_dofs = get_cached_field_dofs(field_name);
     if (field_dofs.empty()) return;
     
     const DynamicVector& sol = field->solution();

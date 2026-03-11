@@ -5,6 +5,7 @@
 
 #include "bilinear_form.hpp"
 #include "fe_values.hpp"
+#include "fem/fe_cache.hpp"
 #include "fem/fe_collection.hpp"
 #include "core/logger.hpp"
 #include "mesh/element.hpp"
@@ -17,6 +18,13 @@ BilinearForm::BilinearForm(const FieldSpace* field)
     , mesh_(field ? field->mesh() : nullptr)
     , n_entries_(0)
 {
+    // Pre-allocate workspace
+    if (field_) {
+        int max_dofs = 27 * field_->n_components();  // Max for Hex27
+        local_matrix_.resize(max_dofs, max_dofs);
+        cell_dofs_.reserve(max_dofs);
+        triplets_.reserve(mesh_->num_cells() * 20);
+    }
 }
 
 void BilinearForm::assemble(LocalMatrixAssembler local_assembler,
@@ -31,16 +39,21 @@ void BilinearForm::assemble(LocalMatrixAssembler local_assembler,
     matrix.resize(n_dofs, n_dofs);
     matrix.setZero();
     
-    std::vector<Eigen::Triplet<Scalar>> triplets;
-    triplets.reserve(mesh_->num_cells() * 20);
+    // Clear and reuse pre-allocated triplet storage
+    triplets_.clear();
     
-    DynamicMatrix local_matrix;
+    // Use FECache to avoid repeated FE creation
+    auto& fe_cache = FECache::instance();
+    const int order = field_->order();
+    const int n_comp = field_->n_components();
     
     // 遍历所有单元块，根据单元类型选择对应的 FE
     Index cell_id = 0;
     for (const auto& block : mesh_->cell_blocks()) {
         GeometryType geom_type = to_geometry_type(block.type());
-        auto fe = create_fe(geom_type, field_->order(), field_->n_components());
+        
+        // Use cached FE (avoid allocation in loop)
+        auto fe = fe_cache.get(geom_type, order, n_comp);
         if (!fe) {
             MPFEM_WARN("No FE for geometry type " << static_cast<int>(geom_type) 
                        << ", skipping " << block.size() << " cells");
@@ -54,25 +67,27 @@ void BilinearForm::assemble(LocalMatrixAssembler local_assembler,
             fe_values.reinit(*field_, cell_id);
             
             int n_local = fe_values.dofs_per_cell();
-            local_matrix.setZero(n_local, n_local);
             
-            local_assembler(cell_id, fe_values, local_matrix);
+            // Resize and zero local matrix (reuse pre-allocated memory)
+            local_matrix_.setZero(n_local, n_local);
             
-            // 直接组装到 triplets
-            std::vector<Index> cell_dofs;
-            field_->get_cell_dofs(cell_id, cell_dofs);
+            local_assembler(cell_id, fe_values, local_matrix_);
+            
+            // Reuse cell_dofs vector
+            cell_dofs_.clear();
+            field_->get_cell_dofs(cell_id, cell_dofs_);
             
             for (int i = 0; i < n_local; ++i) {
                 for (int j = 0; j < n_local; ++j) {
-                    if (std::abs(local_matrix(i, j)) > 1e-15) {
-                        triplets.emplace_back(cell_dofs[i], cell_dofs[j], local_matrix(i, j));
+                    if (std::abs(local_matrix_(i, j)) > 1e-15) {
+                        triplets_.emplace_back(cell_dofs_[i], cell_dofs_[j], local_matrix_(i, j));
                     }
                 }
             }
         }
     }
     
-    matrix.setFromTriplets(triplets.begin(), triplets.end());
+    matrix.setFromTriplets(triplets_.begin(), triplets_.end());
     
     if (symmetrize) {
         SparseMatrix Kt = matrix.transpose();
@@ -96,15 +111,18 @@ void BilinearForm::assemble_with_coefficients(
     matrix.resize(n_dofs, n_dofs);
     matrix.setZero();
     
-    std::vector<Eigen::Triplet<Scalar>> triplets;
-    triplets.reserve(mesh_->num_cells() * 20);
+    // Clear and reuse pre-allocated triplet storage
+    triplets_.clear();
     
-    DynamicMatrix local_matrix;
+    // Use FECache to avoid repeated FE creation
+    auto& fe_cache = FECache::instance();
+    const int order = field_->order();
+    const int n_comp = field_->n_components();
     
     Index cell_id = 0;
     for (const auto& block : mesh_->cell_blocks()) {
         GeometryType geom_type = to_geometry_type(block.type());
-        auto fe = create_fe(geom_type, field_->order(), field_->n_components());
+        auto fe = fe_cache.get(geom_type, order, n_comp);
         if (!fe) {
             cell_id += static_cast<Index>(block.size());
             continue;
@@ -124,25 +142,28 @@ void BilinearForm::assemble_with_coefficients(
             fe_values.reinit(*field_, cell_id);
             
             int n_local = fe_values.dofs_per_cell();
-            local_matrix.setZero(n_local, n_local);
             
-            local_assembler(cell_id, fe_values, local_matrix);
-            local_matrix *= coeff;
+            // Resize and zero local matrix (reuse pre-allocated memory)
+            local_matrix_.setZero(n_local, n_local);
             
-            std::vector<Index> cell_dofs;
-            field_->get_cell_dofs(cell_id, cell_dofs);
+            local_assembler(cell_id, fe_values, local_matrix_);
+            local_matrix_ *= coeff;
+            
+            // Reuse cell_dofs vector
+            cell_dofs_.clear();
+            field_->get_cell_dofs(cell_id, cell_dofs_);
             
             for (int i = 0; i < n_local; ++i) {
                 for (int j = 0; j < n_local; ++j) {
-                    if (std::abs(local_matrix(i, j)) > 1e-15) {
-                        triplets.emplace_back(cell_dofs[i], cell_dofs[j], local_matrix(i, j));
+                    if (std::abs(local_matrix_(i, j)) > 1e-15) {
+                        triplets_.emplace_back(cell_dofs_[i], cell_dofs_[j], local_matrix_(i, j));
                     }
                 }
             }
         }
     }
     
-    matrix.setFromTriplets(triplets.begin(), triplets.end());
+    matrix.setFromTriplets(triplets_.begin(), triplets_.end());
     
     if (symmetrize) {
         SparseMatrix Kt = matrix.transpose();

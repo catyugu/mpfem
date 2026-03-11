@@ -9,6 +9,7 @@
 #include "core/types.hpp"
 #include "mesh/mesh.hpp"
 #include "dof/field_space.hpp"
+#include "dof/field_registry.hpp"
 #include "material/material_database.hpp"
 #include "linalg/solver_base.hpp"
 #include <memory>
@@ -111,10 +112,19 @@ public:
         (void)values;
     }
     
+    /**
+     * @brief Set field registry for coupling
+     * @param registry Field registry
+     */
+    void set_field_registry(const FieldRegistry* registry) {
+        field_registry_ = registry;
+    }
+    
 protected:
     const Mesh* mesh_ = nullptr;
     const FieldSpace* field_ = nullptr;
     const MaterialDB* mat_db_ = nullptr;
+    const FieldRegistry* field_registry_ = nullptr;
 };
 
 } // namespace mpfem

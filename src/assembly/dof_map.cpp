@@ -193,4 +193,47 @@ void DofMap::get_constrained_dof_values(
     }
 }
 
+void DofMap::apply_dirichlet_bc_fast(
+    std::vector<Eigen::Triplet<Scalar>>& triplets,
+    const std::unordered_set<Index>& constrained_dofs,
+    const std::unordered_map<Index, Scalar>& bc_values,
+    DynamicVector& rhs) {
+    
+    if (constrained_dofs.empty()) return;
+    
+    // Filter triplets: keep only those not in constrained rows
+    std::vector<Eigen::Triplet<Scalar>> filtered;
+    filtered.reserve(triplets.size());
+    
+    for (const auto& t : triplets) {
+        Index row = t.row();
+        Index col = t.col();
+        
+        // Skip entries in constrained rows
+        if (constrained_dofs.count(row) > 0) {
+            continue;
+        }
+        
+        // Keep entry (also skip entries in constrained columns for cleaner matrix)
+        if (constrained_dofs.count(col) == 0) {
+            filtered.push_back(t);
+        }
+    }
+    
+    // Add diagonal entries for constrained DoFs
+    for (Index dof : constrained_dofs) {
+        filtered.emplace_back(dof, dof, 1.0);
+    }
+    
+    // Swap with original
+    triplets.swap(filtered);
+    
+    // Set RHS values
+    for (const auto& [dof, value] : bc_values) {
+        if (dof < static_cast<Index>(rhs.size())) {
+            rhs[dof] = value;
+        }
+    }
+}
+
 }  // namespace mpfem
