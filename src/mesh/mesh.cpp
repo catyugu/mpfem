@@ -5,10 +5,11 @@
 namespace mpfem {
 
 Mesh::Mesh(int dim, Index numVertices, Index numElements, Index numBdrElements)
-    : dim_(dim)
-    , vertices_(numVertices)
-    , elements_(numElements)
-    , bdrElements_(numBdrElements) {
+    : dim_(dim) {
+    // Use reserve instead of resize to allow automatic expansion
+    if (numVertices > 0) vertices_.reserve(numVertices);
+    if (numElements > 0) elements_.reserve(numElements);
+    if (numBdrElements > 0) bdrElements_.reserve(numBdrElements);
 }
 
 void Mesh::setDim(int dim) {

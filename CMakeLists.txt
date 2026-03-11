@@ -84,6 +84,7 @@ add_library(mpfem_core
 
 add_library(mpfem_fe
     src/fe/quadrature.cpp
+    src/fe/element_transform.cpp
 )
 
 add_library(mpfem_mesh
