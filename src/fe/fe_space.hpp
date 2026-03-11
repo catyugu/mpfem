@@ -266,7 +266,10 @@ inline int FESpace::numBdrElementDofs(Index bdrIdx) const {
 }
 
 inline void FESpace::buildEdgeDofMap(Index& dofCounter) {
-    // Build edge-to-dof mapping by processing all elements
+    // Build edge-to-dof mapping by processing all domain elements
+    // Domain elements are the highest dimension elements in the mesh
+    // (e.g., Triangle/Square in 2D, Tetrahedron/Cube in 3D)
+    // Boundary elements should NOT create new edge DOFs
     edgeDofMap_.clear();
     
     for (Index elemIdx = 0; elemIdx < mesh_->numElements(); ++elemIdx) {
@@ -275,20 +278,6 @@ inline void FESpace::buildEdgeDofMap(Index& dofCounter) {
         // Process each edge of the element
         for (int e = 0; e < elem.numEdges(); ++e) {
             auto [v1, v2] = elem.edgeVertices(e);
-            auto key = makeEdgeKey(v1, v2);
-            
-            if (edgeDofMap_.find(key) == edgeDofMap_.end()) {
-                edgeDofMap_[key] = dofCounter++;
-            }
-        }
-    }
-    
-    // Also process boundary elements
-    for (Index bdrIdx = 0; bdrIdx < mesh_->numBdrElements(); ++bdrIdx) {
-        const Element& bdrElem = mesh_->bdrElement(bdrIdx);
-        
-        for (int e = 0; e < bdrElem.numEdges(); ++e) {
-            auto [v1, v2] = bdrElem.edgeVertices(e);
             auto key = makeEdgeKey(v1, v2);
             
             if (edgeDofMap_.find(key) == edgeDofMap_.end()) {

@@ -212,20 +212,25 @@ TEST_F(FESpaceQuadraticTest, ElementDofs) {
 }
 
 TEST_F(FESpaceQuadraticTest, EdgeDofSharing) {
-    // Edge 0-2 is shared between element 0 and element 1 (as edge 2-0 in elem 0)
+    // Element 0: vertices (0, 1, 2)
+    // Element 1: vertices (1, 3, 2)
+    // Shared edge is {1, 2}
+    
     auto dofs0 = feSpace_->elementDofs(0);
     auto dofs1 = feSpace_->elementDofs(1);
     
-    // Element 0: vertices (0, 1, 2), edges: 0-1, 1-2, 2-0
-    // DOF layout: [vertex0, vertex1, vertex2, edge0-1, edge1-2, edge2-0]
-    // Element 1: vertices (1, 3, 2), edges: 1-3, 3-2, 2-1
-    // DOF layout: [vertex1, vertex3, vertex2, edge1-3, edge3-2, edge2-1]
+    // Triangle edge table: Edge 0 = {1,2}, Edge 1 = {2,0}, Edge 2 = {0,1}
+    // Element 0 edges (global):
+    //   Edge 0: {1, 2}  -> DOF index 3
+    //   Edge 1: {0, 2}  -> DOF index 4  
+    //   Edge 2: {0, 1}  -> DOF index 5
+    // Element 1 edges (global):
+    //   Edge 0: {2, 3}  -> DOF index 7
+    //   Edge 1: {1, 2}  -> DOF index 8 (SHARED with elem 0 edge 0)
+    //   Edge 2: {1, 3}  -> DOF index 9
     
-    // Edge 1-2 in elem 0 should equal edge 2-1 in elem 1
-    // (they're the same edge)
-    // In element 0: edge 1-2 is at index 4
-    // In element 1: edge 2-1 is at index 5
-    EXPECT_EQ(dofs0[4], dofs1[5]) << "Edge DOF should be shared";
+    // Shared edge {1, 2} is Edge 0 in elem 0, Edge 1 in elem 1
+    EXPECT_EQ(dofs0[3], dofs1[4]) << "Edge DOF should be shared";
 }
 
 // =============================================================================
@@ -305,17 +310,20 @@ TEST_F(FESpaceQuadTest, ElementDofs) {
 }
 
 TEST_F(FESpaceQuadTest, SharedEdgeDofs) {
-    // Element 0: vertices (0, 1, 4, 3)
-    // Element 1: vertices (1, 2, 5, 4)
-    // Shared edge: vertices (1, 4)
+    // Element 0: vertices {0, 1, 4, 3}
+    // Element 1: vertices {1, 2, 5, 4}
+    // Shared edge: vertices {1, 4}
     
     auto dofs0 = feSpace_->elementDofs(0);
     auto dofs1 = feSpace_->elementDofs(1);
     
-    // Vertex 1: DOF 0 in elem 1, DOF 1 in elem 0
+    // Element 0 DOFs: [vertex0, vertex1, vertex4, vertex3] = [0, 1, 4, 3]
+    // Element 1 DOFs: [vertex1, vertex2, vertex5, vertex4] = [1, 2, 5, 4]
+    
+    // Vertex 1: DOF index 1 in elem 0, DOF index 0 in elem 1
     EXPECT_EQ(dofs0[1], dofs1[0]);
-    // Vertex 4: DOF 2 in elem 1, DOF 2 in elem 0
-    EXPECT_EQ(dofs0[2], dofs1[2]);
+    // Vertex 4: DOF index 2 in elem 0, DOF index 3 in elem 1
+    EXPECT_EQ(dofs0[2], dofs1[3]);
 }
 
 // =============================================================================
