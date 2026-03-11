@@ -19,6 +19,9 @@ using Index = std::int32_t;
 using LocalIndex = std::int16_t;
 using Real = double;
 
+/// Invalid index constant
+inline constexpr Index InvalidIndex = -1;
+
 // =============================================================================
 // Eigen type aliases
 // =============================================================================
@@ -81,8 +84,7 @@ struct IntegrationPoint {
     IntegrationPoint(Real x, Real y, Real z, Real w) : xi(x), eta(y), zeta(z), weight(w) {}
 };
 
-/// Vector of integration points
-using QuadratureRule = std::vector<IntegrationPoint>;
+// Note: QuadratureRule is defined in fe/quadrature.hpp
 
 // =============================================================================
 // Element matrix types
