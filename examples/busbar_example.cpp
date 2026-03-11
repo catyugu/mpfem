@@ -21,7 +21,7 @@ int main(int argc, char* argv[]) {
     Logger::setLevel(LogLevel::Info);
     
     // Default mesh path
-    std::string meshPath = "external/hpc-fem-playground/cases/busbar/mesh.mphtxt";
+    std::string meshPath = "cases/busbar/mesh.mphtxt";
     
     // Override from command line if provided
     if (argc > 1) {

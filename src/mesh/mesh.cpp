@@ -41,13 +41,13 @@ void Mesh::addElement(Element&& e) {
     elements_.push_back(std::move(e));
 }
 
-Index Mesh::addElement(Geometry geom, std::span<const Index> vertices, Index attr) {
-    elements_.emplace_back(geom, vertices, attr);
+Index Mesh::addElement(Geometry geom, std::span<const Index> vertices, Index attr, int order) {
+    elements_.emplace_back(geom, vertices, attr, order);
     return static_cast<Index>(elements_.size() - 1);
 }
 
-Index Mesh::addElement(Geometry geom, const std::vector<Index>& vertices, Index attr) {
-    elements_.emplace_back(geom, vertices, attr);
+Index Mesh::addElement(Geometry geom, const std::vector<Index>& vertices, Index attr, int order) {
+    elements_.emplace_back(geom, vertices, attr, order);
     return static_cast<Index>(elements_.size() - 1);
 }
 
@@ -63,13 +63,13 @@ void Mesh::addBdrElement(Element&& e) {
     bdrElements_.push_back(std::move(e));
 }
 
-Index Mesh::addBdrElement(Geometry geom, std::span<const Index> vertices, Index attr) {
-    bdrElements_.emplace_back(geom, vertices, attr);
+Index Mesh::addBdrElement(Geometry geom, std::span<const Index> vertices, Index attr, int order) {
+    bdrElements_.emplace_back(geom, vertices, attr, order);
     return static_cast<Index>(bdrElements_.size() - 1);
 }
 
-Index Mesh::addBdrElement(Geometry geom, const std::vector<Index>& vertices, Index attr) {
-    bdrElements_.emplace_back(geom, vertices, attr);
+Index Mesh::addBdrElement(Geometry geom, const std::vector<Index>& vertices, Index attr, int order) {
+    bdrElements_.emplace_back(geom, vertices, attr, order);
     return static_cast<Index>(bdrElements_.size() - 1);
 }
 
@@ -80,7 +80,11 @@ void Mesh::reserveBdrElements(Index n) {
 std::set<Index> Mesh::domainIds() const {
     std::set<Index> ids;
     for (const auto& e : elements_) {
-        ids.insert(e.attribute());
+        // Only count volume elements (tetrahedra, hexahedra) as domains
+        if (e.geometry() == Geometry::Tetrahedron || 
+            e.geometry() == Geometry::Cube) {
+            ids.insert(e.attribute());
+        }
     }
     return ids;
 }
@@ -96,7 +100,11 @@ std::set<Index> Mesh::boundaryIds() const {
 std::vector<Index> Mesh::elementsForDomain(Index domainId) const {
     std::vector<Index> result;
     for (Index i = 0; i < static_cast<Index>(elements_.size()); ++i) {
-        if (elements_[i].attribute() == domainId) {
+        const auto& e = elements_[i];
+        // Only count volume elements
+        if ((e.geometry() == Geometry::Tetrahedron || 
+             e.geometry() == Geometry::Cube) &&
+            e.attribute() == domainId) {
             result.push_back(i);
         }
     }

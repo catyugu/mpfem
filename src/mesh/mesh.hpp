@@ -89,8 +89,8 @@ public:
     /// Add an element
     void addElement(const Element& e);
     void addElement(Element&& e);
-    Index addElement(Geometry geom, std::span<const Index> vertices, Index attr = 0);
-    Index addElement(Geometry geom, const std::vector<Index>& vertices, Index attr = 0);
+    Index addElement(Geometry geom, std::span<const Index> vertices, Index attr = 0, int order = 1);
+    Index addElement(Geometry geom, const std::vector<Index>& vertices, Index attr = 0, int order = 1);
 
     /// Reserve space for elements
     void reserveElements(Index n);
@@ -110,8 +110,8 @@ public:
     /// Add a boundary element
     void addBdrElement(const Element& e);
     void addBdrElement(Element&& e);
-    Index addBdrElement(Geometry geom, std::span<const Index> vertices, Index attr = 0);
-    Index addBdrElement(Geometry geom, const std::vector<Index>& vertices, Index attr = 0);
+    Index addBdrElement(Geometry geom, std::span<const Index> vertices, Index attr = 0, int order = 1);
+    Index addBdrElement(Geometry geom, const std::vector<Index>& vertices, Index attr = 0, int order = 1);
 
     /// Reserve space for boundary elements
     void reserveBdrElements(Index n);

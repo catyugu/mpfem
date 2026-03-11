@@ -22,16 +22,22 @@ namespace mpfem {
  * - 2D and 3D meshes
  * - Element types: tri/quad (2D boundary), tet/hex (3D volume)
  * - Domain and boundary attributes
- * - First and second order elements
+ * - First and second order elements (tri2, tet2, edg2, etc.)
  * 
  * Note: Prism and Pyramid elements are NOT supported and will throw an exception.
+ * 
+ * Second-order element node ordering (COMSOL convention):
+ * - Segment2:  V0 V1 E01                          (2 corners + 1 edge midpoint)
+ * - Triangle2: V0 V1 V2 E01 E12 E20               (3 corners + 3 edge midpoints)
+ * - Tetrahedron2: V0 V1 V2 V3 E01 E02 E03 E12 E13 E23 (4 corners + 6 edge midpoints)
  */
 class MphtxtReader {
 public:
     /// Element block info from mphtxt file
     struct ElementBlock {
-        std::string typeName;           ///< Element type name (vtx, edg, tri, tet, etc.)
+        std::string typeName;           ///< Element type name (vtx, edg, edg2, tri, tri2, tet, tet2, etc.)
         int numVertsPerElem = 0;        ///< Number of vertices per element
+        int order = 1;                  ///< Element order (1 = linear, 2 = quadratic)
         std::vector<std::vector<Index>> elements;  ///< Element connectivity
         std::vector<Index> geomIndices; ///< Geometric entity indices (domain/boundary IDs)
     };
@@ -88,6 +94,7 @@ private:
         for (const auto& block : data.blocks) {
             Geometry geom = getGeometryType(block.typeName, block.numVertsPerElem, data.sdim);
             bool isBoundary = isBoundaryElement(geom, data.sdim);
+            int order = block.order;
             
             if (isBoundary) {
                 mesh.reserveBdrElements(mesh.numBdrElements() + 
@@ -97,7 +104,7 @@ private:
                     if (i < block.geomIndices.size()) {
                         attr = block.geomIndices[i];
                     }
-                    mesh.addBdrElement(geom, block.elements[i], attr);
+                    mesh.addBdrElement(geom, block.elements[i], attr, order);
                     numBdrElems++;
                 }
             } else {
@@ -108,7 +115,7 @@ private:
                     if (i < block.geomIndices.size()) {
                         attr = block.geomIndices[i];
                     }
-                    mesh.addElement(geom, block.elements[i], attr);
+                    mesh.addElement(geom, block.elements[i], attr, order);
                     numVolumeElems++;
                 }
             }
@@ -132,17 +139,21 @@ private:
         std::string line;
         
         while (std::getline(file, line)) {
-            // Look for spatial dimension
-            if (line.find("# sdim") != std::string::npos) {
-                std::istringstream iss(line);
+            std::string trimmed = trim(line);
+            
+            // Look for spatial dimension - exact match with "# sdim"
+            if (trimmed.find("# sdim") != std::string::npos) {
+                std::istringstream iss(trimmed);
                 iss >> data.sdim;
+                LOG_DEBUG("Parsed sdim = " << data.sdim);
             }
             
-            // Look for vertex coordinates section
-            if (line.find("# number of mesh vertices") != std::string::npos) {
+            // Look for vertex count - must be "mesh vertices" not "elements"
+            if (trimmed.find("# number of mesh vertices") != std::string::npos) {
                 Index numVertices = 0;
-                std::istringstream iss(line);
+                std::istringstream iss(trimmed);
                 iss >> numVertices;
+                LOG_DEBUG("Expecting " << numVertices << " vertices");
                 
                 // Skip to coordinate section
                 while (std::getline(file, line)) {
@@ -155,10 +166,10 @@ private:
                 data.vertices.reserve(numVertices);
                 Index count = 0;
                 while (count < numVertices && std::getline(file, line)) {
-                    std::string trimmed = trim(line);
-                    if (trimmed.empty() || trimmed[0] == '#') continue;
+                    std::string coordLine = trim(line);
+                    if (coordLine.empty() || coordLine[0] == '#') continue;
                     
-                    std::istringstream iss(trimmed);
+                    std::istringstream iss(coordLine);
                     std::array<Real, 3> coords{0.0, 0.0, 0.0};
                     
                     if (data.sdim == 3) {
@@ -172,11 +183,12 @@ private:
                     data.vertices.push_back(coords);
                     count++;
                 }
+                LOG_DEBUG("Read " << count << " vertices");
             }
             
             // Look for element type blocks
-            if (line.find("# Type") != std::string::npos) {
-                ElementBlock block = parseElementBlock(file, line);
+            if (trimmed.find("# Type #") != std::string::npos) {
+                ElementBlock block = parseElementBlock(file, trimmed);
                 if (!block.elements.empty()) {
                     data.blocks.push_back(std::move(block));
                 }
@@ -192,18 +204,24 @@ private:
         ElementBlock block;
         std::string line;
         
-        // Parse type name from header
-        // Format: "# Type <n>" followed by type name
-        std::getline(file, line);
-        line = trim(line);
+        // Skip empty lines after "# Type #N" header
+        while (std::getline(file, line)) {
+            std::string trimmed = trim(line);
+            if (!trimmed.empty()) break;
+        }
         
-        // Extract type name (second token)
+        // Parse type name: format is "<len> <typename> # type name"
+        // e.g., "3 vtx # type name" means type name is "vtx" with length 3
+        line = trim(line);
         std::istringstream iss(line);
         std::string token;
-        iss >> token;  // Skip count
+        iss >> token;  // Skip count (e.g., "3" in "3 vtx")
         if (iss >> token) {
             block.typeName = token;
+            // Detect order from type name
+            block.order = detectOrder(block.typeName);
         }
+        LOG_DEBUG("Parsing element block: type=" << block.typeName << ", order=" << block.order);
         
         // Read number of vertices per element
         while (std::getline(file, line)) {
@@ -221,13 +239,14 @@ private:
             }
             break;
         }
+        LOG_DEBUG("Vertices per element: " << block.numVertsPerElem);
         
         // Read number of elements
+        Index numElements = 0;
         while (std::getline(file, line)) {
             std::string trimmed = trim(line);
             if (trimmed.empty()) continue;
             
-            Index numElements = 0;
             if (trimmed.find("# number of elements") != std::string::npos) {
                 std::istringstream tiss(trimmed);
                 tiss >> numElements;
@@ -274,6 +293,7 @@ private:
                     count++;
                 }
             }
+            LOG_DEBUG("Read " << block.elements.size() << " elements of type " << block.typeName);
             
             // Look for geometric entity indices
             while (std::getline(file, line)) {
@@ -283,12 +303,16 @@ private:
                     std::istringstream tiss(trimmed);
                     tiss >> numIndices;
                     
-                    // Skip empty lines
+                    // Skip empty lines and comments
                     while (std::getline(file, line)) {
-                        if (!trim(line).empty()) break;
+                        std::string t = trim(line);
+                        if (!t.empty() && t[0] != '#') {
+                            // This line has data, parse it
+                            break;
+                        }
                     }
                     
-                    // Read indices
+                    // Read indices (continuing from the line we just read)
                     block.geomIndices.reserve(numIndices);
                     Index idxCount = 0;
                     do {
@@ -301,9 +325,8 @@ private:
                     } while (idxCount < numIndices && std::getline(file, line));
                     
                     break;
-                } else if (trimmed.find("# Type") != std::string::npos) {
-                    // Start of next block, push back line indicator
-                    // and break (this will be handled by outer loop)
+                } else if (trimmed.find("# Type #") != std::string::npos) {
+                    LOG_DEBUG("Found next Type block while looking for geometric indices");
                     break;
                 } else if (trimmed.find("# ---------") != std::string::npos) {
                     // Start of new object
@@ -315,6 +338,21 @@ private:
         }
         
         return block;
+    }
+
+    /// Detect element order from type name
+    int detectOrder(const std::string& typeName) {
+        std::string lower = toLower(typeName);
+        // Check for second-order indicator
+        if (lower.find("2") != std::string::npos && 
+            (lower.find("tri2") != std::string::npos ||
+             lower.find("tet2") != std::string::npos ||
+             lower.find("edg2") != std::string::npos ||
+             lower.find("quad2") != std::string::npos ||
+             lower.find("hex2") != std::string::npos)) {
+            return 2;
+        }
+        return 1;
     }
 
     /// Get geometry type from type name and vertex count
@@ -331,39 +369,55 @@ private:
             throw MeshException("Pyramid elements are not supported. "
                                "Only tri/quad/tet/hex elements are supported.");
         }
-        if (numVerts == 5) {
+        
+        // Check for prism by vertex count (6 vertices in 3D for linear prism, 
+        // but we also need to avoid confusing with Triangle2 which has 6 nodes)
+        // Prism linear: 6 vertices, Prism quadratic: 15 vertices
+        // Triangle2: 6 vertices but sdim would be 2 for boundary or 3 for boundary in 3D mesh
+        if (numVerts == 6 && sdim == 3 && lower.find("tri") == std::string::npos) {
+            throw MeshException("Prism elements (6 vertices in 3D) are not supported. "
+                               "Only tri/quad/tet/hex elements are supported.");
+        }
+        if (numVerts == 5 && sdim == 3) {
             throw MeshException("Pyramid elements (5 vertices) are not supported. "
                                "Only tri/quad/tet/hex elements are supported.");
         }
-        if (numVerts == 6 && sdim == 3) {
-            throw MeshException("Prism elements (6 vertices) are not supported. "
-                               "Only tri/quad/tet/hex elements are supported.");
-        }
         
-        // Supported types
-        if (lower.find("vtx") != std::string::npos || numVerts == 1) {
+        // Check by type name first (more reliable)
+        if (lower.find("vtx") != std::string::npos) {
             return Geometry::Point;
         }
-        if (lower.find("edg") != std::string::npos || lower.find("lin") != std::string::npos || numVerts == 2) {
+        if (lower.find("edg") != std::string::npos || lower.find("lin") != std::string::npos) {
             return Geometry::Segment;
         }
-        if (lower.find("tri") != std::string::npos || numVerts == 3) {
+        if (lower.find("tri") != std::string::npos) {
             return Geometry::Triangle;
         }
-        if (lower.find("quad") != std::string::npos || (numVerts == 4 && sdim == 2)) {
+        if (lower.find("quad") != std::string::npos) {
             return Geometry::Square;
         }
-        if (lower.find("tet") != std::string::npos || (numVerts == 4 && sdim == 3)) {
+        if (lower.find("tet") != std::string::npos) {
             return Geometry::Tetrahedron;
         }
-        if (lower.find("hex") != std::string::npos || numVerts == 8) {
+        if (lower.find("hex") != std::string::npos) {
             return Geometry::Cube;
         }
         
         // Fallback based on vertex count and dimension
-        if (numVerts == 4 && sdim == 3) return Geometry::Tetrahedron;
+        // This handles cases where type name might be unexpected
+        if (numVerts == 1) return Geometry::Point;
+        if (numVerts == 2) return Geometry::Segment;
+        if (numVerts == 3) return Geometry::Triangle;
         if (numVerts == 4 && sdim == 2) return Geometry::Square;
+        if (numVerts == 4 && sdim == 3) return Geometry::Tetrahedron;
         if (numVerts == 8) return Geometry::Cube;
+        
+        // Second-order elements (detect by vertex count)
+        if (numVerts == 3) return Geometry::Segment;   // edg2: 3 nodes
+        if (numVerts == 6) return Geometry::Triangle;  // tri2: 6 nodes
+        if (numVerts == 9) return Geometry::Square;    // quad2: 9 nodes
+        if (numVerts == 10) return Geometry::Tetrahedron; // tet2: 10 nodes
+        if (numVerts == 27) return Geometry::Cube;     // hex2: 27 nodes
         
         return Geometry::Invalid;
     }

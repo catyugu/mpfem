@@ -14,29 +14,56 @@ namespace mpfem {
  * An element stores:
  * - Geometry type (shape)
  * - Vertex indices (connectivity)
+ * - Element order (1 = linear, 2 = quadratic)
  * - Domain/boundary attribute
  * 
  * This class is purely topological - it does not store coordinates.
  * Coordinate data is managed by the Mesh class.
+ * 
+ * For second-order elements, the vertex ordering follows COMSOL convention:
+ * - First N corner nodes (N = numCorners(geometry))
+ * - Followed by edge midpoint nodes
+ * - Followed by face nodes (for hex elements)
+ * - Followed by interior node (for hex elements)
  */
 class Element {
 public:
     /// Default constructor
     Element() = default;
 
-    /// Construct from geometry type and vertex indices
+    /// Construct from geometry type and vertex indices (assumes first order)
     Element(Geometry geom, std::vector<Index> vertices, Index attribute = 0)
         : geometry_(geom)
         , vertices_(std::move(vertices))
-        , attribute_(attribute) {
+        , attribute_(attribute)
+        , order_(1) {
         validate();
     }
 
-    /// Construct from geometry type and span (for temporary conversion)
+    /// Construct from geometry type, vertex indices, and order
+    Element(Geometry geom, std::vector<Index> vertices, Index attribute, int order)
+        : geometry_(geom)
+        , vertices_(std::move(vertices))
+        , attribute_(attribute)
+        , order_(order) {
+        validate();
+    }
+
+    /// Construct from geometry type and span (assumes first order)
     Element(Geometry geom, std::span<const Index> vertices, Index attribute = 0)
         : geometry_(geom)
         , vertices_(vertices.begin(), vertices.end())
-        , attribute_(attribute) {
+        , attribute_(attribute)
+        , order_(1) {
+        validate();
+    }
+
+    /// Construct from geometry type, span, and order
+    Element(Geometry geom, std::span<const Index> vertices, Index attribute, int order)
+        : geometry_(geom)
+        , vertices_(vertices.begin(), vertices.end())
+        , attribute_(attribute)
+        , order_(order) {
         validate();
     }
 
@@ -92,6 +119,22 @@ public:
     void setAttribute(Index attr) { attribute_ = attr; }
 
     // -------------------------------------------------------------------------
+    // Order access
+    // -------------------------------------------------------------------------
+
+    /// Get element order (1 = linear, 2 = quadratic)
+    int order() const { return order_; }
+
+    /// Set element order
+    void setOrder(int order) { order_ = order; }
+
+    /// Check if element is quadratic (second-order)
+    bool isQuadratic() const { return order_ >= 2; }
+
+    /// Get number of corner vertices (first-order nodes)
+    int numCorners() const { return geom::numCorners(geometry_); }
+
+    // -------------------------------------------------------------------------
     // Edge and face connectivity (computed on demand)
     // -------------------------------------------------------------------------
 
@@ -124,8 +167,9 @@ public:
 
     /// Check if the element is valid
     bool isValid() const {
-        return geometry_ != Geometry::Invalid &&
-               static_cast<int>(vertices_.size()) == geom::numVertices(geometry_);
+        if (geometry_ == Geometry::Invalid) return false;
+        int expectedVerts = geom::numVertices(geometry_, order_);
+        return static_cast<int>(vertices_.size()) == expectedVerts;
     }
 
     /// Get human-readable name
@@ -133,8 +177,9 @@ public:
 
 private:
     void validate() {
-        // Check vertex count matches geometry
-        if (static_cast<int>(vertices_.size()) != geom::numVertices(geometry_)) {
+        // Check vertex count matches geometry and order
+        int expectedVerts = geom::numVertices(geometry_, order_);
+        if (static_cast<int>(vertices_.size()) != expectedVerts) {
             // Could throw an exception, but for now just mark as invalid
             geometry_ = Geometry::Invalid;
         }
@@ -143,6 +188,7 @@ private:
     Geometry geometry_ = Geometry::Invalid;
     std::vector<Index> vertices_;
     Index attribute_ = 0;  // Domain ID or boundary ID
+    int order_ = 1;        // Element order (1 = linear, 2 = quadratic)
 };
 
 // =============================================================================
