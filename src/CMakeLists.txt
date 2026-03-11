@@ -118,7 +118,6 @@ set(MPFEM_PHYSICS_SOURCES
     physics/solid_mechanics.cpp
 )
 set(MPFEM_PHYSICS_HEADERS
-    physics/physics_assembly.hpp
     physics/electrostatics.hpp
     physics/heat_transfer.hpp
     physics/solid_mechanics.hpp
