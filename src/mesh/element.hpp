@@ -202,6 +202,162 @@ inline const char* element_type_name(ElementType type) {
     }
 }
 
+/// Get number of corner vertices for element type (for topology)
+/// For quadratic elements, this returns the number of primary vertices
+constexpr int num_corner_vertices(ElementType type) {
+    switch (type) {
+        case ElementType::Vertex:
+            return 1;
+        case ElementType::Segment:
+        case ElementType::Segment2:
+            return 2;
+        case ElementType::Triangle:
+        case ElementType::Triangle2:
+            return 3;
+        case ElementType::Quadrilateral:
+        case ElementType::Quadrilateral2:
+            return 4;
+        case ElementType::Tetrahedron:
+        case ElementType::Tetrahedron2:
+            return 4;
+        case ElementType::Hexahedron:
+        case ElementType::Hexahedron2:
+            return 8;
+        case ElementType::Wedge:
+        case ElementType::Wedge2:
+            return 6;
+        case ElementType::Pyramid:
+        case ElementType::Pyramid2:
+            return 5;
+        default:
+            return 0;
+    }
+}
+
+/// Get corner vertex indices within an element (0-based local indices)
+/// These are the primary vertices used for topology construction
+/// For quadratic elements, these are the corner nodes (not edge nodes)
+inline std::vector<int> get_corner_vertex_indices(ElementType type) {
+    int n_corners = num_corner_vertices(type);
+    std::vector<int> indices(n_corners);
+    for (int i = 0; i < n_corners; ++i) {
+        indices[i] = i;
+    }
+    return indices;
+}
+
+/// Check if element type uses Euler format with internal nodes
+/// that need to be filtered to Serendipity format
+/// COMSOL mphtxt may output Euler format (with internal nodes) for some elements
+constexpr bool needs_euler_to_serendipity_filter(ElementType type) {
+    switch (type) {
+        case ElementType::Quadrilateral2:  // Euler: 9 nodes, Serendipity: 8 nodes
+        case ElementType::Hexahedron2:     // Euler: 27 nodes, Serendipity: 20 nodes
+        case ElementType::Wedge2:          // Euler: 18 nodes, Serendipity: 15 nodes
+        case ElementType::Pyramid2:        // Euler: 14 nodes, Serendipity: 13 nodes
+            return true;
+        // Tetrahedron2 and Triangle2 have no internal nodes in Euler format
+        default:
+            return false;
+    }
+}
+
+/// Get Euler to Serendipity node index mapping
+/// Returns a vector where result[i] is the Euler index for Serendipity node i
+/// If element doesn't need filtering, returns identity mapping
+///
+/// Node ordering conventions:
+/// - Tetrahedron2: 0-3 corners, 4-9 edges (no internal node, Euler == Serendipity)
+/// - Triangle2: 0-2 corners, 3-5 edges (no internal node, Euler == Serendipity)
+/// - Quadrilateral2 Serendipity (8 nodes): 0-3 corners, 4-7 edges
+///   Euler (9 nodes): 0-3 corners, 4-7 edges, 8 internal
+/// - Hexahedron2 Serendipity (20 nodes): 0-7 corners, 8-19 edges
+///   Euler (27 nodes): 0-7 corners, 8-19 edges, 20-26 internal (faces+center)
+/// - Wedge2 Serendipity (15 nodes): 0-5 corners, 6-14 edges
+///   Euler (18 nodes): 0-5 corners, 6-14 edges, 15-17 internal (face centers)
+/// - Pyramid2 Serendipity (13 nodes): 0-4 corners, 5-12 edges
+///   Euler (14 nodes): 0-4 corners, 5-12 edges, 13 internal
+inline std::vector<int> get_euler_to_serendipity_mapping(ElementType type) {
+    switch (type) {
+        // Elements that don't need filtering - identity mapping
+        case ElementType::Vertex:
+            return {0};
+        case ElementType::Segment:
+        case ElementType::Segment2:
+            return {0, 1};
+        case ElementType::Triangle:
+        case ElementType::Triangle2:
+            return {0, 1, 2, 3, 4, 5};  // 6 nodes, no internal
+        case ElementType::Tetrahedron:
+        case ElementType::Tetrahedron2:
+            return {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};  // 10 nodes, no internal
+
+        // Quadrilateral2: Serendipity (8) from Euler (9)
+        // Euler ordering: corners(0-3), edges(4-7), internal(8)
+        // Serendipity: corners(0-3), edges(4-7)
+        case ElementType::Quadrilateral2:
+            return {0, 1, 2, 3, 4, 5, 6, 7};  // Skip internal node 8
+
+        // Hexahedron2: Serendipity (20) from Euler (27)
+        // Euler ordering: corners(0-7), edges(8-19), face_centers(20-25), center(26)
+        // Serendipity: corners(0-7), edges(8-19)
+        case ElementType::Hexahedron2:
+            return {0, 1, 2, 3, 4, 5, 6, 7,     // corners
+                    8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19};  // edges only
+
+        // Wedge2: Serendipity (15) from Euler (18)
+        // Euler ordering: corners(0-5), edges(6-14), face_centers(15-17)
+        // Serendipity: corners(0-5), edges(6-14)
+        case ElementType::Wedge2:
+            return {0, 1, 2, 3, 4, 5,           // corners
+                    6, 7, 8, 9, 10, 11, 12, 13, 14};  // edges only
+
+        // Pyramid2: Serendipity (13) from Euler (14)
+        // Euler ordering: corners(0-4), edges(5-12), internal(13)
+        // Serendipity: corners(0-4), edges(5-12)
+        case ElementType::Pyramid2:
+            return {0, 1, 2, 3, 4,               // corners
+                    5, 6, 7, 8, 9, 10, 11, 12};  // edges only
+
+        // Linear elements - identity mapping
+        case ElementType::Quadrilateral:
+            return {0, 1, 2, 3};
+        case ElementType::Hexahedron:
+            return {0, 1, 2, 3, 4, 5, 6, 7};
+        case ElementType::Wedge:
+            return {0, 1, 2, 3, 4, 5};
+        case ElementType::Pyramid:
+            return {0, 1, 2, 3, 4};
+
+        default:
+            // Return identity for unknown types
+            return {};
+    }
+}
+
+/// Get the linear (order 1) element type corresponding to a quadratic type
+/// Returns the same type if already linear
+inline ElementType get_linear_element_type(ElementType type) {
+    switch (type) {
+        case ElementType::Segment2:
+            return ElementType::Segment;
+        case ElementType::Triangle2:
+            return ElementType::Triangle;
+        case ElementType::Quadrilateral2:
+            return ElementType::Quadrilateral;
+        case ElementType::Tetrahedron2:
+            return ElementType::Tetrahedron;
+        case ElementType::Hexahedron2:
+            return ElementType::Hexahedron;
+        case ElementType::Wedge2:
+            return ElementType::Wedge;
+        case ElementType::Pyramid2:
+            return ElementType::Pyramid;
+        default:
+            return type;  // Already linear or unknown
+    }
+}
+
 /// Parse element type from string (COMSOL format)
 inline ElementType parse_element_type(const std::string& name) {
     if (name == "vtx")
@@ -377,6 +533,37 @@ public:
     void reserve(SizeType num_elements) {
         connectivity_.reserve(num_elements * nodes_per_element_);
         entity_ids_.reserve(num_elements);
+    }
+
+    /// Get corner vertex indices for element i (for topology building)
+    /// For quadratic elements, returns only the corner vertices (not edge nodes)
+    std::vector<Index> corner_vertices(SizeType i) const {
+        int n_corners = num_corner_vertices(type_);
+        std::vector<Index> corners(n_corners);
+        const Index offset = static_cast<Index>(i * nodes_per_element_);
+        for (int j = 0; j < n_corners; ++j) {
+            corners[j] = connectivity_[offset + j];
+        }
+        return corners;
+    }
+
+    /// Get number of corner vertices per element
+    int corner_vertices_per_element() const {
+        return num_corner_vertices(type_);
+    }
+
+    /// Get corner vertices for all elements (flat array)
+    /// For quadratic elements, extracts only corner nodes
+    IndexArray get_all_corner_vertices() const {
+        int n_corners = num_corner_vertices(type_);
+        IndexArray corners;
+        corners.reserve(size() * n_corners);
+        for (SizeType i = 0; i < size(); ++i) {
+            for (int j = 0; j < n_corners; ++j) {
+                corners.push_back(connectivity_[i * nodes_per_element_ + j]);
+            }
+        }
+        return corners;
     }
 
 private:

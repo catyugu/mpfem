@@ -88,17 +88,17 @@ Vtot	20[mV]	0.02 V	Applied voltage
 
 ## 可以参考的设计
 
-* 单元层（参考单元，不同阶数单元基函数，从参考域到物理域保持微分算子结果一致性的Piola变换ElementTransform/FacetElementTransform）
-* 网格/拓扑层（网格读入，坐标，拓扑编号，形函数，根据边界找单元，单元找边界）
+* 单元层Element（参考单元ReferenceElement，不同阶数单元基函数FECollection&FESpace，从参考域到物理域保持微分算子结果一致性的Piola变换，ElementTransform/FacetElementTransform）
+* 网格Mesh/拓扑层（网格读入MphtxtReader，坐标，拓扑编号，形函数，根据边界找单元，单元找边界）
 * 单元/边界积分器（如Diffusion/Mass/BoundaryMassIntegrator，用于形成局部弱形式矩阵/向量）
-* 自由度编号管理器（管理状态向量，对每个场，管理单元自由度到全局自由度的映射）和插值器（目的是为了上层架构不再需要手动操作向量或者矩阵，可以直接获取某个积分点的场值）和变量/系数系统
-* 组装器（把局部积分结果组装到全局大矩阵里）以及强制边界施加器
-* 线性方程求解器（策略模式）
+* 自由度编号管理器DofHandler（管理状态向量，对每个场，管理单元自由度到全局自由度的映射）和插值器Interpolator/FEValue（目的是为了上层架构不再需要手动操作向量或者矩阵，可以直接获取某个积分点的场值）以及变量/系数 Coefficient
+* 组装器（把局部积分结果组装到全局大矩阵里）Assembler以及强制边界施加器DirichletBCApplicator
+* 线性方程求解器（策略模式）LinearSolver
 * 上层封装物理场，算子抽象和非线性与瞬态求解，IO接口等。
 
 ## 待解决问题和工作
 
-* 二阶网格的读取和拓扑构建逻辑目前仍有问题（形函数二阶，拓扑仍然应该是一阶），注意一下，mphtxt中的离散是euler格式，但我们应该用serendipity格式，所以网格读取中应该忽略一些节点；
-* 金字塔、棱柱的二阶形函数及其梯度需要完善；
-* 需要提供FacetTransform用于更好的BC施加。
+* 重构：审查并移除一些不必要的接口与冗余的代码；
+* 金字塔、棱柱的二阶形函数及其梯度需要完善与测试；
+* 需要提供FacetTransform用于更好的BC施加；
 * 你应该用fe_values取代现存的field_space,field_registry等。

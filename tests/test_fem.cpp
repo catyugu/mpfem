@@ -344,6 +344,150 @@ TEST_F(FETest, PyramidShapeGradients) {
     }
 }
 
+// ============================================================
+// Quadratic Wedge Tests (15 nodes, Serendipity)
+// ============================================================
+
+TEST_F(FETest, QuadraticWedgeShapeFunctions) {
+    FE_Wedge fe(2);
+    
+    EXPECT_EQ(fe.degree(), 2);
+    EXPECT_EQ(fe.dofs_per_cell(), 15);
+    EXPECT_EQ(fe.dim(), 3);
+    
+    // Test partition of unity at several points
+    std::vector<Scalar> values;
+    
+    // At center of wedge
+    fe.shape_values(Point<3>(1.0/3.0, 1.0/3.0, 0), values);
+    Scalar sum = 0;
+    for (auto v : values) sum += v;
+    EXPECT_NEAR(sum, 1.0, 1e-10);
+    
+    // At bottom triangle center (z=-1)
+    fe.shape_values(Point<3>(1.0/3.0, 1.0/3.0, -1), values);
+    sum = 0;
+    for (auto v : values) sum += v;
+    EXPECT_NEAR(sum, 1.0, 1e-10);
+    
+    // At top triangle center (z=+1)
+    fe.shape_values(Point<3>(1.0/3.0, 1.0/3.0, 1), values);
+    sum = 0;
+    for (auto v : values) sum += v;
+    EXPECT_NEAR(sum, 1.0, 1e-10);
+    
+    // At bottom corner node (0,0,-1) - only node 0 should be 1
+    fe.shape_values(Point<3>(0, 0, -1), values);
+    EXPECT_NEAR(values[0], 1.0, 1e-10);
+    for (int i = 1; i < 15; ++i) {
+        EXPECT_NEAR(values[i], 0.0, 1e-10);
+    }
+    
+    // At top corner node (0,0,1) - only node 3 should be 1
+    fe.shape_values(Point<3>(0, 0, 1), values);
+    EXPECT_NEAR(values[3], 1.0, 1e-10);
+    for (int i = 0; i < 15; ++i) {
+        if (i != 3) EXPECT_NEAR(values[i], 0.0, 1e-10);
+    }
+}
+
+TEST_F(FETest, QuadraticWedgeGradients) {
+    FE_Wedge fe(2);
+    
+    std::vector<Tensor<1, 3>> grads;
+    
+    // Test at center
+    fe.shape_gradients(Point<3>(1.0/3.0, 1.0/3.0, 0), grads);
+    
+    // Verify gradients are finite
+    for (int i = 0; i < 15; ++i) {
+        EXPECT_TRUE(std::isfinite(grads[i].x()));
+        EXPECT_TRUE(std::isfinite(grads[i].y()));
+        EXPECT_TRUE(std::isfinite(grads[i].z()));
+    }
+    
+    // Test at corner
+    fe.shape_gradients(Point<3>(0.1, 0.2, -0.5), grads);
+    for (int i = 0; i < 15; ++i) {
+        EXPECT_TRUE(std::isfinite(grads[i].x()));
+        EXPECT_TRUE(std::isfinite(grads[i].y()));
+        EXPECT_TRUE(std::isfinite(grads[i].z()));
+    }
+}
+
+// ============================================================
+// Quadratic Pyramid Tests (13 nodes, Serendipity)
+// ============================================================
+
+TEST_F(FETest, QuadraticPyramidShapeFunctions) {
+    FE_Pyramid fe(2);
+    
+    EXPECT_EQ(fe.degree(), 2);
+    EXPECT_EQ(fe.dofs_per_cell(), 13);
+    EXPECT_EQ(fe.dim(), 3);
+    
+    // Test partition of unity at several points
+    std::vector<Scalar> values;
+    
+    // At center of base (z=0)
+    fe.shape_values(Point<3>(0, 0, 0), values);
+    Scalar sum = 0;
+    for (auto v : values) sum += v;
+    EXPECT_NEAR(sum, 1.0, 1e-10);
+    
+    // At base corner (-1,-1,0) - only node 0 should be 1
+    fe.shape_values(Point<3>(-1, -1, 0), values);
+    EXPECT_NEAR(values[0], 1.0, 1e-10);
+    for (int i = 1; i < 13; ++i) {
+        EXPECT_NEAR(values[i], 0.0, 1e-10);
+    }
+    
+    // At apex (0,0,1) - only node 4 should be 1
+    fe.shape_values(Point<3>(0, 0, 1), values);
+    EXPECT_NEAR(values[4], 1.0, 1e-10);
+    for (int i = 0; i < 13; ++i) {
+        if (i != 4) EXPECT_NEAR(values[i], 0.0, 1e-10);
+    }
+    
+    // Test at mid-height point (partition of unity)
+    fe.shape_values(Point<3>(0, 0, 0.5), values);
+    sum = 0;
+    for (auto v : values) sum += v;
+    EXPECT_NEAR(sum, 1.0, 1e-10);
+}
+
+TEST_F(FETest, QuadraticPyramidGradients) {
+    FE_Pyramid fe(2);
+    
+    std::vector<Tensor<1, 3>> grads;
+    
+    // Test at center of base
+    fe.shape_gradients(Point<3>(0, 0, 0), grads);
+    
+    // Verify gradients are finite
+    for (int i = 0; i < 13; ++i) {
+        EXPECT_TRUE(std::isfinite(grads[i].x()));
+        EXPECT_TRUE(std::isfinite(grads[i].y()));
+        EXPECT_TRUE(std::isfinite(grads[i].z()));
+    }
+    
+    // Test at mid-height
+    fe.shape_gradients(Point<3>(0.1, -0.2, 0.5), grads);
+    for (int i = 0; i < 13; ++i) {
+        EXPECT_TRUE(std::isfinite(grads[i].x()));
+        EXPECT_TRUE(std::isfinite(grads[i].y()));
+        EXPECT_TRUE(std::isfinite(grads[i].z()));
+    }
+    
+    // Test near apex (but not at apex)
+    fe.shape_gradients(Point<3>(0.05, 0.05, 0.9), grads);
+    for (int i = 0; i < 13; ++i) {
+        EXPECT_TRUE(std::isfinite(grads[i].x()));
+        EXPECT_TRUE(std::isfinite(grads[i].y()));
+        EXPECT_TRUE(std::isfinite(grads[i].z()));
+    }
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

@@ -130,12 +130,23 @@ void get_face_vertices(ElementType type, int face_idx,
     face_verts.clear();
 
     // For quadratic elements, use only corner vertices for face matching
-    int num_corner_verts = num_vertices(type);
+    // This is critical: num_corner_vertices returns geometric corner count (e.g., 4 for Tet2)
+    // while num_vertices returns total nodes (e.g., 10 for Tet2)
     if (is_quadratic(type)) {
+        int num_corners = num_corner_vertices(type);
+        // Safety check: ensure we have enough vertices
+        if (static_cast<int>(cell_verts.size()) < num_corners) {
+            // This should not happen - indicates a bug in mesh reading
+            MPFEM_ERROR("Quadratic element " << element_type_name(type) 
+                       << " has only " << cell_verts.size() 
+                       << " vertices in connectivity, but needs " << num_corners 
+                       << " corners for topology. Check mesh file or reader.");
+            return;
+        }
         // Map to linear element for face generation
-        ElementType linear_type = static_cast<ElementType>(static_cast<int>(type) - 8);
+        ElementType linear_type = get_linear_element_type(type);
         get_face_vertices(linear_type, face_idx,
-                          std::span<const Index>(cell_verts.data(), num_corner_verts),
+                          std::span<const Index>(cell_verts.data(), num_corners),
                           face_verts);
         return;
     }

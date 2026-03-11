@@ -139,10 +139,10 @@ private:
         ElementType etype = mpfem::parse_element_type(type_name);
         int elem_dim = element_dimension(etype);
 
-        // Read vertices per element
+        // Read vertices per element (from file - may be Euler format)
         line = skip_to_data(file);
-        int vertices_per_element = 0;
-        std::istringstream(line) >> vertices_per_element;
+        int file_vertices_per_element = 0;
+        std::istringstream(line) >> file_vertices_per_element;
 
         // Read number of elements
         line = skip_to_data(file);
@@ -151,6 +151,24 @@ private:
 
         // Skip "# Elements" comment
         std::getline(file, line);
+
+        // Determine if we need Euler to Serendipity conversion
+        bool needs_filtering = needs_euler_to_serendipity_filter(etype);
+        std::vector<int> serendipity_mapping;
+        int serendipity_nodes_per_element = num_nodes(etype);
+        
+        if (needs_filtering) {
+            serendipity_mapping = get_euler_to_serendipity_mapping(etype);
+            MPFEM_INFO("Quadratic element " << type_name 
+                       << ": converting from Euler (" << file_vertices_per_element 
+                       << " nodes) to Serendipity (" << serendipity_nodes_per_element 
+                       << " nodes)");
+        } else {
+            // Identity mapping - no filtering needed
+            for (int i = 0; i < file_vertices_per_element; ++i) {
+                serendipity_mapping.push_back(i);
+            }
+        }
 
         // Create element block
         ElementBlock* block = nullptr;
@@ -175,16 +193,26 @@ private:
 
         // Read element connectivity
         // Note: COMSOL mphtxt format uses 0-based vertex indices
-        std::vector<Index> vertices(vertices_per_element);
+        std::vector<Index> file_vertices(file_vertices_per_element);
+        std::vector<Index> serendipity_vertices(serendipity_nodes_per_element);
+        
         for (SizeType i = 0; i < num_elements; ++i) {
             std::getline(file, line);
             std::istringstream iss2(line);
-            for (int j = 0; j < vertices_per_element; ++j) {
-                iss2 >> vertices[j];
+            
+            // Read all vertices from file (Euler format)
+            for (int j = 0; j < file_vertices_per_element; ++j) {
+                iss2 >> file_vertices[j];
                 // Vertex indices are already 0-based in mphtxt format
             }
+            
+            // Apply Serendipity mapping if needed
+            for (int j = 0; j < serendipity_nodes_per_element; ++j) {
+                serendipity_vertices[j] = file_vertices[serendipity_mapping[j]];
+            }
+            
             if (block) {
-                block->add_element(vertices, 0);
+                block->add_element(serendipity_vertices, 0);
             }
         }
 
