@@ -83,19 +83,26 @@ QuadratureRule getTriangle(int order) {
         rule.points().push_back(IntegrationPoint(a, b, 0.0, w2));
     } else if (order == 4) {
         // Order 4, 6 points, exact for degree 4
-        const Real w1 = 0.223381589678011;
-        const Real w2 = 0.109951743655322;
-        const Real a1 = 0.445948490915965;
-        const Real b1 = 0.108103018168070;
-        const Real a2 = 0.091576213509771;
-        const Real b2 = 0.816847572980459;
+        // Reference: Dunavant (1985), same as MFEM
+        // AddTriPoints3(off, a, weight) adds points: (a,a), (a,1-2a), (1-2a,a)
         
+        // Group 1: a = 0.091576213509771, weight per point = 0.054975871827661
+        // Points: (0.091576, 0.091576), (0.091576, 0.816848), (0.816848, 0.091576)
+        const Real a1 = 0.091576213509770743460;
+        const Real w1 = 0.054975871827660933819;
+        const Real b1 = 1.0 - 2.0 * a1;  // = 0.81684757298045851208
+        rule.points().push_back(IntegrationPoint(a1, a1, 0.0, w1));
         rule.points().push_back(IntegrationPoint(a1, b1, 0.0, w1));
         rule.points().push_back(IntegrationPoint(b1, a1, 0.0, w1));
-        rule.points().push_back(IntegrationPoint(b1, b1, 0.0, w1));
+        
+        // Group 2: a = 0.445948490915965, weight per point = 0.111690794839006
+        // Points: (0.445948, 0.445948), (0.445948, 0.108103), (0.108103, 0.445948)
+        const Real a2 = 0.44594849091596488632;
+        const Real w2 = 0.11169079483900573285;
+        const Real b2 = 1.0 - 2.0 * a2;  // = 0.10810301816807022736
         rule.points().push_back(IntegrationPoint(a2, a2, 0.0, w2));
-        rule.points().push_back(IntegrationPoint(b2, a2, 0.0, w2));
         rule.points().push_back(IntegrationPoint(a2, b2, 0.0, w2));
+        rule.points().push_back(IntegrationPoint(b2, a2, 0.0, w2));
     } else if (order == 5) {
         // Order 5, 7 points, exact for degree 5
         const Real w1 = 0.225000000000000;

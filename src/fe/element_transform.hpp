@@ -60,10 +60,8 @@ public:
     void transform(const Real* xi, Real* x) const;
     void transform(const Real* xi, Vector3& x) const;
     
-    /// Transform integration point to physical coordinates
-    void transform(IntegrationPoint& ip) const {
-        transform(&ip.xi, &ip.x);
-    }
+    // Note: Use transform(const Real* xi, Vector3& x) to get physical coordinates
+    // IntegrationPoint does not store physical coordinates by default
     
     // -------------------------------------------------------------------------
     // Jacobian
@@ -268,7 +266,7 @@ inline void ElementTransform::computeGeometryInfo() {
     vertexIndices_ = elem->vertices();
     vertices_.resize(vertexIndices_.size());
     for (size_t i = 0; i < vertexIndices_.size(); ++i) {
-        vertices_[i] = mesh_->vertex(vertexIndices_[i]).coords();
+        vertices_[i] = mesh_->vertex(vertexIndices_[i]).toVector();
     }
     
     // Initialize Jacobian matrix

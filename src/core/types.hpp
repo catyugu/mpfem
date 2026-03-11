@@ -33,6 +33,7 @@ using Vector3 = Eigen::Matrix<Real, 3, 1>;
 
 // Dense matrix types
 using MatrixX = Eigen::Matrix<Real, Eigen::Dynamic, Eigen::Dynamic>;
+using Matrix = MatrixX;  // Alias for convenience
 using Matrix2 = Eigen::Matrix<Real, 2, 2>;
 using Matrix3 = Eigen::Matrix<Real, 3, 3>;
 using Matrix32 = Eigen::Matrix<Real, 3, 2>;  // Jacobian for 2D element in 3D space
