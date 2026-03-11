@@ -70,7 +70,7 @@ int main(int argc, char* argv[]) {
         LOG_INFO("Number of interior faces: " << topology.numInteriorFaces());
         
         // Create finite element collection (linear H1)
-        auto fec = FECollection::createH1(1);
+        auto fec = FECollection::createH1(2);
         LOG_INFO("Created H1 FE collection with order " << fec->order());
         
         // Create finite element space
