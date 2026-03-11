@@ -13,7 +13,8 @@ using namespace mpfem;
 
 /// Create a simple test mesh with a single tetrahedron
 Mesh createSingleTetMesh() {
-    Mesh mesh(3, 4, 0);
+    Mesh mesh;
+    mesh.setDim(3);
     
     // Unit tetrahedron vertices
     mesh.addVertex(0.0, 0.0, 0.0);  // 0
@@ -29,7 +30,8 @@ Mesh createSingleTetMesh() {
 
 /// Create a test mesh with a single triangle boundary
 Mesh createSingleTriMesh() {
-    Mesh mesh(2, 3, 1);
+    Mesh mesh;
+    mesh.setDim(2);
     
     mesh.addVertex(0.0, 0.0, 0.0);  // 0
     mesh.addVertex(1.0, 0.0, 0.0);  // 1
@@ -42,7 +44,8 @@ Mesh createSingleTriMesh() {
 
 /// Create a test mesh with a single hexahedron
 Mesh createSingleHexMesh() {
-    Mesh mesh(3, 8, 0);
+    Mesh mesh;
+    mesh.setDim(3);
     
     // Unit cube vertices
     mesh.addVertex(0.0, 0.0, 0.0);  // 0
@@ -62,7 +65,8 @@ Mesh createSingleHexMesh() {
 
 /// Create a test mesh with a single square boundary
 Mesh createSingleSquareMesh() {
-    Mesh mesh(2, 4, 1);
+    Mesh mesh;
+    mesh.setDim(2);
     
     mesh.addVertex(0.0, 0.0, 0.0);  // 0
     mesh.addVertex(1.0, 0.0, 0.0);  // 1
@@ -137,12 +141,14 @@ TEST_F(TetrahedronTransformTest, JacobianConstant) {
 }
 
 TEST_F(TetrahedronTransformTest, JacobianDeterminant) {
-    // Unit tetrahedron has volume 1/6
-    // detJ = 6 * volume = 1 for unit tet
+    // For mapping from reference tetrahedron to physical tetrahedron:
+    // - Reference tet has vertices (0,0,0), (1,0,0), (0,1,0), (0,0,1), volume = 1/6
+    // - Physical unit tet has the same vertices, volume = 1/6
+    // - detJ = physical_volume / reference_volume = 1
     Real xi[] = {0.0, 0.0, 0.0};
     transform_->setIntegrationPoint(xi);
     
-    EXPECT_NEAR(transform_->detJ(), 1.0 / 6.0, 1e-12);
+    EXPECT_NEAR(transform_->detJ(), 1.0, 1e-12);
 }
 
 TEST_F(TetrahedronTransformTest, GradientTransformation) {
@@ -152,25 +158,24 @@ TEST_F(TetrahedronTransformTest, GradientTransformation) {
     Real xi[] = {0.2, 0.3, 0.1};
     transform_->setIntegrationPoint(xi);
     
-    // Reference gradient of first shape function φ0 = 1 - ξ - η - ζ
+    // Reference gradient of first shape function phi0 = 1 - xi - eta - zeta
     Vector3 refGrad(-1.0, -1.0, -1.0);
     Vector3 physGrad;
     transform_->transformGradient(refGrad, physGrad);
     
-    // For unit tetrahedron, J is identity-related, so gradient should be similar
-    // J = [v1-v0, v2-v0, v3-v0] = [[1,0,0], [0,1,0], [0,0,1]] for unit tet
-    // J^{-T} = I, so physGrad should equal refGrad
+    // For unit tetrahedron, J is identity, so J^{-T} = I
+    // physGrad should equal refGrad
     EXPECT_NEAR(physGrad.x(), -1.0, 1e-12);
     EXPECT_NEAR(physGrad.y(), -1.0, 1e-12);
     EXPECT_NEAR(physGrad.z(), -1.0, 1e-12);
 }
 
 TEST_F(TetrahedronTransformTest, Weight) {
-    // weight = |detJ|
+    // weight = |detJ| = 1 for identity mapping
     Real xi[] = {0.0, 0.0, 0.0};
     transform_->setIntegrationPoint(xi);
     
-    EXPECT_NEAR(transform_->weight(), 1.0 / 6.0, 1e-12);
+    EXPECT_NEAR(transform_->weight(), 1.0, 1e-12);
 }
 
 // =============================================================================
@@ -222,11 +227,13 @@ TEST_F(HexahedronTransformTest, TransformCorners) {
 }
 
 TEST_F(HexahedronTransformTest, JacobianUnitCube) {
-    // For unit cube [0,1]^3, detJ = 0.125 (volume = 1, reference cube volume = 8)
+    // Reference cube is [-1,1]^3 with volume = 8
+    // Physical unit cube is [0,1]^3 with volume = 1
+    // Jacobian: dx/dxi = 0.5 for each component
+    // J = 0.5 * I, so detJ = 0.5^3 = 0.125
     Real xi[] = {0.0, 0.0, 0.0};
     transform_->setIntegrationPoint(xi);
     
-    // Jacobian should be 0.5 * I (since dx/dxi = 0.5)
     EXPECT_NEAR(transform_->detJ(), 0.125, 1e-12);
 }
 
@@ -272,12 +279,13 @@ TEST_F(TriangleTransformTest, TransformVertices) {
 }
 
 TEST_F(TriangleTransformTest, JacobianDeterminant) {
-    // Unit triangle has area 0.5
-    // detJ = 2 * area = 1 for reference triangle transformation
+    // Reference triangle has vertices (0,0), (1,0), (0,1), area = 0.5
+    // Physical unit triangle has the same vertices, area = 0.5
+    // detJ = physical_area / reference_area = 1
     Real xi[] = {0.0, 0.0};
     transform_->setIntegrationPoint(xi);
     
-    EXPECT_NEAR(transform_->detJ(), 0.5, 1e-12);
+    EXPECT_NEAR(transform_->detJ(), 1.0, 1e-12);
 }
 
 TEST_F(TriangleTransformTest, GradientTransformation) {
@@ -387,7 +395,8 @@ TEST(IntegrationTransformTest, IntegrateOverTriangle) {
 
 TEST(ScaledElementTest, ScaledTetrahedron) {
     // Create a tetrahedron scaled by factor of 2
-    Mesh mesh(3, 4, 0);
+    Mesh mesh;
+    mesh.setDim(3);
     mesh.addVertex(0.0, 0.0, 0.0);
     mesh.addVertex(2.0, 0.0, 0.0);
     mesh.addVertex(0.0, 2.0, 0.0);
@@ -399,14 +408,17 @@ TEST(ScaledElementTest, ScaledTetrahedron) {
     Real xi[] = {0.0, 0.0, 0.0};
     trans.setIntegrationPoint(xi);
     
-    // Volume should be 8 times larger (2^3)
-    // Original unit tet: 1/6, scaled: 8/6 = 4/3
-    EXPECT_NEAR(trans.weight(), 8.0 / 6.0, 1e-12);
+    // Reference tet volume = 1/6
+    // Physical tet volume = (2^3) * (1/6) = 8/6 = 4/3
+    // detJ = physical_vol / reference_vol = 8
+    EXPECT_NEAR(trans.detJ(), 8.0, 1e-12);
+    EXPECT_NEAR(trans.weight(), 8.0, 1e-12);
 }
 
 TEST(ScaledElementTest, ScaledTriangle) {
     // Create a triangle scaled by factor of 2
-    Mesh mesh(2, 3, 1);
+    Mesh mesh;
+    mesh.setDim(2);
     mesh.addVertex(0.0, 0.0, 0.0);
     mesh.addVertex(2.0, 0.0, 0.0);
     mesh.addVertex(0.0, 2.0, 0.0);
@@ -417,9 +429,11 @@ TEST(ScaledElementTest, ScaledTriangle) {
     Real xi[] = {0.0, 0.0};
     trans.setIntegrationPoint(xi);
     
-    // Area should be 4 times larger (2^2)
-    // Original unit tri: 0.5, scaled: 2.0
-    EXPECT_NEAR(trans.weight(), 2.0, 1e-12);
+    // Reference tri area = 0.5
+    // Physical tri area = (2^2) * 0.5 = 2.0
+    // detJ = physical_area / reference_area = 4
+    EXPECT_NEAR(trans.detJ(), 4.0, 1e-12);
+    EXPECT_NEAR(trans.weight(), 4.0, 1e-12);
 }
 
 // =============================================================================
@@ -430,7 +444,8 @@ TEST(GradientTransformTest, NumericalVerification) {
     // Verify gradient transformation using numerical differentiation
     
     // Create a non-trivial tetrahedron
-    Mesh mesh(3, 4, 0);
+    Mesh mesh;
+    mesh.setDim(3);
     mesh.addVertex(0.0, 0.0, 0.0);
     mesh.addVertex(1.5, 0.2, 0.1);
     mesh.addVertex(0.3, 1.2, 0.4);
@@ -448,7 +463,7 @@ TEST(GradientTransformTest, NumericalVerification) {
     trans.transformGradient(refGrad, physGrad);
     
     // Numerical verification: compute x = F(xi) and check
-    // dx/dxi_j ≈ (F(xi + h*ej) - F(xi - h*ej)) / (2h)
+    // dx/dxi_j = (F(xi + h*ej) - F(xi - h*ej)) / (2h)
     
     // This is a sanity check - exact values depend on geometry
     EXPECT_TRUE(std::isfinite(physGrad.x()));
