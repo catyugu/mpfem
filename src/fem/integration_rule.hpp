@@ -8,6 +8,7 @@
 
 #include "quadrature.hpp"
 #include "mesh/element.hpp"
+#include "fem/fe_base.hpp"
 #include <memory>
 
 namespace mpfem {
