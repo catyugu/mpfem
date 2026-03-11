@@ -82,6 +82,15 @@ add_library(mpfem_core
     src/core/logger.cpp
 )
 
+add_library(mpfem_model INTERFACE)
+
+add_library(mpfem_io
+    src/io/value_parser.cpp
+    src/io/case_xml_reader.cpp
+    src/io/material_xml_reader.cpp
+    src/io/result_exporter.cpp
+)
+
 add_library(mpfem_fe
     src/fe/quadrature.cpp
     src/fe/element_transform.cpp
@@ -95,6 +104,8 @@ add_library(mpfem_mesh
 
 # Library aliases for convenience
 add_library(mpfem::core ALIAS mpfem_core)
+add_library(mpfem::model ALIAS mpfem_model)
+add_library(mpfem::io ALIAS mpfem_io)
 add_library(mpfem::fe ALIAS mpfem_fe)
 add_library(mpfem::mesh ALIAS mpfem_mesh)
 
@@ -115,6 +126,31 @@ if(MPFEM_USE_OPENMP)
     target_link_libraries(mpfem_core PUBLIC OpenMP::OpenMP_CXX)
 endif()
 mpfem_set_default_compiler_options(mpfem_core)
+
+# mpfem_model (header-only)
+target_include_directories(mpfem_model
+    INTERFACE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+        $<INSTALL_INTERFACE:include>
+)
+target_link_libraries(mpfem_model
+    INTERFACE Eigen3::Eigen
+    INTERFACE mpfem_core
+)
+
+# mpfem_io
+target_include_directories(mpfem_io
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+        $<INSTALL_INTERFACE:include>
+)
+target_link_libraries(mpfem_io
+    PUBLIC Eigen3::Eigen
+    PUBLIC mpfem_core
+    PUBLIC mpfem_model
+    PUBLIC tinyxml2::tinyxml2
+)
+mpfem_set_default_compiler_options(mpfem_io)
 
 # mpfem_fe
 target_include_directories(mpfem_fe
@@ -173,7 +209,7 @@ endif()
 # =============================================================================
 include(GNUInstallDirs)
 
-install(TARGETS mpfem_core mpfem_fe mpfem_mesh
+install(TARGETS mpfem_core mpfem_model mpfem_io mpfem_fe mpfem_mesh
     EXPORT mpfemTargets
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}

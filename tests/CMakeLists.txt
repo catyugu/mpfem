@@ -71,3 +71,40 @@ target_link_libraries(mpfem_test_fe_space
 )
 
 add_test(NAME FESpace COMMAND mpfem_test_fe_space)
+
+# =============================================================================
+# IO Tests
+# =============================================================================
+add_executable(mpfem_test_value_parser
+    test_value_parser.cpp
+)
+
+target_link_libraries(mpfem_test_value_parser
+    PRIVATE mpfem::io
+    PRIVATE GTest::gtest_main
+)
+
+add_test(NAME ValueParser COMMAND mpfem_test_value_parser)
+
+add_executable(mpfem_test_case_xml_reader
+    test_case_xml_reader.cpp
+)
+
+target_link_libraries(mpfem_test_case_xml_reader
+    PRIVATE mpfem::io
+    PRIVATE mpfem::mesh
+    PRIVATE GTest::gtest_main
+)
+
+add_test(NAME CaseXmlReader COMMAND mpfem_test_case_xml_reader)
+
+add_executable(mpfem_test_material_xml_reader
+    test_material_xml_reader.cpp
+)
+
+target_link_libraries(mpfem_test_material_xml_reader
+    PRIVATE mpfem::io
+    PRIVATE GTest::gtest_main
+)
+
+add_test(NAME MaterialXmlReader COMMAND mpfem_test_material_xml_reader)
