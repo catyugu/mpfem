@@ -25,6 +25,10 @@ namespace mpfem {
  * - Followed by edge midpoint nodes
  * - Followed by face nodes (for hex elements)
  * - Followed by interior node (for hex elements)
+ * 
+ * Note: Edge and face topology is delegated to geom namespace functions,
+ * which operate on the reference element topology. This keeps the Element
+ * class simple and decouples topology from geometry.
  */
 class Element {
 public:
@@ -68,7 +72,7 @@ public:
     }
 
     // -------------------------------------------------------------------------
-    // Geometry access
+    // Geometry access (delegated to geom namespace)
     // -------------------------------------------------------------------------
 
     /// Get geometry type
@@ -80,10 +84,10 @@ public:
     /// Get number of vertices
     int numVertices() const { return static_cast<int>(vertices_.size()); }
 
-    /// Get number of edges
+    /// Get number of edges (from geometry)
     int numEdges() const { return geom::numEdges(geometry_); }
 
-    /// Get number of faces
+    /// Get number of faces (from geometry)
     int numFaces() const { return geom::numFaces(geometry_); }
 
     /// Check if element is a volume element
@@ -135,22 +139,33 @@ public:
     int numCorners() const { return geom::numCorners(geometry_); }
 
     // -------------------------------------------------------------------------
-    // Edge and face connectivity (computed on demand)
+    // Edge and face connectivity (using geom namespace)
     // -------------------------------------------------------------------------
 
     /**
-     * @brief Get vertex indices for an edge.
+     * @brief Get global vertex indices for an edge.
      * @param edgeIdx Edge index (0 to numEdges()-1)
-     * @return Pair of vertex indices
+     * @return Pair of global vertex indices
      */
-    std::pair<Index, Index> edgeVertices(int edgeIdx) const;
+    std::pair<Index, Index> edgeVertices(int edgeIdx) const {
+        auto local = geom::edgeVertices(geometry_, edgeIdx);
+        return {vertices_[local.first], vertices_[local.second]};
+    }
 
     /**
-     * @brief Get vertex indices for a face.
+     * @brief Get global vertex indices for a face.
      * @param faceIdx Face index (0 to numFaces()-1)
-     * @return Vector of vertex indices for the face
+     * @return Vector of global vertex indices for the face
      */
-    std::vector<Index> faceVertices(int faceIdx) const;
+    std::vector<Index> faceVertices(int faceIdx) const {
+        std::vector<Index> result;
+        auto localVerts = geom::faceVertices(geometry_, faceIdx);
+        result.reserve(localVerts.size());
+        for (int lv : localVerts) {
+            result.push_back(vertices_[lv]);
+        }
+        return result;
+    }
 
     /**
      * @brief Get the geometry type of a face.
@@ -190,134 +205,6 @@ private:
     Index attribute_ = 0;  // Domain ID or boundary ID
     int order_ = 1;        // Element order (1 = linear, 2 = quadratic)
 };
-
-// =============================================================================
-// Edge vertex tables (local vertex indices for each edge)
-// =============================================================================
-
-namespace edge_table {
-
-/// Edge vertices for Triangle: 3 edges
-inline constexpr std::array<std::pair<int, int>, 3> Triangle = {{
-    {1, 2}, {2, 0}, {0, 1}
-}};
-
-/// Edge vertices for Square: 4 edges
-inline constexpr std::array<std::pair<int, int>, 4> Square = {{
-    {0, 1}, {1, 2}, {2, 3}, {3, 0}
-}};
-
-/// Edge vertices for Tetrahedron: 6 edges
-inline constexpr std::array<std::pair<int, int>, 6> Tetrahedron = {{
-    {0, 1}, {1, 2}, {2, 0},  // Bottom face edges
-    {0, 3}, {1, 3}, {2, 3}   // Side edges
-}};
-
-/// Edge vertices for Cube: 12 edges
-inline constexpr std::array<std::pair<int, int>, 12> Cube = {{
-    {0, 1}, {1, 2}, {2, 3}, {3, 0},  // Bottom face
-    {4, 5}, {5, 6}, {6, 7}, {7, 4},  // Top face
-    {0, 4}, {1, 5}, {2, 6}, {3, 7}   // Vertical edges
-}};
-
-}  // namespace edge_table
-
-// =============================================================================
-// Face vertex tables (local vertex indices for each face)
-// =============================================================================
-
-namespace face_table {
-
-/// Face vertices for Tetrahedron: 4 triangular faces
-inline constexpr std::array<std::array<int, 3>, 4> Tetrahedron = {{
-    {{1, 2, 3}},  // Face opposite vertex 0
-    {{0, 3, 2}},  // Face opposite vertex 1 (reversed for outward normal)
-    {{0, 1, 3}},  // Face opposite vertex 2
-    {{0, 2, 1}}   // Face opposite vertex 3 (reversed for outward normal)
-}};
-
-/// Face vertices for Cube: 6 quadrilateral faces
-/// Ordering: -z, +z, -x, +x, -y, +y (for outward normals)
-inline constexpr std::array<std::array<int, 4>, 6> Cube = {{
-    {{0, 1, 2, 3}},  // Bottom (-z)
-    {{4, 7, 6, 5}},  // Top (+z)
-    {{0, 3, 7, 4}},  // Front (-x)
-    {{1, 5, 6, 2}},  // Back (+x)
-    {{0, 4, 5, 1}},  // Left (-y)
-    {{3, 2, 6, 7}}   // Right (+y)
-}};
-
-}  // namespace face_table
-
-// =============================================================================
-// Element inline methods
-// =============================================================================
-
-inline std::pair<Index, Index> Element::edgeVertices(int edgeIdx) const {
-    const std::pair<int, int>* table = nullptr;
-    int numEdges = 0;
-    
-    switch (geometry_) {
-        case Geometry::Triangle:
-            table = reinterpret_cast<const std::pair<int, int>*>(edge_table::Triangle.data());
-            numEdges = 3;
-            break;
-        case Geometry::Square:
-            table = reinterpret_cast<const std::pair<int, int>*>(edge_table::Square.data());
-            numEdges = 4;
-            break;
-        case Geometry::Tetrahedron:
-            table = reinterpret_cast<const std::pair<int, int>*>(edge_table::Tetrahedron.data());
-            numEdges = 6;
-            break;
-        case Geometry::Cube:
-            table = reinterpret_cast<const std::pair<int, int>*>(edge_table::Cube.data());
-            numEdges = 12;
-            break;
-        default:
-            return {0, 0};
-    }
-    
-    if (edgeIdx < 0 || edgeIdx >= numEdges) {
-        return {0, 0};
-    }
-    
-    return {vertices_[table[edgeIdx].first], vertices_[table[edgeIdx].second]};
-}
-
-inline std::vector<Index> Element::faceVertices(int faceIdx) const {
-    std::vector<Index> result;
-    
-    switch (geometry_) {
-        case Geometry::Tetrahedron: {
-            if (faceIdx >= 0 && faceIdx < 4) {
-                result = {vertices_[face_table::Tetrahedron[faceIdx][0]],
-                          vertices_[face_table::Tetrahedron[faceIdx][1]],
-                          vertices_[face_table::Tetrahedron[faceIdx][2]]};
-            }
-            break;
-        }
-        case Geometry::Cube: {
-            if (faceIdx >= 0 && faceIdx < 6) {
-                result = {vertices_[face_table::Cube[faceIdx][0]],
-                          vertices_[face_table::Cube[faceIdx][1]],
-                          vertices_[face_table::Cube[faceIdx][2]],
-                          vertices_[face_table::Cube[faceIdx][3]]};
-            }
-            break;
-        }
-        case Geometry::Triangle:
-        case Geometry::Square: {
-            // 2D elements: the "face" is the element itself
-            result = vertices_;
-            break;
-        }
-        default:
-            break;
-    }
-    
-    return result;
-}
 
 }  // namespace mpfem
 

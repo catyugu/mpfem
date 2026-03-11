@@ -115,8 +115,7 @@ QuadratureRule getTriangle(int order) {
         rule.points().push_back(IntegrationPoint(b3, a3, 0.0, w3));
         rule.points().push_back(IntegrationPoint(a3, b3, 0.0, w3));
     } else {
-        // Default to order 2
-        return getTriangle(2);
+        throw std::runtime_error("Quadrature order >5 not implemented for triangles");
     }
     
     return rule;
@@ -181,21 +180,8 @@ QuadratureRule getTetrahedron(int order) {
         rule.points().push_back(IntegrationPoint(a2, b2, a2, w2));
         rule.points().push_back(IntegrationPoint(a2, a2, b2, w2));
         // Additional points...
-    } else if (order == 5) {
-        // Order 5, 14 points
-        // Simplified version
-        const Real w1 = 0.030283678097089;
-        const Real w2 = 0.006726673314005;
-        const Real w3 = 0.013243803846501;
-        const Real a = 0.067342242210098;
-        const Real b = 0.310885917673978;
-        const Real c = 0.721794249067891;
-        const Real d = 0.452368381604916;
-        
-        // Permutations...
     } else {
-        // Default to order 2
-        return getTetrahedron(2);
+        throw std::runtime_error("Quadrature order >4 not implemented for tetrahedra");
     }
     
     return rule;

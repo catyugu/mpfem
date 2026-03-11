@@ -171,33 +171,8 @@ inline void ReferenceElement::initialize() {
 }
 
 inline std::vector<int> ReferenceElement::faceVertices(int faceIdx) const {
-    std::vector<int> vertices;
-    
-    switch (geometry_) {
-        case Geometry::Tetrahedron:
-            if (faceIdx >= 0 && faceIdx < 4) {
-                vertices.assign(face_table::Tetrahedron[faceIdx].begin(),
-                               face_table::Tetrahedron[faceIdx].end());
-            }
-            break;
-        case Geometry::Cube:
-            if (faceIdx >= 0 && faceIdx < 6) {
-                vertices.assign(face_table::Cube[faceIdx].begin(),
-                               face_table::Cube[faceIdx].end());
-            }
-            break;
-        case Geometry::Triangle:
-        case Geometry::Square:
-            // 2D element: the face is the element itself
-            for (int i = 0; i < numDofs(); ++i) {
-                vertices.push_back(i);
-            }
-            break;
-        default:
-            break;
-    }
-    
-    return vertices;
+    // Delegate to geom namespace
+    return geom::faceVertices(geometry_, faceIdx);
 }
 
 inline std::vector<int> ReferenceElement::faceDofs(int faceIdx) const {
@@ -207,39 +182,8 @@ inline std::vector<int> ReferenceElement::faceDofs(int faceIdx) const {
 }
 
 inline std::pair<int, int> ReferenceElement::edgeVertices(int edgeIdx) const {
-    const std::pair<int, int>* table = nullptr;
-    int numEdges = 0;
-    
-    switch (geometry_) {
-        case Geometry::Triangle:
-            table = reinterpret_cast<const std::pair<int, int>*>(
-                edge_table::Triangle.data());
-            numEdges = 3;
-            break;
-        case Geometry::Square:
-            table = reinterpret_cast<const std::pair<int, int>*>(
-                edge_table::Square.data());
-            numEdges = 4;
-            break;
-        case Geometry::Tetrahedron:
-            table = reinterpret_cast<const std::pair<int, int>*>(
-                edge_table::Tetrahedron.data());
-            numEdges = 6;
-            break;
-        case Geometry::Cube:
-            table = reinterpret_cast<const std::pair<int, int>*>(
-                edge_table::Cube.data());
-            numEdges = 12;
-            break;
-        default:
-            return {-1, -1};
-    }
-    
-    if (edgeIdx < 0 || edgeIdx >= numEdges) {
-        return {-1, -1};
-    }
-    
-    return table[edgeIdx];
+    // Delegate to geom namespace
+    return geom::edgeVertices(geometry_, edgeIdx);
 }
 
 }  // namespace mpfem
