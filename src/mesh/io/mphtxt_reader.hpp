@@ -29,7 +29,13 @@ namespace mpfem {
  * Second-order element node ordering (COMSOL convention):
  * - Segment2:  V0 V1 E01                          (2 corners + 1 edge midpoint)
  * - Triangle2: V0 V1 V2 E01 E12 E20               (3 corners + 3 edge midpoints)
- * - Tetrahedron2: V0 V1 V2 V3 E01 E02 E03 E12 E13 E23 (4 corners + 6 edge midpoints)
+ * - Tetrahedron2: V0 V1 V2 V3 E01 E02 E12 E03 E13 E23 (4 corners + 6 edge midpoints)
+ * 
+ * Node reordering for Tetrahedron2:
+ * COMSOL edge midpoint order: E01, E02, E12, E03, E13, E23 (nodes 4-9)
+ * mpfem edge order:           E01, E12, E20, E03, E13, E23
+ * Note: E02 and E20 are the same edge (vertices 0-2)
+ * Reordering: swap nodes 5 and 6, then reorder 7,8,9 to 7,8,9 (no change needed for last three)
  */
 class MphtxtReader {
 public:
@@ -103,6 +109,14 @@ private:
             bool isBoundary = isBoundaryElement(geom, data.sdim);
             int order = block.order;
             
+            // Tetrahedron2 node reordering: COMSOL to mpfem
+            // COMSOL edge midpoints: E01, E02, E12, E03, E13, E23 (nodes 4-9)
+            // mpfem edge midpoints:  E01, E12, E20, E03, E13, E23 (nodes 4-9)
+            // Note: E02 = E20 (same edge, vertices 0-2)
+            // Mapping: swap nodes 5 and 6
+            static const Index tet2Reorder[] = {0, 1, 2, 3, 4, 6, 5, 7, 8, 9};
+            bool needReorder = (geom == Geometry::Tetrahedron && order == 2);
+            
             if (isBoundary) {
                 mesh.reserveBdrElements(mesh.numBdrElements() + 
                     static_cast<Index>(block.elements.size()));
@@ -111,7 +125,16 @@ private:
                     if (i < block.geomIndices.size()) {
                         attr = block.geomIndices[i];
                     }
-                    mesh.addBdrElement(geom, block.elements[i], attr, order);
+                    const auto& elemConn = block.elements[i];
+                    if (needReorder && elemConn.size() == 10) {
+                        std::vector<Index> reordered(10);
+                        for (int j = 0; j < 10; ++j) {
+                            reordered[j] = elemConn[tet2Reorder[j]];
+                        }
+                        mesh.addBdrElement(geom, reordered, attr, order);
+                    } else {
+                        mesh.addBdrElement(geom, elemConn, attr, order);
+                    }
                     numBdrElems++;
                 }
             } else {
@@ -122,7 +145,16 @@ private:
                     if (i < block.geomIndices.size()) {
                         attr = block.geomIndices[i];
                     }
-                    mesh.addElement(geom, block.elements[i], attr, order);
+                    const auto& elemConn = block.elements[i];
+                    if (needReorder && elemConn.size() == 10) {
+                        std::vector<Index> reordered(10);
+                        for (int j = 0; j < 10; ++j) {
+                            reordered[j] = elemConn[tet2Reorder[j]];
+                        }
+                        mesh.addElement(geom, reordered, attr, order);
+                    } else {
+                        mesh.addElement(geom, elemConn, attr, order);
+                    }
                     numVolumeElems++;
                 }
             }
@@ -403,22 +435,6 @@ private:
         if (lower.find("hex") != std::string::npos) {
             return Geometry::Cube;
         }
-        
-        // Fallback based on vertex count and dimension
-        // This handles cases where type name might be unexpected
-        if (numVerts == 1) return Geometry::Point;
-        if (numVerts == 2) return Geometry::Segment;
-        if (numVerts == 3) return Geometry::Triangle;
-        if (numVerts == 4 && sdim == 2) return Geometry::Square;
-        if (numVerts == 4 && sdim == 3) return Geometry::Tetrahedron;
-        if (numVerts == 8) return Geometry::Cube;
-        
-        // Second-order elements (detect by vertex count)
-        if (numVerts == 3) return Geometry::Segment;   // edg2: 3 nodes
-        if (numVerts == 6) return Geometry::Triangle;  // tri2: 6 nodes
-        if (numVerts == 9) return Geometry::Square;    // quad2: 9 nodes
-        if (numVerts == 10) return Geometry::Tetrahedron; // tet2: 10 nodes
-        if (numVerts == 27) return Geometry::Cube;     // hex2: 27 nodes
         
         return Geometry::Invalid;
     }

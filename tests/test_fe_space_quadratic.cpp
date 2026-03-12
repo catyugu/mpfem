@@ -3,6 +3,7 @@
 #include <set>
 #include "mesh/mesh.hpp"
 #include "mesh/geometry.hpp"
+#include "mesh/io/mphtxt_reader.hpp"
 #include "fe/fe_space.hpp"
 #include "fe/element_transform.hpp"
 #include "fe/fe_collection.hpp"
@@ -10,6 +11,15 @@
 #include "fe/quadrature.hpp"
 
 using namespace mpfem;
+
+// Helper to get test data path
+static std::string dataPath(const std::string& relativePath) {
+#ifdef MPFEM_PROJECT_ROOT
+    return std::string(MPFEM_PROJECT_ROOT) + "/" + relativePath;
+#else
+    return relativePath;
+#endif
+}
 
 // =============================================================================
 // Helper Functions
@@ -382,4 +392,204 @@ TEST(MixedOrderTest, IsoparametricElement) {
     
     EXPECT_EQ(mesh.element(0).order(), 2);  // Geometric order
     EXPECT_EQ(fes.order(), 2);              // Physical order
+}
+
+// =============================================================================
+// Real COMSOL Mesh Tests - Verify Node Ordering
+// =============================================================================
+
+class COMSOLMeshTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        meshPath_ = dataPath("cases/busbar_order2/mesh.mphtxt");
+    }
+    
+    std::string meshPath_;
+};
+
+TEST_F(COMSOLMeshTest, LoadQuadraticMesh) {
+    // Test loading a real COMSOL quadratic mesh
+    Mesh mesh = MphtxtReader::read(meshPath_);
+    
+    // Basic sanity checks
+    EXPECT_GT(mesh.numVertices(), 0);
+    EXPECT_GT(mesh.numElements(), 0);
+    
+    // Check for quadratic elements
+    bool hasQuadratic = false;
+    for (Index e = 0; e < mesh.numElements(); ++e) {
+        if (mesh.element(e).order() == 2) {
+            hasQuadratic = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(hasQuadratic);
+}
+
+TEST_F(COMSOLMeshTest, Tetrahedron2EdgeMidpoints) {
+    // Verify that edge midpoints are correctly positioned
+    // This tests the node reordering fix for COMSOL compatibility
+    Mesh mesh = MphtxtReader::read(meshPath_);
+    
+    int checkedTets = 0;
+    const Real tol = 1e-6;
+    
+    for (Index e = 0; e < mesh.numElements() && checkedTets < 10; ++e) {
+        const auto& elem = mesh.element(e);
+        if (elem.geometry() != Geometry::Tetrahedron || elem.order() != 2) {
+            continue;
+        }
+        
+        const auto& vertices = elem.vertices();
+        ASSERT_EQ(vertices.size(), 10) << "Tetrahedron2 should have 10 vertices";
+        
+        // Corner vertices
+        auto v0 = mesh.vertex(vertices[0]);
+        auto v1 = mesh.vertex(vertices[1]);
+        auto v2 = mesh.vertex(vertices[2]);
+        auto v3 = mesh.vertex(vertices[3]);
+        
+        // Edge midpoints (mpfem ordering after reordering)
+        // dof 4: E01, dof 5: E12, dof 6: E20, dof 7: E03, dof 8: E13, dof 9: E23
+        auto e01 = mesh.vertex(vertices[4]);  // Edge 0-1
+        auto e12 = mesh.vertex(vertices[5]);  // Edge 1-2
+        auto e20 = mesh.vertex(vertices[6]);  // Edge 2-0
+        auto e03 = mesh.vertex(vertices[7]);  // Edge 0-3
+        auto e13 = mesh.vertex(vertices[8]);  // Edge 1-3
+        auto e23 = mesh.vertex(vertices[9]);  // Edge 2-3
+        
+        // Verify edge midpoints are at the correct positions
+        auto checkMidpoint = [&](const Vertex& mid, const Vertex& a, const Vertex& b, 
+                                  const std::string& edgeName) {
+            Vertex expected((a.x() + b.x()) / 2, (a.y() + b.y()) / 2, (a.z() + b.z()) / 2, 3);
+            Real dist = std::sqrt(
+                std::pow(mid.x() - expected.x(), 2) +
+                std::pow(mid.y() - expected.y(), 2) +
+                std::pow(mid.z() - expected.z(), 2)
+            );
+            EXPECT_LT(dist, tol) << "Edge " << edgeName << " midpoint mismatch in element " << e
+                                 << ": expected (" << expected.x() << ", " << expected.y() 
+                                 << ", " << expected.z() << "), got (" << mid.x() << ", " 
+                                 << mid.y() << ", " << mid.z() << ")";
+        };
+        
+        checkMidpoint(e01, v0, v1, "E01");
+        checkMidpoint(e12, v1, v2, "E12");
+        checkMidpoint(e20, v2, v0, "E20");
+        checkMidpoint(e03, v0, v3, "E03");
+        checkMidpoint(e13, v1, v3, "E13");
+        checkMidpoint(e23, v2, v3, "E23");
+        
+        checkedTets++;
+    }
+    
+    EXPECT_GT(checkedTets, 0) << "No quadratic tetrahedra found in mesh";
+}
+
+TEST_F(COMSOLMeshTest, JacobianPositiveDefinite) {
+    // Verify that Jacobian determinant is positive at quadrature points
+    // This is a crucial test for correct node ordering
+    Mesh mesh = MphtxtReader::read(meshPath_);
+    
+    FECollection fec(2);
+    FESpace fes(&mesh, &fec);
+    ElementTransform trans(&mesh, 0);
+    
+    int checkedElems = 0;
+    
+    for (Index e = 0; e < mesh.numElements() && checkedElems < 20; ++e) {
+        const auto& elem = mesh.element(e);
+        if (elem.order() != 2) continue;
+        
+        trans.setElement(e);
+        auto refElem = fes.elementRefElement(e);
+        const QuadratureRule& rule = refElem->quadrature();
+        
+        for (const auto& ip : rule) {
+            trans.setIntegrationPoint(ip);
+            Real detJ = trans.detJ();
+            
+            EXPECT_GT(detJ, 0.0) << "Negative or zero Jacobian determinant at element " << e
+                                  << " with detJ = " << detJ;
+        }
+        
+        checkedElems++;
+    }
+    
+    EXPECT_GT(checkedElems, 0) << "No quadratic elements found in mesh";
+}
+
+TEST_F(COMSOLMeshTest, FESpaceConsistency) {
+    // Test that FESpace correctly handles the reordered mesh
+    Mesh mesh = MphtxtReader::read(meshPath_);
+    
+    FECollection fec(2);
+    FESpace fes(&mesh, &fec);
+    
+    // DOFs should map directly to mesh vertices for COMSOL-style meshes
+    EXPECT_EQ(fes.numDofs(), mesh.numVertices());
+    
+    // Check element DOF mapping consistency
+    for (Index e = 0; e < std::min(mesh.numElements(), Index(10)); ++e) {
+        const auto& elem = mesh.element(e);
+        if (elem.order() != 2) continue;
+        
+        auto dofs = fes.elementDofs(e);
+        auto vertices = elem.vertices();
+        
+        ASSERT_EQ(dofs.size(), vertices.size());
+        
+        for (size_t i = 0; i < dofs.size(); ++i) {
+            // DOF index should equal vertex index (COMSOL-style)
+            EXPECT_EQ(dofs[i], vertices[i]) 
+                << "DOF-vertex mismatch at local index " << i 
+                << " of element " << e;
+        }
+    }
+}
+
+TEST_F(COMSOLMeshTest, ShapeFunctionKroneckerDelta) {
+    // Verify that shape functions have Kronecker delta property at nodes
+    // This tests the consistency between node ordering and shape function definition
+    Mesh mesh = MphtxtReader::read(meshPath_);
+    
+    FECollection fec(2);
+    FESpace fes(&mesh, &fec);
+    ElementTransform trans(&mesh, 0);
+    
+    const Real tol = 1e-10;
+    int testedElems = 0;
+    
+    for (Index e = 0; e < mesh.numElements() && testedElems < 5; ++e) {
+        const auto& elem = mesh.element(e);
+        if (elem.geometry() != Geometry::Tetrahedron || elem.order() != 2) {
+            continue;
+        }
+        
+        trans.setElement(e);
+        auto refElem = fes.elementRefElement(e);
+        const ShapeFunction* shapeFunc = refElem->shapeFunction();
+        auto dofCoords = shapeFunc->dofCoords();
+        
+        // At each node position, only the corresponding shape function should be 1
+        for (size_t i = 0; i < dofCoords.size(); ++i) {
+            Real xi[] = {dofCoords[i][0], dofCoords[i][1], dofCoords[i][2]};
+            
+            auto values = shapeFunc->evalValues(xi);
+            
+            for (size_t j = 0; j < values.size(); ++j) {
+                if (i == j) {
+                    EXPECT_NEAR(values[j], 1.0, tol) 
+                        << "Shape function " << j << " should be 1 at its own node in element " << e;
+                } else {
+                    EXPECT_NEAR(values[j], 0.0, tol) 
+                        << "Shape function " << j << " should be 0 at node " << i << " in element " << e;
+                }
+            }
+        }
+        
+        testedElems++;
+    }
+    
+    EXPECT_GT(testedElems, 0) << "No Tetrahedron2 elements found for testing";
 }
