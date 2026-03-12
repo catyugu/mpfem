@@ -28,6 +28,7 @@ inline constexpr Index InvalidIndex = -1;
 
 // Dense vector types
 using VectorX = Eigen::Matrix<Real, Eigen::Dynamic, 1>;
+using Vector = VectorX;  // Alias for convenience
 using Vector2 = Eigen::Matrix<Real, 2, 1>;
 using Vector3 = Eigen::Matrix<Real, 3, 1>;
 
@@ -39,8 +40,8 @@ using Matrix3 = Eigen::Matrix<Real, 3, 3>;
 using Matrix32 = Eigen::Matrix<Real, 3, 2>;  // Jacobian for 2D element in 3D space
 using Matrix23 = Eigen::Matrix<Real, 2, 3>;
 
-// Sparse matrix type
-using SparseMatrix = Eigen::SparseMatrix<Real, Eigen::RowMajor>;
+// Sparse matrix type (Eigen-based, for general use)
+using EigenSparseMatrix = Eigen::SparseMatrix<Real, Eigen::RowMajor>;
 
 // Triplet for sparse matrix construction
 using Triplet = Eigen::Triplet<Real>;

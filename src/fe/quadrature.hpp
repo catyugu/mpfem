@@ -26,8 +26,7 @@ public:
 
     /// Construct from separate arrays
     QuadratureRule(const std::vector<Real>& xi,
-                   const std::vector<Real>& weights,
-                   int dim = 1) {
+                   const std::vector<Real>& weights) {
         points_.reserve(xi.size());
         for (size_t i = 0; i < xi.size(); ++i) {
             points_.push_back(IntegrationPoint(xi[i], 0.0, 0.0, weights[i]));

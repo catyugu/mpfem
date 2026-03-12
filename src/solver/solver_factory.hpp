@@ -44,12 +44,6 @@ public:
             case SolverType::BiCGSTABWithILUT:
                 return std::make_unique<EigenBiCGSTABILUTSolver>();
                 
-            case SolverType::GMRES:
-                return std::make_unique<EigenGMRESSolver>();
-                
-            case SolverType::GMRESWithILUT:
-                return std::make_unique<EigenGMRESILUTSolver>();
-                
             case SolverType::Auto:
                 return createAuto();
                 
@@ -156,7 +150,6 @@ public:
             "sparse_lu", "sparse_qr",
             "cg", "cg_ic",
             "bicgstab", "bicgstab_ilut",
-            "gmres", "gmres_ilut",
             "auto"
         };
         

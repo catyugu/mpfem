@@ -91,8 +91,6 @@ enum class SolverType {
     CGWithIC,       ///< CG with Incomplete Cholesky preconditioner
     BiCGSTAB,       ///< BiCGSTAB (non-symmetric)
     BiCGSTABWithILUT, ///< BiCGSTAB with ILUT preconditioner
-    GMRES,          ///< GMRES (general)
-    GMRESWithILUT,  ///< GMRES with ILUT preconditioner
     
     // Auto selection
     Auto            ///< Let solver factory choose
@@ -110,8 +108,6 @@ inline std::string solverTypeToString(SolverType type) {
         case SolverType::CGWithIC:   return "cg_ic";
         case SolverType::BiCGSTAB:   return "bicgstab";
         case SolverType::BiCGSTABWithILUT: return "bicgstab_ilut";
-        case SolverType::GMRES:      return "gmres";
-        case SolverType::GMRESWithILUT: return "gmres_ilut";
         case SolverType::Auto:       return "auto";
         default: return "unknown";
     }
@@ -128,8 +124,6 @@ inline SolverType stringToSolverType(const std::string& str) {
     if (str == "cg_ic") return SolverType::CGWithIC;
     if (str == "bicgstab") return SolverType::BiCGSTAB;
     if (str == "bicgstab_ilut") return SolverType::BiCGSTABWithILUT;
-    if (str == "gmres") return SolverType::GMRES;
-    if (str == "gmres_ilut") return SolverType::GMRESWithILUT;
     return SolverType::Auto;
 }
 

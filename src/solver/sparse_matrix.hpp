@@ -5,202 +5,150 @@
 #include <Eigen/Sparse>
 #include <vector>
 #include <fstream>
+#include <iostream>
 
-namespace mpfem {
+namespace mpfem
+{
 
-/**
- * @brief Sparse matrix wrapper using Eigen::SparseMatrix.
- * 
- * This is a thin wrapper around Eigen's sparse matrix to provide
- * a consistent interface for the solver module. Uses column-major
- * storage for better compatibility with sparse solvers.
- */
-class SparseMatrix {
-public:
-    using Storage = Eigen::SparseMatrix<Real, Eigen::ColMajor, Index>;
-    using Triplet = Eigen::Triplet<Real, Index>;
+    /**
+     * @brief Sparse matrix wrapper using Eigen::SparseMatrix.
+     *
+     * This is a thin wrapper around Eigen's sparse matrix to provide
+     * a consistent interface for the solver module. Uses column-major
+     * storage for better compatibility with sparse solvers.
+     */
+    class SparseMatrix
+    {
+    public:
+        using Storage = Eigen::SparseMatrix<Real, Eigen::ColMajor, Index>;
+        using Triplet = Eigen::Triplet<Real, Index>;
 
-    SparseMatrix() = default;
-    
-    explicit SparseMatrix(Index rows, Index cols)
-        : mat_(rows, cols) {}
-    
-    /// Get number of rows
-    Index rows() const { return mat_.rows(); }
-    
-    /// Get number of columns
-    Index cols() const { return mat_.cols(); }
-    
-    /// Get number of non-zeros
-    Index nonZeros() const { return mat_.nonZeros(); }
-    
-    /// Resize matrix
-    void resize(Index rows, Index cols) {
-        mat_.resize(rows, cols);
-    }
-    
-    /// Reserve space for non-zeros
-    void reserve(Index nonZeros) {
-        mat_.reserve(nonZeros);
-    }
-    
-    /// Set from triplets (efficient batch insertion)
-    void setFromTriplets(const std::vector<Triplet>& triplets) {
-        mat_.setFromTriplets(triplets.begin(), triplets.end());
-    }
-    
-    /// Set from triplets (move version)
-    void setFromTriplets(std::vector<Triplet>&& triplets) {
-        mat_.setFromTriplets(triplets.begin(), triplets.end());
-    }
-    
-    /// Add a triplet for later assembly
-    void addTriplet(Index row, Index col, Real value) {
-        triplets_.emplace_back(row, col, value);
-    }
-    
-    /// Assemble from accumulated triplets
-    void assemble() {
-        mat_.setFromTriplets(triplets_.begin(), triplets_.end());
-        triplets_.clear();
-        triplets_.shrink_to_fit();
-    }
-    
-    /// Clear all data
-    void clear() {
-        mat_.setZero();
-        triplets_.clear();
-    }
-    
-    /// Set all entries to zero (keep structure)
-    void setZero() {
-        mat_.setZero();
-    }
-    
-    /// Coefficient access (slow, for debugging)
-    Real coeff(Index row, Index col) const {
-        return mat_.coeff(row, col);
-    }
-    
-    /// Mutable coefficient access (slow, creates entry if not exists)
-    Real& coeffRef(Index row, Index col) {
-        return mat_.coeffRef(row, col);
-    }
-    
-    /// Get underlying Eigen matrix (const)
-    const Storage& eigen() const { return mat_; }
-    
-    /// Get underlying Eigen matrix (mutable)
-    Storage& eigen() { return mat_; }
-    
-    /// Get triplets (for external assembly)
-    std::vector<Triplet>& triplets() { return triplets_; }
-    const std::vector<Triplet>& triplets() const { return triplets_; }
-    
-    /// Make compressed (required for some solvers)
-    void makeCompressed() {
-        mat_.makeCompressed();
-    }
-    
-    /// Check if compressed
-    bool isCompressed() const {
-        return mat_.isCompressed();
-    }
-    
-    /// Print matrix info
-    void printInfo() const {
-        std::cout << "SparseMatrix: " << rows() << " x " << cols() 
-                  << ", nnz = " << nonZeros() << std::endl;
-    }
-    
-    /// Write to Matrix Market format
-    void writeToMatrixMarket(const std::string& filename) const {
-        std::ofstream file(filename);
-        file << "%%MatrixMarket matrix coordinate real general\n";
-        file << rows() << " " << cols() << " " << nonZeros() << "\n";
-        for (int k = 0; k < mat_.outerSize(); ++k) {
-            for (Storage::InnerIterator it(mat_, k); it; ++it) {
-                file << it.row() + 1 << " " << it.col() + 1 << " " 
-                     << it.value() << "\n";
+        SparseMatrix() = default;
+
+        explicit SparseMatrix(Index rows, Index cols)
+            : mat_(rows, cols) {}
+
+        /// Get number of rows
+        Index rows() const { return mat_.rows(); }
+
+        /// Get number of columns
+        Index cols() const { return mat_.cols(); }
+
+        /// Get number of non-zeros
+        Index nonZeros() const { return mat_.nonZeros(); }
+
+        /// Resize matrix
+        void resize(Index rows, Index cols)
+        {
+            mat_.resize(rows, cols);
+        }
+
+        /// Reserve space for non-zeros
+        void reserve(Index nonZeros)
+        {
+            mat_.reserve(nonZeros);
+        }
+
+        /// Set from triplets (efficient batch insertion)
+        void setFromTriplets(const std::vector<Triplet> &triplets)
+        {
+            mat_.setFromTriplets(triplets.begin(), triplets.end());
+        }
+
+        /// Set from triplets (move version)
+        void setFromTriplets(std::vector<Triplet> &&triplets)
+        {
+            mat_.setFromTriplets(triplets.begin(), triplets.end());
+        }
+
+        /// Add a triplet for later assembly
+        void addTriplet(Index row, Index col, Real value)
+        {
+            triplets_.emplace_back(row, col, value);
+        }
+
+        /// Assemble from accumulated triplets
+        void assemble()
+        {
+            mat_.setFromTriplets(triplets_.begin(), triplets_.end());
+            triplets_.clear();
+            triplets_.shrink_to_fit();
+        }
+
+        /// Clear all data
+        void clear()
+        {
+            mat_.setZero();
+            triplets_.clear();
+        }
+
+        /// Set all entries to zero (keep structure)
+        void setZero()
+        {
+            mat_.setZero();
+        }
+
+        /// Coefficient access (slow, for debugging)
+        Real coeff(Index row, Index col) const
+        {
+            return mat_.coeff(row, col);
+        }
+
+        /// Mutable coefficient access (slow, creates entry if not exists)
+        Real &coeffRef(Index row, Index col)
+        {
+            return mat_.coeffRef(row, col);
+        }
+
+        /// Get underlying Eigen matrix (const)
+        const Storage &eigen() const { return mat_; }
+
+        /// Get underlying Eigen matrix (mutable)
+        Storage &eigen() { return mat_; }
+
+        /// Get triplets (for external assembly)
+        std::vector<Triplet> &triplets() { return triplets_; }
+        const std::vector<Triplet> &triplets() const { return triplets_; }
+
+        /// Make compressed (required for some solvers)
+        void makeCompressed()
+        {
+            mat_.makeCompressed();
+        }
+
+        /// Check if compressed
+        bool isCompressed() const
+        {
+            return mat_.isCompressed();
+        }
+
+        /// Print matrix info
+        void printInfo() const
+        {
+            std::cout << "SparseMatrix: " << rows() << " x " << cols()
+                      << ", nnz = " << nonZeros() << std::endl;
+        }
+
+        /// Write to Matrix Market format
+        void writeToMatrixMarket(const std::string &filename) const
+        {
+            std::ofstream file(filename);
+            file << "%%MatrixMarket matrix coordinate real general\n";
+            file << rows() << " " << cols() << " " << nonZeros() << "\n";
+            for (int k = 0; k < mat_.outerSize(); ++k)
+            {
+                for (Storage::InnerIterator it(mat_, k); it; ++it)
+                {
+                    file << it.row() + 1 << " " << it.col() + 1 << " "
+                         << it.value() << "\n";
+                }
             }
         }
-    }
-    
-private:
-    Storage mat_;
-    std::vector<Triplet> triplets_;
-};
 
-/**
- * @brief Vector wrapper using Eigen::Vector.
- */
-class Vector {
-public:
-    using Storage = Eigen::Vector<Real, Eigen::Dynamic>;
-    
-    Vector() = default;
-    
-    explicit Vector(Index size) : vec_(size) {}
-    
-    Vector(Index size, Real value) : vec_(size, value) {}
-    
-    /// Get size
-    Index size() const { return vec_.size(); }
-    
-    /// Resize
-    void resize(Index size) { vec_.resize(size); }
-    
-    /// Resize and set value
-    void resize(Index size, Real value) {
-        vec_.resize(size);
-        vec_.setConstant(value);
-    }
-    
-    /// Set all entries to zero
-    void setZero() { vec_.setZero(); }
-    
-    /// Set all entries to constant
-    void setConstant(Real value) { vec_.setConstant(value); }
-    
-    /// Element access
-    Real& operator()(Index i) { return vec_(i); }
-    Real operator()(Index i) const { return vec_(i); }
-    
-    /// Element access with []
-    Real& operator[](Index i) { return vec_(i); }
-    Real operator[](Index i) const { return vec_(i); }
-    
-    /// Get underlying Eigen vector
-    const Storage& eigen() const { return vec_; }
-    Storage& eigen() { return vec_; }
-    
-    /// Raw data access
-    Real* data() { return vec_.data(); }
-    const Real* data() const { return vec_.data(); }
-    
-    /// L2 norm
-    Real norm() const { return vec_.norm(); }
-    
-    /// L-inf norm
-    Real lpNorm() const { 
-        return vec_.template lpNorm<Eigen::Infinity>(); 
-    }
-    
-    /// Dot product
-    Real dot(const Vector& other) const {
-        return vec_.dot(other.vec_);
-    }
-    
-    /// Assignment from Eigen vector
-    Vector& operator=(const Storage& other) {
-        vec_ = other;
-        return *this;
-    }
-    
-private:
-    Storage vec_;
-};
+    private:
+        Storage mat_;
+        std::vector<Triplet> triplets_;
+    };
+} // namespace mpfem
 
-}  // namespace mpfem
-
-#endif  // MPFEM_SPARSE_MATRIX_HPP
+#endif // MPFEM_SPARSE_MATRIX_HPP

@@ -26,27 +26,28 @@ public:
     }
     
     bool solve(const SparseMatrix& A, Vector& x, const Vector& b) override {
+
         // Analyze + factorize + solve in one call if not already done
         solver_.compute(A.eigen());
         
         if (solver_.info() != Eigen::Success) {
-            if (printLevel_ > 0) {
-                std::cerr << "[EigenSparseLU] Factorization failed" << std::endl;
-            }
+            std::cerr << "[EigenSparseLU] Factorization failed" << std::endl;
+            x.setZero(b.size());
             return false;
         }
         
-        x.eigen() = solver_.solve(b.eigen());
+        x = solver_.solve(b);
         
         if (solver_.info() != Eigen::Success) {
-            if (printLevel_ > 0) {
-                std::cerr << "[EigenSparseLU] Solve failed" << std::endl;
-            }
+            std::cerr << "[EigenSparseLU] Solve failed" << std::endl;
+            x.setZero(b.size());
             return false;
         }
         
+        std::cout << "[EigenSparseLU] Solve successful, solution norm: " << x.norm() << std::endl;
+        
         iterations_ = 1;
-        residual_ = (A.eigen() * x.eigen() - b.eigen()).norm() / b.eigen().norm();
+        residual_ = (A.eigen() * x - b).norm() / b.norm();
         
         if (printLevel_ > 0) {
             std::cout << "[EigenSparseLU] Solved, residual = " << residual_ << std::endl;
@@ -56,7 +57,7 @@ public:
     }
     
 private:
-    Eigen::SparseLU<SparseMatrix::Storage> solver_;
+    Eigen::SparseLU<Eigen::SparseMatrix<Real>> solver_;
 };
 
 /**
@@ -79,7 +80,7 @@ public:
             return false;
         }
         
-        x.eigen() = solver_.solve(b.eigen());
+        x = solver_.solve(b);
         
         if (solver_.info() != Eigen::Success) {
             if (printLevel_ > 0) {
@@ -89,13 +90,13 @@ public:
         }
         
         iterations_ = 1;
-        residual_ = (A.eigen() * x.eigen() - b.eigen()).norm() / b.eigen().norm();
+        residual_ = (A.eigen() * x - b).norm() / b.norm();
         
         return true;
     }
     
 private:
-    Eigen::SparseQR<SparseMatrix::Storage, Eigen::COLAMDOrdering<int>> solver_;
+    Eigen::SparseQR<Eigen::SparseMatrix<Real>, Eigen::COLAMDOrdering<int>> solver_;
 };
 
 /**
@@ -111,7 +112,7 @@ public:
         solver_.setMaxIterations(maxIterations_);
         solver_.setTolerance(tolerance_);
         
-        x.eigen() = solver_.solveWithGuess(b.eigen(), x.eigen());
+        x = solver_.solveWithGuess(b, x);
         
         iterations_ = solver_.iterations();
         residual_ = solver_.error();
@@ -125,7 +126,7 @@ public:
     }
     
 private:
-    Eigen::ConjugateGradient<SparseMatrix::Storage> solver_;
+    Eigen::ConjugateGradient<Eigen::SparseMatrix<Real>> solver_;
 };
 
 /**
@@ -136,15 +137,11 @@ public:
     std::string name() const override { return "Eigen::CG+IC"; }
     
     bool solve(const SparseMatrix& A, Vector& x, const Vector& b) override {
-        // Create preconditioner
-        precond_.compute(A.eigen());
-        
-        solver_.setPreconditioner(precond_);
         solver_.setMaxIterations(maxIterations_);
         solver_.setTolerance(tolerance_);
         solver_.compute(A.eigen());
         
-        x.eigen() = solver_.solveWithGuess(b.eigen(), x.eigen());
+        x = solver_.solveWithGuess(b, x);
         
         iterations_ = solver_.iterations();
         residual_ = solver_.error();
@@ -158,9 +155,8 @@ public:
     }
     
 private:
-    Eigen::ConjugateGradient<SparseMatrix::Storage, Eigen::Lower, 
+    Eigen::ConjugateGradient<Eigen::SparseMatrix<Real>, Eigen::Lower, 
                              Eigen::IncompleteCholesky<Real>> solver_;
-    Eigen::IncompleteCholesky<Real> precond_;
 };
 
 /**
@@ -177,7 +173,7 @@ public:
         solver_.setTolerance(tolerance_);
         solver_.compute(A.eigen());
         
-        x.eigen() = solver_.solveWithGuess(b.eigen(), x.eigen());
+        x = solver_.solveWithGuess(b, x);
         
         iterations_ = solver_.iterations();
         residual_ = solver_.error();
@@ -191,7 +187,7 @@ public:
     }
     
 private:
-    Eigen::BiCGSTAB<SparseMatrix::Storage> solver_;
+    Eigen::BiCGSTAB<Eigen::SparseMatrix<Real>> solver_;
 };
 
 /**
@@ -206,7 +202,7 @@ public:
         solver_.setTolerance(tolerance_);
         solver_.compute(A.eigen());
         
-        x.eigen() = solver_.solveWithGuess(b.eigen(), x.eigen());
+        x = solver_.solveWithGuess(b, x);
         
         iterations_ = solver_.iterations();
         residual_ = solver_.error();
@@ -220,68 +216,11 @@ public:
     }
     
 private:
-    Eigen::BiCGSTAB<SparseMatrix::Storage, Eigen::IncompleteLUT<Real>> solver_;
+    Eigen::BiCGSTAB<Eigen::SparseMatrix<Real>, Eigen::IncompleteLUT<Real>> solver_;
 };
 
-/**
- * @brief Eigen GMRES iterative solver.
- */
-class EigenGMRESSolver : public LinearSolver {
-public:
-    std::string name() const override { return "Eigen::GMRES"; }
-    
-    bool solve(const SparseMatrix& A, Vector& x, const Vector& b) override {
-        solver_.setMaxIterations(maxIterations_);
-        solver_.setTolerance(tolerance_);
-        solver_.set_restart(30);  // Restart parameter
-        solver_.compute(A.eigen());
-        
-        x.eigen() = solver_.solveWithGuess(b.eigen(), x.eigen());
-        
-        iterations_ = solver_.iterations();
-        residual_ = solver_.error();
-        
-        if (printLevel_ > 0) {
-            std::cout << "[EigenGMRES] Iterations: " << iterations_ 
-                      << ", Error: " << residual_ << std::endl;
-        }
-        
-        return solver_.info() == Eigen::Success;
-    }
-    
-private:
-    Eigen::GMRES<SparseMatrix::Storage> solver_;
-};
-
-/**
- * @brief Eigen GMRES with ILUT preconditioner.
- */
-class EigenGMRESILUTSolver : public LinearSolver {
-public:
-    std::string name() const override { return "Eigen::GMRES+ILUT"; }
-    
-    bool solve(const SparseMatrix& A, Vector& x, const Vector& b) override {
-        solver_.setMaxIterations(maxIterations_);
-        solver_.setTolerance(tolerance_);
-        solver_.set_restart(30);
-        solver_.compute(A.eigen());
-        
-        x.eigen() = solver_.solveWithGuess(b.eigen(), x.eigen());
-        
-        iterations_ = solver_.iterations();
-        residual_ = solver_.error();
-        
-        if (printLevel_ > 0) {
-            std::cout << "[EigenGMRES-ILUT] Iterations: " << iterations_ 
-                      << ", Error: " << residual_ << std::endl;
-        }
-        
-        return solver_.info() == Eigen::Success;
-    }
-    
-private:
-    Eigen::GMRES<SparseMatrix::Storage, Eigen::IncompleteLUT<Real>> solver_;
-};
+// Note: GMRES is not available in standard Eigen, use BiCGSTAB or DGMRES from unsupported module
+// If you need GMRES, consider using Eigen's unsupported GMRES or an external solver
 
 }  // namespace mpfem
 

@@ -93,6 +93,13 @@ private:
         
         for (const auto& block : data.blocks) {
             Geometry geom = getGeometryType(block.typeName, block.numVertsPerElem, data.sdim);
+            
+            // Skip vertex and edge elements - they are not volume or boundary elements
+            if (geom == Geometry::Point || geom == Geometry::Segment) {
+                LOG_DEBUG("Skipping " << block.elements.size() << " " << block.typeName << " elements");
+                continue;
+            }
+            
             bool isBoundary = isBoundaryElement(geom, data.sdim);
             int order = block.order;
             
@@ -302,27 +309,21 @@ private:
                     Index numIndices = 0;
                     std::istringstream tiss(trimmed);
                     tiss >> numIndices;
+                    LOG_DEBUG("Found " << numIndices << " geometric entity indices");
                     
-                    // Skip empty lines and comments
-                    while (std::getline(file, line)) {
-                        std::string t = trim(line);
-                        if (!t.empty() && t[0] != '#') {
-                            // This line has data, parse it
-                            break;
-                        }
-                    }
+                    // Skip the comment line "# Geometric entity indices"
+                    std::getline(file, line);
                     
-                    // Read indices (continuing from the line we just read)
+                    // Read indices - one per line
                     block.geomIndices.reserve(numIndices);
-                    Index idxCount = 0;
-                    do {
+                    for (Index i = 0; i < numIndices && std::getline(file, line); ++i) {
                         std::istringstream iiss(trim(line));
                         Index idx;
-                        while (iiss >> idx && idxCount < numIndices) {
+                        if (iiss >> idx) {
                             block.geomIndices.push_back(idx);
-                            idxCount++;
                         }
-                    } while (idxCount < numIndices && std::getline(file, line));
+                    }
+                    LOG_DEBUG("Read " << block.geomIndices.size() << " indices");
                     
                     break;
                 } else if (trimmed.find("# Type #") != std::string::npos) {
