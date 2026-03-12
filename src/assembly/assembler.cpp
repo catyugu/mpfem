@@ -1,5 +1,11 @@
 #include "assembly/assembler.hpp"
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
+#include <unordered_set>
+
 namespace mpfem {
 
 // =============================================================================
@@ -29,13 +35,93 @@ void BilinearFormAssembler::assembleDomain() {
     
     const Index numElements = mesh->numElements();
     
-    // Pre-collect all triplets (element-level parallelization is sufficient)
-    // Each element produces a small dense matrix, which is much smaller than
-    // the global matrix, so we don't need thread-local storage per element
+    // Pre-allocate element matrix and DOF vector outside loop (reused)
+    // Get max DOFs per element for pre-allocation
+    int maxDofs = 0;
+    for (Index e = 0; e < numElements; ++e) {
+        const ReferenceElement* refElem = fes_->elementRefElement(e);
+        if (refElem && refElem->numDofs() > maxDofs) {
+            maxDofs = refElem->numDofs();
+        }
+    }
     
     std::vector<SparseMatrix::Triplet> allTriplets;
-    allTriplets.reserve(numElements * 64);  // Rough estimate
+    allTriplets.reserve(static_cast<size_t>(numElements) * maxDofs * maxDofs);
     
+#ifdef _OPENMP
+    // Parallel assembly with thread-local storage
+    const int numThreads = omp_get_max_threads();
+    std::vector<std::vector<SparseMatrix::Triplet>> threadTriplets(numThreads);
+    for (auto& tt : threadTriplets) {
+        tt.reserve(static_cast<size_t>(numElements) * maxDofs * maxDofs / numThreads);
+    }
+    
+    #pragma omp parallel
+    {
+        const int tid = omp_get_thread_num();
+        auto& localTriplets = threadTriplets[tid];
+        
+        // Thread-local buffers
+        Matrix elmat(maxDofs, maxDofs);
+        std::vector<Index> dofs(maxDofs);
+        ElementTransform trans;
+        trans.setMesh(mesh);
+        
+        #pragma omp for schedule(dynamic, 1024)
+        for (Index e = 0; e < numElements; ++e) {
+            const ReferenceElement* refElem = fes_->elementRefElement(e);
+            if (!refElem) continue;
+            
+            const int nd = refElem->numDofs();
+            
+            // Setup element transform
+            trans.setElement(e);
+            
+            // Initialize element matrix
+            elmat.setZero(nd, nd);
+            
+            // Apply all domain integrators
+            for (const auto& integ : domainIntegs_) {
+                Matrix temp(nd, nd);
+                temp.setZero();
+                integ->assembleElementMatrix(*refElem, trans, temp);
+                elmat.block(0, 0, nd, nd) += temp;
+            }
+            for (const auto& integ : domainIntegRefs_) {
+                Matrix temp(nd, nd);
+                temp.setZero();
+                integ->assembleElementMatrix(*refElem, trans, temp);
+                elmat.block(0, 0, nd, nd) += temp;
+            }
+            
+            // Get global DOF indices
+            dofs.resize(nd);
+            fes_->getElementDofs(e, dofs);
+            
+            // Collect triplets
+            for (int i = 0; i < nd; ++i) {
+                if (dofs[i] == InvalidIndex) continue;
+                for (int j = 0; j < nd; ++j) {
+                    if (dofs[j] == InvalidIndex) continue;
+                    localTriplets.emplace_back(dofs[i], dofs[j], elmat(i, j));
+                }
+            }
+        }
+    }
+    
+    // Merge thread-local triplets
+    size_t totalCount = 0;
+    for (const auto& tt : threadTriplets) {
+        totalCount += tt.size();
+    }
+    allTriplets.reserve(totalCount);
+    for (auto& tt : threadTriplets) {
+        allTriplets.insert(allTriplets.end(), 
+                          std::make_move_iterator(tt.begin()),
+                          std::make_move_iterator(tt.end()));
+    }
+#else
+    // Serial version with optimized memory usage
     Matrix elmat;
     std::vector<Index> dofs;
     ElementTransform trans;
@@ -45,11 +131,13 @@ void BilinearFormAssembler::assembleDomain() {
         const ReferenceElement* refElem = fes_->elementRefElement(e);
         if (!refElem) continue;
         
+        const int nd = refElem->numDofs();
+        
         // Setup element transform
         trans.setElement(e);
         
         // Initialize element matrix
-        elmat.setZero(refElem->numDofs(), refElem->numDofs());
+        elmat.setZero(nd, nd);
         
         // Apply all domain integrators
         for (const auto& integ : domainIntegs_) {
@@ -75,6 +163,7 @@ void BilinearFormAssembler::assembleDomain() {
             }
         }
     }
+#endif
     
     // Finalize assembly
     mat_.setFromTriplets(std::move(allTriplets));
@@ -185,6 +274,64 @@ void BilinearFormAssembler::assembleBoundaryMatrix(Index bdrIdx, Matrix& elmat) 
     }
 }
 
+void BilinearFormAssembler::computeSparsityPattern() {
+    if (!fes_) return;
+    
+    const Mesh* mesh = fes_->mesh();
+    if (!mesh) return;
+    
+    const Index numElements = mesh->numElements();
+    const Index ndofs = fes_->numDofs();
+    
+    // Use vector of sets for efficient duplicate elimination
+    std::vector<std::unordered_set<Index>> rowCols(ndofs);
+    
+    std::vector<Index> dofs;
+    
+    // Process all elements to find non-zero patterns
+    for (Index e = 0; e < numElements; ++e) {
+        fes_->getElementDofs(e, dofs);
+        
+        for (size_t i = 0; i < dofs.size(); ++i) {
+            if (dofs[i] == InvalidIndex) continue;
+            for (size_t j = 0; j < dofs.size(); ++j) {
+                if (dofs[j] == InvalidIndex) continue;
+                rowCols[dofs[i]].insert(dofs[j]);
+            }
+        }
+    }
+    
+    // Also process boundary elements
+    for (Index b = 0; b < mesh->numBdrElements(); ++b) {
+        fes_->getBdrElementDofs(b, dofs);
+        
+        for (size_t i = 0; i < dofs.size(); ++i) {
+            if (dofs[i] == InvalidIndex) continue;
+            for (size_t j = 0; j < dofs.size(); ++j) {
+                if (dofs[j] == InvalidIndex) continue;
+                rowCols[dofs[i]].insert(dofs[j]);
+            }
+        }
+    }
+    
+    // Convert to vector format
+    sparsityPattern_.resize(ndofs);
+    for (Index i = 0; i < ndofs; ++i) {
+        sparsityPattern_[i].assign(rowCols[i].begin(), rowCols[i].end());
+        std::sort(sparsityPattern_[i].begin(), sparsityPattern_[i].end());
+    }
+    
+    sparsityComputed_ = true;
+    
+    // Pre-allocate matrix using the pattern
+    Index nnz = 0;
+    for (const auto& cols : sparsityPattern_) {
+        nnz += static_cast<Index>(cols.size());
+    }
+    mat_.resize(ndofs, ndofs);
+    mat_.reserve(nnz);
+}
+
 // =============================================================================
 // LinearFormAssembler Implementation
 // =============================================================================
@@ -208,7 +355,70 @@ void LinearFormAssembler::assembleDomain() {
     if (!mesh) return;
     
     const Index numElements = mesh->numElements();
+    const Index ndofs = fes_->numDofs();
     
+#ifdef _OPENMP
+    // Parallel assembly with thread-local vectors
+    const int numThreads = omp_get_max_threads();
+    std::vector<Vector> threadVectors(numThreads);
+    for (auto& v : threadVectors) {
+        v.setZero(ndofs);
+    }
+    
+    #pragma omp parallel
+    {
+        const int tid = omp_get_thread_num();
+        Vector& localVec = threadVectors[tid];
+        
+        Vector elvec;
+        std::vector<Index> dofs;
+        ElementTransform trans;
+        trans.setMesh(mesh);
+        
+        #pragma omp for schedule(dynamic)
+        for (Index e = 0; e < numElements; ++e) {
+            const ReferenceElement* refElem = fes_->elementRefElement(e);
+            if (!refElem) continue;
+            
+            const int nd = refElem->numDofs();
+            
+            trans.setElement(e);
+            
+            elvec.setZero(nd);
+            
+            for (const auto& integ : domainIntegs_) {
+                Vector temp(nd);
+                temp.setZero();
+                integ->assembleElementVector(*refElem, trans, temp);
+                elvec += temp;
+            }
+            for (const auto& integ : domainIntegRefs_) {
+                Vector temp(nd);
+                temp.setZero();
+                integ->assembleElementVector(*refElem, trans, temp);
+                elvec += temp;
+            }
+            
+            // Get global DOF indices
+            dofs.resize(nd);
+            fes_->getElementDofs(e, dofs);
+            
+            // Assemble into thread-local vector
+            for (int i = 0; i < nd; ++i) {
+                if (dofs[i] != InvalidIndex) {
+                    localVec(dofs[i]) += elvec(i);
+                }
+            }
+        }
+    }
+    
+    // Merge thread-local vectors
+    vec_.setZero(ndofs);
+    for (const auto& lv : threadVectors) {
+        vec_ += lv;
+    }
+#else
+    // Serial version
     Vector elvec;
     std::vector<Index> dofs;
     ElementTransform trans;
@@ -243,6 +453,7 @@ void LinearFormAssembler::assembleDomain() {
             }
         }
     }
+#endif
 }
 
 void LinearFormAssembler::assembleBoundary() {

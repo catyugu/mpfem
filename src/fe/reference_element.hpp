@@ -15,6 +15,9 @@ namespace mpfem {
  * 
  * A ReferenceElement provides all the information needed for finite element
  * calculations on the reference (canonical) element.
+ * 
+ * Precomputes shape function values and gradients at all quadrature points
+ * to avoid runtime memory allocation during assembly.
  */
 class ReferenceElement {
 public:
@@ -60,6 +63,30 @@ public:
     /// Get dof coordinates in reference element
     std::vector<std::vector<Real>> dofCoords() const {
         return shapeFunc_->dofCoords();
+    }
+    
+    // -------------------------------------------------------------------------
+    // Precomputed shape function values at quadrature points (ZERO ALLOCATION)
+    // -------------------------------------------------------------------------
+    
+    /// Get shape function value at quadrature point q, dof i
+    Real shapeValue(int q, int i) const {
+        return shapeValues_[q * numDofs_ + i];
+    }
+    
+    /// Get shape function gradient at quadrature point q, dof i (reference coords)
+    const Vector3& shapeGradient(int q, int i) const {
+        return shapeGradients_[q * numDofs_ + i];
+    }
+    
+    /// Get pointer to all shape values at quadrature point q (for vectorized access)
+    const Real* shapeValuesAtQuad(int q) const {
+        return &shapeValues_[q * numDofs_];
+    }
+    
+    /// Get pointer to all shape gradients at quadrature point q
+    const Vector3* shapeGradientsAtQuad(int q) const {
+        return &shapeGradients_[q * numDofs_];
     }
     
     // -------------------------------------------------------------------------
@@ -118,12 +145,22 @@ public:
     
 private:
     void initialize();
+    void precomputeShapeValues();
     
     Geometry geometry_ = Geometry::Invalid;
     int order_ = 1;
+    int numDofs_ = 0;  // Cached number of DOFs
     std::unique_ptr<ShapeFunction> shapeFunc_;
     QuadratureRule quadrature_;
     std::vector<std::unique_ptr<ReferenceElement>> faceElements_;
+    
+    // Precomputed shape function values at all quadrature points
+    // Layout: [numQuadPoints * numDofs] - shapeValues_[q * numDofs + i]
+    std::vector<Real> shapeValues_;
+    
+    // Precomputed shape function gradients (in reference coordinates) at all quadrature points
+    // Layout: [numQuadPoints * numDofs] - shapeGradients_[q * numDofs + i]
+    std::vector<Vector3> shapeGradients_;
 };
 
 // =============================================================================
@@ -136,7 +173,7 @@ inline ReferenceElement::ReferenceElement(Geometry geom, int order)
 }
 
 inline int ReferenceElement::numDofs() const {
-    return shapeFunc_ ? shapeFunc_->numDofs() : 0;
+    return numDofs_;
 }
 
 inline void ReferenceElement::initialize() {
@@ -161,8 +198,14 @@ inline void ReferenceElement::initialize() {
             return;
     }
     
+    // Cache numDofs
+    numDofs_ = shapeFunc_->numDofs();
+    
     // Create quadrature rule with order 2*order for exact integration
     quadrature_ = quadrature::get(geometry_, std::max(1, 2 * order_));
+    
+    // Precompute shape function values at all quadrature points
+    precomputeShapeValues();
     
     // Create face elements for volume elements
     if (dim() == 3) {
@@ -170,6 +213,32 @@ inline void ReferenceElement::initialize() {
         for (int f = 0; f < numFaces(); ++f) {
             faceElements_.push_back(
                 std::make_unique<ReferenceElement>(faceGeometry(f), order_));
+        }
+    }
+}
+
+inline void ReferenceElement::precomputeShapeValues() {
+    if (!shapeFunc_ || numDofs_ == 0) return;
+    
+    const int nq = quadrature_.size();
+    if (nq == 0) return;
+    
+    // Allocate storage (single allocation for all quadrature points)
+    shapeValues_.resize(static_cast<size_t>(nq) * numDofs_);
+    shapeGradients_.resize(static_cast<size_t>(nq) * numDofs_);
+    
+    // Precompute values at each quadrature point
+    for (int q = 0; q < nq; ++q) {
+        const IntegrationPoint& ip = quadrature_[q];
+        ShapeValues sv = shapeFunc_->eval(ip);
+        
+        // Copy to contiguous storage
+        Real* vals = &shapeValues_[static_cast<size_t>(q) * numDofs_];
+        Vector3* grads = &shapeGradients_[static_cast<size_t>(q) * numDofs_];
+        
+        for (int i = 0; i < numDofs_; ++i) {
+            vals[i] = sv.values[i];
+            grads[i] = sv.gradients[i];
         }
     }
 }

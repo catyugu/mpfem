@@ -210,7 +210,9 @@ inline ElementTransform::ElementTransform(const Mesh* mesh, Index elemIdx, Eleme
 inline void ElementTransform::setIntegrationPoint(const IntegrationPoint& ip) {
     ip_ = ip;
     evalState_ = 0;
-    shapeValues_ = shapeFunc_ ? shapeFunc_->eval(ip_) : ShapeValues();
+    // Don't compute shape values here - delay until needed in evalJacobian()
+    // This avoids memory allocation when setting integration points
+    shapeValues_ = ShapeValues();  // Clear cached values
 }
 
 inline void ElementTransform::setIntegrationPoint(const Real* xi) {
@@ -218,7 +220,8 @@ inline void ElementTransform::setIntegrationPoint(const Real* xi) {
     if (dim_ > 1) ip_.eta = xi[1];
     if (dim_ > 2) ip_.zeta = xi[2];
     evalState_ = 0;
-    shapeValues_ = shapeFunc_ ? shapeFunc_->eval(ip_) : ShapeValues();
+    // Don't compute shape values here - delay until needed in evalJacobian()
+    shapeValues_ = ShapeValues();  // Clear cached values
 }
 
 inline void ElementTransform::transform(const Real* xi, Vector3& x) const {

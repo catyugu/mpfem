@@ -4,7 +4,7 @@
 namespace mpfem {
 
 // =============================================================================
-// DiffusionIntegrator - Vectorized Implementation
+// DiffusionIntegrator - Optimized with Precomputed Shape Values
 // =============================================================================
 
 void DiffusionIntegrator::assembleElementMatrix(const ReferenceElement& refElem,
@@ -12,34 +12,36 @@ void DiffusionIntegrator::assembleElementMatrix(const ReferenceElement& refElem,
                                                  Matrix& elmat) const {
     const int nd = refElem.numDofs();
     const int dim = refElem.dim();
+    const int nq = refElem.numQuadraturePoints();
     
+    // Use passed-in elmat directly (no allocation here)
     elmat.setZero(nd, nd);
     
-    const QuadratureRule& rule = refElem.quadrature();
-    
-    // Pre-allocate gradient matrix for vectorized computation
+    // Temporary gradient matrix - stack allocated for small sizes
+    // Use Eigen's fixed-size matrices for better performance
     Eigen::MatrixXd gradMat(nd, dim);
-    Eigen::VectorXd phi(nd);
     
-    for (const auto& ip : rule) {
+    for (int q = 0; q < nq; ++q) {
+        const IntegrationPoint& ip = refElem.integrationPoint(q);
         trans.setIntegrationPoint(ip);
         
-        Real w = ip.weight * trans.weight();
+        const Real w = ip.weight * trans.weight();
         
-        ShapeValues sv = refElem.evalShape(ip);
+        // Use precomputed shape values - NO ALLOCATION
+        const Real* phi_vals = refElem.shapeValuesAtQuad(q);
+        const Vector3* refGrads = refElem.shapeGradientsAtQuad(q);
         
         // Build gradient matrix (nd x dim)
         // physGrad[i] = J^{-T} * refGrad[i]
         for (int i = 0; i < nd; ++i) {
             Vector3 physGrad;
-            trans.transformGradient(sv.gradients[i], physGrad);
+            trans.transformGradient(refGrads[i].data(), physGrad.data());
             for (int d = 0; d < dim; ++d) {
                 gradMat(i, d) = physGrad[d];
             }
-            phi(i) = sv.values[i];
         }
         
-        Real coeff = evalCoefficient(trans);
+        const Real coeff = evalCoefficient(trans);
         
         // Vectorized: elmat += w * coeff * (gradMat * gradMat^T)
         elmat.noalias() += w * coeff * (gradMat * gradMat.transpose());
@@ -47,142 +49,118 @@ void DiffusionIntegrator::assembleElementMatrix(const ReferenceElement& refElem,
 }
 
 // =============================================================================
-// MassIntegrator - Vectorized Implementation
+// MassIntegrator - Optimized with Precomputed Shape Values
 // =============================================================================
 
 void MassIntegrator::assembleElementMatrix(const ReferenceElement& refElem,
                                             ElementTransform& trans,
                                             Matrix& elmat) const {
     const int nd = refElem.numDofs();
+    const int nq = refElem.numQuadraturePoints();
     
     elmat.setZero(nd, nd);
     
-    const QuadratureRule& rule = refElem.quadrature();
-    
-    // Pre-allocate shape function vector
-    Eigen::VectorXd phi(nd);
-    
-    for (const auto& ip : rule) {
+    for (int q = 0; q < nq; ++q) {
+        const IntegrationPoint& ip = refElem.integrationPoint(q);
         trans.setIntegrationPoint(ip);
         
-        Real w = ip.weight * trans.weight();
+        const Real w = ip.weight * trans.weight();
         
-        ShapeValues sv = refElem.evalShape(ip);
+        // Use precomputed shape values - NO ALLOCATION
+        const Real* phi = refElem.shapeValuesAtQuad(q);
         
-        // Build shape function vector
-        for (int i = 0; i < nd; ++i) {
-            phi(i) = sv.values[i];
-        }
+        const Real coeff = evalCoefficient(trans);
         
-        Real coeff = evalCoefficient(trans);
-        
-        // Vectorized: elmat += w * coeff * (phi * phi^T)
-        elmat.noalias() += w * coeff * (phi * phi.transpose());
+        // Vectorized using Eigen::Map - phi is stored contiguously
+        Eigen::Map<const Eigen::VectorXd> phiMap(phi, nd);
+        elmat.noalias() += w * coeff * (phiMap * phiMap.transpose());
     }
 }
 
 // =============================================================================
-// DomainLFIntegrator - Vectorized Implementation
+// DomainLFIntegrator - Optimized with Precomputed Shape Values
 // =============================================================================
 
 void DomainLFIntegrator::assembleElementVector(const ReferenceElement& refElem,
                                                 ElementTransform& trans,
                                                 Vector& elvec) const {
     const int nd = refElem.numDofs();
+    const int nq = refElem.numQuadraturePoints();
     
     elvec.setZero(nd);
     
-    const QuadratureRule& rule = refElem.quadrature();
-    
-    // Pre-allocate shape function vector
-    Eigen::VectorXd phi(nd);
-    
-    for (const auto& ip : rule) {
+    for (int q = 0; q < nq; ++q) {
+        const IntegrationPoint& ip = refElem.integrationPoint(q);
         trans.setIntegrationPoint(ip);
         
-        Real w = ip.weight * trans.weight();
+        const Real w = ip.weight * trans.weight();
         
-        ShapeValues sv = refElem.evalShape(ip);
+        // Use precomputed shape values - NO ALLOCATION
+        const Real* phi = refElem.shapeValuesAtQuad(q);
         
-        // Build shape function vector
-        for (int i = 0; i < nd; ++i) {
-            phi(i) = sv.values[i];
-        }
+        const Real f = evalCoefficient(trans);
         
-        Real f = evalCoefficient(trans);
-        
-        // Vectorized: elvec += w * f * phi
-        elvec.noalias() += w * f * phi;
+        // Vectorized using Eigen::Map
+        Eigen::Map<const Eigen::VectorXd> phiMap(phi, nd);
+        elvec.noalias() += w * f * phiMap;
     }
 }
 
 // =============================================================================
-// BoundaryLFIntegrator - Vectorized Implementation
+// BoundaryLFIntegrator - Optimized with Precomputed Shape Values
 // =============================================================================
 
 void BoundaryLFIntegrator::assembleFaceVector(const ReferenceElement& refElem,
                                                FacetElementTransform& trans,
                                                Vector& elvec) const {
     const int nd = refElem.numDofs();
+    const int nq = refElem.numQuadraturePoints();
     
     elvec.setZero(nd);
     
-    const QuadratureRule& rule = refElem.quadrature();
-    
-    // Pre-allocate shape function vector
-    Eigen::VectorXd phi(nd);
-    
-    for (const auto& ip : rule) {
+    for (int q = 0; q < nq; ++q) {
+        const IntegrationPoint& ip = refElem.integrationPoint(q);
         trans.setIntegrationPoint(ip);
         
-        Real w = ip.weight * trans.weight();
+        const Real w = ip.weight * trans.weight();
         
-        ShapeValues sv = refElem.evalShape(ip);
+        // Use precomputed shape values - NO ALLOCATION
+        const Real* phi = refElem.shapeValuesAtQuad(q);
         
-        // Build shape function vector
-        for (int i = 0; i < nd; ++i) {
-            phi(i) = sv.values[i];
-        }
+        const Real g = evalCoefficient(trans);
         
-        Real g = evalCoefficient(trans);
-        
-        // Vectorized: elvec += w * g * phi
-        elvec.noalias() += w * g * phi;
+        // Vectorized using Eigen::Map
+        Eigen::Map<const Eigen::VectorXd> phiMap(phi, nd);
+        elvec.noalias() += w * g * phiMap;
     }
 }
 
 // =============================================================================
-// ConvectionBoundaryIntegrator - Vectorized Implementation
+// ConvectionBoundaryIntegrator - Optimized with Precomputed Shape Values
 // =============================================================================
 
 void ConvectionBoundaryIntegrator::assembleFaceMatrix(const ReferenceElement& refElem,
                                                        FacetElementTransform& trans,
                                                        Matrix& elmat) const {
     const int nd = refElem.numDofs();
+    const int nq = refElem.numQuadraturePoints();
     
     elmat.setZero(nd, nd);
     
-    const QuadratureRule& rule = refElem.quadrature();
-    
-    // Pre-allocate shape function vector
-    Eigen::VectorXd phi(nd);
-    
-    for (const auto& ip : rule) {
+    for (int q = 0; q < nq; ++q) {
+        const IntegrationPoint& ip = refElem.integrationPoint(q);
         trans.setIntegrationPoint(ip);
         
-        Real w = ip.weight * trans.weight();
+        const Real w = ip.weight * trans.weight();
         
-        ShapeValues sv = refElem.evalShape(ip);
+        // Use precomputed shape values - NO ALLOCATION
+        const Real* phi = refElem.shapeValuesAtQuad(q);
         
-        // Build shape function vector
-        for (int i = 0; i < nd; ++i) {
-            phi(i) = sv.values[i];
-        }
+        const Real h = evalCoefficient(trans);
         
-        Real h = evalCoefficient(trans);
-        
-        // Vectorized: elmat += w * h * (phi * phi^T)
-        elmat.noalias() += w * h * (phi * phi.transpose());
+        // Vectorized using Eigen::Map
+        Eigen::Map<const Eigen::VectorXd> phiMap(phi, nd);
+        elmat.noalias() += w * h * (phiMap * phiMap.transpose());
     }
 }
 
@@ -190,38 +168,32 @@ void ConvectionBoundaryIntegrator::assembleFaceVector(const ReferenceElement& re
                                                        FacetElementTransform& trans,
                                                        Vector& elvec) const {
     const int nd = refElem.numDofs();
+    const int nq = refElem.numQuadraturePoints();
     
     elvec.setZero(nd);
     
     if (!Tinf_) return;
     
-    const QuadratureRule& rule = refElem.quadrature();
-    
-    // Pre-allocate shape function vector
-    Eigen::VectorXd phi(nd);
-    
-    for (const auto& ip : rule) {
+    for (int q = 0; q < nq; ++q) {
+        const IntegrationPoint& ip = refElem.integrationPoint(q);
         trans.setIntegrationPoint(ip);
         
-        Real w = ip.weight * trans.weight();
+        const Real w = ip.weight * trans.weight();
         
-        ShapeValues sv = refElem.evalShape(ip);
+        // Use precomputed shape values - NO ALLOCATION
+        const Real* phi = refElem.shapeValuesAtQuad(q);
         
-        // Build shape function vector
-        for (int i = 0; i < nd; ++i) {
-            phi(i) = sv.values[i];
-        }
+        const Real h = evalCoefficient(trans);
+        const Real Tinf = Tinf_->eval(trans);
         
-        Real h = evalCoefficient(trans);
-        Real Tinf = Tinf_->eval(trans);
-        
-        // Vectorized: elvec += w * h * Tinf * phi
-        elvec.noalias() += w * h * Tinf * phi;
+        // Vectorized using Eigen::Map
+        Eigen::Map<const Eigen::VectorXd> phiMap(phi, nd);
+        elvec.noalias() += w * h * Tinf * phiMap;
     }
 }
 
 // =============================================================================
-// VectorMassIntegrator - Vectorized Implementation
+// VectorMassIntegrator - Optimized with Precomputed Shape Values
 // =============================================================================
 
 void VectorMassIntegrator::assembleElementMatrix(const ReferenceElement& refElem,
@@ -230,31 +202,26 @@ void VectorMassIntegrator::assembleElementMatrix(const ReferenceElement& refElem
                                                   Matrix& elmat) const {
     const int nd = refElem.numDofs();
     const int nvd = nd * vdim;
+    const int nq = refElem.numQuadraturePoints();
     
     elmat.setZero(nvd, nvd);
     
-    const QuadratureRule& rule = refElem.quadrature();
-    
-    // Pre-allocate shape function vector
-    Eigen::VectorXd phi(nd);
-    
-    for (const auto& ip : rule) {
+    for (int q = 0; q < nq; ++q) {
+        const IntegrationPoint& ip = refElem.integrationPoint(q);
         trans.setIntegrationPoint(ip);
         
-        Real w = ip.weight * trans.weight();
+        const Real w = ip.weight * trans.weight();
         
-        ShapeValues sv = refElem.evalShape(ip);
+        // Use precomputed shape values - NO ALLOCATION
+        const Real* phi = refElem.shapeValuesAtQuad(q);
         
-        // Build shape function vector
-        for (int i = 0; i < nd; ++i) {
-            phi(i) = sv.values[i];
-        }
+        const Real rho = evalCoefficient(trans);
         
-        Real rho = evalCoefficient(trans);
+        // Vectorized using Eigen::Map
+        Eigen::Map<const Eigen::VectorXd> phiMap(phi, nd);
         
         // Mass matrix for each component (block diagonal)
-        // Using block operations for vectorization
-        Eigen::MatrixXd massBlock = w * rho * (phi * phi.transpose());
+        const Eigen::MatrixXd massBlock = w * rho * (phiMap * phiMap.transpose());
         
         for (int c = 0; c < vdim; ++c) {
             elmat.block(c * nd, c * nd, nd, nd) += massBlock;

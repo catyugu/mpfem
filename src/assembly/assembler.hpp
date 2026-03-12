@@ -126,6 +126,22 @@ public:
     /// Set element transform (optional, for custom transform)
     void setElementTransform(ElementTransform* trans) { elemTrans_ = trans; }
     
+    // -------------------------------------------------------------------------
+    // Sparsity pattern
+    // -------------------------------------------------------------------------
+    
+    /// Compute and cache sparsity pattern
+    void computeSparsityPattern();
+    
+    /// Check if sparsity pattern is cached
+    bool hasSparsityPattern() const { return sparsityComputed_; }
+    
+    /// Clear sparsity pattern cache
+    void clearSparsityPattern() { 
+        sparsityComputed_ = false;
+        sparsityPattern_.clear();
+    }
+    
 private:
     void assembleElementMatrix(Index elemIdx, Matrix& elmat);
     void assembleBoundaryMatrix(Index bdrIdx, Matrix& elmat);
@@ -140,6 +156,10 @@ private:
     
     SparseMatrix mat_;
     ElementTransform defaultTrans_;
+    
+    // Sparsity pattern storage: pattern_[row] = set of column indices
+    std::vector<std::vector<Index>> sparsityPattern_;
+    bool sparsityComputed_ = false;
 };
 
 // =============================================================================
