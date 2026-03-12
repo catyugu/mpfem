@@ -177,7 +177,6 @@ target_include_directories(mpfem_mesh
 target_link_libraries(mpfem_mesh
     PUBLIC Eigen3::Eigen
     PUBLIC mpfem_core
-    PUBLIC mpfem_fe
 )
 mpfem_set_default_compiler_options(mpfem_mesh)
 

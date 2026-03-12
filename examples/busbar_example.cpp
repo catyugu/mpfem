@@ -52,7 +52,7 @@ int main(int argc, char* argv[]) {
                 s += std::to_string(d) + " ";
             }
             return s;
-        };
+        }();
         
         LOG_INFO << "Number of boundaries: " << boundaries.size();
         LOG_INFO << "Boundary IDs: " << [&](){
@@ -61,7 +61,7 @@ int main(int argc, char* argv[]) {
                 s += std::to_string(b) + " ";
             }
             return s;
-        };
+        }();
         
         // Build topology
         MeshTopology topology(&mesh);

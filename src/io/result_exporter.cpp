@@ -65,7 +65,7 @@ void ResultExporter::exportComsolText(const std::string& filename,
     }
 
     file.close();
-    LOG_INFO << "Exported results to " << filenameme;
+    LOG_INFO << "Exported results to " << filename;
 }
 
 void ResultExporter::exportVtu(const std::string& filename,
@@ -186,7 +186,7 @@ void ResultExporter::exportVtuWithVectors(const std::string& filename,
     file << "</VTKFile>\n";
 
     file.close();
-    LOG_INFO << "Exported VTU results to " << filenameme;
+    LOG_INFO << "Exported VTU results to " << filename;
 }
 
 }  // namespace mpfem
