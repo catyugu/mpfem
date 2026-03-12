@@ -136,18 +136,3 @@ target_link_libraries(mpfem_test_fe_values
 )
 
 add_test(NAME FEValues COMMAND mpfem_test_fe_values)
-
-# =============================================================================
-# Coefficient Tests
-# =============================================================================
-add_executable(mpfem_test_coefficient
-    test_coefficient.cpp
-)
-
-target_link_libraries(mpfem_test_coefficient
-    PRIVATE mpfem::coefficient
-    PRIVATE mpfem::mesh
-    PRIVATE GTest::gtest_main
-)
-
-add_test(NAME Coefficient COMMAND mpfem_test_coefficient)

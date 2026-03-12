@@ -98,10 +98,6 @@ add_library(mpfem_fe
     src/fe/fe_values.cpp
 )
 
-add_library(mpfem_coefficient
-    src/coefficient/material_coefficient.cpp
-)
-
 add_library(mpfem_mesh
     src/mesh/mesh.cpp
     src/mesh/mesh_topology.cpp
@@ -114,7 +110,6 @@ add_library(mpfem::model ALIAS mpfem_model)
 add_library(mpfem::io ALIAS mpfem_io)
 add_library(mpfem::fe ALIAS mpfem_fe)
 add_library(mpfem::mesh ALIAS mpfem_mesh)
-add_library(mpfem::coefficient ALIAS mpfem_coefficient)
 
 # =============================================================================
 # Target properties
@@ -173,20 +168,6 @@ target_link_libraries(mpfem_fe
 )
 mpfem_set_default_compiler_options(mpfem_fe)
 
-# mpfem_coefficient
-target_include_directories(mpfem_coefficient
-    PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
-        $<INSTALL_INTERFACE:include>
-)
-target_link_libraries(mpfem_coefficient
-    PUBLIC Eigen3::Eigen
-    PUBLIC mpfem_core
-    PUBLIC mpfem_fe
-    PUBLIC mpfem_model
-)
-mpfem_set_default_compiler_options(mpfem_coefficient)
-
 # mpfem_mesh
 target_include_directories(mpfem_mesh
     PUBLIC
@@ -232,7 +213,7 @@ endif()
 # =============================================================================
 include(GNUInstallDirs)
 
-install(TARGETS mpfem_core mpfem_model mpfem_io mpfem_fe mpfem_mesh mpfem_coefficient
+install(TARGETS mpfem_core mpfem_model mpfem_io mpfem_fe mpfem_mesh
     EXPORT mpfemTargets
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
