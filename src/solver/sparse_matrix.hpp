@@ -7,6 +7,7 @@
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <unordered_set>
 
 namespace mpfem
 {
@@ -124,70 +125,9 @@ namespace mpfem
         }
 
         /**
-         * @brief Eliminate a row: zero all entries and set diagonal to 1.
-         * 
-         * Also modifies the RHS vector to account for known values.
-         * This is the standard "static condensation" approach for Dirichlet BCs.
-         * 
-         * @param row Row index to eliminate.
-         * @param value Known value for this DOF.
-         * @param b RHS vector (modified to subtract eliminated column contributions).
-         */
-        void eliminateRow(Index row, Real value, Vector& b)
-        {
-            // Proper Dirichlet BC elimination:
-            // For row elimination, we need to:
-            // 1. For each column j != row in this row, zero the entry
-            // 2. For each row k != row with entry in column 'row', 
-            //    subtract A(k,row) * value from b(k) and zero the entry
-            // 3. Set A(row,row) = 1 and b(row) = value
-            
-            // Step 1 & 2: Process column 'row' using column iterator (efficient for sparse matrix)
-            // The column 'row' contains entries A(k,row) for various k
-            for (Storage::InnerIterator it(mat_, row); it; ++it) {
-                Index k = it.row();
-                if (k == row) continue;  // Skip diagonal
-                
-                Real a_ki = it.value();
-                // Subtract contribution from RHS
-                b(k) -= a_ki * value;
-                // Zero the column entry (this modifies the matrix)
-                it.valueRef() = 0.0;
-            }
-            
-            // Step 3: Zero row entries using row iterator (if row-major) or scan
-            // For column-major storage, we need to scan columns
-            for (Index col = 0; col < mat_.cols(); ++col) {
-                if (col == row) continue;
-                // Use coeffRef to access and modify (creates entry if needed, but typically exists)
-                mat_.coeffRef(row, col) = 0.0;
-            }
-            
-            // Set diagonal to 1 and RHS to value
-            mat_.coeffRef(row, row) = 1.0;
-            b(row) = value;
-        }
-
-        /**
-         * @brief Eliminate multiple rows for Dirichlet BCs.
-         * 
-         * @param rows Row indices to eliminate.
-         * @param values Corresponding known values.
-         * @param b RHS vector.
-         */
-        void eliminateRows(const std::vector<Index>& rows, const Vector& values, Vector& b)
-        {
-            std::map<Index, Real> dofValues;
-            for (size_t i = 0; i < rows.size(); ++i) {
-                dofValues[rows[i]] = values(i);
-            }
-            eliminateRows(dofValues, b);
-        }
-
-        /**
          * @brief Eliminate multiple rows for Dirichlet BCs (efficient version).
          * 
-         * Optimized batch elimination using a map for O(1) value lookup.
+         * Optimized batch elimination using sparse column iteration.
          * 
          * @param dofValues Map from DOF index to known value.
          * @param b RHS vector.
@@ -196,38 +136,43 @@ namespace mpfem
         {
             if (dofValues.empty()) return;
             
-            // Create a set of eliminated DOFs for fast lookup
-            std::vector<bool> isEliminated(mat_.rows(), false);
-            for (const auto& [row, val] : dofValues) {
-                isEliminated[row] = true;
+            const Index n = mat_.rows();
+            
+            // Build vectors for O(1) lookup
+            std::vector<bool> isEliminated(n, false);
+            std::vector<Real> eliminatedValues(n, 0.0);
+            for (const auto& [dof, val] : dofValues) {
+                isEliminated[dof] = true;
+                eliminatedValues[dof] = val;
             }
             
-            // Process all columns that have eliminated DOFs
-            // For each eliminated DOF, process its column (efficient using column iterator)
-            for (const auto& [row, val] : dofValues) {
-                for (Storage::InnerIterator it(mat_, row); it; ++it) {
-                    Index k = it.row();
-                    if (isEliminated[k]) continue;  // Skip if this DOF is also eliminated
+            // Process all columns
+            for (Index col = 0; col < mat_.outerSize(); ++col) {
+                // Iterate over all rows in this column
+                for (Storage::InnerIterator it(mat_, col); it; ++it) {
+                    Index row = it.row();
                     
-                    Real a_ki = it.value();
-                    // Subtract contribution from RHS
-                    b(k) -= a_ki * val;
-                    // Zero the column entry
-                    it.valueRef() = 0.0;
+                    if (isEliminated[col] && isEliminated[row]) {
+                        // Both eliminated: zero off-diagonal entries
+                        if (row != col) {
+                            it.valueRef() = 0.0;
+                        }
+                    } else if (isEliminated[col]) {
+                        // Column eliminated (but row not): subtract from RHS, zero entry
+                        b(row) -= it.value() * eliminatedValues[col];
+                        it.valueRef() = 0.0;
+                    } else if (isEliminated[row]) {
+                        // Row eliminated (but column not): just zero the entry
+                        it.valueRef() = 0.0;
+                    }
+                    // else: neither eliminated, keep the entry
                 }
             }
             
-            // Zero all row entries for eliminated DOFs and set diagonal
-            for (const auto& [row, val] : dofValues) {
-                // Zero row entries (except diagonal)
-                for (Index col = 0; col < mat_.cols(); ++col) {
-                    if (col != row) {
-                        mat_.coeffRef(row, col) = 0.0;
-                    }
-                }
-                // Set diagonal to 1 and RHS to value
-                mat_.coeffRef(row, row) = 1.0;
-                b(row) = val;
+            // Set diagonal to 1 and RHS to BC value for all eliminated DOFs
+            for (const auto& [dof, val] : dofValues) {
+                mat_.coeffRef(dof, dof) = 1.0;
+                b(dof) = val;
             }
         }
 

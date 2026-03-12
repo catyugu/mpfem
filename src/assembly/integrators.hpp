@@ -16,6 +16,11 @@ namespace mpfem {
 // Diffusion Integrator
 // =============================================================================
 
+/**
+ * @brief Integrator for diffusion term: ∫ σ ∇φᵢ · ∇φⱼ dΩ
+ * 
+ * Vectorized implementation using Eigen matrix operations.
+ */
 class DiffusionIntegrator : public BilinearFormIntegrator {
 public:
     DiffusionIntegrator() = default;
@@ -33,6 +38,11 @@ public:
 // Mass Integrator
 // =============================================================================
 
+/**
+ * @brief Integrator for mass term: ∫ ρ φᵢ φⱼ dΩ
+ * 
+ * Vectorized implementation using outer product.
+ */
 class MassIntegrator : public BilinearFormIntegrator {
 public:
     MassIntegrator() = default;
@@ -50,6 +60,11 @@ public:
 // Domain Load Integrator
 // =============================================================================
 
+/**
+ * @brief Integrator for domain load: ∫ f φᵢ dΩ
+ * 
+ * Vectorized implementation.
+ */
 class DomainLFIntegrator : public LinearFormIntegrator {
 public:
     DomainLFIntegrator() = default;
@@ -67,6 +82,11 @@ public:
 // Boundary Load Integrator
 // =============================================================================
 
+/**
+ * @brief Integrator for boundary load (Neumann BC): ∫ g φᵢ dΓ
+ * 
+ * Vectorized implementation.
+ */
 class BoundaryLFIntegrator : public LinearFormIntegrator {
 public:
     BoundaryLFIntegrator() = default;
@@ -84,6 +104,14 @@ public:
 // Convection Boundary Integrator (Robin BC)
 // =============================================================================
 
+/**
+ * @brief Integrator for convection boundary condition (Robin BC).
+ * 
+ * Bilinear term: ∫ h φᵢ φⱼ dΓ
+ * Linear term: ∫ h T∞ φᵢ dΓ
+ * 
+ * Vectorized implementation.
+ */
 class ConvectionBoundaryIntegrator : public BilinearFormIntegrator {
 public:
     ConvectionBoundaryIntegrator() = default;
@@ -113,6 +141,12 @@ private:
 // Vector Mass Integrator
 // =============================================================================
 
+/**
+ * @brief Integrator for vector mass term: ∫ ρ φᵢ · φⱼ dΩ
+ * 
+ * For vector fields (e.g., displacement), forms block diagonal mass matrix.
+ * Vectorized implementation.
+ */
 class VectorMassIntegrator : public VectorBilinearFormIntegrator {
 public:
     VectorMassIntegrator() = default;
@@ -126,203 +160,6 @@ public:
     
     const char* name() const override { return "VectorMassIntegrator"; }
 };
-
-// =============================================================================
-// Inline Implementations
-// =============================================================================
-
-inline void DiffusionIntegrator::assembleElementMatrix(const ReferenceElement& refElem,
-                                                        ElementTransform& trans,
-                                                        Matrix& elmat) const {
-    const int nd = refElem.numDofs();
-    const int dim = refElem.dim();
-    
-    elmat.setZero(nd, nd);
-    
-    const QuadratureRule& rule = refElem.quadrature();
-    
-    for (const auto& ip : rule) {
-        trans.setIntegrationPoint(ip);
-        
-        Real w = ip.weight * trans.weight();
-        
-        ShapeValues sv = refElem.evalShape(ip);
-        
-        std::vector<Vector3> physGrad(nd);
-        for (int i = 0; i < nd; ++i) {
-            trans.transformGradient(sv.gradients[i], physGrad[i]);
-        }
-        
-        Real coeff = evalCoefficient(trans);
-        
-        for (int i = 0; i < nd; ++i) {
-            for (int j = 0; j < nd; ++j) {
-                Real dot = 0.0;
-                for (int d = 0; d < dim; ++d) {
-                    dot += physGrad[i][d] * physGrad[j][d];
-                }
-                elmat(i, j) += w * coeff * dot;
-            }
-        }
-    }
-}
-
-inline void MassIntegrator::assembleElementMatrix(const ReferenceElement& refElem,
-                                                   ElementTransform& trans,
-                                                   Matrix& elmat) const {
-    const int nd = refElem.numDofs();
-    
-    elmat.setZero(nd, nd);
-    
-    const QuadratureRule& rule = refElem.quadrature();
-    
-    for (const auto& ip : rule) {
-        trans.setIntegrationPoint(ip);
-        
-        Real w = ip.weight * trans.weight();
-        
-        std::vector<Real> phi = refElem.evalShape(ip).values;
-        
-        Real coeff = evalCoefficient(trans);
-        
-        for (int i = 0; i < nd; ++i) {
-            for (int j = 0; j < nd; ++j) {
-                elmat(i, j) += w * coeff * phi[i] * phi[j];
-            }
-        }
-    }
-}
-
-inline void DomainLFIntegrator::assembleElementVector(const ReferenceElement& refElem,
-                                                       ElementTransform& trans,
-                                                       Vector& elvec) const {
-    const int nd = refElem.numDofs();
-    
-    elvec.setZero(nd);
-    
-    const QuadratureRule& rule = refElem.quadrature();
-    
-    for (const auto& ip : rule) {
-        trans.setIntegrationPoint(ip);
-        
-        Real w = ip.weight * trans.weight();
-        
-        std::vector<Real> phi = refElem.evalShape(ip).values;
-        
-        Real f = evalCoefficient(trans);
-        
-        for (int i = 0; i < nd; ++i) {
-            elvec(i) += w * f * phi[i];
-        }
-    }
-}
-
-inline void BoundaryLFIntegrator::assembleFaceVector(const ReferenceElement& refElem,
-                                                      FacetElementTransform& trans,
-                                                      Vector& elvec) const {
-    const int nd = refElem.numDofs();
-    
-    elvec.setZero(nd);
-    
-    const QuadratureRule& rule = refElem.quadrature();
-    
-    for (const auto& ip : rule) {
-        trans.setIntegrationPoint(ip);
-        
-        Real w = ip.weight * trans.weight();
-        
-        std::vector<Real> phi = refElem.evalShape(ip).values;
-        
-        Real g = evalCoefficient(trans);
-        
-        for (int i = 0; i < nd; ++i) {
-            elvec(i) += w * g * phi[i];
-        }
-    }
-}
-
-inline void ConvectionBoundaryIntegrator::assembleFaceMatrix(const ReferenceElement& refElem,
-                                                              FacetElementTransform& trans,
-                                                              Matrix& elmat) const {
-    const int nd = refElem.numDofs();
-    
-    elmat.setZero(nd, nd);
-    
-    const QuadratureRule& rule = refElem.quadrature();
-    
-    for (const auto& ip : rule) {
-        trans.setIntegrationPoint(ip);
-        
-        Real w = ip.weight * trans.weight();
-        
-        std::vector<Real> phi = refElem.evalShape(ip).values;
-        
-        Real h = evalCoefficient(trans);
-        
-        for (int i = 0; i < nd; ++i) {
-            for (int j = 0; j < nd; ++j) {
-                elmat(i, j) += w * h * phi[i] * phi[j];
-            }
-        }
-    }
-}
-
-inline void ConvectionBoundaryIntegrator::assembleFaceVector(const ReferenceElement& refElem,
-                                                              FacetElementTransform& trans,
-                                                              Vector& elvec) const {
-    const int nd = refElem.numDofs();
-    
-    elvec.setZero(nd);
-    
-    if (!Tinf_) return;
-    
-    const QuadratureRule& rule = refElem.quadrature();
-    
-    for (const auto& ip : rule) {
-        trans.setIntegrationPoint(ip);
-        
-        Real w = ip.weight * trans.weight();
-        
-        std::vector<Real> phi = refElem.evalShape(ip).values;
-        
-        Real h = evalCoefficient(trans);
-        Real Tinf = Tinf_->eval(trans);
-        
-        for (int i = 0; i < nd; ++i) {
-            elvec(i) += w * h * Tinf * phi[i];
-        }
-    }
-}
-
-inline void VectorMassIntegrator::assembleElementMatrix(const ReferenceElement& refElem,
-                                                         ElementTransform& trans,
-                                                         int vdim,
-                                                         Matrix& elmat) const {
-    const int nd = refElem.numDofs();
-    const int nvd = nd * vdim;
-    
-    elmat.setZero(nvd, nvd);
-    
-    const QuadratureRule& rule = refElem.quadrature();
-    
-    for (const auto& ip : rule) {
-        trans.setIntegrationPoint(ip);
-        
-        Real w = ip.weight * trans.weight();
-        
-        std::vector<Real> phi = refElem.evalShape(ip).values;
-        
-        Real rho = evalCoefficient(trans);
-        
-        for (int c = 0; c < vdim; ++c) {
-            for (int i = 0; i < nd; ++i) {
-                for (int j = 0; j < nd; ++j) {
-                    elmat(c * nd + i, c * nd + j) += w * rho * phi[i] * phi[j];
-                }
-            }
-        }
-    }
-}
 
 }  // namespace mpfem
 

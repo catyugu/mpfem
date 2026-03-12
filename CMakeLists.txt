@@ -98,6 +98,7 @@ add_library(mpfem_fe
     src/fe/grid_function.cpp
     src/fe/fe_values.cpp
     src/fe/coefficient.cpp
+    src/fe/shape_function.cpp
 )
 
 add_library(mpfem_mesh
@@ -106,8 +107,11 @@ add_library(mpfem_mesh
     src/mesh/io/mphtxt_reader.cpp
 )
 
-# Assembly module (header-only for now, for template-based assembly)
-add_library(mpfem_assembly INTERFACE)
+# Assembly module
+add_library(mpfem_assembly
+    src/assembly/assembler.cpp
+    src/assembly/integrators.cpp
+)
 
 # Solver module (header-only for now)
 add_library(mpfem_solver INTERFACE)
@@ -196,19 +200,20 @@ target_link_libraries(mpfem_mesh
 )
 mpfem_set_default_compiler_options(mpfem_mesh)
 
-# mpfem_assembly (header-only)
+# mpfem_assembly
 target_include_directories(mpfem_assembly
-    INTERFACE
+    PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
         $<INSTALL_INTERFACE:include>
 )
 target_link_libraries(mpfem_assembly
-    INTERFACE Eigen3::Eigen
-    INTERFACE mpfem_core
-    INTERFACE mpfem_mesh
-    INTERFACE mpfem_fe
-    INTERFACE mpfem_solver
+    PUBLIC Eigen3::Eigen
+    PUBLIC mpfem_core
+    PUBLIC mpfem_mesh
+    PUBLIC mpfem_fe
+    PUBLIC mpfem_solver
 )
+mpfem_set_default_compiler_options(mpfem_assembly)
 
 # mpfem_solver (header-only)
 target_include_directories(mpfem_solver
