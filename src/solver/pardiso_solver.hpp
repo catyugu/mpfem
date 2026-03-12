@@ -61,21 +61,21 @@ private:
 #ifndef MPFEM_USE_MKL
 
 inline PardisoSolver::PardisoSolver() {
-    LOG_ERROR("PardisoSolver: MKL not available. Please compile with MPFEM_USE_MKL=ON");
+    LOG_ERROR << "PardisoSolver: MKL not available. Please compile with MPFEM_USE_MKL=ON";
 }
 
 inline PardisoSolver::~PardisoSolver() = default;
 
 inline void PardisoSolver::analyzePattern(const SparseMatrix&) {
-    LOG_ERROR("PardisoSolver: MKL not available");
+    LOG_ERROR << "PardisoSolver: MKL not available";
 }
 
 inline void PardisoSolver::factorize(const SparseMatrix&) {
-    LOG_ERROR("PardisoSolver: MKL not available");
+    LOG_ERROR << "PardisoSolver: MKL not available";
 }
 
 inline bool PardisoSolver::solve(const SparseMatrix&, Vector&, const Vector&) {
-    LOG_ERROR("PardisoSolver: MKL not available");
+    LOG_ERROR << "PardisoSolver: MKL not available";
     return false;
 }
 
@@ -111,7 +111,7 @@ inline void PardisoSolver::initPardiso() {
     iparm_[59] = 0;     // Use in-core PARDISO
     
     initialized_ = true;
-    LOG_DEBUG("PardisoSolver initialized");
+    LOG_DEBUG << "PardisoSolver initialized";
 }
 
 inline void PardisoSolver::freePardiso() {
@@ -127,12 +127,12 @@ inline void PardisoSolver::freePardiso() {
             nullptr, nullptr);
     
     if (error != 0) {
-        LOG_ERROR("PARDISO release error: " << error);
+        LOG_ERROR << "PARDISO release error: " << error;
     }
     
     initialized_ = false;
     factorized_ = false;
-    LOG_DEBUG("PardisoSolver freed");
+    LOG_DEBUG << "PardisoSolver freed";
 }
 
 inline void PardisoSolver::analyzePattern(const SparseMatrix& A) {
@@ -169,8 +169,8 @@ inline void PardisoSolver::analyzePattern(const SparseMatrix& A) {
     factorized_ = false;
     
     if (printLevel_ > 0) {
-        LOG_INFO( "[PARDISO] Analysis complete. "
-                  << "Estimated nonzeros in L+U: " << iparm_[17] << std::endl);
+        LOG_INFO << "[PARDISO] Analysis complete. "
+                  << "Estimated nonzeros in L+U: " << iparm_[17];
     }
 }
 
@@ -196,8 +196,8 @@ inline void PardisoSolver::factorize(const SparseMatrix& A) {
     factorized_ = true;
     
     if (printLevel_ > 0) {
-        LOG_INFO("[PARDISO] Factorization complete. "
-                  << "MFlops: " << iparm_[18] << std::endl);
+        LOG_INFO << "[PARDISO] Factorization complete. "
+                  << "MFlops: " << iparm_[18];
     }
 }
 
@@ -229,8 +229,8 @@ inline bool PardisoSolver::solve(const SparseMatrix& A, Vector& x, const Vector&
     residual_ = iparm_[6];  // Number of iterative refinement steps
     
     if (printLevel_ > 0) {
-        LOG_INFO("[PARDISO] Solve complete. "
-                  << "Refinement steps: " << iparm_[6] << std::endl);
+        LOG_INFO << "[PARDISO] Solve complete. "
+                  << "Refinement steps: " << iparm_[6];
     }
     
     return error == 0;
@@ -238,17 +238,17 @@ inline bool PardisoSolver::solve(const SparseMatrix& A, Vector& x, const Vector&
 
 inline void PardisoSolver::checkError(int error, const char* phase) {
     if (error != 0) {
-        LOG_ERROR("PARDISO " << phase << " error: " << error);
+        LOG_ERROR << "PARDISO " << phase << " error: " << error;
         switch (error) {
-            case -1: LOG_ERROR("Input inconsistent"); break;
-            case -2: LOG_ERROR("Not enough memory"); break;
-            case -3: LOG_ERROR("Reordering problem"); break;
-            case -4: LOG_ERROR("Zero pivot, numerical factorization or iterative refinement error"); break;
-            case -5: LOG_ERROR("Error in unsorted matrix"); break;
-            case -6: LOG_ERROR("Preordering failed"); break;
-            case -7: LOG_ERROR("Diagonal matrix problem"); break;
-            case -8: LOG_ERROR("32-bit integer overflow problem"); break;
-            default: LOG_ERROR("Unknown error"); break;
+            case -1: LOG_ERROR << "Input inconsistent"; break;
+            case -2: LOG_ERROR << "Not enough memory"; break;
+            case -3: LOG_ERROR << "Reordering problem"; break;
+            case -4: LOG_ERROR << "Zero pivot, numerical factorization or iterative refinement error"; break;
+            case -5: LOG_ERROR << "Error in unsorted matrix"; break;
+            case -6: LOG_ERROR << "Preordering failed"; break;
+            case -7: LOG_ERROR << "Diagonal matrix problem"; break;
+            case -8: LOG_ERROR << "32-bit integer overflow problem"; break;
+            default: LOG_ERROR << "Unknown error"; break;
         }
     }
 }

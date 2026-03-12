@@ -45,13 +45,13 @@ public:
             return false;
         }
         
-        LOG_INFO("[EigenSparseLU] Solve successful, solution norm: " << x.norm() << std::endl);
+        LOG_INFO << "[EigenSparseLU] Solve successful, solution norm: " << x.norm();
         
         iterations_ = 1;
         residual_ = (A.eigen() * x - b).norm() / b.norm();
         
         if (printLevel_ > 0) {
-            LOG_INFO("[EigenSparseLU] Solved, residual = " << residual_ << std::endl);
+            LOG_INFO << "[EigenSparseLU] Solved, residual = " << residual_;
         }
         
         return true;
@@ -119,8 +119,8 @@ public:
         residual_ = solver_.error();
         
         if (printLevel_ > 0) {
-            LOG_INFO("[EigenCG] Iterations: " << iterations_ 
-                      << ", Error: " << residual_ << std::endl);
+            LOG_INFO << "[EigenCG] Iterations: " << iterations_ 
+                      << ", Error: " << residual_;
         }
         
         return solver_.info() == Eigen::Success;
@@ -148,8 +148,8 @@ public:
         residual_ = solver_.error();
         
         if (printLevel_ > 0) {
-            LOG_INFO("[EigenCG+IC] Iterations: " << iterations_ 
-                     << ", Error: " << residual_ << std::endl);
+            LOG_INFO << "[EigenCG+IC] Iterations: " << iterations_ 
+                     << ", Error: " << residual_;
         }
         
         return solver_.info() == Eigen::Success;
@@ -180,8 +180,8 @@ public:
         residual_ = solver_.error();
         
         if (printLevel_ > 0) {
-            LOG_INFO("[EigenBiCGSTAB] Iterations: " << iterations_ 
-                     << ", Error: " << residual_);
+            LOG_INFO << "[EigenBiCGSTAB] Iterations: " << iterations_ 
+                     << ", Error: " << residual_;
         }
         
         return solver_.info() == Eigen::Success;
@@ -209,8 +209,8 @@ public:
         residual_ = solver_.error();
         
         if (printLevel_ > 0) {
-            LOG_INFO("[EigenBiCGSTAB-ILUT] Iterations: " << iterations_ 
-                     << ", Error: " << residual_);
+            LOG_INFO << "[EigenBiCGSTAB-ILUT] Iterations: " << iterations_ 
+                     << ", Error: " << residual_;
         }
         
         return solver_.info() == Eigen::Success;

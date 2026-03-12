@@ -253,8 +253,8 @@ void CaseXmlReader::readFromFile(const std::string& filePath, CaseDefinition& ca
         }
     }
 
-    LOG_INFO("Loaded case definition: " << caseDefinition.caseName 
-             << " with " << caseDefinition.physicsDefinitions.size() << " physics fields");
+    LOG_INFO << "Loaded case definition: " << caseDefinition.caseName 
+             << " with " << caseDefinition.physicsDefinitions.size() << " physics fields";
 }
 
 }  // namespace mpfem

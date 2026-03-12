@@ -22,7 +22,7 @@ void MeshTopology::setMesh(const Mesh* mesh) {
 void MeshTopology::build() {
     if (!mesh_) return;
     
-    LOG_INFO("Building mesh topology...");
+    LOG_INFO << "Building mesh topology...";
     
     // Clear previous data
     faceToElement_.clear();
@@ -41,8 +41,8 @@ void MeshTopology::build() {
     // Identify boundary faces
     identifyBoundaryFaces();
     
-    LOG_INFO("Topology built: " << boundaryFaceIndices_.size() << " boundary faces, "
-             << interiorFaceIndices_.size() << " interior faces");
+    LOG_INFO << "Topology built: " << boundaryFaceIndices_.size() << " boundary faces, "
+             << interiorFaceIndices_.size() << " interior faces";
 }
 
 void MeshTopology::buildFaceToElementMap() {

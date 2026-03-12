@@ -7,8 +7,8 @@ namespace mpfem {
 
 void FEValues::registerField(FieldKind kind, GridFunction* gf) {
     if (!gf) {
-        LOG_WARN("Attempting to register null GridFunction for field kind " 
-                 << static_cast<int>(kind));
+        LOG_WARN << "Attempting to register null GridFunction for field kind " 
+                 << static_cast<int>(kind);
         return;
     }
     fields_[kind] = gf;
@@ -16,7 +16,7 @@ void FEValues::registerField(FieldKind kind, GridFunction* gf) {
 
 void FEValues::registerField(const std::string& name, GridFunction* gf) {
     if (!gf) {
-        LOG_WARN("Attempting to register null GridFunction for field " << name);
+        LOG_WARN << "Attempting to register null GridFunction for field " << name;
         return;
     }
     fieldsByName_[name] = gf;

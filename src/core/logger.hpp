@@ -31,7 +31,8 @@ enum class LogLevel {
  * Usage:
  *   Logger::setLevel(LogLevel::Debug);
  *   Logger::log(LogLevel::Info, "Starting computation");
- *   LOG_INFO("Processing element " << elemId);
+ *   LOG_INFO << "Processing element " << elemId;
+ *   LOG_ERROR << "Error in element " << elemId << ": " << errorMsg;
  */
 class Logger {
 public:
@@ -101,36 +102,58 @@ private:
 };
 
 // =============================================================================
-// Convenience macros for logging
+// Stream-style logging helper class
 // =============================================================================
 
-#define LOG_DEBUG(msg)                                          \
-    do {                                                        \
-        std::ostringstream oss;                                 \
-        oss << msg;                                             \
-        ::mpfem::Logger::instance().log(::mpfem::LogLevel::Debug, oss.str()); \
-    } while (0)
+/**
+ * @brief Temporary object for stream-style logging.
+ * 
+ * Usage: LOG_INFO << "Value: " << value;
+ * The log message is sent on destruction.
+ */
+class LogMessage {
+public:
+    explicit LogMessage(LogLevel level) : level_(level) {}
+    
+    // Non-copyable
+    LogMessage(const LogMessage&) = delete;
+    LogMessage& operator=(const LogMessage&) = delete;
+    
+    // Movable (allows LOG_INFO << ... to work)
+    LogMessage(LogMessage&& other) noexcept 
+        : level_(other.level_), oss_(std::move(other.oss_)) {}
+    
+    ~LogMessage() {
+        if (!oss_.str().empty() || level_ == LogLevel::Error) {
+            Logger::instance().log(level_, oss_.str());
+        }
+    }
+    
+    template<typename T>
+    LogMessage& operator<<(const T& value) {
+        oss_ << value;
+        return *this;
+    }
+    
+    // Support std::endl and other manipulators
+    LogMessage& operator<<(std::ostream& (*manip)(std::ostream&)) {
+        oss_ << manip;
+        return *this;
+    }
+    
+private:
+    LogLevel level_;
+    std::ostringstream oss_;
+};
 
-#define LOG_INFO(msg)                                           \
-    do {                                                        \
-        std::ostringstream oss;                                 \
-        oss << msg;                                             \
-        ::mpfem::Logger::instance().log(::mpfem::LogLevel::Info, oss.str()); \
-    } while (0)
+// =============================================================================
+// Convenience macros for logging (stream-style)
+// =============================================================================
 
-#define LOG_WARN(msg)                                           \
-    do {                                                        \
-        std::ostringstream oss;                                 \
-        oss << msg;                                             \
-        ::mpfem::Logger::instance().log(::mpfem::LogLevel::Warning, oss.str()); \
-    } while (0)
-
-#define LOG_ERROR(msg)                                          \
-    do {                                                        \
-        std::ostringstream oss;                                 \
-        oss << msg;                                             \
-        ::mpfem::Logger::instance().log(::mpfem::LogLevel::Error, oss.str()); \
-    } while (0)
+#define LOG_DEBUG   ::mpfem::LogMessage(::mpfem::LogLevel::Debug)
+#define LOG_INFO    ::mpfem::LogMessage(::mpfem::LogLevel::Info)
+#define LOG_WARN    ::mpfem::LogMessage(::mpfem::LogLevel::Warning)
+#define LOG_ERROR   ::mpfem::LogMessage(::mpfem::LogLevel::Error)
 
 /**
  * @brief Assertion macro that logs error and exits on failure.
@@ -141,7 +164,7 @@ private:
 #define Check(cond, msg)                                        \
     do {                                                        \
         if (!(cond)) {                                          \
-            LOG_ERROR(msg);                                     \
+            ::mpfem::LogMessage(::mpfem::LogLevel::Error) << msg; \
             std::exit(1);                                       \
         }                                                       \
     } while (0)

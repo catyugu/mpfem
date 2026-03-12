@@ -48,7 +48,7 @@ public:
                 return createAuto();
                 
             default:
-                LOG_ERROR("Unknown solver type, using SparseLU");
+                LOG_ERROR << "Unknown solver type, using SparseLU";
                 return std::make_unique<EigenSparseLUSolver>();
         }
     }
@@ -98,10 +98,10 @@ public:
      */
     static std::unique_ptr<LinearSolver> createAuto() {
 #ifdef MPFEM_USE_MKL
-        LOG_DEBUG("Auto-selecting PARDISO solver");
+        LOG_DEBUG << "Auto-selecting PARDISO solver";
         return std::make_unique<PardisoSolver>();
 #else
-        LOG_DEBUG("Auto-selecting Eigen SparseLU solver");
+        LOG_DEBUG << "Auto-selecting Eigen SparseLU solver";
         return std::make_unique<EigenSparseLUSolver>();
 #endif
     }

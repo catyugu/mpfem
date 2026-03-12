@@ -14,7 +14,7 @@ Mesh::Mesh(int dim, Index numVertices, Index numElements, Index numBdrElements)
 
 void Mesh::setDim(int dim) {
     dim_ = dim;
-    LOG_DEBUG("Mesh dimension set to " << dim);
+    LOG_DEBUG << "Mesh dimension set to " << dim;
 }
 
 void Mesh::addVertex(const Vertex& v) {

@@ -28,68 +28,68 @@ int main(int argc, char* argv[]) {
         meshPath = argv[1];
     }
     
-    LOG_INFO("=== Busbar Example ===");
-    LOG_INFO("Reading mesh from: " << meshPath);
+    LOG_INFO << "=== Busbar Example ===";
+    LOG_INFO << "Reading mesh from: " << meshPath;
     
     try {
         // Read mesh
         Mesh mesh = MphtxtReader::read(meshPath);
         
         // Print mesh statistics
-        LOG_INFO("Mesh dimension: " << mesh.dim());
-        LOG_INFO("Number of vertices: " << mesh.numVertices());
-        LOG_INFO("Number of volume elements: " << mesh.numElements());
-        LOG_INFO("Number of boundary elements: " << mesh.numBdrElements());
+        LOG_INFO << "Mesh dimension: " << mesh.dim();
+        LOG_INFO << "Number of vertices: " << mesh.numVertices();
+        LOG_INFO << "Number of volume elements: " << mesh.numElements();
+        LOG_INFO << "Number of boundary elements: " << mesh.numBdrElements();
         
         // Get domain and boundary IDs
         auto domains = mesh.domainIds();
         auto boundaries = mesh.boundaryIds();
         
-        LOG_INFO("Number of domains: " << domains.size());
-        LOG_INFO("Domain IDs: " << [&]() {
+        LOG_INFO << "Number of domains: " << domains.size();
+        LOG_INFO << "Domain IDs: " << [&]() {
             std::string s;
             for (auto d : domains) {
                 s += std::to_string(d) + " ";
             }
             return s;
-        }());
+        };
         
-        LOG_INFO("Number of boundaries: " << boundaries.size());
-        LOG_INFO("Boundary IDs: " << [&]() {
+        LOG_INFO << "Number of boundaries: " << boundaries.size();
+        LOG_INFO << "Boundary IDs: " << [&](){
             std::string s;
             for (auto b : boundaries) {
                 s += std::to_string(b) + " ";
             }
             return s;
-        }());
+        };
         
         // Build topology
         MeshTopology topology(&mesh);
-        LOG_INFO("Number of faces: " << topology.numFaces());
-        LOG_INFO("Number of boundary faces: " << topology.numBoundaryFaces());
-        LOG_INFO("Number of interior faces: " << topology.numInteriorFaces());
+        LOG_INFO << "Number of faces: " << topology.numFaces();
+        LOG_INFO << "Number of boundary faces: " << topology.numBoundaryFaces();
+        LOG_INFO << "Number of interior faces: " << topology.numInteriorFaces();
         
         // Create finite element collection (linear H1)
         auto fec = FECollection::createH1(2);
-        LOG_INFO("Created H1 FE collection with order " << fec->order());
+        LOG_INFO << "Created H1 FE collection with order " << fec->order();
         
         // Create finite element space
         FESpace fes(&mesh, std::move(fec));
-        LOG_INFO("Created FE space with " << fes.numDofs() << " DOFs");
+        LOG_INFO << "Created FE space with " << fes.numDofs() << " DOFs";
         
         // Verify expected values for busbar case
         if (domains.size() != 7) {
-            LOG_WARN("Expected 7 domains, got " << domains.size());
+            LOG_WARN << "Expected 7 domains, got " << domains.size();
         }
         if (boundaries.size() != 43) {
-            LOG_WARN("Expected 43 boundaries, got " << boundaries.size());
+            LOG_WARN << "Expected 43 boundaries, got " << boundaries.size();
         }
         
-        LOG_INFO("=== Mesh reading successful! ===");
+        LOG_INFO << "=== Mesh reading successful! ===";
         return 0;
         
     } catch (const std::exception& e) {
-        LOG_ERROR("Error: " << e.what());
+        LOG_ERROR << "Error: " << e.what();
         return 1;
     }
 }

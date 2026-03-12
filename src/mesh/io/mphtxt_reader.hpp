@@ -73,7 +73,7 @@ public:
 private:
     /// Read and create mesh
     Mesh readFile(const std::string& filename) {
-        LOG_INFO("Reading mesh from " << filename);
+        LOG_INFO << "Reading mesh from " << filename;
         
         auto data = parseFile(filename);
         
@@ -96,7 +96,7 @@ private:
             
             // Skip vertex and edge elements - they are not volume or boundary elements
             if (geom == Geometry::Point || geom == Geometry::Segment) {
-                LOG_DEBUG("Skipping " << block.elements.size() << " " << block.typeName << " elements");
+                LOG_DEBUG << "Skipping " << block.elements.size() << " " << block.typeName << " elements";
                 continue;
             }
             
@@ -128,9 +128,9 @@ private:
             }
         }
         
-        LOG_INFO("Mesh loaded: " << mesh.numVertices() << " vertices, "
+        LOG_INFO << "Mesh loaded: " << mesh.numVertices() << " vertices, "
                  << numVolumeElems << " volume elements, "
-                 << numBdrElems << " boundary elements");
+                    << numBdrElems << " boundary elements";
         
         return mesh;
     }
@@ -152,7 +152,7 @@ private:
             if (trimmed.find("# sdim") != std::string::npos) {
                 std::istringstream iss(trimmed);
                 iss >> data.sdim;
-                LOG_DEBUG("Parsed sdim = " << data.sdim);
+                LOG_DEBUG << "Parsed sdim = " << data.sdim;
             }
             
             // Look for vertex count - must be "mesh vertices" not "elements"
@@ -160,7 +160,7 @@ private:
                 Index numVertices = 0;
                 std::istringstream iss(trimmed);
                 iss >> numVertices;
-                LOG_DEBUG("Expecting " << numVertices << " vertices");
+                LOG_DEBUG << "Expecting " << numVertices << " vertices";
                 
                 // Skip to coordinate section
                 while (std::getline(file, line)) {
@@ -190,7 +190,7 @@ private:
                     data.vertices.push_back(coords);
                     count++;
                 }
-                LOG_DEBUG("Read " << count << " vertices");
+                LOG_DEBUG << "Read " << count << " vertices";
             }
             
             // Look for element type blocks
@@ -228,7 +228,7 @@ private:
             // Detect order from type name
             block.order = detectOrder(block.typeName);
         }
-        LOG_DEBUG("Parsing element block: type=" << block.typeName << ", order=" << block.order);
+        LOG_DEBUG << "Parsing element block: type=" << block.typeName << ", order=" << block.order;
         
         // Read number of vertices per element
         while (std::getline(file, line)) {
@@ -246,7 +246,7 @@ private:
             }
             break;
         }
-        LOG_DEBUG("Vertices per element: " << block.numVertsPerElem);
+        LOG_DEBUG << "Vertices per element: " << block.numVertsPerElem;
         
         // Read number of elements
         Index numElements = 0;
@@ -300,7 +300,7 @@ private:
                     count++;
                 }
             }
-            LOG_DEBUG("Read " << block.elements.size() << " elements of type " << block.typeName);
+            LOG_DEBUG << "Read " << block.elements.size() << " elements of type " << block.typeName;
             
             // Look for geometric entity indices
             while (std::getline(file, line)) {
@@ -309,7 +309,7 @@ private:
                     Index numIndices = 0;
                     std::istringstream tiss(trimmed);
                     tiss >> numIndices;
-                    LOG_DEBUG("Found " << numIndices << " geometric entity indices");
+                    LOG_DEBUG << "Found " << numIndices << " geometric entity indices";
                     
                     // Skip the comment line "# Geometric entity indices"
                     std::getline(file, line);
@@ -323,11 +323,11 @@ private:
                             block.geomIndices.push_back(idx);
                         }
                     }
-                    LOG_DEBUG("Read " << block.geomIndices.size() << " indices");
+                    LOG_DEBUG << "Read " << block.geomIndices.size() << " indices";
                     
                     break;
                 } else if (trimmed.find("# Type #") != std::string::npos) {
-                    LOG_DEBUG("Found next Type block while looking for geometric indices");
+                    LOG_DEBUG << "Found next Type block while looking for geometric indices";
                     break;
                 } else if (trimmed.find("# ---------") != std::string::npos) {
                     // Start of new object

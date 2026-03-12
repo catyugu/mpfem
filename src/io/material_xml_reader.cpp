@@ -97,14 +97,14 @@ void MaterialXmlReader::readFromFile(const std::string& filePath, MaterialDataba
         material.heatCapacity = getProperty("heatcapacity");
 
         database.addMaterial(material);
-        LOG_DEBUG("Loaded material: " << material.tag);
+        LOG_DEBUG << "Loaded material: " << material.tag;
     }
 
     if (database.size() == 0) {
         throw FileException("No material blocks found in file: " + filePath);
     }
 
-    LOG_INFO("Loaded " << database.size() << " materials from " << filePath);
+    LOG_INFO << "Loaded " << database.size() << " materials from " << filePath;
 }
 
 }  // namespace mpfem
