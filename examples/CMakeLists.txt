@@ -5,6 +5,8 @@ add_executable(busbar_example
 )
 
 target_link_libraries(busbar_example
+    PRIVATE mpfem::physics
+    PRIVATE mpfem::io
     PRIVATE mpfem::mesh
     PRIVATE mpfem::fe
 )

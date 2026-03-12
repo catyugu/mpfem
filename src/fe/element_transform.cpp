@@ -1,4 +1,5 @@
 #include "fe/element_transform.hpp"
+#include "core/exception.hpp"
 #include <cmath>
 
 namespace mpfem {
@@ -19,14 +20,29 @@ void ElementTransform::setElement(Index elemIdx) {
 }
 
 Index ElementTransform::attribute() const {
-    if (!mesh_) return 0;
+    if (!mesh_) {
+        MPFEM_THROW(Exception, "ElementTransform::attribute: mesh not set");
+    }
     
-    if (elemType_ == VOLUME && elemIdx_ < mesh_->numElements()) {
+    if (elemType_ == VOLUME) {
+        if (elemIdx_ >= mesh_->numElements()) {
+            MPFEM_THROW(RangeException, 
+                "ElementTransform::attribute: invalid element index " + 
+                std::to_string(elemIdx_) + ", num elements = " + 
+                std::to_string(mesh_->numElements()));
+        }
         return mesh_->element(elemIdx_).attribute();
-    } else if (elemType_ == BOUNDARY && elemIdx_ < mesh_->numBdrElements()) {
+    } else if (elemType_ == BOUNDARY) {
+        if (elemIdx_ >= mesh_->numBdrElements()) {
+            MPFEM_THROW(RangeException, 
+                "ElementTransform::attribute: invalid boundary element index " + 
+                std::to_string(elemIdx_) + ", num boundary elements = " + 
+                std::to_string(mesh_->numBdrElements()));
+        }
         return mesh_->bdrElement(elemIdx_).attribute();
     }
-    return 0;
+    
+    MPFEM_THROW(Exception, "ElementTransform::attribute: unknown element type");
 }
 
 void ElementTransform::computeGeometryInfo() {
@@ -67,22 +83,21 @@ void ElementTransform::initGeometricShapeFunction() {
 }
 
 void ElementTransform::transform(const Real* xi, Real* x) const {
-    if (!shapeFunc_ || shapeValues_.values.empty()) {
-        // Fallback: use linear interpolation for vertices
-        for (int d = 0; d < spaceDim_; ++d) x[d] = 0.0;
-        return;
+    if (!shapeFunc_) {
+        MPFEM_THROW(Exception, "ElementTransform::transform: shape function not initialized");
     }
     
-    // Recompute shape values if needed
+    // Use pre-computed shape values if available, otherwise compute them
     ShapeValues sv;
-    if (shapeValues_.values.empty()) {
+    if (!shapeValues_.values.empty()) {
+        sv = shapeValues_;
+    } else {
+        // Compute shape values at the given reference coordinates
         IntegrationPoint ip;
         ip.xi = xi[0];
         if (dim_ > 1) ip.eta = xi[1];
         if (dim_ > 2) ip.zeta = xi[2];
         sv = shapeFunc_->eval(ip);
-    } else {
-        sv = shapeValues_;
     }
     
     for (int d = 0; d < spaceDim_; ++d) {
@@ -96,10 +111,13 @@ void ElementTransform::transform(const Real* xi, Real* x) const {
 void ElementTransform::evalJacobian() const {
     if (evalState_ & JACOBIAN_MASK) return;
     
-    if (!shapeFunc_ || shapeValues_.gradients.empty()) {
-        jacobian_.setZero();
-        evalState_ |= JACOBIAN_MASK;
-        return;
+    if (!shapeFunc_) {
+        MPFEM_THROW(Exception, "ElementTransform::evalJacobian: shape function not initialized");
+    }
+    
+    // Compute shape values and gradients if not already computed
+    if (shapeValues_.gradients.empty()) {
+        shapeValues_ = shapeFunc_->eval(ip_);
     }
     
     // J = sum_i (x_i * grad_phi_i^T)
@@ -126,10 +144,12 @@ void ElementTransform::evalWeight() const {
         detJ_ = jacobian_.determinant();
         weight_ = std::abs(detJ_);
     } else {
-        // Non-square Jacobian (boundary element): weight = sqrt(det(J^T J))
+        // Non-square Jacobian (boundary element):
+        // weight = sqrt(det(J^T J)) = area/volume scaling factor
+        // detJ should also be this value for consistency
         Matrix JtJ = jacobian_.transpose() * jacobian_;
-        detJ_ = JtJ.determinant();
-        weight_ = std::sqrt(std::abs(detJ_));
+        weight_ = std::sqrt(std::abs(JtJ.determinant()));
+        detJ_ = weight_;
     }
     
     evalState_ |= WEIGHT_MASK;

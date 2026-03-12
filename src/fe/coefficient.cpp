@@ -33,12 +33,12 @@ void VectorCoefficient::eval(ElementTransform& trans, const IntegrationPoint& ip
 
 Real PWConstCoefficient::eval(ElementTransform& trans) const {
     Index attr = trans.attribute();
-    if (attr >= 1 && static_cast<size_t>(attr) <= constants_.size()) {
-        return constants_[attr - 1];
+    if (attr < 1 || static_cast<size_t>(attr) > constants_.size()) {
+        MPFEM_THROW(RangeException, 
+            "PWConstCoefficient: invalid attribute " + std::to_string(attr) +
+            ", valid range is [1, " + std::to_string(constants_.size()) + "]");
     }
-    Logger::log(LogLevel::Warning, 
-        "PWConstCoefficient: invalid attribute " + std::to_string(attr));
-    return 0.0;
+    return constants_[attr - 1];
 }
 
 // =============================================================================
@@ -79,7 +79,7 @@ Real FunctionCoefficient::eval(ElementTransform& trans) const {
         return func_(x.x(), x.y(), x.z());
     }
     
-    return 0.0;
+    MPFEM_THROW(Exception, "FunctionCoefficient: no function set");
 }
 
 // =============================================================================
@@ -88,8 +88,7 @@ Real FunctionCoefficient::eval(ElementTransform& trans) const {
 
 Real GridFunctionCoefficient::eval(ElementTransform& trans) const {
     if (!gf_) {
-        Logger::log(LogLevel::Warning, "GridFunctionCoefficient: null GridFunction");
-        return 0.0;
+        MPFEM_THROW(Exception, "GridFunctionCoefficient: null GridFunction");
     }
     
     Index elemIdx = trans.elementIndex();
@@ -111,7 +110,9 @@ Real GridFunctionCoefficient::eval(ElementTransform& trans) const {
 // =============================================================================
 
 Real RestrictedCoefficient::eval(ElementTransform& trans) const {
-    if (!coef_) return 0.0;
+    if (!coef_) {
+        MPFEM_THROW(Exception, "RestrictedCoefficient: null coefficient");
+    }
     
     Index attr = trans.attribute();
     if (activeAttr_.count(attr) > 0) {
@@ -128,8 +129,7 @@ Real RestrictedCoefficient::eval(ElementTransform& trans) const {
 Real RatioCoefficient::eval(ElementTransform& trans) const {
     Real denom = denom_->eval(trans);
     if (std::abs(denom) < 1e-30) {
-        Logger::log(LogLevel::Warning, "RatioCoefficient: division by zero");
-        return 0.0;
+        MPFEM_THROW(Exception, "RatioCoefficient: division by zero");
     }
     return num_->eval(trans) / denom;
 }
@@ -145,7 +145,7 @@ Real TransformedCoefficient::eval(ElementTransform& trans) const {
     if (q1_ && transform1_) {
         return transform1_(q1_->eval(trans));
     }
-    return 0.0;
+    MPFEM_THROW(Exception, "TransformedCoefficient: no transform function set");
 }
 
 // =============================================================================
@@ -168,10 +168,10 @@ Real TemperatureDependentConductivityCoefficient::eval(ElementTransform& trans) 
     Index attr = trans.attribute();
     
     if (attr < 1 || static_cast<size_t>(attr) > sigma0_.size()) {
-        Logger::log(LogLevel::Warning, 
+        MPFEM_THROW(RangeException, 
             "TemperatureDependentConductivity: invalid attribute " 
-            + std::to_string(attr));
-        return 1.0;
+            + std::to_string(attr) + ", valid range is [1, " 
+            + std::to_string(sigma0_.size()) + "]");
     }
     
     const Real rho0 = rho0_[attr - 1];
@@ -190,9 +190,9 @@ Real TemperatureDependentConductivityCoefficient::eval(ElementTransform& trans) 
         Real rho = rho0 * (1.0 + alpha * (temp - tref));
         
         if (!std::isfinite(rho) || rho <= 0.0) {
-            Logger::log(LogLevel::Warning, 
-                "TemperatureDependentConductivity: invalid resistivity");
-            return sigma0_[attr - 1] > 0.0 ? sigma0_[attr - 1] : 1.0;
+            MPFEM_THROW(Exception, 
+                "TemperatureDependentConductivity: invalid resistivity " 
+                + std::to_string(rho) + " at temperature " + std::to_string(temp));
         }
         
         return 1.0 / rho;
@@ -201,9 +201,9 @@ Real TemperatureDependentConductivityCoefficient::eval(ElementTransform& trans) 
     // Use constant conductivity
     Real sigma = sigma0_[attr - 1];
     if (!std::isfinite(sigma) || sigma <= 0.0) {
-        Logger::log(LogLevel::Warning, 
-            "TemperatureDependentConductivity: invalid conductivity");
-        return 1.0;
+        MPFEM_THROW(Exception, 
+            "TemperatureDependentConductivity: invalid conductivity " 
+            + std::to_string(sigma) + " for attribute " + std::to_string(attr));
     }
     
     return sigma;
@@ -227,10 +227,10 @@ Real TemperatureDependentThermalConductivityCoefficient::eval(ElementTransform& 
     Index attr = trans.attribute();
     
     if (attr < 1 || static_cast<size_t>(attr) > k0_.size()) {
-        Logger::log(LogLevel::Warning, 
+        MPFEM_THROW(RangeException, 
             "TemperatureDependentThermalConductivity: invalid attribute " 
-            + std::to_string(attr));
-        return 1.0;
+            + std::to_string(attr) + ", valid range is [1, " 
+            + std::to_string(k0_.size()) + "]");
     }
     
     Real temp = tref_[attr - 1];
@@ -246,9 +246,9 @@ Real TemperatureDependentThermalConductivityCoefficient::eval(ElementTransform& 
     Real k = k0 * (1.0 + alpha * (temp - tref));
     
     if (!std::isfinite(k) || k <= 0.0) {
-        Logger::log(LogLevel::Warning, 
-            "TemperatureDependentThermalConductivity: invalid conductivity");
-        return k0 > 0.0 ? k0 : 1.0;
+        MPFEM_THROW(Exception, 
+            "TemperatureDependentThermalConductivity: invalid conductivity " 
+            + std::to_string(k) + " at temperature " + std::to_string(temp));
     }
     
     return k;

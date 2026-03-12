@@ -121,9 +121,10 @@ private:
                 mesh.reserveBdrElements(mesh.numBdrElements() + 
                     static_cast<Index>(block.elements.size()));
                 for (size_t i = 0; i < block.elements.size(); ++i) {
+                    // COMSOL uses 0-based indices in mphtxt, convert to 1-based
                     Index attr = 0;
                     if (i < block.geomIndices.size()) {
-                        attr = block.geomIndices[i];
+                        attr = block.geomIndices[i] + 1;
                     }
                     const auto& elemConn = block.elements[i];
                     if (needReorder && elemConn.size() == 10) {
@@ -141,6 +142,7 @@ private:
                 mesh.reserveElements(mesh.numElements() + 
                     static_cast<Index>(block.elements.size()));
                 for (size_t i = 0; i < block.elements.size(); ++i) {
+                    // COMSOL domain indices in mphtxt are already 1-based, no conversion needed
                     Index attr = 0;
                     if (i < block.geomIndices.size()) {
                         attr = block.geomIndices[i];

@@ -3,6 +3,7 @@
 
 #include "mesh/geometry.hpp"
 #include "reference_element.hpp"
+#include "core/exception.hpp"
 #include <memory>
 #include <unordered_map>
 
@@ -130,9 +131,11 @@ inline std::unique_ptr<FECollection> FECollection::create(const std::string& nam
         }
         return createH1(order);
     }
-    // TODO: Parse other types
+    // TODO: Parse other types (L2, ND, RT)
     
-    return nullptr;
+    MPFEM_THROW(Exception, 
+        "FECollection::create: unsupported FE type '" + name + 
+        "'. Supported types: H1_1, H1_2, etc.");
 }
 
 }  // namespace mpfem

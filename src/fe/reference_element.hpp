@@ -5,6 +5,7 @@
 #include "mesh/element.hpp"
 #include "shape_function.hpp"
 #include "quadrature.hpp"
+#include "core/exception.hpp"
 #include <memory>
 
 namespace mpfem {
@@ -90,10 +91,13 @@ public:
     
     /// Get face reference element (for boundary integration)
     const ReferenceElement* faceElement(int faceIdx) const {
-        if (faceIdx >= 0 && faceIdx < static_cast<int>(faceElements_.size())) {
-            return faceElements_[faceIdx].get();
+        if (faceIdx < 0 || faceIdx >= static_cast<int>(faceElements_.size())) {
+            MPFEM_THROW(RangeException, 
+                "ReferenceElement::faceElement: invalid face index " + 
+                std::to_string(faceIdx) + ", num faces = " + 
+                std::to_string(faceElements_.size()));
         }
-        return nullptr;
+        return faceElements_[faceIdx].get();
     }
     
     /// Get local vertex indices for a face

@@ -1,11 +1,12 @@
 /**
  * @file busbar_example.cpp
- * @brief Example demonstrating mesh reading for the busbar test case.
+ * @brief Example demonstrating electrostatics solving for the busbar test case.
  * 
  * This example shows how to:
  * 1. Read a mesh from mphtxt format
- * 2. Verify mesh statistics (domains, boundaries)
- * 3. Create a finite element space
+ * 2. Read case definition from XML
+ * 3. Build and solve electrostatics problem
+ * 4. Export results to VTU format for visualization
  */
 
 #include "mesh/mesh.hpp"
@@ -13,79 +14,92 @@
 #include "mesh/mesh_topology.hpp"
 #include "fe/fe_collection.hpp"
 #include "fe/fe_space.hpp"
+#include "physics/physics_problem_builder.hpp"
+#include "io/case_xml_reader.hpp"
+#include "io/material_xml_reader.hpp"
+#include "io/result_exporter.hpp"
 #include "core/logger.hpp"
+#include <filesystem>
 
 using namespace mpfem;
 
 int main(int argc, char* argv[]) {
     Logger::setLevel(LogLevel::Info);
     
-    // Default mesh path
-    std::string meshPath = "cases/busbar/mesh.mphtxt";
+    // Default case directory
+    std::string caseDir = "cases/busbar";
     
     // Override from command line if provided
     if (argc > 1) {
-        meshPath = argv[1];
+        caseDir = argv[1];
     }
     
-    LOG_INFO << "=== Busbar Example ===";
-    LOG_INFO << "Reading mesh from: " << meshPath;
+    LOG_INFO << "=== Busbar Electrostatics Example ===";
+    LOG_INFO << "Case directory: " << caseDir;
     
     try {
-        // Read mesh
-        Mesh mesh = MphtxtReader::read(meshPath);
+        // Build physics problem from case directory
+        PhysicsProblemSetup setup = PhysicsProblemBuilder::build(caseDir);
         
-        // Print mesh statistics
-        LOG_INFO << "Mesh dimension: " << mesh.dim();
-        LOG_INFO << "Number of vertices: " << mesh.numVertices();
-        LOG_INFO << "Number of volume elements: " << mesh.numElements();
-        LOG_INFO << "Number of boundary elements: " << mesh.numBdrElements();
-        
-        // Get domain and boundary IDs
-        auto domains = mesh.domainIds();
-        auto boundaries = mesh.boundaryIds();
-        
-        LOG_INFO << "Number of domains: " << domains.size();
-        LOG_INFO << "Domain IDs: " << [&]() {
-            std::string s;
-            for (auto d : domains) {
-                s += std::to_string(d) + " ";
-            }
-            return s;
-        }();
-        
-        LOG_INFO << "Number of boundaries: " << boundaries.size();
-        LOG_INFO << "Boundary IDs: " << [&](){
-            std::string s;
-            for (auto b : boundaries) {
-                s += std::to_string(b) + " ";
-            }
-            return s;
-        }();
-        
-        // Build topology
-        MeshTopology topology(&mesh);
-        LOG_INFO << "Number of faces: " << topology.numFaces();
-        LOG_INFO << "Number of boundary faces: " << topology.numBoundaryFaces();
-        LOG_INFO << "Number of interior faces: " << topology.numInteriorFaces();
-        
-        // Create finite element collection (linear H1)
-        auto fec = FECollection::createH1(2);
-        LOG_INFO << "Created H1 FE collection with order " << fec->order();
-        
-        // Create finite element space
-        FESpace fes(&mesh, std::move(fec));
-        LOG_INFO << "Created FE space with " << fes.numDofs() << " DOFs";
-        
-        // Verify expected values for busbar case
-        if (domains.size() != 7) {
-            LOG_WARN << "Expected 7 domains, got " << domains.size();
-        }
-        if (boundaries.size() != 43) {
-            LOG_WARN << "Expected 43 boundaries, got " << boundaries.size();
+        if (!setup.hasElectrostatics()) {
+            LOG_ERROR << "No electrostatics physics found in case";
+            return 1;
         }
         
-        LOG_INFO << "=== Mesh reading successful! ===";
+        auto& solver = setup.electrostatics;
+        
+        // Assemble and solve
+        LOG_INFO << "Assembling system...";
+        solver->assemble();
+        
+        LOG_INFO << "Solving...";
+        bool success = solver->solve();
+        
+        if (!success) {
+            LOG_ERROR << "Solver failed to converge";
+            return 1;
+        }
+        
+        // Print results
+        Real minV = solver->minValue();
+        Real maxV = solver->maxValue();
+        
+        LOG_INFO << "=== Results ===";
+        LOG_INFO << "Potential range: [" << minV << ", " << maxV << "] V";
+        LOG_INFO << "Expected range: [0, 0.02] V";
+        
+        // Verify results
+        if (minV < -1e-6) {
+            LOG_WARN << "Minimum potential is negative: " << minV;
+        }
+        if (std::abs(maxV - 0.02) > 0.001) {
+            LOG_WARN << "Maximum potential differs from expected: " << maxV << " vs 0.02";
+        } else {
+            LOG_INFO << "Potential range is correct!";
+        }
+        
+        LOG_INFO << "Solver iterations: " << solver->iterations();
+        LOG_INFO << "Solver residual: " << solver->residual();
+        
+        // Export results to VTU
+        std::filesystem::create_directories("results");
+        std::string outputPath = "results/busbar_electrostatics.vtu";
+        
+        // Prepare field data
+        const GridFunction& V = solver->field();
+        FieldResult potentialField;
+        potentialField.name = "V";
+        potentialField.unit = "V";
+        potentialField.nodalValues.resize(V.numDofs());
+        for (Index i = 0; i < V.numDofs(); ++i) {
+            potentialField.nodalValues[i] = V.values()(i);
+        }
+        
+        std::vector<FieldResult> fields = {potentialField};
+        ResultExporter::exportVtu(outputPath, *setup.mesh, fields);
+        
+        LOG_INFO << "Results exported to: " << outputPath;
+        LOG_INFO << "=== Example completed successfully! ===";
         return 0;
         
     } catch (const std::exception& e) {

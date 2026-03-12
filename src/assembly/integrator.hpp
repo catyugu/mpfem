@@ -58,13 +58,6 @@ public:
         q_ = std::shared_ptr<Coefficient>(&q, [](Coefficient*){}); 
     }
     
-    /// Set coefficient from raw pointer (assumes external ownership, DEPRECATED)
-    [[deprecated("Use setCoefficientShared() or setCoefficientRef()")]]
-    void setCoefficient(Coefficient* q) { 
-        if (q) q_ = std::shared_ptr<Coefficient>(q, [](Coefficient*){}); 
-        else q_.reset();
-    }
-    
     /// Get the coefficient (may be nullptr)
     Coefficient* coefficient() const { return q_.get(); }
     
@@ -108,11 +101,6 @@ public:
     void setCoefficientShared(std::shared_ptr<Coefficient> q) { q_ = std::move(q); }
     void setCoefficientRef(Coefficient& q) { 
         q_ = std::shared_ptr<Coefficient>(&q, [](Coefficient*){}); 
-    }
-    [[deprecated("Use setCoefficientShared() or setCoefficientRef()")]]
-    void setCoefficient(Coefficient* q) { 
-        if (q) q_ = std::shared_ptr<Coefficient>(q, [](Coefficient*){}); 
-        else q_.reset();
     }
     
     Coefficient* coefficient() const { return q_.get(); }

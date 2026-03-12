@@ -112,6 +112,11 @@ add_library(mpfem_assembly INTERFACE)
 # Solver module (header-only for now)
 add_library(mpfem_solver INTERFACE)
 
+# Physics module
+add_library(mpfem_physics
+    src/physics/electrostatics_solver.cpp
+)
+
 # Library aliases for convenience
 add_library(mpfem::core ALIAS mpfem_core)
 add_library(mpfem::model ALIAS mpfem_model)
@@ -120,6 +125,7 @@ add_library(mpfem::fe ALIAS mpfem_fe)
 add_library(mpfem::mesh ALIAS mpfem_mesh)
 add_library(mpfem::assembly ALIAS mpfem_assembly)
 add_library(mpfem::solver ALIAS mpfem_solver)
+add_library(mpfem::physics ALIAS mpfem_physics)
 
 # =============================================================================
 # Target properties
@@ -215,6 +221,24 @@ target_link_libraries(mpfem_solver
     INTERFACE mpfem_core
 )
 
+# mpfem_physics
+target_include_directories(mpfem_physics
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+        $<INSTALL_INTERFACE:include>
+)
+target_link_libraries(mpfem_physics
+    PUBLIC Eigen3::Eigen
+    PUBLIC mpfem_core
+    PUBLIC mpfem_mesh
+    PUBLIC mpfem_fe
+    PUBLIC mpfem_assembly
+    PUBLIC mpfem_solver
+    PUBLIC mpfem_io
+    PUBLIC mpfem_model
+)
+mpfem_set_default_compiler_options(mpfem_physics)
+
 # =============================================================================
 # Compile definitions
 # =============================================================================
@@ -247,7 +271,7 @@ endif()
 # =============================================================================
 include(GNUInstallDirs)
 
-install(TARGETS mpfem_core mpfem_model mpfem_io mpfem_fe mpfem_mesh mpfem_assembly mpfem_solver
+install(TARGETS mpfem_core mpfem_model mpfem_io mpfem_fe mpfem_mesh mpfem_assembly mpfem_solver mpfem_physics
     EXPORT mpfemTargets
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}

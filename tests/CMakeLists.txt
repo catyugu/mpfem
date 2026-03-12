@@ -201,3 +201,23 @@ target_link_libraries(mpfem_test_integrator
 )
 
 add_test(NAME Integrator COMMAND mpfem_test_integrator)
+
+# =============================================================================
+# Electrostatics Solver Tests (Physics module)
+# =============================================================================
+add_executable(mpfem_test_electrostatics_solver
+    test_electrostatics_solver.cpp
+)
+
+target_link_libraries(mpfem_test_electrostatics_solver
+    PRIVATE mpfem::physics
+    PRIVATE mpfem::mesh
+    PRIVATE mpfem::fe
+    PRIVATE mpfem::assembly
+    PRIVATE mpfem::solver
+    PRIVATE mpfem::io
+    PRIVATE mpfem::model
+    PRIVATE GTest::gtest_main
+)
+
+add_test(NAME ElectrostaticsSolver COMMAND mpfem_test_electrostatics_solver)

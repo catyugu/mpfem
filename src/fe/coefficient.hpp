@@ -115,10 +115,12 @@ public:
     
     /// Get constant for attribute i (1-indexed)
     Real constant(int attr) const {
-        if (attr >= 1 && static_cast<size_t>(attr) <= constants_.size()) {
-            return constants_[attr - 1];
+        if (attr < 1 || static_cast<size_t>(attr) > constants_.size()) {
+            MPFEM_THROW(RangeException, 
+                "PWConstCoefficient::constant: invalid attribute " + std::to_string(attr) +
+                ", valid range is [1, " + std::to_string(constants_.size()) + "]");
         }
-        return 0.0;
+        return constants_[attr - 1];
     }
     
     /// Access operator (1-indexed)

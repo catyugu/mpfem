@@ -2,6 +2,7 @@
 #define MPFEM_CASE_DEFINITION_HPP
 
 #include "model/field_kind.hpp"
+#include "core/exception.hpp"
 #include <string>
 #include <vector>
 #include <set>
@@ -105,7 +106,7 @@ struct CaseDefinition {
 
     /**
      * @brief Get variable value by name.
-     * @return Value if found, 0.0 otherwise.
+     * @throws Exception if variable not found.
      */
     double getVariable(const std::string& name) const {
         for (const auto& v : variables) {
@@ -113,7 +114,32 @@ struct CaseDefinition {
                 return v.siValue;
             }
         }
-        return 0.0;
+        MPFEM_THROW(Exception, 
+            "CaseDefinition::getVariable: variable '" + name + "' not found");
+    }
+    
+    /**
+     * @brief Check if variable exists.
+     */
+    bool hasVariable(const std::string& name) const {
+        for (const auto& v : variables) {
+            if (v.name == name) {
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    /**
+     * @brief Get variable value by name, or default if not found.
+     */
+    double getVariableOrDefault(const std::string& name, double defaultValue) const {
+        for (const auto& v : variables) {
+            if (v.name == name) {
+                return v.siValue;
+            }
+        }
+        return defaultValue;
     }
 
     /**

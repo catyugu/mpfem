@@ -5,6 +5,7 @@
 #include "mesh/mesh_topology.hpp"
 #include "fe_collection.hpp"
 #include "core/types.hpp"
+#include "core/exception.hpp"
 #include <vector>
 #include <memory>
 #include <unordered_map>
@@ -132,13 +133,29 @@ public:
     
     /// Get reference element for an element
     const ReferenceElement* elementRefElement(Index elemIdx) const {
-        if (!mesh_ || elemIdx >= mesh_->numElements()) return nullptr;
+        if (!mesh_) {
+            MPFEM_THROW(Exception, "FESpace::elementRefElement: mesh not set");
+        }
+        if (elemIdx >= mesh_->numElements()) {
+            MPFEM_THROW(RangeException, 
+                "FESpace::elementRefElement: invalid element index " + 
+                std::to_string(elemIdx) + ", num elements = " + 
+                std::to_string(mesh_->numElements()));
+        }
         return refElement(mesh_->element(elemIdx).geometry());
     }
     
     /// Get reference element for a boundary element
     const ReferenceElement* bdrElementRefElement(Index bdrIdx) const {
-        if (!mesh_ || bdrIdx >= mesh_->numBdrElements()) return nullptr;
+        if (!mesh_) {
+            MPFEM_THROW(Exception, "FESpace::bdrElementRefElement: mesh not set");
+        }
+        if (bdrIdx >= mesh_->numBdrElements()) {
+            MPFEM_THROW(RangeException, 
+                "FESpace::bdrElementRefElement: invalid boundary element index " + 
+                std::to_string(bdrIdx) + ", num boundary elements = " + 
+                std::to_string(mesh_->numBdrElements()));
+        }
         return refElement(mesh_->bdrElement(bdrIdx).geometry());
     }
     

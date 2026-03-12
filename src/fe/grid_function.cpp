@@ -2,6 +2,7 @@
 #include "fe/element_transform.hpp"
 #include "fe/shape_function.hpp"
 #include "core/logger.hpp"
+#include "core/exception.hpp"
 
 namespace mpfem {
 
@@ -76,10 +77,16 @@ void GridFunction::setElementValues(Index elemIdx, const Eigen::VectorXd& localV
 }
 
 Real GridFunction::eval(Index elemIdx, const Real* xi) const {
-    if (!fes_) return 0.0;
+    if (!fes_) {
+        MPFEM_THROW(Exception, "GridFunction::eval: FE space not set");
+    }
     
     const ReferenceElement* refElem = fes_->elementRefElement(elemIdx);
-    if (!refElem) return 0.0;
+    if (!refElem) {
+        MPFEM_THROW(Exception, 
+            "GridFunction::eval: no reference element for element " + 
+            std::to_string(elemIdx));
+    }
     
     // Get shape function values
     auto shapeValues = refElem->shapeFunction()->evalValues(xi);
