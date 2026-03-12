@@ -80,13 +80,13 @@ public:
 
     /// Check if a face (by index) is an external boundary - O(1)
     bool isExternalBoundary(Index faceIdx) const {
-        if (faceIdx >= faceInfoList_.size()) return false;
+        if (faceIdx < 0 || static_cast<size_t>(faceIdx) >= faceInfoList_.size()) return false;
         return faceInfoList_[faceIdx].isBoundary;
     }
 
     /// Get adjacent elements for a face - O(1)
     std::pair<Index, Index> getAdjacentElements(Index faceIdx) const {
-        if (faceIdx >= faceInfoList_.size()) {
+        if (faceIdx < 0 || static_cast<size_t>(faceIdx) >= faceInfoList_.size()) {
             return {InvalidIndex, InvalidIndex};
         }
         const auto& info = faceInfoList_[faceIdx];

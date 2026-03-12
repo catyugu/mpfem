@@ -1,11 +1,8 @@
 #ifndef MPFEM_FACET_ELEMENT_TRANSFORM_HPP
 #define MPFEM_FACET_ELEMENT_TRANSFORM_HPP
 
-#include "mesh/mesh.hpp"
-#include "mesh/geometry.hpp"
-#include "core/types.hpp"
-#include <Eigen/Dense>
-#include "shape_function.hpp"
+#include "fe/element_transform.hpp"
+#include <cmath>
 
 namespace mpfem {
 
@@ -13,203 +10,88 @@ namespace mpfem {
 class MeshTopology;
 
 /**
+ * @file facet_element_transform.hpp
  * @brief Transformation for boundary facet elements.
  * 
- * FacetElementTransform handles coordinate transformation for boundary 
- * elements (triangles, quadrilaterals in 3D; segments in 2D). It provides:
- * - Normal vector computation for boundary faces
- * - Jacobian and weight computation for surface integrals
- * - Access to adjacent volume element information
+ * FacetElementTransform inherits from ElementTransform and provides
+ * additional functionality for boundary elements:
+ * - Normal vector computation
+ * - Access to adjacent volume element
+ * - Integration point mapping from boundary to volume element
  * 
- * Thread safety: Each thread should have its own FacetElementTransform instance.
- * The cached Jacobian data uses mutable for lazy evaluation but is not thread-safe
- * when shared between threads.
- * 
- * Usage:
- *   FacetElementTransform trans(&mesh, bdrElemIdx);
- *   for (const auto& ip : quadrature) {
- *       trans.setIntegrationPoint(ip);
- *       Vector3 n = trans.normal();
- *       Real w = trans.weight() * ip.weight;
- *       // ... surface integral
- *   }
+ * Design inspired by MFEM's FaceElementTransformations class.
  */
-class FacetElementTransform {
+class FacetElementTransform : public ElementTransform {
 public:
-    /// Default constructor
-    FacetElementTransform() = default;
+    // -------------------------------------------------------------------------
+    // Construction
+    // -------------------------------------------------------------------------
     
-    /// Construct with mesh and boundary element index
-    FacetElementTransform(const Mesh* mesh, Index bdrElemIdx);
+    FacetElementTransform() : ElementTransform(nullptr, InvalidIndex, BOUNDARY) {}
+    
+    FacetElementTransform(const Mesh* mesh, Index bdrElemIdx)
+        : ElementTransform(mesh, bdrElemIdx, BOUNDARY) {}
+    
+    FacetElementTransform(const Mesh* mesh, const MeshTopology* topo, Index bdrElemIdx);
     
     // -------------------------------------------------------------------------
     // Setup
     // -------------------------------------------------------------------------
     
-    /// Set the mesh
-    void setMesh(const Mesh* mesh) { mesh_ = mesh; }
+    void setMesh(const Mesh* mesh) override;
+    void setElement(Index bdrElemIdx) override;
     
-    /// Set the boundary element index
-    void setBoundaryElement(Index bdrElemIdx);
+    /// Set boundary element index (alias for setElement)
+    void setBoundaryElement(Index bdrElemIdx) { setElement(bdrElemIdx); }
     
-    /// Set integration point (invalidates cached Jacobian data)
-    void setIntegrationPoint(const Real* xi);
-    
-    /// Reset evaluation state (force recompute on next access)
-    void reset() { evalState_ = 0; }
+    /// Set mesh topology (required for adjacent element access)
+    void setTopology(const MeshTopology* topo);
     
     // -------------------------------------------------------------------------
-    // Geometry info
+    // Boundary-specific properties
     // -------------------------------------------------------------------------
     
-    /// Get geometry type
-    Geometry geometry() const { return geometry_; }
-    
-    /// Get spatial dimension of the boundary element (one less than mesh dim)
-    int dim() const { return dim_; }
-    
-    /// Get spatial dimension of the parent mesh
-    int spaceDim() const { return spaceDim_; }
-    
-    /// Get boundary element index
-    Index boundaryElementIndex() const { return bdrElemIdx_; }
-    
-    /// Get the mesh
-    const Mesh* mesh() const { return mesh_; }
-    
-    /// Get the boundary attribute (boundary ID)
+    /// Get the boundary attribute (boundary condition ID)
     Index boundaryAttribute() const;
-    
-    // -------------------------------------------------------------------------
-    // Transformation
-    // -------------------------------------------------------------------------
-    
-    /// Transform reference coordinates to physical coordinates
-    void transform(const Real* xi, Real* x) const;
-    void transform(const Real* xi, Vector3& x) const;
-    
-    // -------------------------------------------------------------------------
-    // Jacobian and related quantities
-    // -------------------------------------------------------------------------
-    
-    /// Get the Jacobian matrix (spaceDim x dim)
-    /// For a triangle in 3D: J = [dF/dxi, dF/deta] (3x2 matrix)
-    const Matrix& jacobian() const;
-    
-    /// Get the Jacobian determinant (area scaling factor)
-    /// For surface elements: |det(J)| = |dF/dxi x dF/deta|
-    Real detJ() const;
-    
-    /// Get the weight = |det(J)| for surface integrals
-    Real weight() const;
-    
-    // -------------------------------------------------------------------------
-    // Normal vector
-    // -------------------------------------------------------------------------
     
     /**
      * @brief Get outward unit normal vector at current integration point.
      * 
      * For 2D surface in 3D: n = (dF/dxi x dF/deta) / |dF/dxi x dF/deta|
      * For 1D curve in 2D: n = tangent rotated 90 degrees
-     * 
-     * The normal direction follows the right-hand rule with the boundary
-     * element's vertex ordering (outward from the domain).
      */
     Vector3 normal() const;
     
     // -------------------------------------------------------------------------
-    // Element vertices (convenience)
+    // Adjacent element access
     // -------------------------------------------------------------------------
     
-    /// Get vertex coordinates
-    const std::vector<Vector3>& vertices() const { return vertices_; }
+    /// Check if topology information is available
+    bool hasTopology() const { return topo_ != nullptr; }
     
-    /// Get number of vertices
-    int numVertices() const { return static_cast<int>(vertices_.size()); }
+    /// Get adjacent volume element index
+    Index adjacentElementIndex() const;
+    
+    /// Get local face index in the adjacent element
+    int localFaceIndex() const;
+    
+    /// Get ElementTransform for the adjacent volume element
+    bool getAdjacentElementTransform(ElementTransform& trans) const;
+    
+    /// Map integration point from boundary to volume element coordinates
+    bool mapToVolumeElement(const Real* bdrXi, Real* volXi) const;
     
 private:
-    // -------------------------------------------------------------------------
-    // Evaluation state management
-    // -------------------------------------------------------------------------
-    enum EvalMask {
-        JACOBIAN_MASK = 1,
-        WEIGHT_MASK   = 2
-    };
+    void computeGeometryInfo() override;
+    void computeAdjacentElementInfo() const;
     
-    void computeGeometryInfo();
-    void createGeomShapeFunction();
-    void evalJacobian() const;
-    void evalJacobianLinear() const;
-    void evalWeight() const;
+    const MeshTopology* topo_ = nullptr;
     
-    // -------------------------------------------------------------------------
-    // Member variables
-    // -------------------------------------------------------------------------
-    const Mesh* mesh_ = nullptr;
-    Index bdrElemIdx_ = 0;
-    
-    Geometry geometry_ = Geometry::Invalid;
-    int dim_ = 0;        // Dimension of boundary element (1 for segment, 2 for triangle/quad)
-    int spaceDim_ = 0;   // Dimension of parent mesh
-    int geomOrder_ = 1;  // Geometric order (from element)
-    std::vector<Vector3> vertices_;
-    std::vector<Index> vertexIndices_;
-    
-    IntegrationPoint ip_;
-    
-    // Geometric shape function for curved boundary elements
-    std::unique_ptr<ShapeFunction> geomShapeFunc_;
-    
-    // Mutable for lazy evaluation
-    mutable Matrix jacobian_;  // spaceDim_ x dim_
-    mutable Real detJ_ = 0.0;
-    mutable Real weight_ = 0.0;
-    mutable int evalState_ = 0;
+    // Cached adjacent element info
+    mutable Index adjElemIdx_ = InvalidIndex;
+    mutable int localFaceIdx_ = -1;
+    mutable bool adjElemComputed_ = false;
 };
-
-// =============================================================================
-// Inline implementations
-// =============================================================================
-
-inline FacetElementTransform::FacetElementTransform(const Mesh* mesh, Index bdrElemIdx)
-    : mesh_(mesh), bdrElemIdx_(bdrElemIdx) {
-    computeGeometryInfo();
-}
-
-inline void FacetElementTransform::setBoundaryElement(Index bdrElemIdx) {
-    bdrElemIdx_ = bdrElemIdx;
-    evalState_ = 0;
-    computeGeometryInfo();
-}
-
-inline void FacetElementTransform::setIntegrationPoint(const Real* xi) {
-    ip_.xi = xi[0];
-    if (dim_ > 1) ip_.eta = xi[1];
-    if (dim_ > 2) ip_.zeta = xi[2];
-    evalState_ = 0;
-}
-
-inline void FacetElementTransform::transform(const Real* xi, Vector3& x) const {
-    Real coords[3];
-    transform(xi, coords);
-    x = Vector3(coords[0], coords[1], coords[2]);
-}
-
-inline const Matrix& FacetElementTransform::jacobian() const {
-    evalJacobian();
-    return jacobian_;
-}
-
-inline Real FacetElementTransform::detJ() const {
-    evalWeight();
-    return detJ_;
-}
-
-inline Real FacetElementTransform::weight() const {
-    evalWeight();
-    return weight_;
-}
 
 }  // namespace mpfem
 

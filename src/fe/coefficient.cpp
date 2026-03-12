@@ -32,7 +32,7 @@ void VectorCoefficient::eval(ElementTransform& trans, const IntegrationPoint& ip
 // =============================================================================
 
 Real PWConstCoefficient::eval(ElementTransform& trans) const {
-    Index attr = trans.elementAttribute();
+    Index attr = trans.attribute();
     if (attr >= 1 && static_cast<size_t>(attr) <= constants_.size()) {
         return constants_[attr - 1];
     }
@@ -46,7 +46,7 @@ Real PWConstCoefficient::eval(ElementTransform& trans) const {
 // =============================================================================
 
 Real PWCoefficient::eval(ElementTransform& trans) const {
-    Index attr = trans.elementAttribute();
+    Index attr = trans.attribute();
     
     // Check owned coefficients
     auto it = pieces_.find(attr);
@@ -113,7 +113,7 @@ Real GridFunctionCoefficient::eval(ElementTransform& trans) const {
 Real RestrictedCoefficient::eval(ElementTransform& trans) const {
     if (!coef_) return 0.0;
     
-    Index attr = trans.elementAttribute();
+    Index attr = trans.attribute();
     if (activeAttr_.count(attr) > 0) {
         return coef_->eval(trans);
     }
@@ -165,7 +165,7 @@ void TemperatureDependentConductivityCoefficient::setMaterialFields(
 }
 
 Real TemperatureDependentConductivityCoefficient::eval(ElementTransform& trans) const {
-    Index attr = trans.elementAttribute();
+    Index attr = trans.attribute();
     
     if (attr < 1 || static_cast<size_t>(attr) > sigma0_.size()) {
         Logger::log(LogLevel::Warning, 
@@ -224,7 +224,7 @@ void TemperatureDependentThermalConductivityCoefficient::setMaterialFields(
 }
 
 Real TemperatureDependentThermalConductivityCoefficient::eval(ElementTransform& trans) const {
-    Index attr = trans.elementAttribute();
+    Index attr = trans.attribute();
     
     if (attr < 1 || static_cast<size_t>(attr) > k0_.size()) {
         Logger::log(LogLevel::Warning, 
@@ -291,7 +291,7 @@ void VectorGridFunctionCoefficient::eval(ElementTransform& trans, Real* result) 
 // =============================================================================
 
 void PWMatrixCoefficient::eval(ElementTransform& trans, Real* result) const {
-    Index attr = trans.elementAttribute();
+    Index attr = trans.attribute();
     
     auto it = matrices_.find(attr);
     if (it != matrices_.end()) {

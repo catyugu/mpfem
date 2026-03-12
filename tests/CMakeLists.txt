@@ -184,3 +184,20 @@ target_link_libraries(mpfem_test_coefficient
 )
 
 add_test(NAME Coefficient COMMAND mpfem_test_coefficient)
+
+# =============================================================================
+# Integrator Tests (Assembly module)
+# =============================================================================
+add_executable(mpfem_test_integrator
+    test_integrator.cpp
+)
+
+target_link_libraries(mpfem_test_integrator
+    PRIVATE mpfem::mesh
+    PRIVATE mpfem::fe
+    PRIVATE mpfem::assembly
+    PRIVATE mpfem::solver
+    PRIVATE GTest::gtest_main
+)
+
+add_test(NAME Integrator COMMAND mpfem_test_integrator)

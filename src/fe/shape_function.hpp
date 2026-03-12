@@ -72,6 +72,11 @@ public:
      * For Lagrange elements, these are the node positions.
      */
     virtual std::vector<std::vector<Real>> dofCoords() const = 0;
+    
+    /**
+     * @brief Factory method to create shape function for given geometry and order.
+     */
+    static std::unique_ptr<ShapeFunction> create(Geometry geom, int order);
 };
 
 // =============================================================================
@@ -817,7 +822,53 @@ inline std::vector<std::vector<Real>> H1CubeShape::dofCoords() const {
     
     return coords;
 }
-
-}  // namespace mpfem
-
-#endif  // MPFEM_SHAPE_FUNCTION_HPP
+    
+    
+    
+    // =============================================================================
+    
+    // Factory method implementation
+    
+    // =============================================================================
+    
+    
+    
+    inline std::unique_ptr<ShapeFunction> ShapeFunction::create(Geometry geom, int order) {
+    
+        switch (geom) {
+    
+            case Geometry::Segment:
+    
+                return std::make_unique<H1SegmentShape>(order);
+    
+            case Geometry::Triangle:
+    
+                return std::make_unique<H1TriangleShape>(order);
+    
+            case Geometry::Square:
+    
+                return std::make_unique<H1SquareShape>(order);
+    
+            case Geometry::Tetrahedron:
+    
+                return std::make_unique<H1TetrahedronShape>(order);
+    
+            case Geometry::Cube:
+    
+                return std::make_unique<H1CubeShape>(order);
+    
+            default:
+    
+                return nullptr;
+    
+        }
+    
+    }
+    
+    
+    
+    }  // namespace mpfem
+    
+    
+    
+    #endif  // MPFEM_SHAPE_FUNCTION_HPP

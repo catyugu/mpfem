@@ -1,4 +1,5 @@
 #include "fe/facet_element_transform.hpp"
+#include "mesh/mesh_topology.hpp"
 #include <cmath>
 
 namespace mpfem {
@@ -7,269 +8,216 @@ namespace mpfem {
 // FacetElementTransform Implementation
 // =============================================================================
 
-Index FacetElementTransform::boundaryAttribute() const {
-    if (!mesh_) return 0;
-    
-    if (bdrElemIdx_ < mesh_->numBdrElements()) {
-        return mesh_->bdrElement(bdrElemIdx_).attribute();
-    }
-    return 0;
+FacetElementTransform::FacetElementTransform(const Mesh* mesh, 
+                                             const MeshTopology* topo, 
+                                             Index bdrElemIdx)
+    : ElementTransform(mesh, bdrElemIdx, BOUNDARY), topo_(topo) {
+}
+
+void FacetElementTransform::setMesh(const Mesh* mesh) {
+    ElementTransform::setMesh(mesh);
+    adjElemComputed_ = false;
+}
+
+void FacetElementTransform::setElement(Index bdrElemIdx) {
+    elemIdx_ = bdrElemIdx;
+    elemType_ = BOUNDARY;
+    evalState_ = 0;
+    adjElemComputed_ = false;
+    computeGeometryInfo();
+}
+
+void FacetElementTransform::setTopology(const MeshTopology* topo) {
+    topo_ = topo;
+    adjElemComputed_ = false;
 }
 
 void FacetElementTransform::computeGeometryInfo() {
     if (!mesh_) return;
     
-    if (bdrElemIdx_ >= mesh_->numBdrElements()) return;
+    if (elemIdx_ >= mesh_->numBdrElements()) return;
     
-    const Element& elem = mesh_->bdrElement(bdrElemIdx_);
+    const Element& elem = mesh_->bdrElement(elemIdx_);
     geometry_ = elem.geometry();
     spaceDim_ = mesh_->dim();
-    dim_ = geom::dim(geometry_);  // Dimension of the boundary element
-    
-    // Get vertex coordinates
-    vertexIndices_ = elem.vertices();
-    vertices_.resize(vertexIndices_.size());
-    for (size_t i = 0; i < vertexIndices_.size(); ++i) {
-        vertices_[i] = mesh_->vertex(vertexIndices_[i]).toVector();
-    }
-    
-    // Pre-allocate Jacobian matrix (spaceDim_ x dim_)
-    jacobian_.setZero(spaceDim_, dim_);
-    
-    // Get geometric order and create shape function
+    dim_ = geom::dim(geometry_);
     geomOrder_ = elem.order();
-    createGeomShapeFunction();
-}
-
-void FacetElementTransform::createGeomShapeFunction() {
-    switch (geometry_) {
-        case Geometry::Segment:
-            geomShapeFunc_ = std::make_unique<H1SegmentShape>(geomOrder_);
-            break;
-        case Geometry::Triangle:
-            geomShapeFunc_ = std::make_unique<H1TriangleShape>(geomOrder_);
-            break;
-        case Geometry::Square:
-            geomShapeFunc_ = std::make_unique<H1SquareShape>(geomOrder_);
-            break;
-        default:
-            geomShapeFunc_ = nullptr;
-            break;
-    }
-}
-
-// =============================================================================
-// Transform implementations
-// =============================================================================
-
-void FacetElementTransform::transform(const Real* xi, Real* x) const {
-    x[0] = x[1] = x[2] = 0.0;
     
-    if (!geomShapeFunc_) {
-        // Fallback to linear interpolation for unsupported geometry
-        switch (geometry_) {
-            case Geometry::Segment: {
-                Real phi0 = 0.5 * (1.0 - xi[0]);
-                Real phi1 = 0.5 * (1.0 + xi[0]);
-                for (int i = 0; i < spaceDim_; ++i) {
-                    x[i] = phi0 * vertices_[0][i] + phi1 * vertices_[1][i];
-                }
-                break;
-            }
-            case Geometry::Triangle: {
-                Real l1 = 1.0 - xi[0] - xi[1];
-                Real l2 = xi[0];
-                Real l3 = xi[1];
-                for (int i = 0; i < spaceDim_; ++i) {
-                    x[i] = l1 * vertices_[0][i] + l2 * vertices_[1][i] + l3 * vertices_[2][i];
-                }
-                break;
-            }
-            case Geometry::Square: {
-                Real xi1 = xi[0], xi2 = xi[1];
-                Real phi[4];
-                phi[0] = 0.25 * (1.0 - xi1) * (1.0 - xi2);
-                phi[1] = 0.25 * (1.0 + xi1) * (1.0 - xi2);
-                phi[2] = 0.25 * (1.0 + xi1) * (1.0 + xi2);
-                phi[3] = 0.25 * (1.0 - xi1) * (1.0 + xi2);
-                for (int i = 0; i < spaceDim_; ++i) {
-                    x[i] = phi[0] * vertices_[0][i] + phi[1] * vertices_[1][i] +
-                          phi[2] * vertices_[2][i] + phi[3] * vertices_[3][i];
-                }
-                break;
-            }
-            default:
-                break;
-        }
-        return;
+    // Get node coordinates
+    nodeIndices_ = elem.vertices();
+    nodes_.resize(nodeIndices_.size());
+    for (size_t i = 0; i < nodeIndices_.size(); ++i) {
+        nodes_[i] = mesh_->vertex(nodeIndices_[i]).toVector();
     }
     
-    // Use geometric shape functions for coordinate interpolation
-    auto sv = geomShapeFunc_->evalValues(xi);
-    
-    for (int i = 0; i < spaceDim_; ++i) {
-        x[i] = 0.0;
-    }
-    
-    for (int j = 0; j < geomShapeFunc_->numDofs(); ++j) {
-        for (int i = 0; i < spaceDim_; ++i) {
-            x[i] += sv[j] * vertices_[j][i];
-        }
-    }
-}
-
-// =============================================================================
-// Jacobian evaluation
-// =============================================================================
-
-void FacetElementTransform::evalJacobian() const {
-    if (evalState_ & JACOBIAN_MASK) return;
-    
-    if (!geomShapeFunc_) {
-        // Fallback to linear Jacobian for unsupported geometry
-        evalJacobianLinear();
-        return;
-    }
-    
-    // Use geometric shape functions for Jacobian computation
-    ShapeValues sv = geomShapeFunc_->eval(&ip_.xi);
-    
-    // J = sum_k (x_k \otimes grad_xi(phi_k))
+    // Pre-allocate matrices
     jacobian_.setZero(spaceDim_, dim_);
+    invJacobian_.setZero(dim_, spaceDim_);
+    invJacobianT_.setZero(spaceDim_, dim_);
+    adjJacobian_.setZero(spaceDim_, dim_);
     
-    for (int j = 0; j < geomShapeFunc_->numDofs(); ++j) {
-        for (int d1 = 0; d1 < spaceDim_; ++d1) {
-            for (int d2 = 0; d2 < dim_; ++d2) {
-                jacobian_(d1, d2) += vertices_[j][d1] * sv.gradients[j][d2];
-            }
-        }
-    }
+    initGeometricShapeFunction();
     
-    evalState_ |= JACOBIAN_MASK;
+    // Reset cached adjacent element info
+    adjElemComputed_ = false;
+    adjElemIdx_ = InvalidIndex;
+    localFaceIdx_ = -1;
 }
 
-void FacetElementTransform::evalJacobianLinear() const {
-    // Linear Jacobian computation (fallback)
-    switch (geometry_) {
-        case Geometry::Segment: {
-            for (int i = 0; i < spaceDim_; ++i) {
-                jacobian_(i, 0) = 0.5 * (vertices_[1][i] - vertices_[0][i]);
-            }
-            break;
-        }
-        
-        case Geometry::Triangle: {
-            for (int i = 0; i < spaceDim_; ++i) {
-                jacobian_(i, 0) = vertices_[1][i] - vertices_[0][i];
-                jacobian_(i, 1) = vertices_[2][i] - vertices_[0][i];
-            }
-            break;
-        }
-        
-        case Geometry::Square: {
-            Real xi = ip_.xi, eta = ip_.eta;
-            
-            Real dphi0_dxi = -0.25 * (1.0 - eta);
-            Real dphi1_dxi =  0.25 * (1.0 - eta);
-            Real dphi2_dxi =  0.25 * (1.0 + eta);
-            Real dphi3_dxi = -0.25 * (1.0 + eta);
-            
-            Real dphi0_deta = -0.25 * (1.0 - xi);
-            Real dphi1_deta = -0.25 * (1.0 + xi);
-            Real dphi2_deta =  0.25 * (1.0 + xi);
-            Real dphi3_deta =  0.25 * (1.0 - xi);
-            
-            for (int i = 0; i < spaceDim_; ++i) {
-                jacobian_(i, 0) = dphi0_dxi * vertices_[0][i] + dphi1_dxi * vertices_[1][i] +
-                                      dphi2_dxi * vertices_[2][i] + dphi3_dxi * vertices_[3][i];
-                jacobian_(i, 1) = dphi0_deta * vertices_[0][i] + dphi1_deta * vertices_[1][i] +
-                                      dphi2_deta * vertices_[2][i] + dphi3_deta * vertices_[3][i];
-            }
-            break;
-        }
-        
-        default:
-            break;
-    }
-    
-    evalState_ |= JACOBIAN_MASK;
+Index FacetElementTransform::boundaryAttribute() const {
+    return attribute();  // Already handled in base class
 }
 
-void FacetElementTransform::evalWeight() const {
-    if (evalState_ & WEIGHT_MASK) return;
-    
-    evalJacobian();
-    
-    // For 1D element: detJ = magnitude of tangent
-    // For 2D element: compute area factor
-    if (dim_ == 1) {
-        // Segment in 2D or 3D space
-        detJ_ = 0.0;
-        for (int i = 0; i < spaceDim_; ++i) {
-            detJ_ += jacobian_(i, 0) * jacobian_(i, 0);
-        }
-        detJ_ = std::sqrt(detJ_);
-    } else if (dim_ == 2) {
-        // Triangle or Square in 3D space
-        // detJ = magnitude of normal vector = |J(:,0) x J(:,1)|
-        Vector3 tangent1, tangent2;
-        for (int i = 0; i < spaceDim_; ++i) {
-            tangent1[i] = jacobian_(i, 0);
-            tangent2[i] = jacobian_(i, 1);
-        }
-        Vector3 n = tangent1.cross(tangent2);
-        detJ_ = n.norm();
-    }
-    
-    weight_ = detJ_;
-    evalState_ |= WEIGHT_MASK;
+Index FacetElementTransform::adjacentElementIndex() const {
+    computeAdjacentElementInfo();
+    return adjElemIdx_;
 }
 
-// =============================================================================
-// Normal vector computation
-// =============================================================================
+int FacetElementTransform::localFaceIndex() const {
+    computeAdjacentElementInfo();
+    return localFaceIdx_;
+}
+
+bool FacetElementTransform::getAdjacentElementTransform(ElementTransform& trans) const {
+    computeAdjacentElementInfo();
+    if (adjElemIdx_ == InvalidIndex) return false;
+    trans.setMesh(mesh_);
+    trans.setElement(adjElemIdx_);
+    return true;
+}
 
 Vector3 FacetElementTransform::normal() const {
     evalJacobian();
     
-    Vector3 n;
+    Vector3 n(0.0, 0.0, 0.0);
     
-    if (dim_ == 1) {
-        // Segment in 2D or 3D space
-        // Normal is perpendicular to tangent
-        Vector3 tangent;
-        for (int i = 0; i < spaceDim_; ++i) {
-            tangent[i] = jacobian_(i, 0);
+    if (dim_ == 2 && spaceDim_ == 3) {
+        // Surface in 3D: n = (dF/dxi x dF/deta) / |dF/dxi x dF/deta|
+        Vector3 t1(jacobian_(0, 0), jacobian_(1, 0), jacobian_(2, 0));
+        Vector3 t2(jacobian_(0, 1), jacobian_(1, 1), jacobian_(2, 1));
+        n = t1.cross(t2);
+        n.normalize();
+    }
+    else if (dim_ == 1 && spaceDim_ == 2) {
+        // Curve in 2D: n = tangent rotated 90 degrees
+        Vector3 t(jacobian_(0, 0), jacobian_(1, 0), 0.0);
+        // Rotate 90 degrees counterclockwise (outward normal convention)
+        n = Vector3(-t.y(), t.x(), 0.0);
+        n.normalize();
+    }
+    else if (dim_ == 1 && spaceDim_ == 3) {
+        // Curve in 3D: need additional information for normal
+        // Use cross product with a reference direction
+        Vector3 t(jacobian_(0, 0), jacobian_(1, 0), jacobian_(2, 0));
+        Vector3 ref(0, 0, 1);
+        if (std::abs(t.dot(ref)) > 0.9) {
+            ref = Vector3(1, 0, 0);
         }
-        tangent.normalize();
-        
-        if (spaceDim_ == 2) {
-            // Segment lies in a plane, normal is in that plane
-            n = Vector3(-tangent.y(), tangent.x(), 0.0);
-        } else if (spaceDim_ == 3) {
-            // Segment is embedded in 3D, need reference direction
-            // Use z-direction as reference
-            Vector3 ref(0, 0, 1);
-            n = tangent.cross(ref);
-            if (n.norm() < 1e-10) {
-                // Tangent is parallel to z-axis, use x-direction
-                ref = Vector3(1, 0, 0);
-                n = tangent.cross(ref);
-            }
-        }
-    } else if (dim_ == 2) {
-        // Triangle or Square in 3D space
-        // Normal = J(:,0) x J(:,1)
-        Vector3 tangent1, tangent2;
-        for (int i = 0; i < spaceDim_; ++i) {
-            tangent1[i] = jacobian_(i, 0);
-            tangent2[i] = jacobian_(i, 1);
-        }
-        n = tangent1.cross(tangent2);
+        n = t.cross(ref);
+        n.normalize();
     }
     
-    n.normalize();
     return n;
+}
+
+void FacetElementTransform::computeAdjacentElementInfo() const {
+    if (adjElemComputed_) return;
+    
+    adjElemIdx_ = InvalidIndex;
+    localFaceIdx_ = -1;
+    
+    if (!mesh_ || !topo_) {
+        adjElemComputed_ = true;
+        return;
+    }
+    
+    // Get the topology face index for this boundary element
+    Index faceIdx = topo_->getBoundaryFaceIndex(elemIdx_);
+    if (faceIdx == InvalidIndex) {
+        adjElemComputed_ = true;
+        return;
+    }
+    
+    // Get the face info
+    const auto& faceInfo = topo_->getFaceInfo(faceIdx);
+    
+    // For boundary faces, elem1 is the interior element
+    adjElemIdx_ = faceInfo.elem1;
+    localFaceIdx_ = faceInfo.localFace1;
+    
+    adjElemComputed_ = true;
+}
+
+bool FacetElementTransform::mapToVolumeElement(const Real* bdrXi, Real* volXi) const {
+    computeAdjacentElementInfo();
+    
+    if (adjElemIdx_ == InvalidIndex || localFaceIdx_ < 0) {
+        return false;
+    }
+    
+    const Element& volElem = mesh_->element(adjElemIdx_);
+    Geometry volGeom = volElem.geometry();
+    
+    // Tetrahedron mapping
+    if (volGeom == Geometry::Tetrahedron) {
+        const Real xi = bdrXi[0];
+        const Real eta = bdrXi[1];
+        
+        switch (localFaceIdx_) {
+            case 0:  volXi[0] = xi; volXi[1] = eta; volXi[2] = 1.0 - xi - eta; break;
+            case 1:  volXi[0] = 0.0; volXi[1] = eta; volXi[2] = 1.0 - xi - eta; break;
+            case 2:  volXi[0] = xi; volXi[1] = 0.0; volXi[2] = 1.0 - xi - eta; break;
+            case 3:  volXi[0] = xi; volXi[1] = eta; volXi[2] = 0.0; break;
+            default: return false;
+        }
+        return true;
+    }
+    
+    // Hexahedron mapping
+    if (volGeom == Geometry::Cube) {
+        const Real xi = bdrXi[0];
+        const Real eta = bdrXi[1];
+        
+        switch (localFaceIdx_) {
+            case 0:  volXi[0] = xi; volXi[1] = eta; volXi[2] = -1.0; break;
+            case 1:  volXi[0] = xi; volXi[1] = eta; volXi[2] = 1.0; break;
+            case 2:  volXi[0] = xi; volXi[1] = -1.0; volXi[2] = eta; break;
+            case 3:  volXi[0] = xi; volXi[1] = 1.0; volXi[2] = eta; break;
+            case 4:  volXi[0] = -1.0; volXi[1] = xi; volXi[2] = eta; break;
+            case 5:  volXi[0] = 1.0; volXi[1] = xi; volXi[2] = eta; break;
+            default: return false;
+        }
+        return true;
+    }
+    
+    // Triangle mapping (2D)
+    if (volGeom == Geometry::Triangle) {
+        const Real xi = bdrXi[0];
+        
+        switch (localFaceIdx_) {
+            case 0:  volXi[0] = xi; volXi[1] = 1.0 - xi; break;
+            case 1:  volXi[0] = 0.0; volXi[1] = xi; break;
+            case 2:  volXi[0] = xi; volXi[1] = 0.0; break;
+            default: return false;
+        }
+        return true;
+    }
+    
+    // Square mapping (2D)
+    if (volGeom == Geometry::Square) {
+        const Real xi = bdrXi[0];
+        
+        switch (localFaceIdx_) {
+            case 0:  volXi[0] = xi; volXi[1] = -1.0; break;
+            case 1:  volXi[0] = 1.0; volXi[1] = xi; break;
+            case 2:  volXi[0] = xi; volXi[1] = 1.0; break;
+            case 3:  volXi[0] = -1.0; volXi[1] = xi; break;
+            default: return false;
+        }
+        return true;
+    }
+    
+    return false;
 }
 
 }  // namespace mpfem

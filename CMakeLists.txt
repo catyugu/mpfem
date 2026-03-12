@@ -106,12 +106,20 @@ add_library(mpfem_mesh
     src/mesh/io/mphtxt_reader.cpp
 )
 
+# Assembly module (header-only for now, for template-based assembly)
+add_library(mpfem_assembly INTERFACE)
+
+# Solver module (header-only for now)
+add_library(mpfem_solver INTERFACE)
+
 # Library aliases for convenience
 add_library(mpfem::core ALIAS mpfem_core)
 add_library(mpfem::model ALIAS mpfem_model)
 add_library(mpfem::io ALIAS mpfem_io)
 add_library(mpfem::fe ALIAS mpfem_fe)
 add_library(mpfem::mesh ALIAS mpfem_mesh)
+add_library(mpfem::assembly ALIAS mpfem_assembly)
+add_library(mpfem::solver ALIAS mpfem_solver)
 
 # =============================================================================
 # Target properties
@@ -182,6 +190,31 @@ target_link_libraries(mpfem_mesh
 )
 mpfem_set_default_compiler_options(mpfem_mesh)
 
+# mpfem_assembly (header-only)
+target_include_directories(mpfem_assembly
+    INTERFACE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+        $<INSTALL_INTERFACE:include>
+)
+target_link_libraries(mpfem_assembly
+    INTERFACE Eigen3::Eigen
+    INTERFACE mpfem_core
+    INTERFACE mpfem_mesh
+    INTERFACE mpfem_fe
+    INTERFACE mpfem_solver
+)
+
+# mpfem_solver (header-only)
+target_include_directories(mpfem_solver
+    INTERFACE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+        $<INSTALL_INTERFACE:include>
+)
+target_link_libraries(mpfem_solver
+    INTERFACE Eigen3::Eigen
+    INTERFACE mpfem_core
+)
+
 # =============================================================================
 # Compile definitions
 # =============================================================================
@@ -214,7 +247,7 @@ endif()
 # =============================================================================
 include(GNUInstallDirs)
 
-install(TARGETS mpfem_core mpfem_model mpfem_io mpfem_fe mpfem_mesh
+install(TARGETS mpfem_core mpfem_model mpfem_io mpfem_fe mpfem_mesh mpfem_assembly mpfem_solver
     EXPORT mpfemTargets
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}

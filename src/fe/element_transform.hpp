@@ -7,54 +7,54 @@
 #include "fe/quadrature.hpp"
 #include "core/types.hpp"
 #include <Eigen/Dense>
+#include <memory>
 
 namespace mpfem {
 
 /**
+ * @file element_transform.hpp
  * @brief Element transformation from reference to physical coordinates.
+ * 
+ * Design inspired by MFEM's ElementTransformation class.
+ */
+
+/**
+ * @brief Base class for element transformations.
  * 
  * Provides mapping between reference element and physical element,
  * including Jacobian computation and coordinate transformation.
  * 
- * This class is designed for volume elements (tetrahedra, hexahedra in 3D;
- * triangles, quadrilaterals in 2D). For boundary elements, use
- * FacetElementTransform instead.
+ * Element types:
+ * - VOLUME: Interior elements (tetrahedra, hexahedra, triangles, quads)
+ * - BOUNDARY: Boundary elements (triangles, quads in 3D; segments in 2D)
  * 
- * **Geometric Order vs Field Order**:
- * - Geometric order (geomOrder_): Determines the accuracy of coordinate mapping.
- *   Derived from Element::order(). For curved (second-order) meshes, this is 2.
- * - Field order: Determined by the FE space, not stored here.
- * 
- * The geometric shape function (geomShapeFunc_) is used for coordinate transformation
- * and Jacobian computation. For linear elements, it's a linear Lagrange shape function.
- * For quadratic elements, it's a quadratic Lagrange shape function that accounts for
- * edge midpoints, enabling proper curved element representation.
- * 
- * Thread safety: Each thread should have its own ElementTransform instance.
- * The cached Jacobian data uses mutable for lazy evaluation but is not
- * thread-safe when shared between threads.
- * 
- * Design inspired by MFEM's ElementTransformation class.
+ * Thread safety: Each thread should have its own transform instance.
  */
 class ElementTransform {
 public:
-    /// Default constructor
-    ElementTransform() = default;
+    /// Element type enumeration
+    enum ElementType {
+        VOLUME = 1,     ///< Interior/volume element
+        BOUNDARY = 2    ///< Boundary/facet element
+    };
     
-    /// Construct with mesh and element index
-    explicit ElementTransform(const Mesh* mesh, Index elemIdx);
+    // -------------------------------------------------------------------------
+    // Construction
+    // -------------------------------------------------------------------------
+    
+    ElementTransform() = default;
+    explicit ElementTransform(const Mesh* mesh, Index elemIdx, 
+                              ElementType type = VOLUME);
+    virtual ~ElementTransform() = default;
     
     // -------------------------------------------------------------------------
     // Setup
     // -------------------------------------------------------------------------
     
-    /// Set the mesh
-    void setMesh(const Mesh* mesh) { mesh_ = mesh; }
+    virtual void setMesh(const Mesh* mesh);
+    virtual void setElement(Index elemIdx);
     
-    /// Set the element index
-    void setElement(Index elemIdx);
-    
-    /// Set integration point (invalidates cached Jacobian data)
+    /// Set integration point (invalidates cached data)
     void setIntegrationPoint(const IntegrationPoint& ip);
     void setIntegrationPoint(const Real* xi);
     
@@ -68,33 +68,26 @@ public:
     /// Get geometry type
     Geometry geometry() const { return geometry_; }
     
-    /// Get spatial dimension
+    /// Get spatial dimension of reference element
     int dim() const { return dim_; }
+    
+    /// Get spatial dimension of physical space
+    int spaceDim() const { return spaceDim_; }
     
     /// Get element index
     Index elementIndex() const { return elemIdx_; }
     
+    /// Get element type
+    ElementType elementType() const { return elemType_; }
+    
     /// Get the mesh
     const Mesh* mesh() const { return mesh_; }
     
-    /// Get the element attribute (domain ID)
-    Index elementAttribute() const;
+    /// Get the element attribute (domain/boundary ID)
+    Index attribute() const;
     
-    /// Get geometric order (from Element::order())
-    /// This determines the accuracy of coordinate mapping.
-    /// For curved elements, this is >= 2.
+    /// Get geometric order
     int geometricOrder() const { return geomOrder_; }
-    
-    /// Get geometric shape function (for coordinate mapping)
-    /// This is used for transform() and Jacobian computation.
-    const ShapeFunction* geometricShapeFunction() const { 
-        return geomShapeFunc_.get(); 
-    }
-    
-    /// Get number of geometric nodes (nodes used for coordinate mapping)
-    int numGeometricNodes() const { 
-        return geomShapeFunc_ ? geomShapeFunc_->numDofs() : 0; 
-    }
     
     /// Check if element is curved (geometric order >= 2)
     bool isCurved() const { return geomOrder_ >= 2; }
@@ -104,153 +97,120 @@ public:
     // -------------------------------------------------------------------------
     
     /// Transform reference coordinates to physical coordinates
-    void transform(const Real* xi, Real* x) const;
+    virtual void transform(const Real* xi, Real* x) const;
     void transform(const Real* xi, Vector3& x) const;
-    
-    /// Transform integration point to physical coordinates
-    void transform(const IntegrationPoint& ip, Vector3& x) const {
-        transform(&ip.xi, x);
-    }
+    void transform(const IntegrationPoint& ip, Vector3& x) const;
     
     // -------------------------------------------------------------------------
     // Jacobian and related quantities
     // -------------------------------------------------------------------------
     
-    /// Get the Jacobian matrix (dim x dim)
-    /// J_ij = dx_i / dxi_j
+    /// Get the Jacobian matrix (spaceDim x dim)
     const Matrix& jacobian() const;
     
     /// Get the inverse Jacobian matrix
     const Matrix& invJacobian() const;
     
-    /// Get the transpose of inverse Jacobian matrix (J^{-T}) for gradient transformation
+    /// Get the transpose of inverse Jacobian (J^{-T})
     const Matrix& invJacobianT() const;
     
     /// Get the Jacobian determinant
     Real detJ() const;
     
-    /// Get the weight = |det(J)|
-    Real weight() const;
+    /// Get the weight = |det(J)| for volume elements, or sqrt(det(J^T J)) for surface elements
+    virtual Real weight() const;
     
-    /// Get the adjugate of the Jacobian (for gradient transformation)
+    /// Get the adjugate of the Jacobian
     const Matrix& adjJacobian() const;
     
     // -------------------------------------------------------------------------
     // Gradient transformation
     // -------------------------------------------------------------------------
     
-    /**
-     * @brief Transform gradient from reference to physical coordinates.
-     * 
-     * Given gradient in reference coordinates: grad_xi(phi)
-     * Returns gradient in physical coordinates: grad_x(phi)
-     * 
-     * grad_x(phi) = J^{-T} * grad_xi(phi)
-     */
+    /// Transform gradient from reference to physical coordinates
     void transformGradient(const Real* refGrad, Real* physGrad) const;
     void transformGradient(const Vector3& refGrad, Vector3& physGrad) const;
     
     // -------------------------------------------------------------------------
-    // Element vertices (convenience)
+    // Element nodes
     // -------------------------------------------------------------------------
     
     /// Get geometric node coordinates
-    const std::vector<Vector3>& geomNodes() const { return geomNodes_; }
+    const std::vector<Vector3>& nodes() const { return nodes_; }
     
     /// Get number of geometric nodes
-    int numGeomNodes() const { return static_cast<int>(geomNodes_.size()); }
+    int numNodes() const { return static_cast<int>(nodes_.size()); }
     
-    /// Get vertex coordinates (alias for geometric nodes)
-    const std::vector<Vector3>& vertices() const { return geomNodes_; }
-    
-    /// Get number of vertices (alias for numGeomNodes)
-    int numVertices() const { return numGeomNodes(); }
+    /// Alias for compatibility
+    const std::vector<Vector3>& vertices() const { return nodes_; }
+    int numVertices() const { return numNodes(); }
     
     /// Get the currently set integration point
     const IntegrationPoint& integrationPoint() const { return ip_; }
     
-private:
+protected:
     // -------------------------------------------------------------------------
-    // Evaluation state management (MFEM-style)
+    // Evaluation state management
     // -------------------------------------------------------------------------
     enum EvalMask {
-        JACOBIAN_MASK    = 1,
-        WEIGHT_MASK      = 2,
-        ADJUGATE_MASK    = 4,
-        INVERSE_MASK     = 8,
+        JACOBIAN_MASK = 1,
+        WEIGHT_MASK   = 2,
+        ADJUGATE_MASK = 4,
+        INVERSE_MASK  = 8,
         INV_JACOBIAN_T_MASK = 16
     };
     
-    void computeGeometryInfo();
+    virtual void computeGeometryInfo();
     void evalJacobian() const;
     void evalWeight() const;
     void evalAdjugate() const;
     void evalInverse() const;
     void evalInvJacobianT() const;
     
-    /// Initialize geometric shape function based on geometry type and order
     void initGeometricShapeFunction();
     
     // -------------------------------------------------------------------------
     // Member variables
     // -------------------------------------------------------------------------
     const Mesh* mesh_ = nullptr;
-    Index elemIdx_ = 0;
+    Index elemIdx_ = InvalidIndex;
+    ElementType elemType_ = VOLUME;
     
     Geometry geometry_ = Geometry::Invalid;
-    int dim_ = 0;
-    
-    /// Geometric order (from Element::order())
-    /// This determines the coordinate mapping accuracy.
+    int dim_ = 0;        ///< Reference dimension
+    int spaceDim_ = 0;   ///< Physical space dimension
     int geomOrder_ = 1;
     
-    /// Geometric shape function for coordinate transformation.
-    /// For linear elements: order 1 Lagrange shape function.
-    /// For curved elements: order 2+ Lagrange shape function.
-    std::unique_ptr<ShapeFunction> geomShapeFunc_;
-    
-    /// Geometric node coordinates (all nodes used for coordinate mapping).
-    /// For linear elements: corner vertices only.
-    /// For curved elements: corner vertices + edge midpoints + ...
-    std::vector<Vector3> geomNodes_;
-    
-    /// Geometric node indices in the mesh vertex array.
-    /// For curved elements, this includes edge midpoint node indices.
-    std::vector<Index> geomNodeIndices_;
+    std::unique_ptr<ShapeFunction> shapeFunc_;
+    std::vector<Vector3> nodes_;
+    std::vector<Index> nodeIndices_;
     
     IntegrationPoint ip_;
     
     // Mutable for lazy evaluation
-    mutable Matrix jacobian_;
-    mutable Matrix invJacobian_;
-    mutable Matrix invJacobianT_;  // J^{-T} for gradient transformation
-    mutable Matrix adjJacobian_;
+    mutable Matrix jacobian_;       ///< spaceDim x dim
+    mutable Matrix invJacobian_;    ///< dim x spaceDim
+    mutable Matrix invJacobianT_;   ///< spaceDim x dim
+    mutable Matrix adjJacobian_;    ///< spaceDim x dim
     mutable Real detJ_ = 0.0;
     mutable Real weight_ = 0.0;
     mutable int evalState_ = 0;
-    
-    // Shape function values cache for Jacobian computation
-    mutable ShapeValues geomShapeValues_;
+    mutable ShapeValues shapeValues_;
 };
 
 // =============================================================================
-// Inline implementations for simple getters/setters
+// Inline implementations
 // =============================================================================
 
-inline ElementTransform::ElementTransform(const Mesh* mesh, Index elemIdx)
-    : mesh_(mesh), elemIdx_(elemIdx) {
-    computeGeometryInfo();
-}
-
-inline void ElementTransform::setElement(Index elemIdx) {
-    elemIdx_ = elemIdx;
-    evalState_ = 0;
+inline ElementTransform::ElementTransform(const Mesh* mesh, Index elemIdx, ElementType type)
+    : mesh_(mesh), elemIdx_(elemIdx), elemType_(type) {
     computeGeometryInfo();
 }
 
 inline void ElementTransform::setIntegrationPoint(const IntegrationPoint& ip) {
     ip_ = ip;
     evalState_ = 0;
+    shapeValues_ = shapeFunc_ ? shapeFunc_->eval(ip_) : ShapeValues();
 }
 
 inline void ElementTransform::setIntegrationPoint(const Real* xi) {
@@ -258,12 +218,17 @@ inline void ElementTransform::setIntegrationPoint(const Real* xi) {
     if (dim_ > 1) ip_.eta = xi[1];
     if (dim_ > 2) ip_.zeta = xi[2];
     evalState_ = 0;
+    shapeValues_ = shapeFunc_ ? shapeFunc_->eval(ip_) : ShapeValues();
 }
 
 inline void ElementTransform::transform(const Real* xi, Vector3& x) const {
     Real coords[3];
     transform(xi, coords);
     x = Vector3(coords[0], coords[1], coords[2]);
+}
+
+inline void ElementTransform::transform(const IntegrationPoint& ip, Vector3& x) const {
+    transform(&ip.xi, x);
 }
 
 inline void ElementTransform::transformGradient(const Vector3& refGrad, Vector3& physGrad) const {
@@ -291,11 +256,6 @@ inline const Matrix& ElementTransform::invJacobianT() const {
 inline Real ElementTransform::detJ() const {
     evalWeight();
     return detJ_;
-}
-
-inline Real ElementTransform::weight() const {
-    evalWeight();
-    return weight_;
 }
 
 inline const Matrix& ElementTransform::adjJacobian() const {
