@@ -1,14 +1,14 @@
-# ============================================================
-# mpfem Examples
-# ============================================================
+# Examples CMakeLists.txt
 
-# Examples will be added as the library is implemented
+add_executable(busbar_example
+    busbar_example.cpp
+)
 
-# Helper function to create example executable
-function(mpfem_add_example EXAMPLE_NAME)
-    add_executable(${EXAMPLE_NAME} ${EXAMPLE_NAME}.cpp)
-    target_link_libraries(${EXAMPLE_NAME} PRIVATE mpfem)
-endfunction()
+target_link_libraries(busbar_example
+    PRIVATE mpfem::physics
+    PRIVATE mpfem::io
+    PRIVATE mpfem::mesh
+    PRIVATE mpfem::fe
+)
 
-# Examples will be uncommented as modules are implemented
-# mpfem_add_example(run_busbar)
+# Add more examples as needed

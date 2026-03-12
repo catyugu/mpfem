@@ -1,105 +1,89 @@
-/**
- * @file exception.hpp
- * @brief Exception classes for mpfem
- */
+#ifndef MPFEM_EXCEPTION_HPP
+#define MPFEM_EXCEPTION_HPP
 
-#ifndef MPFEM_CORE_EXCEPTION_HPP
-#define MPFEM_CORE_EXCEPTION_HPP
-
-#include <sstream>
 #include <stdexcept>
-#include <string_view>
+#include <string>
+#include <source_location>
 
 namespace mpfem {
 
-/**
- * @brief Base exception class for mpfem
- */
+/// Base exception class for mpfem
 class Exception : public std::runtime_error {
 public:
-    Exception(std::string_view file, int line, std::string_view message)
-        : std::runtime_error("")
-        , file_(file)
-        , line_(line)
-        , message_(message) {
+    explicit Exception(const std::string& message,
+                       const std::source_location& loc = std::source_location::current())
+        : std::runtime_error(formatMessage(message, loc)) {}
+
+private:
+    static std::string formatMessage(const std::string& msg, 
+                                      const std::source_location& loc) {
+        return "[" + std::string(loc.file_name()) + ":" + 
+               std::to_string(loc.line()) + "] " + msg;
     }
-
-    const char* what() const noexcept override { return what_.c_str(); }
-
-    const std::string& file() const { return file_; }
-    int line() const { return line_; }
-    const std::string& message() const { return message_; }
-
-protected:
-    std::string file_;
-    int line_;
-    std::string message_;
-    std::string what_;
 };
 
-/**
- * @brief Exception for file I/O errors
- */
-class FileError : public Exception {
+/// Exception for file I/O errors
+class FileException : public Exception {
 public:
-    FileError(std::string_view file, int line, std::string_view message)
-        : Exception(file, line, message) {
-        std::ostringstream oss;
-        oss << "FileError at " << file_ << ':' << line_ << "\n  " << message;
-        what_ = oss.str();
-    }
+    explicit FileException(const std::string& message)
+        : Exception("File error: " + message) {}
 };
 
-/**
- * @brief Exception for invalid argument errors
- */
-class InvalidArgument : public Exception {
+/// Exception for mesh parsing errors
+class MeshException : public Exception {
 public:
-    InvalidArgument(std::string_view file, int line, std::string_view message)
-        : Exception(file, line, message) {
-        std::ostringstream oss;
-        oss << "InvalidArgument at " << file_ << ':' << line_ << "\n  " << message;
-        what_ = oss.str();
-    }
+    explicit MeshException(const std::string& message)
+        : Exception("Mesh error: " + message) {}
 };
 
-/**
- * @brief Exception for runtime errors
- */
-class RuntimeError : public Exception {
+/// Exception for finite element errors
+class FeException : public Exception {
 public:
-    RuntimeError(std::string_view file, int line, std::string_view message)
-        : Exception(file, line, message) {
-        std::ostringstream oss;
-        oss << "RuntimeError at " << file_ << ':' << line_ << "\n  " << message;
-        what_ = oss.str();
-    }
+    explicit FeException(const std::string& message)
+        : Exception("Finite element error: " + message) {}
 };
 
-/**
- * @brief Exception for not implemented features
- */
-class NotImplementedError : public Exception {
+/// Exception for solver errors
+class SolverException : public Exception {
 public:
-    NotImplementedError(std::string_view file, int line, std::string_view message)
-        : Exception(file, line, message) {
-        std::ostringstream oss;
-        oss << "NotImplementedError at " << file_ << ':' << line_ << "\n  " << message;
-        what_ = oss.str();
-    }
+    explicit SolverException(const std::string& message)
+        : Exception("Solver error: " + message) {}
 };
 
-// ============================================================
-// Exception throwing macros
-// ============================================================
+/// Exception for invalid arguments
+class ArgumentException : public Exception {
+public:
+    explicit ArgumentException(const std::string& message)
+        : Exception("Invalid argument: " + message) {}
+};
 
-#define MPFEM_THROW(ExceptionType, msg) \
-    do { \
-        std::ostringstream _oss; \
-        _oss << msg; \
-        throw ExceptionType(__FILE__, __LINE__, _oss.str()); \
-    } while(0)
+/// Exception for out-of-range access
+class RangeException : public Exception {
+public:
+    explicit RangeException(const std::string& message)
+        : Exception("Range error: " + message) {}
+};
+
+/// Exception for not-yet-implemented features
+class NotImplementedException : public Exception {
+public:
+    explicit NotImplementedException(const std::string& feature)
+        : Exception("Not implemented: " + feature) {}
+};
 
 }  // namespace mpfem
 
-#endif  // MPFEM_CORE_EXCEPTION_HPP
+// =============================================================================
+// Convenience macros
+// =============================================================================
+
+#define MPFEM_THROW(type, msg) throw ::mpfem::type(msg)
+
+#define MPFEM_ASSERT(cond, msg)                    \
+    do {                                           \
+        if (!(cond)) {                             \
+            MPFEM_THROW(Exception, msg);           \
+        }                                          \
+    } while (0)
+
+#endif  // MPFEM_EXCEPTION_HPP

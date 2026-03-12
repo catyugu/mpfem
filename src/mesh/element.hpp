@@ -1,578 +1,211 @@
-/**
- * @file element.hpp
- * @brief Element type definitions for mpfem
- */
+#ifndef MPFEM_ELEMENT_HPP
+#define MPFEM_ELEMENT_HPP
 
-#ifndef MPFEM_MESH_ELEMENT_HPP
-#define MPFEM_MESH_ELEMENT_HPP
-
+#include "geometry.hpp"
 #include "core/types.hpp"
-
-#include <array>
-#include <span>
 #include <vector>
+#include <span>
 
 namespace mpfem {
 
-// ============================================================
-// Element Type Enumeration
-// ============================================================
-
-/// Element type codes (compatible with COMSOL/VTK conventions)
-enum class ElementType : int {
-    Vertex = 0,        ///< Point element
-    Segment = 1,       ///< Line segment
-    Triangle = 2,      ///< Triangle (2D)
-    Quadrilateral = 3, ///< Quadrilateral (2D)
-    Tetrahedron = 4,   ///< Tetrahedron (3D)
-    Hexahedron = 5,    ///< Hexahedron (3D)
-    Wedge = 6,         ///< Prism/Wedge (3D)
-    Pyramid = 7,       ///< Pyramid (3D)
-    // Quadratic elements (second order)
-    Segment2 = 8,      ///< Quadratic segment
-    Triangle2 = 9,     ///< Quadratic triangle
-    Quadrilateral2 = 10, ///< Quadratic quadrilateral
-    Tetrahedron2 = 11, ///< Quadratic tetrahedron
-    Hexahedron2 = 12,  ///< Quadratic hexahedron
-    Wedge2 = 13,       ///< Quadratic wedge
-    Pyramid2 = 14,     ///< Quadratic pyramid
-    Unknown = -1
-};
-
-// ============================================================
-// Element Trait Templates
-// ============================================================
-
-namespace detail {
-
-/// Number of vertices for each element type (linear)
-constexpr int num_vertices_v[] = {
-    1,   // Vertex
-    2,   // Segment
-    3,   // Triangle
-    4,   // Quadrilateral
-    4,   // Tetrahedron
-    8,   // Hexahedron
-    6,   // Wedge
-    5,   // Pyramid
-    // Quadratic
-    3,   // Segment2
-    6,   // Triangle2
-    8,   // Quadrilateral2
-    10,  // Tetrahedron2
-    20,  // Hexahedron2
-    15,  // Wedge2
-    13   // Pyramid2
-};
-
-/// Number of nodes (DoFs) for each element type
-constexpr int num_nodes_v[] = {
-    1,   // Vertex
-    2,   // Segment
-    3,   // Triangle
-    4,   // Quadrilateral
-    4,   // Tetrahedron
-    8,   // Hexahedron
-    6,   // Wedge
-    5,   // Pyramid
-    // Quadratic
-    3,   // Segment2
-    6,   // Triangle2
-    8,   // Quadrilateral2
-    10,  // Tetrahedron2
-    20,  // Hexahedron2
-    15,  // Wedge2
-    13   // Pyramid2
-};
-
-/// Dimension for each element type
-constexpr int dimension_v[] = {
-    0,   // Vertex
-    1,   // Segment
-    2,   // Triangle
-    2,   // Quadrilateral
-    3,   // Tetrahedron
-    3,   // Hexahedron
-    3,   // Wedge
-    3,   // Pyramid
-    // Quadratic
-    1,   // Segment2
-    2,   // Triangle2
-    2,   // Quadrilateral2
-    3,   // Tetrahedron2
-    3,   // Hexahedron2
-    3,   // Wedge2
-    3    // Pyramid2
-};
-
-/// Geometry type mapping
-constexpr GeometryType to_geometry_v[] = {
-    GeometryType::Point,         // Vertex
-    GeometryType::Segment,       // Segment
-    GeometryType::Triangle,      // Triangle
-    GeometryType::Quadrilateral, // Quadrilateral
-    GeometryType::Tetrahedron,   // Tetrahedron
-    GeometryType::Hexahedron,    // Hexahedron
-    GeometryType::Wedge,         // Wedge
-    GeometryType::Pyramid,       // Pyramid
-    // Quadratic (same geometry type)
-    GeometryType::Segment,       // Segment2
-    GeometryType::Triangle,      // Triangle2
-    GeometryType::Quadrilateral, // Quadrilateral2
-    GeometryType::Tetrahedron,   // Tetrahedron2
-    GeometryType::Hexahedron,    // Hexahedron2
-    GeometryType::Wedge,         // Wedge2
-    GeometryType::Pyramid        // Pyramid2
-};
-
-}  // namespace detail
-
-// ============================================================
-// Element Type Utilities
-// ============================================================
-
-/// Get number of vertices for element type
-constexpr int num_vertices(ElementType type) {
-    const int idx = static_cast<int>(type);
-    return (idx >= 0 && idx < 15) ? detail::num_vertices_v[idx] : 0;
-}
-
-/// Get number of nodes for element type
-constexpr int num_nodes(ElementType type) { return num_vertices(type); }
-
-/// Get dimension of element type
-constexpr int element_dimension(ElementType type) {
-    const int idx = static_cast<int>(type);
-    return (idx >= 0 && idx < 15) ? detail::dimension_v[idx] : -1;
-}
-
-/// Convert element type to geometry type
-constexpr GeometryType to_geometry_type(ElementType type) {
-    const int idx = static_cast<int>(type);
-    return (idx >= 0 && idx < 15) ? detail::to_geometry_v[idx]
-                                 : GeometryType::Point;
-}
-
-/// Check if element type is quadratic (second order)
-constexpr bool is_quadratic(ElementType type) {
-    const int idx = static_cast<int>(type);
-    return idx >= 8 && idx < 15;
-}
-
-/// Get element order (1 for linear, 2 for quadratic)
-constexpr int element_order(ElementType type) {
-    return is_quadratic(type) ? 2 : 1;
-}
-
-/// Get element type name as string
-inline const char* element_type_name(ElementType type) {
-    switch (type) {
-        case ElementType::Vertex:
-            return "Vertex";
-        case ElementType::Segment:
-            return "Segment";
-        case ElementType::Triangle:
-            return "Triangle";
-        case ElementType::Quadrilateral:
-            return "Quadrilateral";
-        case ElementType::Tetrahedron:
-            return "Tetrahedron";
-        case ElementType::Hexahedron:
-            return "Hexahedron";
-        case ElementType::Wedge:
-            return "Wedge";
-        case ElementType::Pyramid:
-            return "Pyramid";
-        case ElementType::Segment2:
-            return "Segment2";
-        case ElementType::Triangle2:
-            return "Triangle2";
-        case ElementType::Quadrilateral2:
-            return "Quadrilateral2";
-        case ElementType::Tetrahedron2:
-            return "Tetrahedron2";
-        case ElementType::Hexahedron2:
-            return "Hexahedron2";
-        case ElementType::Wedge2:
-            return "Wedge2";
-        case ElementType::Pyramid2:
-            return "Pyramid2";
-        default:
-            return "Unknown";
-    }
-}
-
-/// Get number of corner vertices for element type (for topology)
-/// For quadratic elements, this returns the number of primary vertices
-constexpr int num_corner_vertices(ElementType type) {
-    switch (type) {
-        case ElementType::Vertex:
-            return 1;
-        case ElementType::Segment:
-        case ElementType::Segment2:
-            return 2;
-        case ElementType::Triangle:
-        case ElementType::Triangle2:
-            return 3;
-        case ElementType::Quadrilateral:
-        case ElementType::Quadrilateral2:
-            return 4;
-        case ElementType::Tetrahedron:
-        case ElementType::Tetrahedron2:
-            return 4;
-        case ElementType::Hexahedron:
-        case ElementType::Hexahedron2:
-            return 8;
-        case ElementType::Wedge:
-        case ElementType::Wedge2:
-            return 6;
-        case ElementType::Pyramid:
-        case ElementType::Pyramid2:
-            return 5;
-        default:
-            return 0;
-    }
-}
-
-/// Get corner vertex indices within an element (0-based local indices)
-/// These are the primary vertices used for topology construction
-/// For quadratic elements, these are the corner nodes (not edge nodes)
-inline std::vector<int> get_corner_vertex_indices(ElementType type) {
-    int n_corners = num_corner_vertices(type);
-    std::vector<int> indices(n_corners);
-    for (int i = 0; i < n_corners; ++i) {
-        indices[i] = i;
-    }
-    return indices;
-}
-
-/// Check if element type uses Euler format with internal nodes
-/// that need to be filtered to Serendipity format
-/// COMSOL mphtxt may output Euler format (with internal nodes) for some elements
-constexpr bool needs_euler_to_serendipity_filter(ElementType type) {
-    switch (type) {
-        case ElementType::Quadrilateral2:  // Euler: 9 nodes, Serendipity: 8 nodes
-        case ElementType::Hexahedron2:     // Euler: 27 nodes, Serendipity: 20 nodes
-        case ElementType::Wedge2:          // Euler: 18 nodes, Serendipity: 15 nodes
-        case ElementType::Pyramid2:        // Euler: 14 nodes, Serendipity: 13 nodes
-            return true;
-        // Tetrahedron2 and Triangle2 have no internal nodes in Euler format
-        default:
-            return false;
-    }
-}
-
-/// Get Euler to Serendipity node index mapping
-/// Returns a vector where result[i] is the Euler index for Serendipity node i
-/// If element doesn't need filtering, returns identity mapping
-///
-/// Node ordering conventions:
-/// - Tetrahedron2: 0-3 corners, 4-9 edges (no internal node, Euler == Serendipity)
-/// - Triangle2: 0-2 corners, 3-5 edges (no internal node, Euler == Serendipity)
-/// - Quadrilateral2 Serendipity (8 nodes): 0-3 corners, 4-7 edges
-///   Euler (9 nodes): 0-3 corners, 4-7 edges, 8 internal
-/// - Hexahedron2 Serendipity (20 nodes): 0-7 corners, 8-19 edges
-///   Euler (27 nodes): 0-7 corners, 8-19 edges, 20-26 internal (faces+center)
-/// - Wedge2 Serendipity (15 nodes): 0-5 corners, 6-14 edges
-///   Euler (18 nodes): 0-5 corners, 6-14 edges, 15-17 internal (face centers)
-/// - Pyramid2 Serendipity (13 nodes): 0-4 corners, 5-12 edges
-///   Euler (14 nodes): 0-4 corners, 5-12 edges, 13 internal
-inline std::vector<int> get_euler_to_serendipity_mapping(ElementType type) {
-    switch (type) {
-        // Elements that don't need filtering - identity mapping
-        case ElementType::Vertex:
-            return {0};
-        case ElementType::Segment:
-        case ElementType::Segment2:
-            return {0, 1};
-        case ElementType::Triangle:
-        case ElementType::Triangle2:
-            return {0, 1, 2, 3, 4, 5};  // 6 nodes, no internal
-        case ElementType::Tetrahedron:
-        case ElementType::Tetrahedron2:
-            return {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};  // 10 nodes, no internal
-
-        // Quadrilateral2: Serendipity (8) from Euler (9)
-        // Euler ordering: corners(0-3), edges(4-7), internal(8)
-        // Serendipity: corners(0-3), edges(4-7)
-        case ElementType::Quadrilateral2:
-            return {0, 1, 2, 3, 4, 5, 6, 7};  // Skip internal node 8
-
-        // Hexahedron2: Serendipity (20) from Euler (27)
-        // Euler ordering: corners(0-7), edges(8-19), face_centers(20-25), center(26)
-        // Serendipity: corners(0-7), edges(8-19)
-        case ElementType::Hexahedron2:
-            return {0, 1, 2, 3, 4, 5, 6, 7,     // corners
-                    8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19};  // edges only
-
-        // Wedge2: Serendipity (15) from Euler (18)
-        // Euler ordering: corners(0-5), edges(6-14), face_centers(15-17)
-        // Serendipity: corners(0-5), edges(6-14)
-        case ElementType::Wedge2:
-            return {0, 1, 2, 3, 4, 5,           // corners
-                    6, 7, 8, 9, 10, 11, 12, 13, 14};  // edges only
-
-        // Pyramid2: Serendipity (13) from Euler (14)
-        // Euler ordering: corners(0-4), edges(5-12), internal(13)
-        // Serendipity: corners(0-4), edges(5-12)
-        case ElementType::Pyramid2:
-            return {0, 1, 2, 3, 4,               // corners
-                    5, 6, 7, 8, 9, 10, 11, 12};  // edges only
-
-        // Linear elements - identity mapping
-        case ElementType::Quadrilateral:
-            return {0, 1, 2, 3};
-        case ElementType::Hexahedron:
-            return {0, 1, 2, 3, 4, 5, 6, 7};
-        case ElementType::Wedge:
-            return {0, 1, 2, 3, 4, 5};
-        case ElementType::Pyramid:
-            return {0, 1, 2, 3, 4};
-
-        default:
-            // Return identity for unknown types
-            return {};
-    }
-}
-
-/// Get the linear (order 1) element type corresponding to a quadratic type
-/// Returns the same type if already linear
-inline ElementType get_linear_element_type(ElementType type) {
-    switch (type) {
-        case ElementType::Segment2:
-            return ElementType::Segment;
-        case ElementType::Triangle2:
-            return ElementType::Triangle;
-        case ElementType::Quadrilateral2:
-            return ElementType::Quadrilateral;
-        case ElementType::Tetrahedron2:
-            return ElementType::Tetrahedron;
-        case ElementType::Hexahedron2:
-            return ElementType::Hexahedron;
-        case ElementType::Wedge2:
-            return ElementType::Wedge;
-        case ElementType::Pyramid2:
-            return ElementType::Pyramid;
-        default:
-            return type;  // Already linear or unknown
-    }
-}
-
-/// Parse element type from string (COMSOL format)
-inline ElementType parse_element_type(const std::string& name) {
-    if (name == "vtx")
-        return ElementType::Vertex;
-    if (name == "edg")
-        return ElementType::Segment;
-    if (name == "tri")
-        return ElementType::Triangle;
-    if (name == "quad")
-        return ElementType::Quadrilateral;
-    if (name == "tet")
-        return ElementType::Tetrahedron;
-    if (name == "hex")
-        return ElementType::Hexahedron;
-    if (name == "prism" || name == "wedge")
-        return ElementType::Wedge;
-    if (name == "pyr")
-        return ElementType::Pyramid;
-    // Quadratic
-    if (name == "edg2" || name == "seg2")
-        return ElementType::Segment2;
-    if (name == "tri2")
-        return ElementType::Triangle2;
-    if (name == "quad2")
-        return ElementType::Quadrilateral2;
-    if (name == "tet2")
-        return ElementType::Tetrahedron2;
-    if (name == "hex2")
-        return ElementType::Hexahedron2;
-    if (name == "prism2" || name == "wedge2")
-        return ElementType::Wedge2;
-    if (name == "pyr2")
-        return ElementType::Pyramid2;
-    return ElementType::Unknown;
-}
-
-// ============================================================
-// Element Class
-// ============================================================
-
 /**
- * @brief Represents a single mesh element
+ * @brief Element class representing a mesh element (topology only).
  * 
- * Stores the element type and vertex indices.
- * Supports both linear and quadratic elements.
+ * An element stores:
+ * - Geometry type (shape)
+ * - Vertex indices (connectivity)
+ * - Element order (1 = linear, 2 = quadratic)
+ * - Domain/boundary attribute
+ * 
+ * This class is purely topological - it does not store coordinates.
+ * Coordinate data is managed by the Mesh class.
+ * 
+ * For second-order elements, the vertex ordering follows COMSOL convention:
+ * - First N corner nodes (N = numCorners(geometry))
+ * - Followed by edge midpoint nodes
+ * - Followed by face nodes (for hex elements)
+ * - Followed by interior node (for hex elements)
+ * 
+ * Note: Edge and face topology is delegated to geom namespace functions,
+ * which operate on the reference element topology. This keeps the Element
+ * class simple and decouples topology from geometry.
  */
 class Element {
 public:
-    Element() : type_(ElementType::Unknown), entity_id_(0) {}
+    /// Default constructor
+    Element() = default;
 
-    Element(ElementType type, std::vector<Index> vertices, Index entity_id = 0)
-        : type_(type), vertices_(std::move(vertices)), entity_id_(entity_id) {}
-
-    /// Get element type
-    ElementType type() const { return type_; }
-
-    /// Get geometry type
-    GeometryType geometry_type() const {
-        return to_geometry_type(type_);
+    /// Construct from geometry type and vertex indices (assumes first order)
+    Element(Geometry geom, std::vector<Index> vertices, Index attribute = 0)
+        : geometry_(geom)
+        , vertices_(std::move(vertices))
+        , attribute_(attribute)
+        , order_(1) {
+        validate();
     }
 
-    /// Get element dimension
-    int dimension() const { return element_dimension(type_); }
+    /// Construct from geometry type, vertex indices, and order
+    Element(Geometry geom, std::vector<Index> vertices, Index attribute, int order)
+        : geometry_(geom)
+        , vertices_(std::move(vertices))
+        , attribute_(attribute)
+        , order_(order) {
+        validate();
+    }
 
-    /// Get element order (1 for linear, 2 for quadratic)
-    int order() const { return element_order(type_); }
+    /// Construct from geometry type and span (assumes first order)
+    Element(Geometry geom, std::span<const Index> vertices, Index attribute = 0)
+        : geometry_(geom)
+        , vertices_(vertices.begin(), vertices.end())
+        , attribute_(attribute)
+        , order_(1) {
+        validate();
+    }
 
-    /// Get number of vertices/nodes
-    int num_vertices() const { return static_cast<int>(vertices_.size()); }
+    /// Construct from geometry type, span, and order
+    Element(Geometry geom, std::span<const Index> vertices, Index attribute, int order)
+        : geometry_(geom)
+        , vertices_(vertices.begin(), vertices.end())
+        , attribute_(attribute)
+        , order_(order) {
+        validate();
+    }
+
+    // -------------------------------------------------------------------------
+    // Geometry access (delegated to geom namespace)
+    // -------------------------------------------------------------------------
+
+    /// Get geometry type
+    Geometry geometry() const { return geometry_; }
+
+    /// Get spatial dimension of the element
+    int dim() const { return geom::dim(geometry_); }
+
+    /// Get number of vertices
+    int numVertices() const { return static_cast<int>(vertices_.size()); }
+
+    /// Get number of edges (from geometry)
+    int numEdges() const { return geom::numEdges(geometry_); }
+
+    /// Get number of faces (from geometry)
+    int numFaces() const { return geom::numFaces(geometry_); }
+
+    /// Check if element is a volume element
+    bool isVolume() const { return geom::isVolume(geometry_); }
+
+    /// Check if element is a surface element
+    bool isSurface() const { return geom::isSurface(geometry_); }
+
+    // -------------------------------------------------------------------------
+    // Vertex access
+    // -------------------------------------------------------------------------
 
     /// Get vertex index
     Index vertex(int i) const { return vertices_[i]; }
+    Index& vertex(int i) { return vertices_[i]; }
 
-    /// Get all vertices
-    std::span<const Index> vertices() const { return vertices_; }
-
-    /// Get mutable vertices
+    /// Get all vertex indices
+    const std::vector<Index>& vertices() const { return vertices_; }
     std::vector<Index>& vertices() { return vertices_; }
 
-    /// Get geometric entity ID (domain or boundary ID)
-    Index entity_id() const { return entity_id_; }
+    /// Get vertex indices as span
+    std::span<const Index> vertexSpan() const { return vertices_; }
 
-    /// Set geometric entity ID
-    void set_entity_id(Index id) { entity_id_ = id; }
+    // -------------------------------------------------------------------------
+    // Attribute access
+    // -------------------------------------------------------------------------
 
-    /// Check if element is valid
-    bool is_valid() const {
-        return type_ != ElementType::Unknown &&
-               static_cast<int>(vertices_.size()) == num_nodes(type_);
+    /// Get attribute (domain ID for volume elements, boundary ID for surface elements)
+    Index attribute() const { return attribute_; }
+    Index& attribute() { return attribute_; }
+
+    /// Set attribute
+    void setAttribute(Index attr) { attribute_ = attr; }
+
+    // -------------------------------------------------------------------------
+    // Order access
+    // -------------------------------------------------------------------------
+
+    /// Get element order (1 = linear, 2 = quadratic)
+    int order() const { return order_; }
+
+    /// Set element order
+    void setOrder(int order) { order_ = order; }
+
+    /// Check if element is quadratic (second-order)
+    bool isQuadratic() const { return order_ >= 2; }
+
+    /// Get number of corner vertices (first-order nodes)
+    int numCorners() const { return geom::numCorners(geometry_); }
+
+    // -------------------------------------------------------------------------
+    // Edge and face connectivity (using geom namespace)
+    // -------------------------------------------------------------------------
+
+    /**
+     * @brief Get global vertex indices for an edge.
+     * @param edgeIdx Edge index (0 to numEdges()-1)
+     * @return Pair of global vertex indices
+     */
+    std::pair<Index, Index> edgeVertices(int edgeIdx) const {
+        auto local = geom::edgeVertices(geometry_, edgeIdx);
+        return {vertices_[local.first], vertices_[local.second]};
     }
 
+    /**
+     * @brief Get global vertex indices for a face.
+     * @param faceIdx Face index (0 to numFaces()-1)
+     * @return Vector of global vertex indices for the face
+     */
+    std::vector<Index> faceVertices(int faceIdx) const {
+        std::vector<Index> result;
+        auto localVerts = geom::faceVertices(geometry_, faceIdx);
+        result.reserve(localVerts.size());
+        for (int lv : localVerts) {
+            result.push_back(vertices_[lv]);
+        }
+        return result;
+    }
+
+    /**
+     * @brief Get the geometry type of a face.
+     * @param faceIdx Face index
+     * @return Geometry type of the face
+     */
+    Geometry faceGeometry(int faceIdx) const {
+        return geom::faceGeometry(geometry_, faceIdx);
+    }
+
+    // -------------------------------------------------------------------------
+    // Utility
+    // -------------------------------------------------------------------------
+
+    /// Check if the element is valid
+    bool isValid() const {
+        if (geometry_ == Geometry::Invalid) return false;
+        int expectedVerts = geom::numVertices(geometry_, order_);
+        return static_cast<int>(vertices_.size()) == expectedVerts;
+    }
+
+    /// Get human-readable name
+    std::string_view name() const { return geom::name(geometry_); }
+
 private:
-    ElementType type_;
+    void validate() {
+        // Check vertex count matches geometry and order
+        int expectedVerts = geom::numVertices(geometry_, order_);
+        if (static_cast<int>(vertices_.size()) != expectedVerts) {
+            // Could throw an exception, but for now just mark as invalid
+            geometry_ = Geometry::Invalid;
+        }
+    }
+
+    Geometry geometry_ = Geometry::Invalid;
     std::vector<Index> vertices_;
-    Index entity_id_;  ///< Domain ID (for volume) or Boundary ID (for surface)
-};
-
-// ============================================================
-// Element Block (Collection of same-type elements)
-// ============================================================
-
-/**
- * @brief A block of elements of the same type
- * 
- * Used for efficient storage and processing of mesh elements.
- * Elements are stored in a flat array with fixed stride.
- */
-class ElementBlock {
-public:
-    ElementBlock() : type_(ElementType::Unknown), nodes_per_element_(0) {}
-
-    ElementBlock(ElementType type) : type_(type), nodes_per_element_(num_nodes(type)) {}
-
-    /// Get element type
-    ElementType type() const { return type_; }
-
-    /// Get geometry type
-    GeometryType geometry_type() const { return to_geometry_type(type_); }
-
-    /// Get number of elements in block
-    SizeType size() const { return entity_ids_.size(); }
-
-    /// Get nodes per element
-    int nodes_per_element() const { return nodes_per_element_; }
-
-    /// Add an element
-    void add_element(std::span<const Index> vertices, Index entity_id) {
-        if (vertices.size() != static_cast<size_t>(nodes_per_element_)) {
-            return;  // Invalid element
-        }
-        for (auto v : vertices) {
-            connectivity_.push_back(v);
-        }
-        entity_ids_.push_back(entity_id);
-    }
-
-    /// Get vertex indices for element i
-    std::span<const Index> element_vertices(SizeType i) const {
-        const Index offset = static_cast<Index>(i * nodes_per_element_);
-        return std::span<const Index>(connectivity_.data() + offset,
-                                      nodes_per_element_);
-    }
-
-    /// Get entity ID for element i
-    Index entity_id(SizeType i) const { return entity_ids_[i]; }
-
-    /// Get all connectivity data
-    const IndexArray& connectivity() const { return connectivity_; }
-
-    /// Get all entity IDs
-    const IndexArray& entity_ids() const { return entity_ids_; }
-
-    /// Get mutable entity IDs (for setting during parsing)
-    IndexArray& entity_ids_mut() { return entity_ids_; }
-
-    /// Set entity ID for element i
-    void set_entity_id(SizeType i, Index entity_id) {
-        if (i < entity_ids_.size()) {
-            entity_ids_[i] = entity_id;
-        }
-    }
-
-    /// Check if block is empty
-    bool empty() const { return entity_ids_.empty(); }
-
-    /// Clear all data
-    void clear() {
-        connectivity_.clear();
-        entity_ids_.clear();
-    }
-
-    /// Reserve capacity
-    void reserve(SizeType num_elements) {
-        connectivity_.reserve(num_elements * nodes_per_element_);
-        entity_ids_.reserve(num_elements);
-    }
-
-    /// Get corner vertex indices for element i (for topology building)
-    /// For quadratic elements, returns only the corner vertices (not edge nodes)
-    std::vector<Index> corner_vertices(SizeType i) const {
-        int n_corners = num_corner_vertices(type_);
-        std::vector<Index> corners(n_corners);
-        const Index offset = static_cast<Index>(i * nodes_per_element_);
-        for (int j = 0; j < n_corners; ++j) {
-            corners[j] = connectivity_[offset + j];
-        }
-        return corners;
-    }
-
-    /// Get number of corner vertices per element
-    int corner_vertices_per_element() const {
-        return num_corner_vertices(type_);
-    }
-
-    /// Get corner vertices for all elements (flat array)
-    /// For quadratic elements, extracts only corner nodes
-    IndexArray get_all_corner_vertices() const {
-        int n_corners = num_corner_vertices(type_);
-        IndexArray corners;
-        corners.reserve(size() * n_corners);
-        for (SizeType i = 0; i < size(); ++i) {
-            for (int j = 0; j < n_corners; ++j) {
-                corners.push_back(connectivity_[i * nodes_per_element_ + j]);
-            }
-        }
-        return corners;
-    }
-
-private:
-    ElementType type_;
-    int nodes_per_element_;
-    IndexArray connectivity_;  // Flat array of vertex indices
-    IndexArray entity_ids_;    // One per element
+    Index attribute_ = 0;  // Domain ID or boundary ID
+    int order_ = 1;        // Element order (1 = linear, 2 = quadratic)
 };
 
 }  // namespace mpfem
 
-#endif  // MPFEM_MESH_ELEMENT_HPP
+#endif  // MPFEM_ELEMENT_HPP

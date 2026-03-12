@@ -1,184 +1,154 @@
-/**
- * @file types.hpp
- * @brief Core type definitions for mpfem
- */
-
-#ifndef MPFEM_CORE_TYPES_HPP
-#define MPFEM_CORE_TYPES_HPP
+#ifndef MPFEM_TYPES_HPP
+#define MPFEM_TYPES_HPP
 
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
 #include <cstddef>
 #include <cstdint>
-#include <limits>
 #include <vector>
+#include <array>
+#include <span>
 
 namespace mpfem {
 
-// ============================================================
-// Index Types
-// ============================================================
+// =============================================================================
+// Basic types
+// =============================================================================
 
-using Index = std::int64_t;
-using SizeType = std::size_t;
+using Index = std::int32_t;
+using LocalIndex = std::int16_t;
+using Real = double;
 
-using IndexArray = std::vector<Index>;
-using ScalarArray = std::vector<double>;
+/// Invalid index constant
+inline constexpr Index InvalidIndex = -1;
 
-// ============================================================
-// Scalar Type
-// ============================================================
+// =============================================================================
+// Eigen type aliases
+// =============================================================================
 
-using Scalar = double;
+// Dense vector types
+using VectorX = Eigen::Matrix<Real, Eigen::Dynamic, 1>;
+using Vector = VectorX;  // Alias for convenience
+using Vector2 = Eigen::Matrix<Real, 2, 1>;
+using Vector3 = Eigen::Matrix<Real, 3, 1>;
 
-// ============================================================
-// Eigen-based Matrix and Vector Types
-// ============================================================
+// Dense matrix types
+using MatrixX = Eigen::Matrix<Real, Eigen::Dynamic, Eigen::Dynamic>;
+using Matrix = MatrixX;  // Alias for convenience
+using Matrix2 = Eigen::Matrix<Real, 2, 2>;
+using Matrix3 = Eigen::Matrix<Real, 3, 3>;
+using Matrix32 = Eigen::Matrix<Real, 3, 2>;  // Jacobian for 2D element in 3D space
+using Matrix23 = Eigen::Matrix<Real, 2, 3>;
 
-template <int Rows, int Cols>
-using Matrix = Eigen::Matrix<Scalar, Rows, Cols>;
+// Sparse matrix type (Eigen-based, for general use)
+using EigenSparseMatrix = Eigen::SparseMatrix<Real, Eigen::RowMajor>;
 
-template <int Size>
-using Vector = Eigen::Matrix<Scalar, Size, 1>;
+// Triplet for sparse matrix construction
+using Triplet = Eigen::Triplet<Real>;
 
-template <int Size>
-using SquareMatrix = Eigen::Matrix<Scalar, Size, Size>;
+// =============================================================================
+// Geometry related types
+// =============================================================================
 
-// Dynamic size versions
-using DynamicVector = Eigen::Matrix<Scalar, Eigen::Dynamic, 1>;
-using DynamicMatrix = Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic>;
+/// Maximum number of nodes per element (for fixed-size arrays)
+inline constexpr LocalIndex MaxNodesPerElement = 27;  // 3x3x3 for hex27
 
-// Sparse matrix type
-using SparseMatrix = Eigen::SparseMatrix<Scalar>;
+/// Maximum number of vertices per element
+inline constexpr LocalIndex MaxVerticesPerElement = 8;  // hex8
 
-// Common fixed-size types
-using Vector2 = Vector<2>;
-using Vector3 = Vector<3>;
-using Matrix2 = SquareMatrix<2>;
-using Matrix3 = SquareMatrix<3>;
+/// Maximum spatial dimension
+inline constexpr LocalIndex MaxDim = 3;
 
-// Point type (3D coordinates, but can represent 2D by ignoring z)
-template <int Dim>
-using Point = Vector<Dim>;
+/// Coordinate array type
+using CoordArray = std::array<Real, MaxDim>;
 
-// ============================================================
-// Tensor Template
-// ============================================================
+/// Node index array for an element
+using NodeIndices = std::vector<Index>;
 
-template <int Rank, int Dim>
-struct Tensor;
+/// Fixed-size node array (for stack allocation)
+template <LocalIndex N>
+using FixedNodeArray = std::array<Index, N>;
 
-/// Rank-1 Tensor (Vector)
-template <int Dim>
-struct Tensor<1, Dim> : public Vector<Dim> {
-    using Base = Vector<Dim>;
-    using Base::Base;
+// =============================================================================
+// Quadrature related types
+// =============================================================================
 
-    Tensor() : Base() { Base::setZero(); }
-
-    static Tensor Zero() {
-        Tensor t;
-        t.Base::setZero();
-        return t;
-    }
+/// Integration point in reference coordinates
+struct IntegrationPoint {
+    Real xi = 0.0;      ///< Reference coordinate (first parametric direction)
+    Real eta = 0.0;     ///< Reference coordinate (second parametric direction)
+    Real zeta = 0.0;    ///< Reference coordinate (third parametric direction)
+    Real weight = 0.0;  ///< Quadrature weight
+    
+    IntegrationPoint() = default;
+    IntegrationPoint(Real x, Real w) : xi(x), weight(w) {}
+    IntegrationPoint(Real x, Real y, Real w) : xi(x), eta(y), weight(w) {}
+    IntegrationPoint(Real x, Real y, Real z, Real w) : xi(x), eta(y), zeta(z), weight(w) {}
 };
 
-/// Rank-2 Tensor (Matrix)
-template <int Dim>
-struct Tensor<2, Dim> : public SquareMatrix<Dim> {
-    using Base = SquareMatrix<Dim>;
-    using Base::Base;
+// Note: QuadratureRule is defined in fe/quadrature.hpp
 
-    Tensor() : Base() { Base::setZero(); }
+// =============================================================================
+// Element matrix types
+// =============================================================================
 
-    static Tensor Identity() {
-        Tensor t;
-        t.Base::setIdentity();
-        return t;
-    }
+/// Element stiffness matrix (local matrix)
+using ElementMatrix = MatrixX;
 
-    static Tensor Zero() {
-        Tensor t;
-        t.Base::setZero();
-        return t;
-    }
+/// Element vector (local load vector)
+using ElementVector = VectorX;
+
+// =============================================================================
+// Boundary types
+// =============================================================================
+
+/// Boundary type enumeration
+enum class BoundaryType : std::uint8_t {
+    Interior,   ///< Internal boundary (shared by multiple elements)
+    Exterior    ///< External boundary (boundary of the domain)
 };
 
-/// Rank-4 Tensor (for elasticity tensor)
-template <int Dim>
-struct Tensor<4, Dim> {
-    Scalar data[Dim][Dim][Dim][Dim];
-
-    Tensor() {
-        for (int i = 0; i < Dim; ++i)
-            for (int j = 0; j < Dim; ++j)
-                for (int k = 0; k < Dim; ++k)
-                    for (int l = 0; l < Dim; ++l)
-                        data[i][j][k][l] = 0.0;
-    }
-
-    Scalar& operator()(int i, int j, int k, int l) {
-        return data[i][j][k][l];
-    }
-
-    Scalar operator()(int i, int j, int k, int l) const {
-        return data[i][j][k][l];
-    }
-
-    static Tensor Zero() {
-        return Tensor();
-    }
+/// Physical dimension enumeration
+enum class Dim : std::uint8_t {
+    D1 = 1,
+    D2 = 2,
+    D3 = 3
 };
 
-// ============================================================
-// Geometry Type Enumeration
-// ============================================================
+// =============================================================================
+// Utility functions
+// =============================================================================
 
-enum class GeometryType {
-    Invalid = -1,
-    Point = 0,
-    Segment = 1,
-    Triangle = 2,
-    Quadrilateral = 3,
-    Tetrahedron = 4,
-    Hexahedron = 5,
-    Wedge = 6,
-    Pyramid = 7
-};
-
-// ============================================================
-// Update Flags for FEValues
-// ============================================================
-
-enum class UpdateFlags : int {
-    None = 0,
-    UpdateJxW = 1 << 0,
-    UpdateGradients = 1 << 1,
-    UpdateValues = 1 << 2,
-    UpdateQuadraturePoints = 1 << 3,
-    UpdateNormals = 1 << 4,
-    UpdateDefault = UpdateValues | UpdateGradients | UpdateJxW,
-    UpdateAll = UpdateValues | UpdateGradients | UpdateJxW | UpdateQuadraturePoints | UpdateNormals
-};
-
-inline UpdateFlags operator|(UpdateFlags a, UpdateFlags b) {
-    return static_cast<UpdateFlags>(static_cast<int>(a) | static_cast<int>(b));
+/// Convert dimension enum to integer
+inline constexpr std::size_t dimToInt(Dim d) {
+    return static_cast<std::size_t>(d);
 }
 
-inline UpdateFlags operator&(UpdateFlags a, UpdateFlags b) {
-    return static_cast<UpdateFlags>(static_cast<int>(a) & static_cast<int>(b));
+/// Get number of components for a given dimension
+inline constexpr std::size_t numComponents(Dim dim) {
+    return dimToInt(dim);
 }
-
-inline bool has_flag(UpdateFlags flags, UpdateFlags flag) {
-    return (flags & flag) == flag;
-}
-
-// ============================================================
-// Constants
-// ============================================================
-
-constexpr Index InvalidIndex = -1;
 
 }  // namespace mpfem
 
-#endif  // MPFEM_CORE_TYPES_HPP
+// =============================================================================
+// Eigen vector output for debugging
+// =============================================================================
+
+namespace Eigen {
+template <typename Derived>
+std::ostream& operator<<(std::ostream& os, const MatrixBase<Derived>& m) {
+    os << "[";
+    for (Index i = 0; i < m.rows(); ++i) {
+        if (i > 0) os << "; ";
+        for (Index j = 0; j < m.cols(); ++j) {
+            if (j > 0) os << " ";
+            os << m(i, j);
+        }
+    }
+    os << "]";
+    return os;
+}
+}  // namespace Eigen
+
+#endif  // MPFEM_TYPES_HPP

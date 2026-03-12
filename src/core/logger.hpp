@@ -1,224 +1,174 @@
-/**
- * @file logger.hpp
- * @brief Minimal thread-safe logging system for mpfem
- * 
- * Provides three log levels: INFO, WARN, ERROR.
- * Log level filtering is done at compile time.
- */
-
-#ifndef MPFEM_CORE_LOGGER_HPP
-#define MPFEM_CORE_LOGGER_HPP
+#ifndef MPFEM_LOGGER_HPP
+#define MPFEM_LOGGER_HPP
 
 #include <chrono>
-#include <ctime>
-#include <iostream>
-#include <iomanip>
 #include <mutex>
-#include <sstream>
 #include <string>
-#include <string_view>
+#include <sstream>
+#include <iostream>
+#include <cstdlib>
 
 namespace mpfem {
 
-// ============================================================
-// Log Level Definition
-// ============================================================
-
-enum class LogLevel : int {
-    INFO = 0,
-    WARN = 1,
-    ERROR = 2,
-    NONE = 99  // Disable all logging
+/**
+ * @brief Logging severity levels used by Logger.
+ */
+enum class LogLevel {
+    Debug,
+    Info,
+    Warning,
+    Error
 };
 
-// Compile-time log level (set via compile definition)
-// Use integer values: 0=INFO, 1=WARN, 2=ERROR, 99=NONE
-#ifndef MPFEM_LOG_LEVEL
-#define MPFEM_LOG_LEVEL 0  // INFO
-#endif
-
-// ============================================================
-// Logger Class (Thread-Safe Singleton)
-// ============================================================
-
+/**
+ * @brief Minimal thread-safe logger used by mpfem modules.
+ * 
+ * Singleton pattern for global access. Supports:
+ * - Log level filtering
+ * - Thread-safe output
+ * - Elapsed time tracking
+ * 
+ * Usage:
+ *   Logger::setLevel(LogLevel::Debug);
+ *   Logger::log(LogLevel::Info, "Starting computation");
+ *   LOG_INFO << "Processing element " << elemId;
+ *   LOG_ERROR << "Error in element " << elemId << ": " << errorMsg;
+ */
 class Logger {
 public:
-    /// Get singleton instance
-    static Logger& instance() {
-        static Logger logger;
-        return logger;
-    }
+    /**
+     * @brief Sets minimum severity threshold for output.
+     */
+    static void setLevel(LogLevel level);
 
-    /// Set minimum log level at runtime
-    void set_level(LogLevel level) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        min_level_ = level;
-    }
+    /**
+     * @brief Logs a message when level is above configured threshold.
+     */
+    static void log(LogLevel level, const std::string& message);
 
-    /// Log a message at the specified level
-    void log(LogLevel level, std::string_view file, int line,
-             std::string_view message) {
-        if (static_cast<int>(level) < static_cast<int>(min_level_)) {
-            return;
-        }
+    /**
+     * @brief Returns elapsed milliseconds since program start.
+     */
+    static std::chrono::milliseconds elapsedMillis();
 
-        std::lock_guard<std::mutex> lock(mutex_);
+    /**
+     * @brief Formats elapsed time as human-readable string.
+     */
+    static std::string formatElapsed();
 
-        // Get current time
-        auto now = std::chrono::system_clock::now();
-        auto now_time = std::chrono::system_clock::to_time_t(now);
-        auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                          now.time_since_epoch()) %
-                      1000;
-
-        std::tm tm_buf;
-#ifdef _WIN32
-        localtime_s(&tm_buf, &now_time);
-#else
-        localtime_r(&now_time, &tm_buf);
-#endif
-
-        // Format: [LEVEL] YYYY-MM-DD HH:MM:SS.mmm [file:line] message
-        std::ostringstream oss;
-        oss << '[' << level_str(level) << "] ";
-        oss << std::put_time(&tm_buf, "%Y-%m-%d %H:%M:%S");
-        oss << '.' << std::setfill('0') << std::setw(3) << now_ms.count();
-        oss << " [" << file << ':' << line << "] ";
-        oss << message << '\n';
-
-        // Output to stderr for ERROR, stdout for others
-        if (level == LogLevel::ERROR) {
-            std::cerr << oss.str();
-        } else {
-            std::cout << oss.str();
-        }
-    }
-
-    /// Log without file/line info
-    void log(LogLevel level, std::string_view message) {
-        if (static_cast<int>(level) < static_cast<int>(min_level_)) {
-            return;
-        }
-
-        std::lock_guard<std::mutex> lock(mutex_);
-
-        auto now = std::chrono::system_clock::now();
-        auto now_time = std::chrono::system_clock::to_time_t(now);
-        auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                          now.time_since_epoch()) %
-                      1000;
-
-        std::tm tm_buf;
-#ifdef _WIN32
-        localtime_s(&tm_buf, &now_time);
-#else
-        localtime_r(&now_time, &tm_buf);
-#endif
-
-        std::ostringstream oss;
-        oss << '[' << level_str(level) << "] ";
-        oss << std::put_time(&tm_buf, "%Y-%m-%d %H:%M:%S");
-        oss << '.' << std::setfill('0') << std::setw(3) << now_ms.count();
-        oss << " " << message << '\n';
-
-        if (level == LogLevel::ERROR) {
-            std::cerr << oss.str();
-        } else {
-            std::cout << oss.str();
-        }
-    }
+    /**
+     * @brief Get the singleton instance.
+     */
+    static Logger& instance();
 
 private:
-    Logger() : min_level_(static_cast<LogLevel>(MPFEM_LOG_LEVEL)) {}
-    Logger(const Logger&) = delete;
-    Logger& operator=(const Logger&) = delete;
-
-    const char* level_str(LogLevel level) const {
-        switch (level) {
-            case LogLevel::INFO:
-                return "INFO";
-            case LogLevel::WARN:
-                return "WARN";
-            case LogLevel::ERROR:
-                return "ERROR";
-            default:
-                return "UNKNOWN";
-        }
-    }
-
+    Logger() = default;
+    
     std::mutex mutex_;
-    LogLevel min_level_;
+    LogLevel minimumLevel_ = LogLevel::Info;
+    std::chrono::steady_clock::time_point startTime_ = std::chrono::steady_clock::now();
 };
 
-// ============================================================
-// Log Macros
-// ============================================================
+/**
+ * @brief RAII timer that logs elapsed time on destruction.
+ * 
+ * Usage:
+ *   {
+ *       ScopedTimer timer("Assembly");
+ *       // ... do work ...
+ *   }  // Logs: "Assembly completed in 1.23s"
+ */
+class ScopedTimer {
+public:
+    explicit ScopedTimer(const std::string& label, LogLevel level = LogLevel::Info);
+    ~ScopedTimer();
 
-// Helper to extract filename from path
-inline std::string_view extract_filename(std::string_view path) {
-    auto pos = path.find_last_of("/\\");
-    return (pos == std::string_view::npos) ? path : path.substr(pos + 1);
-}
+    // Non-copyable, non-movable
+    ScopedTimer(const ScopedTimer&) = delete;
+    ScopedTimer& operator=(const ScopedTimer&) = delete;
+    ScopedTimer(ScopedTimer&&) = delete;
+    ScopedTimer& operator=(ScopedTimer&&) = delete;
 
-// Main logging macros
-#define MPFEM_INFO(msg)                                            \
-    do {                                                           \
-        if (0 >= MPFEM_LOG_LEVEL) {                                \
-            std::ostringstream _oss;                               \
-            _oss << msg;                                           \
-            mpfem::Logger::instance().log(                         \
-                mpfem::LogLevel::INFO,                             \
-                mpfem::extract_filename(__FILE__), __LINE__,       \
-                _oss.str());                                       \
-        }                                                          \
-    } while (0)
+    void stop();
+    double getElapsedSeconds() const;
+    std::string getElapsedStr() const;
 
-#define MPFEM_WARN(msg)                                            \
-    do {                                                           \
-        if (1 >= MPFEM_LOG_LEVEL) {                                \
-            std::ostringstream _oss;                               \
-            _oss << msg;                                           \
-            mpfem::Logger::instance().log(                         \
-                mpfem::LogLevel::WARN,                             \
-                mpfem::extract_filename(__FILE__), __LINE__,       \
-                _oss.str());                                       \
-        }                                                          \
-    } while (0)
+private:
+    std::string label_;
+    LogLevel level_;
+    std::chrono::steady_clock::time_point start_;
+    std::chrono::steady_clock::time_point end_;
+    bool stopped_ = false;
+};
 
-#define MPFEM_ERROR(msg)                                           \
-    do {                                                           \
-        if (2 >= MPFEM_LOG_LEVEL) {                                \
-            std::ostringstream _oss;                               \
-            _oss << msg;                                           \
-            mpfem::Logger::instance().log(                         \
-                mpfem::LogLevel::ERROR,                            \
-                mpfem::extract_filename(__FILE__), __LINE__,       \
-                _oss.str());                                       \
-        }                                                          \
-    } while (0)
+// =============================================================================
+// Stream-style logging helper class
+// =============================================================================
 
-// Conditional logging (only logs if condition is true)
-#define MPFEM_INFO_IF(cond, msg)                                   \
-    do {                                                           \
-        if (cond) {                                                \
-            MPFEM_INFO(msg);                                       \
-        }                                                          \
-    } while (0)
+/**
+ * @brief Temporary object for stream-style logging.
+ * 
+ * Usage: LOG_INFO << "Value: " << value;
+ * The log message is sent on destruction.
+ */
+class LogMessage {
+public:
+    explicit LogMessage(LogLevel level) : level_(level) {}
+    
+    // Non-copyable
+    LogMessage(const LogMessage&) = delete;
+    LogMessage& operator=(const LogMessage&) = delete;
+    
+    // Movable (allows LOG_INFO << ... to work)
+    LogMessage(LogMessage&& other) noexcept 
+        : level_(other.level_), oss_(std::move(other.oss_)) {}
+    
+    ~LogMessage() {
+        if (!oss_.str().empty() || level_ == LogLevel::Error) {
+            Logger::instance().log(level_, oss_.str());
+        }
+    }
+    
+    template<typename T>
+    LogMessage& operator<<(const T& value) {
+        oss_ << value;
+        return *this;
+    }
+    
+    // Support std::endl and other manipulators
+    LogMessage& operator<<(std::ostream& (*manip)(std::ostream&)) {
+        oss_ << manip;
+        return *this;
+    }
+    
+private:
+    LogLevel level_;
+    std::ostringstream oss_;
+};
 
-#define MPFEM_WARN_IF(cond, msg)                                   \
-    do {                                                           \
-        if (cond) {                                                \
-            MPFEM_WARN(msg);                                       \
-        }                                                          \
-    } while (0)
+// =============================================================================
+// Convenience macros for logging (stream-style)
+// =============================================================================
 
-#define MPFEM_ERROR_IF(cond, msg)                                  \
-    do {                                                           \
-        if (cond) {                                                \
-            MPFEM_ERROR(msg);                                      \
-        }                                                          \
+#define LOG_DEBUG   ::mpfem::LogMessage(::mpfem::LogLevel::Debug)
+#define LOG_INFO    ::mpfem::LogMessage(::mpfem::LogLevel::Info)
+#define LOG_WARN    ::mpfem::LogMessage(::mpfem::LogLevel::Warning)
+#define LOG_ERROR   ::mpfem::LogMessage(::mpfem::LogLevel::Error)
+
+/**
+ * @brief Assertion macro that logs error and exits on failure.
+ * 
+ * Usage: Check(condition, "Error message");
+ * If condition is false, logs error and calls std::exit(1).
+ */
+#define Check(cond, msg)                                        \
+    do {                                                        \
+        if (!(cond)) {                                          \
+            ::mpfem::LogMessage(::mpfem::LogLevel::Error) << msg; \
+            std::exit(1);                                       \
+        }                                                       \
     } while (0)
 
 }  // namespace mpfem
 
-#endif  // MPFEM_CORE_LOGGER_HPP
+#endif  // MPFEM_LOGGER_HPP
