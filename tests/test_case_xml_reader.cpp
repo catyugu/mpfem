@@ -9,14 +9,23 @@ protected:
     void SetUp() override {
         Logger::setLevel(LogLevel::Warning);
     }
+    
+    // Helper to get test data path
+    static std::string dataPath(const std::string& relativePath) {
+#ifdef MPFEM_PROJECT_ROOT
+        return std::string(MPFEM_PROJECT_ROOT) + "/" + relativePath;
+#else
+        return relativePath;
+#endif
+    }
 };
 
 TEST_F(CaseXmlReaderTest, ReadBusbarCase) {
     CaseDefinition caseDef;
     
-    // Read the actual case file (relative to project root)
+    // Read the actual case file
     ASSERT_NO_THROW({
-        CaseXmlReader::readFromFile("cases/busbar/case.xml", caseDef);
+        CaseXmlReader::readFromFile(dataPath("cases/busbar/case.xml"), caseDef);
     });
 
     // Verify case name
@@ -106,7 +115,7 @@ TEST_F(CaseXmlReaderTest, ReadBusbarOrder2Case) {
     CaseDefinition caseDef;
     
     ASSERT_NO_THROW({
-        CaseXmlReader::readFromFile("cases/busbar_order2/case.xml", caseDef);
+        CaseXmlReader::readFromFile(dataPath("cases/busbar_order2/case.xml"), caseDef);
     });
 
     // Should have order 2 for all physics
@@ -117,7 +126,7 @@ TEST_F(CaseXmlReaderTest, ReadBusbarOrder2Case) {
 
 TEST_F(CaseXmlReaderTest, GetVariableMap) {
     CaseDefinition caseDef;
-    CaseXmlReader::readFromFile("cases/busbar/case.xml", caseDef);
+    CaseXmlReader::readFromFile(dataPath("cases/busbar/case.xml"), caseDef);
 
     auto varMap = caseDef.getVariableMap();
     
@@ -128,7 +137,7 @@ TEST_F(CaseXmlReaderTest, GetVariableMap) {
 
 TEST_F(CaseXmlReaderTest, BoundaryConditionParsing) {
     CaseDefinition caseDef;
-    CaseXmlReader::readFromFile("cases/busbar/case.xml", caseDef);
+    CaseXmlReader::readFromFile(dataPath("cases/busbar/case.xml"), caseDef);
 
     // Find the electrostatics physics and check voltage boundary
     for (const auto& physics : caseDef.physicsDefinitions) {
@@ -148,7 +157,7 @@ TEST_F(CaseXmlReaderTest, BoundaryConditionParsing) {
 
 TEST_F(CaseXmlReaderTest, MaterialAssignmentParsing) {
     CaseDefinition caseDef;
-    CaseXmlReader::readFromFile("cases/busbar/case.xml", caseDef);
+    CaseXmlReader::readFromFile(dataPath("cases/busbar/case.xml"), caseDef);
 
     // Domain 1 should have mat1 (Copper)
     bool foundCopper = false;
@@ -169,9 +178,4 @@ TEST_F(CaseXmlReaderTest, MaterialAssignmentParsing) {
         }
     }
     EXPECT_TRUE(foundTitanium);
-}
-
-int main(int argc, char** argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
 }

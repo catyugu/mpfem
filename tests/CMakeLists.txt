@@ -1,5 +1,8 @@
 # Tests CMakeLists.txt
 
+# Define project root directory for test data files
+add_compile_definitions(MPFEM_PROJECT_ROOT="${CMAKE_SOURCE_DIR}")
+
 # =============================================================================
 # Mesh Tests
 # =============================================================================

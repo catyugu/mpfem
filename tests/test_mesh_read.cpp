@@ -10,11 +10,20 @@ protected:
     void SetUp() override {
         Logger::setLevel(LogLevel::Info);
     }
+    
+    // Helper to get test data path
+    static std::string dataPath(const std::string& relativePath) {
+#ifdef MPFEM_PROJECT_ROOT
+        return std::string(MPFEM_PROJECT_ROOT) + "/" + relativePath;
+#else
+        return relativePath;
+#endif
+    }
 };
 
 TEST_F(MeshReadTest, ReadBusbarMesh) {
     // Test mesh file path
-    std::string meshPath = "cases/busbar/mesh.mphtxt";
+    std::string meshPath = dataPath("cases/busbar/mesh.mphtxt");
     
     // Read mesh
     Mesh mesh = MphtxtReader::read(meshPath);
