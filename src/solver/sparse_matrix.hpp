@@ -122,6 +122,56 @@ namespace mpfem
             return mat_.isCompressed();
         }
 
+        /**
+         * @brief Eliminate a row: zero all entries and set diagonal to 1.
+         * 
+         * Also modifies the RHS vector to account for known values.
+         * This is the standard "static condensation" approach for Dirichlet BCs.
+         * 
+         * @param row Row index to eliminate.
+         * @param value Known value for this DOF.
+         * @param b RHS vector (modified to subtract eliminated column contributions).
+         */
+        void eliminateRow(Index row, Real value, Vector& b)
+        {
+            // For each column j in this row:
+            // - If j != row: add A(row,j) * value to b(j), then zero A(row,j)
+            // - If j == row: set A(row,j) = 1, set b(row) = value
+            
+            // Note: Eigen sparse matrix iteration is column-major
+            // We need to iterate over all columns to find entries in this row
+            
+            for (Index j = 0; j < mat_.cols(); ++j) {
+                Real a_ij = mat_.coeff(row, j);
+                if (std::abs(a_ij) > 0) {
+                    if (j != row) {
+                        // Add contribution to RHS for column j
+                        b(j) -= a_ij * value;
+                        // Zero the entry
+                        mat_.coeffRef(row, j) = 0.0;
+                    }
+                }
+            }
+            
+            // Set diagonal to 1 and RHS to value
+            mat_.coeffRef(row, row) = 1.0;
+            b(row) = value;
+        }
+
+        /**
+         * @brief Eliminate multiple rows for Dirichlet BCs.
+         * 
+         * @param rows Row indices to eliminate.
+         * @param values Corresponding known values.
+         * @param b RHS vector.
+         */
+        void eliminateRows(const std::vector<Index>& rows, const Vector& values, Vector& b)
+        {
+            for (size_t i = 0; i < rows.size(); ++i) {
+                eliminateRow(rows[i], values(i), b);
+            }
+        }
+
         /// Write to Matrix Market format
         void writeToMatrixMarket(const std::string &filename) const
         {
@@ -142,6 +192,7 @@ namespace mpfem
         Storage mat_;
         std::vector<Triplet> triplets_;
     };
+
 } // namespace mpfem
 
 #endif // MPFEM_SPARSE_MATRIX_HPP

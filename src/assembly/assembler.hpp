@@ -763,39 +763,18 @@ inline int DirichletBC::apply(SparseMatrix& A, Vector& x, Vector& b) {
     int nConstrained = static_cast<int>(constrainedDofs_.size());
     if (nConstrained == 0) return 0;
     
-    // Set solution values at constrained DOFs
-    for (Index dof : constrainedDofs_) {
-        Real val = value_;
-        if (hasCoefficient_ && coef_) {
-            // For coefficient, we need a point to evaluate
-            // This is simplified - in practice we'd need proper evaluation
-            val = value_;  // Use the stored value for now
-        }
-        x(dof) = val;
-    }
-    
     if (method_ == Method::Elimination) {
-        // Modify RHS: b_i = A_ii * x_i for constrained rows
-        // Then zero the row and set diagonal to 1
+        // Use proper row elimination: modifies both A and b
         for (Index dof : constrainedDofs_) {
-            Real val = x(dof);
-            
-            // Zero out the row in the matrix and set diagonal to 1
-            // Note: This requires modifying the sparse matrix structure
-            // For now, we use the penalty-like approach via triplet modification
-            
-            // Add contribution to RHS from boundary value
-            // In proper elimination: b_new = b - A * x_bc for non-BC DOFs
-            // Simplified here: just set the row
-            b(dof) = val;
+            Real val = value_;  // Use stored value
+            x(dof) = val;
+            A.eliminateRow(dof, val, b);
         }
     }
     else if (method_ == Method::Penalty) {
-        // Add large penalty to diagonal
         for (Index dof : constrainedDofs_) {
-            Real val = x(dof);
-            // A(dof, dof) += penalty
-            // b(dof) += penalty * val
+            Real val = value_;
+            x(dof) = val;
             A.addTriplet(dof, dof, penalty_);
             b(dof) += penalty_ * val;
         }
