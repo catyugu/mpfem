@@ -76,7 +76,7 @@ Vector3 FEValues::getVectorValue(FieldKind kind, Index elemIdx, const Integratio
 
 Vector3 FEValues::getGradient(FieldKind kind, Index elemIdx, 
                               const IntegrationPoint& ip, 
-                              const ElementTransform& trans) const {
+                              ElementTransform& trans) const {
     const GridFunction* gf = field(kind);
     if (!gf) {
         throw FeException("Field not registered: " + std::to_string(static_cast<int>(kind)));
@@ -86,7 +86,7 @@ Vector3 FEValues::getGradient(FieldKind kind, Index elemIdx,
 
 Vector3 FEValues::getGradient(FieldKind kind, Index elemIdx, 
                               const Real* xi, 
-                              const ElementTransform& trans) const {
+                              ElementTransform& trans) const {
     const GridFunction* gf = field(kind);
     if (!gf) {
         throw FeException("Field not registered: " + std::to_string(static_cast<int>(kind)));

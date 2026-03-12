@@ -358,26 +358,99 @@ inline ShapeValues H1SquareShape::eval(const Real* xi) const {
     sv.values.resize(numDofs());
     sv.gradients.resize(numDofs());
     
-    // Tensor product of 1D shape functions
     const int n = order_ + 1;
-    auto shape1d_x = segment1d_.evalValues(&xi[0]);
-    auto shape1d_y = segment1d_.evalValues(&xi[1]);
     
-    // Get derivatives
-    auto sv_x = segment1d_.eval(&xi[0]);
-    auto sv_y = segment1d_.eval(&xi[1]);
-    
-    for (int j = 0; j < n; ++j) {
-        for (int i = 0; i < n; ++i) {
-            int idx = j * n + i;
-            sv.values[idx] = shape1d_x[i] * shape1d_y[j];
-            
-            // Gradient: dφ/dξ = dφ_x/dξ * φ_y, dφ/dη = φ_x * dφ_y/dη
-            sv.gradients[idx] = Vector3(
-                sv_x.gradients[i].x() * shape1d_y[j],
-                shape1d_x[i] * sv_y.gradients[j].x(),
-                0.0
-            );
+    if (order_ == 1) {
+        // Linear: tensor product
+        auto shape1d_x = segment1d_.evalValues(&xi[0]);
+        auto shape1d_y = segment1d_.evalValues(&xi[1]);
+        auto sv_x = segment1d_.eval(&xi[0]);
+        auto sv_y = segment1d_.eval(&xi[1]);
+        
+        for (int j = 0; j < n; ++j) {
+            for (int i = 0; i < n; ++i) {
+                int idx = j * n + i;
+                sv.values[idx] = shape1d_x[i] * shape1d_y[j];
+                sv.gradients[idx] = Vector3(
+                    sv_x.gradients[i].x() * shape1d_y[j],
+                    shape1d_x[i] * sv_y.gradients[j].x(),
+                    0.0
+                );
+            }
+        }
+    } else if (order_ == 2) {
+        // Quadratic: use geometric node ordering (corners -> edges -> center)
+        // Node ordering: 4 corners + 4 edges + 1 center = 9 nodes
+        // This matches COMSOL convention
+        
+        const Real x = xi[0];
+        const Real y = xi[1];
+        
+        // 1D quadratic shape functions on [-1, 1]:
+        // L0(x) = x(x-1)/2, L1(x) = 1-x^2, L2(x) = x(x+1)/2
+        
+        auto eval1D = [](Real t) -> std::array<Real, 3> {
+            return {t * (t - 1) * 0.5, 1 - t * t, t * (t + 1) * 0.5};
+        };
+        auto eval1DGrad = [](Real t) -> std::array<Real, 3> {
+            return {t - 0.5, -2 * t, t + 0.5};
+        };
+        
+        auto Lx = eval1D(x);
+        auto Ly = eval1D(y);
+        auto dLx = eval1DGrad(x);
+        auto dLy = eval1DGrad(y);
+        
+        // Corner nodes (0-3): vertices at corners
+        // Corner 0: (-1,-1), Corner 1: (1,-1), Corner 2: (1,1), Corner 3: (-1,1)
+        // Maps to tensor product indices: (0,0), (2,0), (2,2), (0,2)
+        sv.values[0] = Lx[0] * Ly[0];  // (-1,-1)
+        sv.values[1] = Lx[2] * Ly[0];  // (1,-1)
+        sv.values[2] = Lx[2] * Ly[2];  // (1,1)
+        sv.values[3] = Lx[0] * Ly[2];  // (-1,1)
+        
+        sv.gradients[0] = Vector3(dLx[0] * Ly[0], Lx[0] * dLy[0], 0.0);
+        sv.gradients[1] = Vector3(dLx[2] * Ly[0], Lx[2] * dLy[0], 0.0);
+        sv.gradients[2] = Vector3(dLx[2] * Ly[2], Lx[2] * dLy[2], 0.0);
+        sv.gradients[3] = Vector3(dLx[0] * Ly[2], Lx[0] * dLy[2], 0.0);
+        
+        // Edge nodes (4-7): midpoints of edges
+        // Edge 0: bottom (y=-1), nodes (0,1) -> midpoint at (0,-1)
+        // Edge 1: right (x=1), nodes (1,2) -> midpoint at (1,0)
+        // Edge 2: top (y=1), nodes (2,3) -> midpoint at (0,1)
+        // Edge 3: left (x=-1), nodes (3,0) -> midpoint at (-1,0)
+        // Maps to tensor product: (1,0), (2,1), (1,2), (0,1)
+        sv.values[4] = Lx[1] * Ly[0];  // (0,-1)
+        sv.values[5] = Lx[2] * Ly[1];  // (1,0)
+        sv.values[6] = Lx[1] * Ly[2];  // (0,1)
+        sv.values[7] = Lx[0] * Ly[1];  // (-1,0)
+        
+        sv.gradients[4] = Vector3(dLx[1] * Ly[0], Lx[1] * dLy[0], 0.0);
+        sv.gradients[5] = Vector3(dLx[2] * Ly[1], Lx[2] * dLy[1], 0.0);
+        sv.gradients[6] = Vector3(dLx[1] * Ly[2], Lx[1] * dLy[2], 0.0);
+        sv.gradients[7] = Vector3(dLx[0] * Ly[1], Lx[0] * dLy[1], 0.0);
+        
+        // Center node (8): center at (0,0)
+        // Maps to tensor product: (1,1)
+        sv.values[8] = Lx[1] * Ly[1];
+        sv.gradients[8] = Vector3(dLx[1] * Ly[1], Lx[1] * dLy[1], 0.0);
+    } else {
+        // Higher order: tensor product with uniform node spacing
+        auto shape1d_x = segment1d_.evalValues(&xi[0]);
+        auto shape1d_y = segment1d_.evalValues(&xi[1]);
+        auto sv_x = segment1d_.eval(&xi[0]);
+        auto sv_y = segment1d_.eval(&xi[1]);
+        
+        for (int j = 0; j < n; ++j) {
+            for (int i = 0; i < n; ++i) {
+                int idx = j * n + i;
+                sv.values[idx] = shape1d_x[i] * shape1d_y[j];
+                sv.gradients[idx] = Vector3(
+                    sv_x.gradients[i].x() * shape1d_y[j],
+                    shape1d_x[i] * sv_y.gradients[j].x(),
+                    0.0
+                );
+            }
         }
     }
     
@@ -385,32 +458,49 @@ inline ShapeValues H1SquareShape::eval(const Real* xi) const {
 }
 
 inline std::vector<Real> H1SquareShape::evalValues(const Real* xi) const {
-    std::vector<Real> values(numDofs());
-    
-    const int n = order_ + 1;
-    auto shape1d_x = segment1d_.evalValues(&xi[0]);
-    auto shape1d_y = segment1d_.evalValues(&xi[1]);
-    
-    for (int j = 0; j < n; ++j) {
-        for (int i = 0; i < n; ++i) {
-            values[j * n + i] = shape1d_x[i] * shape1d_y[j];
-        }
-    }
-    
-    return values;
+    auto sv = eval(xi);
+    return sv.values;
 }
 
 inline std::vector<std::vector<Real>> H1SquareShape::dofCoords() const {
     std::vector<std::vector<Real>> coords(numDofs());
     const int n = order_ + 1;
     
-    for (int j = 0; j < n; ++j) {
-        for (int i = 0; i < n; ++i) {
-            int idx = j * n + i;
-            coords[idx] = {
-                -1.0 + 2.0 * i / order_,
-                -1.0 + 2.0 * j / order_
-            };
+    // Node ordering for H1 Square:
+    // Order 1 (4 nodes): corners only
+    // Order 2 (9 nodes): 4 corners + 4 edge midpoints + 1 center
+    // Higher order: tensor product nodes
+    
+    if (order_ == 1) {
+        // Corners only - use tensor product ordering to match eval()
+        // Order: (i,j) where i,j ∈ {0,1}, idx = j*2 + i
+        coords[0] = {-1.0, -1.0};  // i=0, j=0
+        coords[1] = { 1.0, -1.0};  // i=1, j=0
+        coords[2] = {-1.0,  1.0};  // i=0, j=1
+        coords[3] = { 1.0,  1.0};  // i=1, j=1
+    } else if (order_ == 2) {
+        // 4 corners
+        coords[0] = {-1.0, -1.0};
+        coords[1] = { 1.0, -1.0};
+        coords[2] = { 1.0,  1.0};
+        coords[3] = {-1.0,  1.0};
+        // 4 edge midpoints
+        coords[4] = { 0.0, -1.0};  // bottom edge
+        coords[5] = { 1.0,  0.0};  // right edge
+        coords[6] = { 0.0,  1.0};  // top edge
+        coords[7] = {-1.0,  0.0};  // left edge
+        // 1 center
+        coords[8] = { 0.0,  0.0};
+    } else {
+        // Higher order: tensor product nodes
+        for (int j = 0; j < n; ++j) {
+            for (int i = 0; i < n; ++i) {
+                int idx = j * n + i;
+                coords[idx] = {
+                    -1.0 + 2.0 * i / order_,
+                    -1.0 + 2.0 * j / order_
+                };
+            }
         }
     }
     
@@ -525,28 +615,122 @@ inline ShapeValues H1CubeShape::eval(const Real* xi) const {
     sv.values.resize(numDofs());
     sv.gradients.resize(numDofs());
     
-    // Tensor product of 1D shape functions
     const int n = order_ + 1;
-    auto shape1d_x = segment1d_.evalValues(&xi[0]);
-    auto shape1d_y = segment1d_.evalValues(&xi[1]);
-    auto shape1d_z = segment1d_.evalValues(&xi[2]);
     
-    auto sv_x = segment1d_.eval(&xi[0]);
-    auto sv_y = segment1d_.eval(&xi[1]);
-    auto sv_z = segment1d_.eval(&xi[2]);
-    
-    for (int k = 0; k < n; ++k) {
-        for (int j = 0; j < n; ++j) {
-            for (int i = 0; i < n; ++i) {
-                int idx = k * n * n + j * n + i;
-                sv.values[idx] = shape1d_x[i] * shape1d_y[j] * shape1d_z[k];
-                
-                // Gradient
-                sv.gradients[idx] = Vector3(
-                    sv_x.gradients[i].x() * shape1d_y[j] * shape1d_z[k],
-                    shape1d_x[i] * sv_y.gradients[j].x() * shape1d_z[k],
-                    shape1d_x[i] * shape1d_y[j] * sv_z.gradients[k].x()
-                );
+    if (order_ == 1) {
+        // Linear: tensor product
+        auto shape1d_x = segment1d_.evalValues(&xi[0]);
+        auto shape1d_y = segment1d_.evalValues(&xi[1]);
+        auto shape1d_z = segment1d_.evalValues(&xi[2]);
+        auto sv_x = segment1d_.eval(&xi[0]);
+        auto sv_y = segment1d_.eval(&xi[1]);
+        auto sv_z = segment1d_.eval(&xi[2]);
+        
+        for (int k = 0; k < n; ++k) {
+            for (int j = 0; j < n; ++j) {
+                for (int i = 0; i < n; ++i) {
+                    int idx = k * n * n + j * n + i;
+                    sv.values[idx] = shape1d_x[i] * shape1d_y[j] * shape1d_z[k];
+                    sv.gradients[idx] = Vector3(
+                        sv_x.gradients[i].x() * shape1d_y[j] * shape1d_z[k],
+                        shape1d_x[i] * sv_y.gradients[j].x() * shape1d_z[k],
+                        shape1d_x[i] * shape1d_y[j] * sv_z.gradients[k].x()
+                    );
+                }
+            }
+        }
+    } else if (order_ == 2) {
+        // Quadratic: use geometric node ordering
+        // Node ordering: 8 corners + 12 edges + 6 faces + 1 center = 27 nodes
+        // This matches COMSOL convention
+        
+        const Real x = xi[0];
+        const Real y = xi[1];
+        const Real z = xi[2];
+        
+        // 1D quadratic shape functions
+        auto eval1D = [](Real t) -> std::array<Real, 3> {
+            return {t * (t - 1) * 0.5, 1 - t * t, t * (t + 1) * 0.5};
+        };
+        auto eval1DGrad = [](Real t) -> std::array<Real, 3> {
+            return {t - 0.5, -2 * t, t + 0.5};
+        };
+        
+        auto Lx = eval1D(x);
+        auto Ly = eval1D(y);
+        auto Lz = eval1D(z);
+        auto dLx = eval1DGrad(x);
+        auto dLy = eval1DGrad(y);
+        auto dLz = eval1DGrad(z);
+        
+        int idx = 0;
+        
+        // 8 corners (0-7)
+        // Corner vertices: (-1,-1,-1), (1,-1,-1), (1,1,-1), (-1,1,-1),
+        //                  (-1,-1,1), (1,-1,1), (1,1,1), (-1,1,1)
+        // Maps to tensor product (i,j,k): (0,0,0), (2,0,0), (2,2,0), (0,2,0),
+        //                                 (0,0,2), (2,0,2), (2,2,2), (0,2,2)
+        sv.values[idx] = Lx[0] * Ly[0] * Lz[0]; sv.gradients[idx++] = Vector3(dLx[0]*Ly[0]*Lz[0], Lx[0]*dLy[0]*Lz[0], Lx[0]*Ly[0]*dLz[0]); // (-1,-1,-1)
+        sv.values[idx] = Lx[2] * Ly[0] * Lz[0]; sv.gradients[idx++] = Vector3(dLx[2]*Ly[0]*Lz[0], Lx[2]*dLy[0]*Lz[0], Lx[2]*Ly[0]*dLz[0]); // ( 1,-1,-1)
+        sv.values[idx] = Lx[2] * Ly[2] * Lz[0]; sv.gradients[idx++] = Vector3(dLx[2]*Ly[2]*Lz[0], Lx[2]*dLy[2]*Lz[0], Lx[2]*Ly[2]*dLz[0]); // ( 1, 1,-1)
+        sv.values[idx] = Lx[0] * Ly[2] * Lz[0]; sv.gradients[idx++] = Vector3(dLx[0]*Ly[2]*Lz[0], Lx[0]*dLy[2]*Lz[0], Lx[0]*Ly[2]*dLz[0]); // (-1, 1,-1)
+        sv.values[idx] = Lx[0] * Ly[0] * Lz[2]; sv.gradients[idx++] = Vector3(dLx[0]*Ly[0]*Lz[2], Lx[0]*dLy[0]*Lz[2], Lx[0]*Ly[0]*dLz[2]); // (-1,-1, 1)
+        sv.values[idx] = Lx[2] * Ly[0] * Lz[2]; sv.gradients[idx++] = Vector3(dLx[2]*Ly[0]*Lz[2], Lx[2]*dLy[0]*Lz[2], Lx[2]*Ly[0]*dLz[2]); // ( 1,-1, 1)
+        sv.values[idx] = Lx[2] * Ly[2] * Lz[2]; sv.gradients[idx++] = Vector3(dLx[2]*Ly[2]*Lz[2], Lx[2]*dLy[2]*Lz[2], Lx[2]*Ly[2]*dLz[2]); // ( 1, 1, 1)
+        sv.values[idx] = Lx[0] * Ly[2] * Lz[2]; sv.gradients[idx++] = Vector3(dLx[0]*Ly[2]*Lz[2], Lx[0]*dLy[2]*Lz[2], Lx[0]*Ly[2]*dLz[2]); // (-1, 1, 1)
+        
+        // 12 edge midpoints (8-19)
+        // Edge ordering matches geometry.hpp edge_table::Cube:
+        // Bottom: 0:(0,1), 1:(1,2), 2:(2,3), 3:(3,0)
+        // Top: 4:(4,5), 5:(5,6), 6:(6,7), 7:(7,4)
+        // Vertical: 8:(0,4), 9:(1,5), 10:(2,6), 11:(3,7)
+        // Maps to tensor product midpoints
+        sv.values[idx] = Lx[1] * Ly[0] * Lz[0]; sv.gradients[idx++] = Vector3(dLx[1]*Ly[0]*Lz[0], Lx[1]*dLy[0]*Lz[0], Lx[1]*Ly[0]*dLz[0]); // (0,-1,-1)
+        sv.values[idx] = Lx[2] * Ly[1] * Lz[0]; sv.gradients[idx++] = Vector3(dLx[2]*Ly[1]*Lz[0], Lx[2]*dLy[1]*Lz[0], Lx[2]*Ly[1]*dLz[0]); // (1, 0,-1)
+        sv.values[idx] = Lx[1] * Ly[2] * Lz[0]; sv.gradients[idx++] = Vector3(dLx[1]*Ly[2]*Lz[0], Lx[1]*dLy[2]*Lz[0], Lx[1]*Ly[2]*dLz[0]); // (0, 1,-1)
+        sv.values[idx] = Lx[0] * Ly[1] * Lz[0]; sv.gradients[idx++] = Vector3(dLx[0]*Ly[1]*Lz[0], Lx[0]*dLy[1]*Lz[0], Lx[0]*Ly[1]*dLz[0]); // (-1,0,-1)
+        sv.values[idx] = Lx[1] * Ly[0] * Lz[2]; sv.gradients[idx++] = Vector3(dLx[1]*Ly[0]*Lz[2], Lx[1]*dLy[0]*Lz[2], Lx[1]*Ly[0]*dLz[2]); // (0,-1, 1)
+        sv.values[idx] = Lx[2] * Ly[1] * Lz[2]; sv.gradients[idx++] = Vector3(dLx[2]*Ly[1]*Lz[2], Lx[2]*dLy[1]*Lz[2], Lx[2]*Ly[1]*dLz[2]); // (1, 0, 1)
+        sv.values[idx] = Lx[1] * Ly[2] * Lz[2]; sv.gradients[idx++] = Vector3(dLx[1]*Ly[2]*Lz[2], Lx[1]*dLy[2]*Lz[2], Lx[1]*Ly[2]*dLz[2]); // (0, 1, 1)
+        sv.values[idx] = Lx[0] * Ly[1] * Lz[2]; sv.gradients[idx++] = Vector3(dLx[0]*Ly[1]*Lz[2], Lx[0]*dLy[1]*Lz[2], Lx[0]*Ly[1]*dLz[2]); // (-1,0, 1)
+        sv.values[idx] = Lx[0] * Ly[0] * Lz[1]; sv.gradients[idx++] = Vector3(dLx[0]*Ly[0]*Lz[1], Lx[0]*dLy[0]*Lz[1], Lx[0]*Ly[0]*dLz[1]); // (-1,-1,0)
+        sv.values[idx] = Lx[2] * Ly[0] * Lz[1]; sv.gradients[idx++] = Vector3(dLx[2]*Ly[0]*Lz[1], Lx[2]*dLy[0]*Lz[1], Lx[2]*Ly[0]*dLz[1]); // ( 1,-1,0)
+        sv.values[idx] = Lx[2] * Ly[2] * Lz[1]; sv.gradients[idx++] = Vector3(dLx[2]*Ly[2]*Lz[1], Lx[2]*dLy[2]*Lz[1], Lx[2]*Ly[2]*dLz[1]); // ( 1, 1,0)
+        sv.values[idx] = Lx[0] * Ly[2] * Lz[1]; sv.gradients[idx++] = Vector3(dLx[0]*Ly[2]*Lz[1], Lx[0]*dLy[2]*Lz[1], Lx[0]*Ly[2]*dLz[1]); // (-1, 1,0)
+        
+        // 6 face centers (20-25)
+        // Face ordering matches geometry.hpp face_table::Cube:
+        // 0: bottom (-z), 1: top (+z), 2: front (-y), 3: back (+y), 4: left (-x), 5: right (+x)
+        sv.values[idx] = Lx[1] * Ly[1] * Lz[0]; sv.gradients[idx++] = Vector3(dLx[1]*Ly[1]*Lz[0], Lx[1]*dLy[1]*Lz[0], Lx[1]*Ly[1]*dLz[0]); // (0,0,-1)
+        sv.values[idx] = Lx[1] * Ly[1] * Lz[2]; sv.gradients[idx++] = Vector3(dLx[1]*Ly[1]*Lz[2], Lx[1]*dLy[1]*Lz[2], Lx[1]*Ly[1]*dLz[2]); // (0,0, 1)
+        sv.values[idx] = Lx[1] * Ly[0] * Lz[1]; sv.gradients[idx++] = Vector3(dLx[1]*Ly[0]*Lz[1], Lx[1]*dLy[0]*Lz[1], Lx[1]*Ly[0]*dLz[1]); // (0,-1,0)
+        sv.values[idx] = Lx[1] * Ly[2] * Lz[1]; sv.gradients[idx++] = Vector3(dLx[1]*Ly[2]*Lz[1], Lx[1]*dLy[2]*Lz[1], Lx[1]*Ly[2]*dLz[1]); // (0, 1,0)
+        sv.values[idx] = Lx[0] * Ly[1] * Lz[1]; sv.gradients[idx++] = Vector3(dLx[0]*Ly[1]*Lz[1], Lx[0]*dLy[1]*Lz[1], Lx[0]*Ly[1]*dLz[1]); // (-1,0,0)
+        sv.values[idx] = Lx[2] * Ly[1] * Lz[1]; sv.gradients[idx++] = Vector3(dLx[2]*Ly[1]*Lz[1], Lx[2]*dLy[1]*Lz[1], Lx[2]*Ly[1]*dLz[1]); // ( 1,0,0)
+        
+        // 1 volume center (26)
+        sv.values[idx] = Lx[1] * Ly[1] * Lz[1];
+        sv.gradients[idx] = Vector3(dLx[1]*Ly[1]*Lz[1], Lx[1]*dLy[1]*Lz[1], Lx[1]*Ly[1]*dLz[1]); // (0,0,0)
+    } else {
+        // Higher order: tensor product
+        auto shape1d_x = segment1d_.evalValues(&xi[0]);
+        auto shape1d_y = segment1d_.evalValues(&xi[1]);
+        auto shape1d_z = segment1d_.evalValues(&xi[2]);
+        auto sv_x = segment1d_.eval(&xi[0]);
+        auto sv_y = segment1d_.eval(&xi[1]);
+        auto sv_z = segment1d_.eval(&xi[2]);
+        
+        for (int k = 0; k < n; ++k) {
+            for (int j = 0; j < n; ++j) {
+                for (int i = 0; i < n; ++i) {
+                    int idx = k * n * n + j * n + i;
+                    sv.values[idx] = shape1d_x[i] * shape1d_y[j] * shape1d_z[k];
+                    sv.gradients[idx] = Vector3(
+                        sv_x.gradients[i].x() * shape1d_y[j] * shape1d_z[k],
+                        shape1d_x[i] * sv_y.gradients[j].x() * shape1d_z[k],
+                        shape1d_x[i] * shape1d_y[j] * sv_z.gradients[k].x()
+                    );
+                }
             }
         }
     }
@@ -555,38 +739,78 @@ inline ShapeValues H1CubeShape::eval(const Real* xi) const {
 }
 
 inline std::vector<Real> H1CubeShape::evalValues(const Real* xi) const {
-    std::vector<Real> values(numDofs());
-    
-    const int n = order_ + 1;
-    auto shape1d_x = segment1d_.evalValues(&xi[0]);
-    auto shape1d_y = segment1d_.evalValues(&xi[1]);
-    auto shape1d_z = segment1d_.evalValues(&xi[2]);
-    
-    for (int k = 0; k < n; ++k) {
-        for (int j = 0; j < n; ++j) {
-            for (int i = 0; i < n; ++i) {
-                int idx = k * n * n + j * n + i;
-                values[idx] = shape1d_x[i] * shape1d_y[j] * shape1d_z[k];
-            }
-        }
-    }
-    
-    return values;
+    auto sv = eval(xi);
+    return sv.values;
 }
 
 inline std::vector<std::vector<Real>> H1CubeShape::dofCoords() const {
     std::vector<std::vector<Real>> coords(numDofs());
     const int n = order_ + 1;
     
-    for (int k = 0; k < n; ++k) {
-        for (int j = 0; j < n; ++j) {
-            for (int i = 0; i < n; ++i) {
-                int idx = k * n * n + j * n + i;
-                coords[idx] = {
-                    -1.0 + 2.0 * i / order_,
-                    -1.0 + 2.0 * j / order_,
-                    -1.0 + 2.0 * k / order_
-                };
+    // Node ordering for H1 Cube:
+    // Order 1 (8 nodes): corners only
+    // Order 2 (27 nodes): 8 corners + 12 edge midpoints + 6 face centers + 1 volume center
+    // Higher order: tensor product nodes
+    
+    if (order_ == 1) {
+        // 8 corners only - use tensor product ordering to match eval()
+        // Order: (i,j,k) where i,j,k ∈ {0,1}, idx = k*4 + j*2 + i
+        // Corresponding to xi ∈ {-1,1}, eta ∈ {-1,1}, zeta ∈ {-1,1}
+        coords[0] = {-1.0, -1.0, -1.0};  // i=0, j=0, k=0
+        coords[1] = { 1.0, -1.0, -1.0};  // i=1, j=0, k=0
+        coords[2] = {-1.0,  1.0, -1.0};  // i=0, j=1, k=0
+        coords[3] = { 1.0,  1.0, -1.0};  // i=1, j=1, k=0
+        coords[4] = {-1.0, -1.0,  1.0};  // i=0, j=0, k=1
+        coords[5] = { 1.0, -1.0,  1.0};  // i=1, j=0, k=1
+        coords[6] = {-1.0,  1.0,  1.0};  // i=0, j=1, k=1
+        coords[7] = { 1.0,  1.0,  1.0};  // i=1, j=1, k=1
+    } else if (order_ == 2) {
+        // 8 corners (0-7)
+        coords[0] = {-1.0, -1.0, -1.0};
+        coords[1] = { 1.0, -1.0, -1.0};
+        coords[2] = { 1.0,  1.0, -1.0};
+        coords[3] = {-1.0,  1.0, -1.0};
+        coords[4] = {-1.0, -1.0,  1.0};
+        coords[5] = { 1.0, -1.0,  1.0};
+        coords[6] = { 1.0,  1.0,  1.0};
+        coords[7] = {-1.0,  1.0,  1.0};
+        
+        // 12 edge midpoints (8-19)
+        coords[8]  = { 0.0, -1.0, -1.0};  // edge 0: bottom front
+        coords[9]  = { 1.0,  0.0, -1.0};  // edge 1: bottom right
+        coords[10] = { 0.0,  1.0, -1.0};  // edge 2: bottom back
+        coords[11] = {-1.0,  0.0, -1.0};  // edge 3: bottom left
+        coords[12] = { 0.0, -1.0,  1.0};  // edge 4: top front
+        coords[13] = { 1.0,  0.0,  1.0};  // edge 5: top right
+        coords[14] = { 0.0,  1.0,  1.0};  // edge 6: top back
+        coords[15] = {-1.0,  0.0,  1.0};  // edge 7: top left
+        coords[16] = {-1.0, -1.0,  0.0};  // edge 8: front left vertical
+        coords[17] = { 1.0, -1.0,  0.0};  // edge 9: front right vertical
+        coords[18] = { 1.0,  1.0,  0.0};  // edge 10: back right vertical
+        coords[19] = {-1.0,  1.0,  0.0};  // edge 11: back left vertical
+        
+        // 6 face centers (20-25)
+        coords[20] = { 0.0,  0.0, -1.0};  // face 0: bottom (-z)
+        coords[21] = { 0.0,  0.0,  1.0};  // face 1: top (+z)
+        coords[22] = { 0.0, -1.0,  0.0};  // face 2: front (-y)
+        coords[23] = { 0.0,  1.0,  0.0};  // face 3: back (+y)
+        coords[24] = {-1.0,  0.0,  0.0};  // face 4: left (-x)
+        coords[25] = { 1.0,  0.0,  0.0};  // face 5: right (+x)
+        
+        // 1 volume center (26)
+        coords[26] = { 0.0,  0.0,  0.0};
+    } else {
+        // Higher order: tensor product nodes
+        for (int k = 0; k < n; ++k) {
+            for (int j = 0; j < n; ++j) {
+                for (int i = 0; i < n; ++i) {
+                    int idx = k * n * n + j * n + i;
+                    coords[idx] = {
+                        -1.0 + 2.0 * i / order_,
+                        -1.0 + 2.0 * j / order_,
+                        -1.0 + 2.0 * k / order_
+                    };
+                }
             }
         }
     }

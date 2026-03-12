@@ -356,6 +356,307 @@ namespace mpfem
             }};
         } // namespace face_table
 
+        // =============================================================================
+        // Edge midpoint reference coordinates (for second-order elements)
+        // =============================================================================
+
+        /// Edge midpoint reference coordinates for Triangle2
+        /// Edge ordering matches edge_table::Triangle
+        /// Coordinates are (xi, eta) in reference triangle
+        inline constexpr std::array<std::array<double, 2>, 3> edgeMidpoint_Triangle = {{
+            {{0.5, 0.0}},  // Edge 0: between vertices 1-2 (midpoint of edge from (1,0) to (0,1))
+            {{0.0, 0.5}},  // Edge 1: between vertices 2-0 (midpoint of edge from (0,1) to (0,0))
+            {{0.5, 0.5}}   // Edge 2: between vertices 0-1 (midpoint of edge from (0,0) to (1,0))
+        }};
+
+        /// Edge midpoint reference coordinates for Square2
+        /// Edge ordering matches edge_table::Square
+        inline constexpr std::array<std::array<double, 2>, 4> edgeMidpoint_Square = {{
+            {{0.0, -1.0}},  // Edge 0: bottom (vertices 0-1)
+            {{1.0, 0.0}},   // Edge 1: right (vertices 1-2)
+            {{0.0, 1.0}},   // Edge 2: top (vertices 2-3)
+            {{-1.0, 0.0}}   // Edge 3: left (vertices 3-0)
+        }};
+
+        /// Edge midpoint reference coordinates for Tetrahedron2
+        /// Edge ordering matches edge_table::Tetrahedron
+        inline constexpr std::array<std::array<double, 3>, 6> edgeMidpoint_Tetrahedron = {{
+            {{0.5, 0.0, 0.0}},  // Edge 0: between vertices 0-1
+            {{0.5, 0.5, 0.0}},  // Edge 1: between vertices 1-2
+            {{0.0, 0.5, 0.0}},  // Edge 2: between vertices 2-0
+            {{0.0, 0.0, 0.5}},  // Edge 3: between vertices 0-3
+            {{0.5, 0.0, 0.5}},  // Edge 4: between vertices 1-3
+            {{0.0, 0.5, 0.5}}   // Edge 5: between vertices 2-3
+        }};
+
+        /// Edge midpoint reference coordinates for Cube2
+        /// Edge ordering matches edge_table::Cube
+        inline constexpr std::array<std::array<double, 3>, 12> edgeMidpoint_Cube = {{
+            {{0.0, -1.0, -1.0}},   // Edge 0: bottom front
+            {{1.0, 0.0, -1.0}},    // Edge 1: bottom right
+            {{0.0, 1.0, -1.0}},    // Edge 2: bottom back
+            {{-1.0, 0.0, -1.0}},   // Edge 3: bottom left
+            {{0.0, -1.0, 1.0}},    // Edge 4: top front
+            {{1.0, 0.0, 1.0}},     // Edge 5: top right
+            {{0.0, 1.0, 1.0}},     // Edge 6: top back
+            {{-1.0, 0.0, 1.0}},    // Edge 7: top left
+            {{-1.0, -1.0, 0.0}},   // Edge 8: front left vertical
+            {{1.0, -1.0, 0.0}},    // Edge 9: front right vertical
+            {{1.0, 1.0, 0.0}},     // Edge 10: back right vertical
+            {{-1.0, 1.0, 0.0}}     // Edge 11: back left vertical
+        }};
+
+        // =============================================================================
+        // Face center reference coordinates (for second-order elements)
+        // =============================================================================
+
+        /// Face center reference coordinates for Square2 (single center point)
+        /// Center of the reference square [-1,1] x [-1,1]
+        inline constexpr std::array<double, 2> faceCenter_Square = {{0.0, 0.0}};
+
+        /// Face center reference coordinates for Cube2 (6 face centers)
+        /// Face ordering matches face_table::Cube: -z, +z, -y, +y, -x, +x
+        inline constexpr std::array<std::array<double, 3>, 6> faceCenter_Cube = {{
+            {{0.0, 0.0, -1.0}},   // Face 0: bottom (-z)
+            {{0.0, 0.0, 1.0}},    // Face 1: top (+z)
+            {{0.0, -1.0, 0.0}},   // Face 2: front (-y)
+            {{0.0, 1.0, 0.0}},    // Face 3: back (+y)
+            {{-1.0, 0.0, 0.0}},   // Face 4: left (-x)
+            {{1.0, 0.0, 0.0}}     // Face 5: right (+x)
+        }};
+
+        // =============================================================================
+        // Volume center reference coordinates (for second-order elements)
+        // =============================================================================
+
+        /// Volume center reference coordinates for Cube2 (single center point)
+        /// Center of the reference cube [-1,1]^3
+        inline constexpr std::array<double, 3> volumeCenter_Cube = {{0.0, 0.0, 0.0}};
+
+        /// Square2: center of the element (same as face center for 2D)
+        inline constexpr std::array<double, 2> center_Square = {{0.0, 0.0}};
+
+        // =============================================================================
+        // Face edge tables: edge indices for each face
+        // =============================================================================
+
+        namespace face_edge_table {
+            /// Face edges for Tetrahedron: 4 triangular faces
+            /// Each face has 3 edges
+            /// Edge ordering follows edge_table::Tetrahedron
+            inline constexpr std::array<std::array<int, 3>, 4> Tetrahedron = {{
+                {{1, 5, 4}},  // Face 0: opposite vertex 0, edges (1-2), (2-3), (1-3)
+                {{0, 3, 2}},  // Face 1: opposite vertex 1, edges (0-1), (0-3), (2-0)
+                {{0, 4, 3}},  // Face 2: opposite vertex 2, edges (0-1), (1-3), (0-3)
+                {{2, 5, 1}}   // Face 3: opposite vertex 3, edges (2-0), (2-3), (1-2)
+            }};
+
+            /// Face edges for Cube: 6 quadrilateral faces
+            /// Each face has 4 edges
+            /// Edge ordering follows edge_table::Cube
+            inline constexpr std::array<std::array<int, 4>, 6> Cube = {{
+                {{0, 1, 2, 3}},   // Face 0: bottom (-z)
+                {{4, 7, 6, 5}},   // Face 1: top (+z)
+                {{0, 8, 4, 11}},  // Face 2: front (-y)
+                {{2, 10, 6, 9}},  // Face 3: back (+y)
+                {{3, 11, 7, 10}}, // Face 4: left (-x)
+                {{1, 9, 5, 8}}    // Face 5: right (+x)
+            }};
+        } // namespace face_edge_table
+
+        // =============================================================================
+        // Helper functions for second-order elements
+        // =============================================================================
+
+        /// Get edge midpoint reference coordinates for a geometry type
+        /// @param g Geometry type
+        /// @param edgeIdx Edge index
+        /// @param coords Output coordinates (size = dim)
+        /// @return true if successful
+        inline bool getEdgeMidpointCoords(Geometry g, int edgeIdx, double* coords) {
+            switch (g) {
+                case Geometry::Segment:
+                    if (edgeIdx == 0) { coords[0] = 0.0; return true; }
+                    return false;
+                case Geometry::Triangle:
+                    if (edgeIdx >= 0 && edgeIdx < 3) {
+                        coords[0] = edgeMidpoint_Triangle[edgeIdx][0];
+                        coords[1] = edgeMidpoint_Triangle[edgeIdx][1];
+                        return true;
+                    }
+                    return false;
+                case Geometry::Square:
+                    if (edgeIdx >= 0 && edgeIdx < 4) {
+                        coords[0] = edgeMidpoint_Square[edgeIdx][0];
+                        coords[1] = edgeMidpoint_Square[edgeIdx][1];
+                        return true;
+                    }
+                    return false;
+                case Geometry::Tetrahedron:
+                    if (edgeIdx >= 0 && edgeIdx < 6) {
+                        coords[0] = edgeMidpoint_Tetrahedron[edgeIdx][0];
+                        coords[1] = edgeMidpoint_Tetrahedron[edgeIdx][1];
+                        coords[2] = edgeMidpoint_Tetrahedron[edgeIdx][2];
+                        return true;
+                    }
+                    return false;
+                case Geometry::Cube:
+                    if (edgeIdx >= 0 && edgeIdx < 12) {
+                        coords[0] = edgeMidpoint_Cube[edgeIdx][0];
+                        coords[1] = edgeMidpoint_Cube[edgeIdx][1];
+                        coords[2] = edgeMidpoint_Cube[edgeIdx][2];
+                        return true;
+                    }
+                    return false;
+                default:
+                    return false;
+            }
+        }
+
+        /// Get edge indices for a face
+        /// @param g Geometry type (must be a volume element)
+        /// @param faceIdx Face index
+        /// @return Vector of edge indices for the face
+        inline std::vector<int> faceEdges(Geometry g, int faceIdx) {
+            std::vector<int> result;
+
+            switch (g) {
+                case Geometry::Tetrahedron:
+                    if (faceIdx >= 0 && faceIdx < 4) {
+                        result.assign(face_edge_table::Tetrahedron[faceIdx].begin(),
+                                      face_edge_table::Tetrahedron[faceIdx].end());
+                    }
+                    break;
+                case Geometry::Cube:
+                    if (faceIdx >= 0 && faceIdx < 6) {
+                        result.assign(face_edge_table::Cube[faceIdx].begin(),
+                                      face_edge_table::Cube[faceIdx].end());
+                    }
+                    break;
+                case Geometry::Triangle:
+                case Geometry::Square:
+                    // 2D elements: each "face" is an edge (boundary edge)
+                    // face i corresponds to edge i
+                    if (faceIdx >= 0 && faceIdx < numEdges(g)) {
+                        result.push_back(faceIdx);
+                    }
+                    break;
+                default:
+                    break;
+            }
+
+            return result;
+        }
+
+        /// Get all node reference coordinates for a geometry type with given order
+        /// @param g Geometry type
+        /// @param order Element order (1 = linear, 2 = quadratic)
+        /// @return Vector of reference coordinates for all nodes
+        /// 
+        /// Node ordering for second-order elements:
+        /// - Triangle2: 3 corners + 3 edge midpoints = 6 nodes (no face center for simplex)
+        /// - Square2:   4 corners + 4 edge midpoints + 1 center = 9 nodes
+        /// - Tetrahedron2: 4 corners + 6 edge midpoints = 10 nodes (no face/volume center for simplex)
+        /// - Cube2:     8 corners + 12 edge midpoints + 6 face centers + 1 volume center = 27 nodes
+        inline std::vector<std::vector<double>> nodeCoords(Geometry g, int order) {
+            std::vector<std::vector<double>> coords;
+            int d = dim(g);
+
+            // Add corner vertex coordinates
+            switch (g) {
+                case Geometry::Segment:
+                    coords.push_back({-1.0});
+                    coords.push_back({1.0});
+                    break;
+                case Geometry::Triangle:
+                    coords.push_back({0.0, 0.0});
+                    coords.push_back({1.0, 0.0});
+                    coords.push_back({0.0, 1.0});
+                    break;
+                case Geometry::Square:
+                    coords.push_back({-1.0, -1.0});
+                    coords.push_back({1.0, -1.0});
+                    coords.push_back({1.0, 1.0});
+                    coords.push_back({-1.0, 1.0});
+                    break;
+                case Geometry::Tetrahedron:
+                    coords.push_back({0.0, 0.0, 0.0});
+                    coords.push_back({1.0, 0.0, 0.0});
+                    coords.push_back({0.0, 1.0, 0.0});
+                    coords.push_back({0.0, 0.0, 1.0});
+                    break;
+                case Geometry::Cube:
+                    coords.push_back({-1.0, -1.0, -1.0});
+                    coords.push_back({1.0, -1.0, -1.0});
+                    coords.push_back({1.0, 1.0, -1.0});
+                    coords.push_back({-1.0, 1.0, -1.0});
+                    coords.push_back({-1.0, -1.0, 1.0});
+                    coords.push_back({1.0, -1.0, 1.0});
+                    coords.push_back({1.0, 1.0, 1.0});
+                    coords.push_back({-1.0, 1.0, 1.0});
+                    break;
+                default:
+                    return coords;
+            }
+
+            // Add edge midpoints for order >= 2
+            if (order >= 2) {
+                int nEdges = numEdges(g);
+                for (int e = 0; e < nEdges; ++e) {
+                    std::vector<double> mp(d);
+                    getEdgeMidpointCoords(g, e, mp.data());
+                    coords.push_back(std::move(mp));
+                }
+                
+                // Add face center for Square2 (tensor product element)
+                if (g == Geometry::Square) {
+                    coords.push_back({center_Square[0], center_Square[1]});
+                }
+                
+                // Add face centers and volume center for Cube2 (tensor product element)
+                if (g == Geometry::Cube) {
+                    // Add 6 face centers
+                    for (int f = 0; f < 6; ++f) {
+                        coords.push_back({faceCenter_Cube[f][0], 
+                                          faceCenter_Cube[f][1], 
+                                          faceCenter_Cube[f][2]});
+                    }
+                    // Add volume center
+                    coords.push_back({volumeCenter_Cube[0], 
+                                      volumeCenter_Cube[1], 
+                                      volumeCenter_Cube[2]});
+                }
+            }
+
+            // TODO: For order >= 3, add additional interior nodes
+
+            return coords;
+        }
+        
+        /// Get face center reference coordinates for Cube2
+        /// @param faceIdx Face index (0 to 5)
+        /// @param coords Output coordinates (size = 3)
+        /// @return true if successful
+        inline bool getFaceCenterCoords(Geometry g, int faceIdx, double* coords) {
+            if (g == Geometry::Cube && faceIdx >= 0 && faceIdx < 6) {
+                coords[0] = faceCenter_Cube[faceIdx][0];
+                coords[1] = faceCenter_Cube[faceIdx][1];
+                coords[2] = faceCenter_Cube[faceIdx][2];
+                return true;
+            }
+            return false;
+        }
+        
+        /// Get volume center reference coordinates for Cube2
+        /// @param coords Output coordinates (size = 3)
+        inline void getVolumeCenterCoords(Geometry g, double* coords) {
+            if (g == Geometry::Cube) {
+                coords[0] = volumeCenter_Cube[0];
+                coords[1] = volumeCenter_Cube[1];
+                coords[2] = volumeCenter_Cube[2];
+            }
+        }
+
         /// Get local vertex indices for an edge
         /// @param g Geometry type
         /// @param edgeIdx Edge index (0 to numEdges(g)-1)
@@ -421,10 +722,13 @@ namespace mpfem
                 break;
             case Geometry::Triangle:
             case Geometry::Square:
-                // 2D elements: the face is the element itself
-                for (int i = 0; i < numVertices(g); ++i)
+                // 2D elements: each "face" is a boundary edge (Segment)
+                // Return the vertices of the edge
+                if (faceIdx >= 0 && faceIdx < numEdges(g))
                 {
-                    result.push_back(i);
+                    auto [v0, v1] = edgeVertices(g, faceIdx);
+                    result.push_back(v0);
+                    result.push_back(v1);
                 }
                 break;
             default:

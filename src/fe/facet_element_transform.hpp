@@ -5,6 +5,7 @@
 #include "mesh/geometry.hpp"
 #include "core/types.hpp"
 #include <Eigen/Dense>
+#include "shape_function.hpp"
 
 namespace mpfem {
 
@@ -137,7 +138,9 @@ private:
     };
     
     void computeGeometryInfo();
+    void createGeomShapeFunction();
     void evalJacobian() const;
+    void evalJacobianLinear() const;
     void evalWeight() const;
     
     // -------------------------------------------------------------------------
@@ -149,10 +152,14 @@ private:
     Geometry geometry_ = Geometry::Invalid;
     int dim_ = 0;        // Dimension of boundary element (1 for segment, 2 for triangle/quad)
     int spaceDim_ = 0;   // Dimension of parent mesh
+    int geomOrder_ = 1;  // Geometric order (from element)
     std::vector<Vector3> vertices_;
     std::vector<Index> vertexIndices_;
     
     IntegrationPoint ip_;
+    
+    // Geometric shape function for curved boundary elements
+    std::unique_ptr<ShapeFunction> geomShapeFunc_;
     
     // Mutable for lazy evaluation
     mutable Matrix jacobian_;  // spaceDim_ x dim_

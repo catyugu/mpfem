@@ -100,16 +100,16 @@ public:
      * @brief Compute gradient of scalar field in physical coordinates.
      * @param elemIdx Element index.
      * @param xi Reference coordinates.
-     * @param trans Element transformation.
+     * @param trans Element transformation (non-const, will be modified to set integration point).
      * @return Gradient in physical coordinates.
      */
-    Vector3 gradient(Index elemIdx, const Real* xi, const ElementTransform& trans) const;
+    Vector3 gradient(Index elemIdx, const Real* xi, ElementTransform& trans) const;
 
     /**
      * @brief Compute gradient at integration point.
      */
     Vector3 gradient(Index elemIdx, const IntegrationPoint& ip, 
-                     const ElementTransform& trans) const {
+                     ElementTransform& trans) const {
         return gradient(elemIdx, &ip.xi, trans);
     }
 

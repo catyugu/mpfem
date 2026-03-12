@@ -49,17 +49,20 @@ Mesh createSingleHexMesh() {
     mesh.setDim(3);
     
     // Unit cube vertices
-    mesh.addVertex(0.0, 0.0, 0.0);  // 0
-    mesh.addVertex(1.0, 0.0, 0.0);  // 1
-    mesh.addVertex(1.0, 1.0, 0.0);  // 2
-    mesh.addVertex(0.0, 1.0, 0.0);  // 3
-    mesh.addVertex(0.0, 0.0, 1.0);  // 4
-    mesh.addVertex(1.0, 0.0, 1.0);  // 5
-    mesh.addVertex(1.0, 1.0, 1.0);  // 6
-    mesh.addVertex(0.0, 1.0, 1.0);  // 7
+    mesh.addVertex(0.0, 0.0, 0.0);  // 0: (0,0,0)
+    mesh.addVertex(1.0, 0.0, 0.0);  // 1: (1,0,0)
+    mesh.addVertex(1.0, 1.0, 0.0);  // 2: (1,1,0)
+    mesh.addVertex(0.0, 1.0, 0.0);  // 3: (0,1,0)
+    mesh.addVertex(0.0, 0.0, 1.0);  // 4: (0,0,1)
+    mesh.addVertex(1.0, 0.0, 1.0);  // 5: (1,0,1)
+    mesh.addVertex(1.0, 1.0, 1.0);  // 6: (1,1,1)
+    mesh.addVertex(0.0, 1.0, 1.0);  // 7: (0,1,1)
     
-    // Hexahedron (cube)
-    mesh.addElement(Geometry::Cube, {0, 1, 2, 3, 4, 5, 6, 7});
+    // Hexahedron (cube) - tensor product ordering to match shape functions
+    // Tensor product order: (0,0,0), (1,0,0), (0,1,0), (1,1,0), (0,0,1), (1,0,1), (0,1,1), (1,1,1)
+    // Physical coords:      (0,0,0), (1,0,0), (0,1,0), (1,1,0), (0,0,1), (1,0,1), (0,1,1), (1,1,1)
+    // Vertex indices:       0,       1,       3,       2,       4,       5,       7,       6
+    mesh.addElement(Geometry::Cube, {0, 1, 3, 2, 4, 5, 7, 6});
     
     return mesh;
 }
@@ -69,12 +72,16 @@ Mesh createSingleSquareBdrMesh() {
     Mesh mesh;
     mesh.setDim(3);  // 3D mesh with 2D boundary
     
-    mesh.addVertex(0.0, 0.0, 0.0);  // 0
-    mesh.addVertex(1.0, 0.0, 0.0);  // 1
-    mesh.addVertex(1.0, 1.0, 0.0);  // 2
-    mesh.addVertex(0.0, 1.0, 0.0);  // 3
+    mesh.addVertex(0.0, 0.0, 0.0);  // 0: (0,0)
+    mesh.addVertex(1.0, 0.0, 0.0);  // 1: (1,0)
+    mesh.addVertex(1.0, 1.0, 0.0);  // 2: (1,1)
+    mesh.addVertex(0.0, 1.0, 0.0);  // 3: (0,1)
     
-    mesh.addBdrElement(Geometry::Square, {0, 1, 2, 3});
+    // Square boundary - tensor product ordering to match shape functions
+    // Tensor product order: (0,0), (1,0), (0,1), (1,1)
+    // Physical coords:      (0,0), (1,0), (0,1), (1,1)
+    // Vertex indices:       0,     1,     3,     2
+    mesh.addBdrElement(Geometry::Square, {0, 1, 3, 2});
     
     return mesh;
 }

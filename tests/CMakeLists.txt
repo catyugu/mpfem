@@ -136,3 +136,33 @@ target_link_libraries(mpfem_test_fe_values
 )
 
 add_test(NAME FEValues COMMAND mpfem_test_fe_values)
+
+# =============================================================================
+# Curved Element Tests (Second-order geometry)
+# =============================================================================
+add_executable(mpfem_test_curved_element
+    test_curved_element.cpp
+)
+
+target_link_libraries(mpfem_test_curved_element
+    PRIVATE mpfem::mesh
+    PRIVATE mpfem::fe
+    PRIVATE GTest::gtest_main
+)
+
+add_test(NAME CurvedElement COMMAND mpfem_test_curved_element)
+
+# =============================================================================
+# Quadratic FE Space Tests
+# =============================================================================
+add_executable(mpfem_test_fe_space_quadratic
+    test_fe_space_quadratic.cpp
+)
+
+target_link_libraries(mpfem_test_fe_space_quadratic
+    PRIVATE mpfem::mesh
+    PRIVATE mpfem::fe
+    PRIVATE GTest::gtest_main
+)
+
+add_test(NAME FESpaceQuadratic COMMAND mpfem_test_fe_space_quadratic)

@@ -1,4 +1,5 @@
 #include "fe/element_transform.hpp"
+#include "fe/shape_function.hpp"
 #include <cmath>
 
 namespace mpfem {
@@ -29,11 +30,21 @@ void ElementTransform::computeGeometryInfo() {
     geometry_ = elem->geometry();
     dim_ = geom::dim(geometry_);
     
-    // Get vertex coordinates
-    vertexIndices_ = elem->vertices();
-    vertices_.resize(vertexIndices_.size());
-    for (size_t i = 0; i < vertexIndices_.size(); ++i) {
-        vertices_[i] = mesh_->vertex(vertexIndices_[i]).toVector();
+    // Get geometric order from the element
+    geomOrder_ = elem->order();
+    
+    // Initialize geometric shape function
+    initGeometricShapeFunction();
+    
+    // Get geometric node coordinates
+    // For all nodes (corners + edge midpoints for quadratic elements)
+    const std::vector<Index>& nodeIndices = elem->vertices();
+    geomNodeIndices_.resize(nodeIndices.size());
+    geomNodes_.resize(nodeIndices.size());
+    
+    for (size_t i = 0; i < nodeIndices.size(); ++i) {
+        geomNodeIndices_[i] = nodeIndices[i];
+        geomNodes_[i] = mesh_->vertex(nodeIndices[i]).toVector();
     }
     
     // Pre-allocate matrices
@@ -42,134 +53,62 @@ void ElementTransform::computeGeometryInfo() {
     adjJacobian_.setZero(dim_, dim_);
 }
 
+void ElementTransform::initGeometricShapeFunction() {
+    // Create geometric shape function based on geometry type and order
+    // This is used for coordinate transformation and Jacobian computation
+    switch (geometry_) {
+        case Geometry::Segment:
+            geomShapeFunc_ = std::make_unique<H1SegmentShape>(geomOrder_);
+            break;
+        case Geometry::Triangle:
+            geomShapeFunc_ = std::make_unique<H1TriangleShape>(geomOrder_);
+            break;
+        case Geometry::Square:
+            geomShapeFunc_ = std::make_unique<H1SquareShape>(geomOrder_);
+            break;
+        case Geometry::Tetrahedron:
+            geomShapeFunc_ = std::make_unique<H1TetrahedronShape>(geomOrder_);
+            break;
+        case Geometry::Cube:
+            geomShapeFunc_ = std::make_unique<H1CubeShape>(geomOrder_);
+            break;
+        default:
+            geomShapeFunc_.reset();
+            break;
+    }
+}
+
 // =============================================================================
-// Jacobian evaluation
+// Jacobian evaluation - using geometric shape functions
 // =============================================================================
 
 void ElementTransform::evalJacobian() const {
     if (evalState_ & JACOBIAN_MASK) return;
     
-    // For linear elements, Jacobian is constant
-    // J_ij = dx_i / dxi_j
+    if (!geomShapeFunc_ || geomNodes_.empty()) {
+        evalState_ |= JACOBIAN_MASK;
+        return;
+    }
     
-    switch (geometry_) {
-        case Geometry::Segment: {
-            // dphi/dxi = (-0.5, 0.5)
-            // J = 0.5 * (x1 - x0)
-            jacobian_(0, 0) = 0.5 * (vertices_[1][0] - vertices_[0][0]);
-            break;
-        }
+    // Evaluate geometric shape functions and their gradients at current point
+    geomShapeValues_ = geomShapeFunc_->eval(&ip_.xi);
+    
+    // Compute Jacobian: J = sum_i x_i (x) grad_xi(phi_i)
+    // where x_i is the i-th geometric node coordinate
+    // and grad_xi(phi_i) is the gradient of the i-th geometric shape function
+    jacobian_.setZero(dim_, dim_);
+    
+    for (int i = 0; i < geomShapeFunc_->numDofs() && i < static_cast<int>(geomNodes_.size()); ++i) {
+        const Vector3& nodeCoord = geomNodes_[i];
+        const Vector3& shapeGrad = geomShapeValues_.gradients[i];
         
-        case Geometry::Triangle: {
-            // Shape function gradients in reference coords (constant for linear)
-            // phi0 = 1 - xi - eta, phi1 = xi, phi2 = eta
-            // grad(phi0) = (-1, -1), grad(phi1) = (1, 0), grad(phi2) = (0, 1)
-            // J = [x1-x0, x2-x0; y1-y0, y2-y0]
-            for (int i = 0; i < 2; ++i) {
-                jacobian_(i, 0) = vertices_[1][i] - vertices_[0][i];
-                jacobian_(i, 1) = vertices_[2][i] - vertices_[0][i];
+        // J += x_i (x) grad_phi_i
+        // J(row, col) = x_i[row] * grad_phi_i[col]
+        for (int row = 0; row < dim_; ++row) {
+            for (int col = 0; col < dim_; ++col) {
+                jacobian_(row, col) += nodeCoord[row] * shapeGrad[col];
             }
-            break;
         }
-        
-        case Geometry::Square: {
-            // Bilinear mapping: phi = 0.25 * (1 +/- xi) * (1 +/- eta)
-            Real xi = ip_.xi, eta = ip_.eta;
-            
-            // dphi/dxi
-            Real dphi0_dxi = -0.25 * (1.0 - eta);
-            Real dphi1_dxi =  0.25 * (1.0 - eta);
-            Real dphi2_dxi =  0.25 * (1.0 + eta);
-            Real dphi3_dxi = -0.25 * (1.0 + eta);
-            
-            // dphi/deta
-            Real dphi0_deta = -0.25 * (1.0 - xi);
-            Real dphi1_deta = -0.25 * (1.0 + xi);
-            Real dphi2_deta =  0.25 * (1.0 + xi);
-            Real dphi3_deta =  0.25 * (1.0 - xi);
-            
-            for (int i = 0; i < 2; ++i) {
-                jacobian_(i, 0) = dphi0_dxi * vertices_[0][i] + dphi1_dxi * vertices_[1][i] +
-                                  dphi2_dxi * vertices_[2][i] + dphi3_dxi * vertices_[3][i];
-                jacobian_(i, 1) = dphi0_deta * vertices_[0][i] + dphi1_deta * vertices_[1][i] +
-                                  dphi2_deta * vertices_[2][i] + dphi3_deta * vertices_[3][i];
-            }
-            break;
-        }
-        
-        case Geometry::Tetrahedron: {
-            // Linear tetrahedron: constant Jacobian
-            // phi0 = 1 - xi - eta - zeta, phi1 = xi, phi2 = eta, phi3 = zeta
-            // J_ij = x_{j+1,i} - x_{0,i} for j = 0,1,2
-            for (int i = 0; i < 3; ++i) {
-                jacobian_(i, 0) = vertices_[1][i] - vertices_[0][i];
-                jacobian_(i, 1) = vertices_[2][i] - vertices_[0][i];
-                jacobian_(i, 2) = vertices_[3][i] - vertices_[0][i];
-            }
-            break;
-        }
-        
-        case Geometry::Cube: {
-            // Trilinear mapping for hexahedron
-            Real xi = ip_.xi, eta = ip_.eta, zeta = ip_.zeta;
-            
-            // Derivatives of shape functions
-            // phi_k = 0.125 * (1 +/- xi) * (1 +/- eta) * (1 +/- zeta)
-            Real dphi[8][3];  // dphi/dxi, dphi/deta, dphi/dzeta
-            
-            // Vertex ordering: (following geometry.hpp face_table::Cube)
-            // 0: (-1,-1,-1), 1: (1,-1,-1), 2: (1,1,-1), 3: (-1,1,-1)
-            // 4: (-1,-1,1),  5: (1,-1,1),  6: (1,1,1),  7: (-1,1,1)
-            
-            Real t1 = 0.125 * (1.0 - eta) * (1.0 - zeta);
-            Real t2 = 0.125 * (1.0 + eta) * (1.0 - zeta);
-            Real t3 = 0.125 * (1.0 - eta) * (1.0 + zeta);
-            Real t4 = 0.125 * (1.0 + eta) * (1.0 + zeta);
-            
-            Real s1 = 0.125 * (1.0 - xi) * (1.0 - zeta);
-            Real s2 = 0.125 * (1.0 + xi) * (1.0 - zeta);
-            Real s3 = 0.125 * (1.0 - xi) * (1.0 + zeta);
-            Real s4 = 0.125 * (1.0 + xi) * (1.0 + zeta);
-            
-            Real r1 = 0.125 * (1.0 - xi) * (1.0 - eta);
-            Real r2 = 0.125 * (1.0 + xi) * (1.0 - eta);
-            Real r3 = 0.125 * (1.0 + xi) * (1.0 + eta);
-            Real r4 = 0.125 * (1.0 - xi) * (1.0 + eta);
-            
-            // dphi/dxi
-            dphi[0][0] = -t1; dphi[1][0] = t1;
-            dphi[2][0] = t2;  dphi[3][0] = -t2;
-            dphi[4][0] = -t3; dphi[5][0] = t3;
-            dphi[6][0] = t4;  dphi[7][0] = -t4;
-            
-            // dphi/deta
-            dphi[0][1] = -s1; dphi[1][1] = -s2;
-            dphi[2][1] = s2;  dphi[3][1] = s1;
-            dphi[4][1] = -s3; dphi[5][1] = -s4;
-            dphi[6][1] = s4;  dphi[7][1] = s3;
-            
-            // dphi/dzeta
-            dphi[0][2] = -r1; dphi[1][2] = -r2;
-            dphi[2][2] = -r3; dphi[3][2] = -r4;
-            dphi[4][2] = r1;  dphi[5][2] = r2;
-            dphi[6][2] = r3;  dphi[7][2] = r4;
-            
-            // J = sum_k (x_k * grad(phi_k))
-            for (int i = 0; i < 3; ++i) {
-                jacobian_(i, 0) = 0;
-                jacobian_(i, 1) = 0;
-                jacobian_(i, 2) = 0;
-                for (int k = 0; k < 8; ++k) {
-                    jacobian_(i, 0) += vertices_[k][i] * dphi[k][0];
-                    jacobian_(i, 1) += vertices_[k][i] * dphi[k][1];
-                    jacobian_(i, 2) += vertices_[k][i] * dphi[k][2];
-                }
-            }
-            break;
-        }
-        
-        default:
-            break;
     }
     
     evalState_ |= JACOBIAN_MASK;
@@ -253,88 +192,22 @@ void ElementTransform::evalInvJacobianT() const {
 }
 
 // =============================================================================
-// Transform implementations
+// Transform implementations - using geometric shape functions
 // =============================================================================
 
 void ElementTransform::transform(const Real* xi, Real* x) const {
     x[0] = x[1] = x[2] = 0.0;
     
-    switch (geometry_) {
-        case Geometry::Segment: {
-            // Reference: [-1, 1]
-            // phi0 = 0.5*(1-xi), phi1 = 0.5*(1+xi)
-            Real phi0 = 0.5 * (1.0 - xi[0]);
-            Real phi1 = 0.5 * (1.0 + xi[0]);
-            for (int i = 0; i < 3; ++i) {
-                x[i] = phi0 * vertices_[0][i] + phi1 * vertices_[1][i];
-            }
-            break;
+    if (!geomShapeFunc_ || geomNodes_.empty()) return;
+    
+    // Evaluate geometric shape function values
+    std::vector<Real> shapeVals = geomShapeFunc_->evalValues(xi);
+    
+    // x = sum_i phi_i(xi) * x_i
+    for (int i = 0; i < geomShapeFunc_->numDofs() && i < static_cast<int>(geomNodes_.size()); ++i) {
+        for (int d = 0; d < 3; ++d) {
+            x[d] += shapeVals[i] * geomNodes_[i][d];
         }
-        
-        case Geometry::Triangle: {
-            // Reference: (0,0), (1,0), (0,1)
-            // Barycentric: (1-xi-eta, xi, eta)
-            Real l1 = 1.0 - xi[0] - xi[1];
-            Real l2 = xi[0];
-            Real l3 = xi[1];
-            for (int i = 0; i < 3; ++i) {
-                x[i] = l1 * vertices_[0][i] + l2 * vertices_[1][i] + l3 * vertices_[2][i];
-            }
-            break;
-        }
-        
-        case Geometry::Square: {
-            // Reference: [-1,1] x [-1,1]
-            Real xi1 = xi[0], xi2 = xi[1];
-            Real phi[4];
-            phi[0] = 0.25 * (1.0 - xi1) * (1.0 - xi2);
-            phi[1] = 0.25 * (1.0 + xi1) * (1.0 - xi2);
-            phi[2] = 0.25 * (1.0 + xi1) * (1.0 + xi2);
-            phi[3] = 0.25 * (1.0 - xi1) * (1.0 + xi2);
-            for (int i = 0; i < 3; ++i) {
-                x[i] = phi[0] * vertices_[0][i] + phi[1] * vertices_[1][i] +
-                       phi[2] * vertices_[2][i] + phi[3] * vertices_[3][i];
-            }
-            break;
-        }
-        
-        case Geometry::Tetrahedron: {
-            // Reference: (0,0,0), (1,0,0), (0,1,0), (0,0,1)
-            // Barycentric: (1-xi-eta-zeta, xi, eta, zeta)
-            Real l1 = 1.0 - xi[0] - xi[1] - xi[2];
-            Real l2 = xi[0];
-            Real l3 = xi[1];
-            Real l4 = xi[2];
-            for (int i = 0; i < 3; ++i) {
-                x[i] = l1 * vertices_[0][i] + l2 * vertices_[1][i] +
-                       l3 * vertices_[2][i] + l4 * vertices_[3][i];
-            }
-            break;
-        }
-        
-        case Geometry::Cube: {
-            // Reference: [-1,1]^3
-            Real xi1 = xi[0], xi2 = xi[1], xi3 = xi[2];
-            Real phi[8];
-            phi[0] = 0.125 * (1.0 - xi1) * (1.0 - xi2) * (1.0 - xi3);
-            phi[1] = 0.125 * (1.0 + xi1) * (1.0 - xi2) * (1.0 - xi3);
-            phi[2] = 0.125 * (1.0 + xi1) * (1.0 + xi2) * (1.0 - xi3);
-            phi[3] = 0.125 * (1.0 - xi1) * (1.0 + xi2) * (1.0 - xi3);
-            phi[4] = 0.125 * (1.0 - xi1) * (1.0 - xi2) * (1.0 + xi3);
-            phi[5] = 0.125 * (1.0 + xi1) * (1.0 - xi2) * (1.0 + xi3);
-            phi[6] = 0.125 * (1.0 + xi1) * (1.0 + xi2) * (1.0 + xi3);
-            phi[7] = 0.125 * (1.0 - xi1) * (1.0 + xi2) * (1.0 + xi3);
-            for (int i = 0; i < 3; ++i) {
-                x[i] = 0;
-                for (int j = 0; j < 8; ++j) {
-                    x[i] += phi[j] * vertices_[j][i];
-                }
-            }
-            break;
-        }
-        
-        default:
-            break;
     }
 }
 

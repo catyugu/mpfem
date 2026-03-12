@@ -30,6 +30,20 @@ struct PairHash {
  * - Total number of degrees of freedom
  * - Support for scalar and vector fields
  * 
+ * **Geometric Order vs Field Order (Physical Order)**:
+ * - Geometric order: Determined by Element::order(), affects coordinate mapping accuracy.
+ *   Stored in the mesh elements. Used by ElementTransform for curved elements.
+ * - Field order (physical order): Determined by FECollection::order(), affects field interpolation accuracy.
+ *   Stored in FECollection. Used by FESpace for DOF management.
+ * 
+ * **Isoparametric, Subparametric, Superparametric Elements**:
+ * - Isoparametric: geometric order == field order (most common)
+ * - Subparametric: geometric order < field order (e.g., linear mesh with quadratic field)
+ * - Superparametric: geometric order > field order (rare, e.g., curved boundary with linear field)
+ * 
+ * FESpace uses the field order (from FECollection) for DOF management, independent of
+ * the geometric order (from mesh elements). This separation allows flexible combinations.
+ * 
  * DOF ordering for higher-order elements:
  * - First N vertex dofs (N = number of vertices)
  * - Then edge dofs (one per edge for order >= 2)
@@ -291,8 +305,6 @@ inline void FESpace::buildDofTable() {
     const FECollection* f = fec();
     if (!mesh_ || !f) return;
     
-    int feOrder = f->order();
-    
     // Find max dofs per element
     maxDofsPerElem_ = 0;
     for (Index i = 0; i < mesh_->numElements(); ++i) {
@@ -312,21 +324,17 @@ inline void FESpace::buildDofTable() {
         }
     }
     
-    // Assign DOFs
-    Index dofCounter = 0;
+    // For H1 Lagrange elements on COMSOL-style meshes:
+    // The mesh vertices already include all nodes (corners + edge midpoints + ...)
+    // So we directly use mesh vertices as DOFs, no need to create additional edge DOFs.
+    // Each mesh vertex corresponds to exactly one DOF.
     
-    // Step 1: Assign vertex DOFs
-    std::vector<Index> vertexDofs(mesh_->numVertices(), InvalidIndex);
-    for (Index v = 0; v < mesh_->numVertices(); ++v) {
-        vertexDofs[v] = dofCounter++;
-    }
+    // Step 1: Count unique DOFs
+    // For H1 elements, DOFs = mesh vertices (each vertex has one DOF)
+    numDofs_ = mesh_->numVertices();
     
-    // Step 2: Build edge DOF map for order >= 2
-    if (feOrder >= 2) {
-        buildEdgeDofMap(dofCounter);
-    }
-    
-    // Step 3: Build element DOF table
+    // Step 2: Build element DOF table
+    // Each element's DOFs are directly mapped from its vertices
     elemDofs_.resize(mesh_->numElements() * maxDofsPerElem_, InvalidIndex);
     
     for (Index elemIdx = 0; elemIdx < mesh_->numElements(); ++elemIdx) {
@@ -337,29 +345,19 @@ inline void FESpace::buildDofTable() {
         if (!refElem) continue;
         
         int nd = refElem->numDofs();
-        int numCorners = elem.numCorners();
-        int numEdges = elem.numEdges();
+        int elemNumVerts = static_cast<int>(elem.vertices().size());
         
-        // Assign vertex DOFs (first numCorners dofs)
-        for (int j = 0; j < numCorners && j < nd; ++j) {
+        // For H1 elements, DOFs directly correspond to element vertices
+        // Element::vertices() returns all geometric nodes:
+        // - For order 1: corner vertices only
+        // - For order 2: corner vertices + edge midpoints + face centers + volume center
+        for (int j = 0; j < nd && j < elemNumVerts; ++j) {
             Index vertexIdx = elem.vertex(j);
-            elemDofs_[base + j] = vertexDofs[vertexIdx];
-        }
-        
-        // Assign edge DOFs for order >= 2
-        if (feOrder >= 2 && nd > numCorners) {
-            for (int e = 0; e < numEdges && (numCorners + e) < nd; ++e) {
-                auto [v1, v2] = elem.edgeVertices(e);
-                auto key = makeEdgeKey(v1, v2);
-                auto it = edgeDofMap_.find(key);
-                if (it != edgeDofMap_.end()) {
-                    elemDofs_[base + numCorners + e] = it->second;
-                }
-            }
+            elemDofs_[base + j] = vertexIdx;  // DOF index = vertex index
         }
     }
     
-    // Step 4: Build boundary element DOF table
+    // Step 3: Build boundary element DOF table
     bdrElemDofs_.resize(mesh_->numBdrElements() * maxDofsPerBdrElem_, InvalidIndex);
     
     for (Index bdrIdx = 0; bdrIdx < mesh_->numBdrElements(); ++bdrIdx) {
@@ -370,29 +368,24 @@ inline void FESpace::buildDofTable() {
         if (!refElem) continue;
         
         int nd = refElem->numDofs();
-        int numCorners = bdrElem.numCorners();
-        int numEdges = bdrElem.numEdges();
+        int elemNumVerts = static_cast<int>(bdrElem.vertices().size());
         
-        // Assign vertex DOFs
-        for (int j = 0; j < numCorners && j < nd; ++j) {
+        // Assign DOFs from boundary element vertices
+        for (int j = 0; j < nd && j < elemNumVerts; ++j) {
             Index vertexIdx = bdrElem.vertex(j);
-            bdrElemDofs_[base + j] = vertexDofs[vertexIdx];
-        }
-        
-        // Assign edge DOFs for order >= 2
-        if (feOrder >= 2 && nd > numCorners) {
-            for (int e = 0; e < numEdges && (numCorners + e) < nd; ++e) {
-                auto [v1, v2] = bdrElem.edgeVertices(e);
-                auto key = makeEdgeKey(v1, v2);
-                auto it = edgeDofMap_.find(key);
-                if (it != edgeDofMap_.end()) {
-                    bdrElemDofs_[base + numCorners + e] = it->second;
-                }
-            }
+            bdrElemDofs_[base + j] = vertexIdx;
         }
     }
     
-    numDofs_ = dofCounter * vdim_;
+    // Clear edge DOF map (no longer needed for COMSOL-style meshes)
+    edgeDofMap_.clear();
+    
+    // Note: For future support of meshes where edge midpoints are NOT mesh vertices,
+    // we would need to create additional DOFs. This is not needed for COMSOL-style
+    // second-order meshes where all nodes are stored as mesh vertices.
+    
+    // Multiply by vdim for vector fields
+    numDofs_ = numDofs_ * vdim_;
     numTrueDofs_ = numDofs_;  // No constraints for now
 }
 

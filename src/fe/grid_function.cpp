@@ -129,7 +129,7 @@ Vector3 GridFunction::evalVector(Index elemIdx, const Real* xi) const {
     return result;
 }
 
-Vector3 GridFunction::gradient(Index elemIdx, const Real* xi, const ElementTransform& trans) const {
+Vector3 GridFunction::gradient(Index elemIdx, const Real* xi, ElementTransform& trans) const {
     if (!fes_) return Vector3::Zero();
     
     const ReferenceElement* refElem = fes_->elementRefElement(elemIdx);
@@ -153,10 +153,9 @@ Vector3 GridFunction::gradient(Index elemIdx, const Real* xi, const ElementTrans
     // Transform to physical coordinates using inverse Jacobian
     // grad_physical = J^{-T} * grad_reference
     // Set integration point first, then get Jacobian
-    ElementTransform& transMut = const_cast<ElementTransform&>(trans);
-    transMut.setIntegrationPoint(xi);
+    trans.setIntegrationPoint(xi);
 
-    const Matrix& JinvT = transMut.invJacobianT();
+    const Matrix& JinvT = trans.invJacobianT();
     
     return JinvT * gradRef;
 }

@@ -20,6 +20,16 @@ namespace mpfem {
  * triangles, quadrilaterals in 2D). For boundary elements, use
  * FacetElementTransform instead.
  * 
+ * **Geometric Order vs Field Order**:
+ * - Geometric order (geomOrder_): Determines the accuracy of coordinate mapping.
+ *   Derived from Element::order(). For curved (second-order) meshes, this is 2.
+ * - Field order: Determined by the FE space, not stored here.
+ * 
+ * The geometric shape function (geomShapeFunc_) is used for coordinate transformation
+ * and Jacobian computation. For linear elements, it's a linear Lagrange shape function.
+ * For quadratic elements, it's a quadratic Lagrange shape function that accounts for
+ * edge midpoints, enabling proper curved element representation.
+ * 
  * Thread safety: Each thread should have its own ElementTransform instance.
  * The cached Jacobian data uses mutable for lazy evaluation but is not
  * thread-safe when shared between threads.
@@ -69,6 +79,25 @@ public:
     
     /// Get the element attribute (domain ID)
     Index elementAttribute() const;
+    
+    /// Get geometric order (from Element::order())
+    /// This determines the accuracy of coordinate mapping.
+    /// For curved elements, this is >= 2.
+    int geometricOrder() const { return geomOrder_; }
+    
+    /// Get geometric shape function (for coordinate mapping)
+    /// This is used for transform() and Jacobian computation.
+    const ShapeFunction* geometricShapeFunction() const { 
+        return geomShapeFunc_.get(); 
+    }
+    
+    /// Get number of geometric nodes (nodes used for coordinate mapping)
+    int numGeometricNodes() const { 
+        return geomShapeFunc_ ? geomShapeFunc_->numDofs() : 0; 
+    }
+    
+    /// Check if element is curved (geometric order >= 2)
+    bool isCurved() const { return geomOrder_ >= 2; }
     
     // -------------------------------------------------------------------------
     // Transformation
@@ -125,11 +154,17 @@ public:
     // Element vertices (convenience)
     // -------------------------------------------------------------------------
     
-    /// Get vertex coordinates
-    const std::vector<Vector3>& vertices() const { return vertices_; }
+    /// Get geometric node coordinates
+    const std::vector<Vector3>& geomNodes() const { return geomNodes_; }
     
-    /// Get number of vertices
-    int numVertices() const { return static_cast<int>(vertices_.size()); }
+    /// Get number of geometric nodes
+    int numGeomNodes() const { return static_cast<int>(geomNodes_.size()); }
+    
+    /// Get vertex coordinates (alias for geometric nodes)
+    const std::vector<Vector3>& vertices() const { return geomNodes_; }
+    
+    /// Get number of vertices (alias for numGeomNodes)
+    int numVertices() const { return numGeomNodes(); }
     
     /// Get the currently set integration point
     const IntegrationPoint& integrationPoint() const { return ip_; }
@@ -153,6 +188,9 @@ private:
     void evalInverse() const;
     void evalInvJacobianT() const;
     
+    /// Initialize geometric shape function based on geometry type and order
+    void initGeometricShapeFunction();
+    
     // -------------------------------------------------------------------------
     // Member variables
     // -------------------------------------------------------------------------
@@ -161,8 +199,24 @@ private:
     
     Geometry geometry_ = Geometry::Invalid;
     int dim_ = 0;
-    std::vector<Vector3> vertices_;
-    std::vector<Index> vertexIndices_;
+    
+    /// Geometric order (from Element::order())
+    /// This determines the coordinate mapping accuracy.
+    int geomOrder_ = 1;
+    
+    /// Geometric shape function for coordinate transformation.
+    /// For linear elements: order 1 Lagrange shape function.
+    /// For curved elements: order 2+ Lagrange shape function.
+    std::unique_ptr<ShapeFunction> geomShapeFunc_;
+    
+    /// Geometric node coordinates (all nodes used for coordinate mapping).
+    /// For linear elements: corner vertices only.
+    /// For curved elements: corner vertices + edge midpoints + ...
+    std::vector<Vector3> geomNodes_;
+    
+    /// Geometric node indices in the mesh vertex array.
+    /// For curved elements, this includes edge midpoint node indices.
+    std::vector<Index> geomNodeIndices_;
     
     IntegrationPoint ip_;
     
@@ -175,8 +229,8 @@ private:
     mutable Real weight_ = 0.0;
     mutable int evalState_ = 0;
     
-    // Shape function storage for Jacobian computation
-    mutable ShapeValues shapeValues_;
+    // Shape function values cache for Jacobian computation
+    mutable ShapeValues geomShapeValues_;
 };
 
 // =============================================================================

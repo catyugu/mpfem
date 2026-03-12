@@ -116,19 +116,19 @@ public:
      * @param kind Field kind.
      * @param elemIdx Element index.
      * @param ip Integration point.
-     * @param trans Element transformation.
+     * @param trans Element transformation (non-const).
      * @return Gradient in physical coordinates.
      */
     Vector3 getGradient(FieldKind kind, Index elemIdx, 
                         const IntegrationPoint& ip, 
-                        const ElementTransform& trans) const;
+                        ElementTransform& trans) const;
 
     /**
      * @brief Get field gradient at reference coordinates.
      */
     Vector3 getGradient(FieldKind kind, Index elemIdx, 
                         const Real* xi, 
-                        const ElementTransform& trans) const;
+                        ElementTransform& trans) const;
 
     // -------------------------------------------------------------------------
     // Convenience methods for common fields
@@ -141,7 +141,7 @@ public:
 
     /// Get electric field (negative gradient of potential)
     Vector3 electricField(Index elemIdx, const IntegrationPoint& ip,
-                          const ElementTransform& trans) const {
+                          ElementTransform& trans) const {
         return -getGradient(FieldKind::ElectricPotential, elemIdx, ip, trans);
     }
 
@@ -152,7 +152,7 @@ public:
 
     /// Get temperature gradient
     Vector3 temperatureGradient(Index elemIdx, const IntegrationPoint& ip,
-                                const ElementTransform& trans) const {
+                                ElementTransform& trans) const {
         return getGradient(FieldKind::Temperature, elemIdx, ip, trans);
     }
 

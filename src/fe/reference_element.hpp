@@ -176,9 +176,41 @@ inline std::vector<int> ReferenceElement::faceVertices(int faceIdx) const {
 }
 
 inline std::vector<int> ReferenceElement::faceDofs(int faceIdx) const {
-    // For linear elements, face dofs = face vertices
-    // For higher order, need to include edge/face interior dofs
-    return faceVertices(faceIdx);
+    std::vector<int> dofs;
+    
+    // Get corner vertex indices for this face
+    std::vector<int> faceVerts = faceVertices(faceIdx);
+    
+    // Add corner DOFs (same as vertex indices for Lagrange elements)
+    for (int v : faceVerts) {
+        dofs.push_back(v);
+    }
+    
+    // For order >= 2, add edge DOFs on the face
+    if (order_ >= 2) {
+        // Get edge indices for this face
+        std::vector<int> faceEdgeIndices = geom::faceEdges(geometry_, faceIdx);
+        
+        // Edge DOFs start after corner DOFs
+        int numElemCorners = geom::numCorners(geometry_);
+        int numElemEdges = geom::numEdges(geometry_);
+        
+        for (int edgeIdx : faceEdgeIndices) {
+            // Edge DOF index = numCorners + edgeIdx
+            dofs.push_back(numElemCorners + edgeIdx);
+        }
+        
+        // For tensor product elements (Cube), add face center DOF
+        // Face center DOFs come after edge DOFs
+        if (geometry_ == Geometry::Cube) {
+            // Cube2: face center DOF index = numCorners + numEdges + faceIdx
+            dofs.push_back(numElemCorners + numElemEdges + faceIdx);
+        }
+    }
+    
+    // TODO: For order >= 3, add additional face interior DOFs
+    
+    return dofs;
 }
 
 inline std::pair<int, int> ReferenceElement::edgeVertices(int edgeIdx) const {
