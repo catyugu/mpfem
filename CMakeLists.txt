@@ -94,6 +94,7 @@ add_library(mpfem_io
 add_library(mpfem_fe
     src/fe/quadrature.cpp
     src/fe/element_transform.cpp
+    src/fe/facet_element_transform.cpp
     src/fe/grid_function.cpp
     src/fe/fe_values.cpp
 )

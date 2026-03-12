@@ -10,14 +10,8 @@ namespace mpfem {
 Index ElementTransform::elementAttribute() const {
     if (!mesh_) return 0;
     
-    if (isBoundary_) {
-        if (elemIdx_ < mesh_->numBdrElements()) {
-            return mesh_->bdrElement(elemIdx_).attribute();
-        }
-    } else {
-        if (elemIdx_ < mesh_->numElements()) {
-            return mesh_->element(elemIdx_).attribute();
-        }
+    if (elemIdx_ < mesh_->numElements()) {
+        return mesh_->element(elemIdx_).attribute();
     }
     return 0;
 }
@@ -26,14 +20,8 @@ void ElementTransform::computeGeometryInfo() {
     if (!mesh_) return;
     
     const Element* elem = nullptr;
-    if (isBoundary_) {
-        if (elemIdx_ < mesh_->numBdrElements()) {
-            elem = &mesh_->bdrElement(elemIdx_);
-        }
-    } else {
-        if (elemIdx_ < mesh_->numElements()) {
-            elem = &mesh_->element(elemIdx_);
-        }
+    if (elemIdx_ < mesh_->numElements()) {
+        elem = &mesh_->element(elemIdx_);
     }
     
     if (!elem) return;
@@ -362,39 +350,6 @@ void ElementTransform::transformGradient(const Real* refGrad, Real* physGrad) co
             physGrad[i] += invJT(i, j) * refGrad[j];
         }
     }
-}
-
-Vector3 ElementTransform::normal() const {
-    // Normal vector for surface elements
-    // n = (J[:,0] x J[:,1]) / |J[:,0] x J[:,1]| for 2D surface in 3D
-    // n = (J[:,0]) / |J[:,0]| rotated by 90 deg for 1D curve in 2D
-    
-    const Matrix& J = jacobian();
-    Vector3 n(0.0, 0.0, 0.0);
-    
-    if (dim_ == 2 && geometry_ == Geometry::Triangle) {
-        // Triangle in 3D space
-        // n = (dF/dxi) x (dF/deta) / |...|
-        Vector3 d1(J(0, 0), J(1, 0), J(2, 0));
-        Vector3 d2(J(0, 1), J(1, 1), J(2, 1));
-        n = d1.cross(d2);
-        n.normalize();
-    } else if (dim_ == 2 && geometry_ == Geometry::Square) {
-        // Quadrilateral in 3D space
-        Vector3 d1(J(0, 0), J(1, 0), J(2, 0));
-        Vector3 d2(J(0, 1), J(1, 1), J(2, 1));
-        n = d1.cross(d2);
-        n.normalize();
-    } else if (dim_ == 1 && geometry_ == Geometry::Segment) {
-        // Segment in 2D space - normal is tangent rotated by 90 degrees
-        // Assuming the segment lies in the xy-plane
-        Real tx = J(0, 0);
-        Real ty = J(1, 0);
-        n = Vector3(-ty, tx, 0.0);
-        n.normalize();
-    }
-    
-    return n;
 }
 
 }  // namespace mpfem

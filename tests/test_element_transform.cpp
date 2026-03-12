@@ -3,6 +3,7 @@
 #include "mesh/mesh.hpp"
 #include "mesh/geometry.hpp"
 #include "fe/element_transform.hpp"
+#include "fe/facet_element_transform.hpp"
 #include "fe/quadrature.hpp"
 
 using namespace mpfem;
@@ -29,9 +30,9 @@ Mesh createSingleTetMesh() {
 }
 
 /// Create a test mesh with a single triangle boundary
-Mesh createSingleTriMesh() {
+Mesh createSingleTriBdrMesh() {
     Mesh mesh;
-    mesh.setDim(2);
+    mesh.setDim(3);  // 3D mesh with 2D boundary
     
     mesh.addVertex(0.0, 0.0, 0.0);  // 0
     mesh.addVertex(1.0, 0.0, 0.0);  // 1
@@ -64,9 +65,9 @@ Mesh createSingleHexMesh() {
 }
 
 /// Create a test mesh with a single square boundary
-Mesh createSingleSquareMesh() {
+Mesh createSingleSquareBdrMesh() {
     Mesh mesh;
-    mesh.setDim(2);
+    mesh.setDim(3);  // 3D mesh with 2D boundary
     
     mesh.addVertex(0.0, 0.0, 0.0);  // 0
     mesh.addVertex(1.0, 0.0, 0.0);  // 1
@@ -79,7 +80,7 @@ Mesh createSingleSquareMesh() {
 }
 
 // =============================================================================
-// Tetrahedron Transform Tests
+// Tetrahedron Transform Tests (Volume Element)
 // =============================================================================
 
 class TetrahedronTransformTest : public ::testing::Test {
@@ -97,7 +98,6 @@ TEST_F(TetrahedronTransformTest, GeometryInfo) {
     EXPECT_EQ(transform_->geometry(), Geometry::Tetrahedron);
     EXPECT_EQ(transform_->dim(), 3);
     EXPECT_EQ(transform_->numVertices(), 4);
-    EXPECT_FALSE(transform_->isBoundary());
 }
 
 TEST_F(TetrahedronTransformTest, TransformReferenceToPhysical) {
@@ -179,7 +179,7 @@ TEST_F(TetrahedronTransformTest, Weight) {
 }
 
 // =============================================================================
-// Hexahedron Transform Tests
+// Hexahedron Transform Tests (Volume Element)
 // =============================================================================
 
 class HexahedronTransformTest : public ::testing::Test {
@@ -238,28 +238,27 @@ TEST_F(HexahedronTransformTest, JacobianUnitCube) {
 }
 
 // =============================================================================
-// Triangle Transform Tests
+// Triangle Boundary Transform Tests (using FacetElementTransform)
 // =============================================================================
 
-class TriangleTransformTest : public ::testing::Test {
+class TriangleFacetTransformTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        mesh_ = createSingleTriMesh();
-        transform_ = std::make_unique<ElementTransform>(&mesh_, 0, true);
+        mesh_ = createSingleTriBdrMesh();
+        transform_ = std::make_unique<FacetElementTransform>(&mesh_, 0);
     }
     
     Mesh mesh_;
-    std::unique_ptr<ElementTransform> transform_;
+    std::unique_ptr<FacetElementTransform> transform_;
 };
 
-TEST_F(TriangleTransformTest, GeometryInfo) {
+TEST_F(TriangleFacetTransformTest, GeometryInfo) {
     EXPECT_EQ(transform_->geometry(), Geometry::Triangle);
     EXPECT_EQ(transform_->dim(), 2);
     EXPECT_EQ(transform_->numVertices(), 3);
-    EXPECT_TRUE(transform_->isBoundary());
 }
 
-TEST_F(TriangleTransformTest, TransformVertices) {
+TEST_F(TriangleFacetTransformTest, TransformVertices) {
     // Test transformation of vertices
     Real xi[] = {0.0, 0.0};  // Vertex 0
     Vector3 x;
@@ -278,7 +277,7 @@ TEST_F(TriangleTransformTest, TransformVertices) {
     EXPECT_NEAR(x.y(), 1.0, 1e-12);
 }
 
-TEST_F(TriangleTransformTest, JacobianDeterminant) {
+TEST_F(TriangleFacetTransformTest, JacobianDeterminant) {
     // Reference triangle has vertices (0,0), (1,0), (0,1), area = 0.5
     // Physical unit triangle has the same vertices, area = 0.5
     // detJ = physical_area / reference_area = 1
@@ -288,49 +287,37 @@ TEST_F(TriangleTransformTest, JacobianDeterminant) {
     EXPECT_NEAR(transform_->detJ(), 1.0, 1e-12);
 }
 
-TEST_F(TriangleTransformTest, GradientTransformation) {
-    // Test gradient transformation for triangle
-    Real xi[] = {0.2, 0.3};
+TEST_F(TriangleFacetTransformTest, NormalVector) {
+    // The triangle lies in the xy-plane, so normal should be along z-axis
+    Real xi[] = {0.33, 0.33};
     transform_->setIntegrationPoint(xi);
     
-    // Reference gradient
-    Vector3 refGrad(-1.0, 1.0, 0.0);
-    Vector3 physGrad;
-    transform_->transformGradient(refGrad, physGrad);
-    
-    // For unit triangle, J = [[1,0], [0,1]], so J^{-T} = I
-    // But J is actually defined differently - need to check
-    // J_ij = dx_i / dxi_j
-    // For unit triangle with vertices (0,0), (1,0), (0,1):
-    // J = [[1, 0], [0, 1]]
-    // J^{-T} = I
-    EXPECT_NEAR(physGrad.x(), -1.0, 1e-12);
-    EXPECT_NEAR(physGrad.y(), 1.0, 1e-12);
+    Vector3 n = transform_->normal();
+    EXPECT_NEAR(std::abs(n.z()), 1.0, 1e-12);
 }
 
 // =============================================================================
-// Square Transform Tests
+// Square Boundary Transform Tests (using FacetElementTransform)
 // =============================================================================
 
-class SquareTransformTest : public ::testing::Test {
+class SquareFacetTransformTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        mesh_ = createSingleSquareMesh();
-        transform_ = std::make_unique<ElementTransform>(&mesh_, 0, true);
+        mesh_ = createSingleSquareBdrMesh();
+        transform_ = std::make_unique<FacetElementTransform>(&mesh_, 0);
     }
     
     Mesh mesh_;
-    std::unique_ptr<ElementTransform> transform_;
+    std::unique_ptr<FacetElementTransform> transform_;
 };
 
-TEST_F(SquareTransformTest, GeometryInfo) {
+TEST_F(SquareFacetTransformTest, GeometryInfo) {
     EXPECT_EQ(transform_->geometry(), Geometry::Square);
     EXPECT_EQ(transform_->dim(), 2);
     EXPECT_EQ(transform_->numVertices(), 4);
-    EXPECT_TRUE(transform_->isBoundary());
 }
 
-TEST_F(SquareTransformTest, TransformCorners) {
+TEST_F(SquareFacetTransformTest, TransformCorners) {
     // Reference square: [-1, 1]^2
     
     // Corner (-1, -1) -> (0, 0)
@@ -345,6 +332,15 @@ TEST_F(SquareTransformTest, TransformCorners) {
     transform_->transform(xi, x);
     EXPECT_NEAR(x.x(), 1.0, 1e-12);
     EXPECT_NEAR(x.y(), 1.0, 1e-12);
+}
+
+TEST_F(SquareFacetTransformTest, NormalVector) {
+    // The square lies in the xy-plane, so normal should be along z-axis
+    Real xi[] = {0.0, 0.0};
+    transform_->setIntegrationPoint(xi);
+    
+    Vector3 n = transform_->normal();
+    EXPECT_NEAR(std::abs(n.z()), 1.0, 1e-12);
 }
 
 // =============================================================================
@@ -370,12 +366,12 @@ TEST(IntegrationTransformTest, IntegrateOverTetrahedron) {
     EXPECT_NEAR(integral, 1.0 / 6.0, 1e-12);
 }
 
-TEST(IntegrationTransformTest, IntegrateOverTriangle) {
+TEST(IntegrationTransformTest, IntegrateOverTriangleBoundary) {
     // Integrate f(x,y) = 1 over unit triangle
     // Result should be area = 0.5
     
-    Mesh mesh = createSingleTriMesh();
-    ElementTransform trans(&mesh, 0, true);
+    Mesh mesh = createSingleTriBdrMesh();
+    FacetElementTransform trans(&mesh, 0);
     
     auto rule = quadrature::getTriangle(2);
     Real integral = 0.0;
@@ -415,16 +411,16 @@ TEST(ScaledElementTest, ScaledTetrahedron) {
     EXPECT_NEAR(trans.weight(), 8.0, 1e-12);
 }
 
-TEST(ScaledElementTest, ScaledTriangle) {
+TEST(ScaledElementTest, ScaledTriangleBoundary) {
     // Create a triangle scaled by factor of 2
     Mesh mesh;
-    mesh.setDim(2);
+    mesh.setDim(3);
     mesh.addVertex(0.0, 0.0, 0.0);
     mesh.addVertex(2.0, 0.0, 0.0);
     mesh.addVertex(0.0, 2.0, 0.0);
     mesh.addBdrElement(Geometry::Triangle, {0, 1, 2});
     
-    ElementTransform trans(&mesh, 0, true);
+    FacetElementTransform trans(&mesh, 0);
     
     Real xi[] = {0.0, 0.0};
     trans.setIntegrationPoint(xi);
@@ -447,26 +443,29 @@ TEST(GradientTransformTest, NumericalVerification) {
     Mesh mesh;
     mesh.setDim(3);
     mesh.addVertex(0.0, 0.0, 0.0);
-    mesh.addVertex(1.5, 0.2, 0.1);
-    mesh.addVertex(0.3, 1.2, 0.4);
-    mesh.addVertex(0.1, 0.2, 1.1);
+    mesh.addVertex(1.0, 0.0, 0.0);
+    mesh.addVertex(0.3, 0.8, 0.1);
+    mesh.addVertex(0.2, 0.1, 0.9);
     mesh.addElement(Geometry::Tetrahedron, {0, 1, 2, 3});
     
     ElementTransform trans(&mesh, 0);
     
-    Real xi[] = {0.3, 0.2, 0.1};
+    // Set integration point
+    Real xi[] = {0.2, 0.3, 0.1};
     trans.setIntegrationPoint(xi);
     
-    // Test: transform gradient from reference to physical
-    Vector3 refGrad(1.0, 0.5, -0.3);
-    Vector3 physGrad;
-    trans.transformGradient(refGrad, physGrad);
+    // For any linear element, the gradient transformation should be exact
+    // Test that J^{-T} * J^{T} = I
     
-    // Numerical verification: compute x = F(xi) and check
-    // dx/dxi_j = (F(xi + h*ej) - F(xi - h*ej)) / (2h)
+    const Matrix& J = trans.jacobian();
+    const Matrix& invJT = trans.invJacobianT();
     
-    // This is a sanity check - exact values depend on geometry
-    EXPECT_TRUE(std::isfinite(physGrad.x()));
-    EXPECT_TRUE(std::isfinite(physGrad.y()));
-    EXPECT_TRUE(std::isfinite(physGrad.z()));
+    Matrix product = invJT * J.transpose();
+    
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) {
+            Real expected = (i == j) ? 1.0 : 0.0;
+            EXPECT_NEAR(product(i, j), expected, 1e-10);
+        }
+    }
 }

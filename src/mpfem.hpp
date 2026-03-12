@@ -28,6 +28,7 @@
 #include "fe/fe_collection.hpp"
 #include "fe/fe_space.hpp"
 #include "fe/element_transform.hpp"
+#include "fe/facet_element_transform.hpp"
 
 // Version
 #define MPFEM_VERSION_MAJOR 0

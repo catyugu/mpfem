@@ -16,6 +16,14 @@ namespace mpfem {
  * Provides mapping between reference element and physical element,
  * including Jacobian computation and coordinate transformation.
  * 
+ * This class is designed for volume elements (tetrahedra, hexahedra in 3D;
+ * triangles, quadrilaterals in 2D). For boundary elements, use
+ * FacetElementTransform instead.
+ * 
+ * Thread safety: Each thread should have its own ElementTransform instance.
+ * The cached Jacobian data uses mutable for lazy evaluation but is not
+ * thread-safe when shared between threads.
+ * 
  * Design inspired by MFEM's ElementTransformation class.
  */
 class ElementTransform {
@@ -24,7 +32,7 @@ public:
     ElementTransform() = default;
     
     /// Construct with mesh and element index
-    ElementTransform(const Mesh* mesh, Index elemIdx, bool isBoundary = false);
+    explicit ElementTransform(const Mesh* mesh, Index elemIdx);
     
     // -------------------------------------------------------------------------
     // Setup
@@ -34,7 +42,7 @@ public:
     void setMesh(const Mesh* mesh) { mesh_ = mesh; }
     
     /// Set the element index
-    void setElement(Index elemIdx, bool isBoundary = false);
+    void setElement(Index elemIdx);
     
     /// Set integration point (invalidates cached Jacobian data)
     void setIntegrationPoint(const IntegrationPoint& ip);
@@ -56,13 +64,10 @@ public:
     /// Get element index
     Index elementIndex() const { return elemIdx_; }
     
-    /// Is this a boundary element?
-    bool isBoundary() const { return isBoundary_; }
-    
     /// Get the mesh
     const Mesh* mesh() const { return mesh_; }
     
-    /// Get the element attribute (domain ID for volume elements, boundary ID for boundary elements)
+    /// Get the element attribute (domain ID)
     Index elementAttribute() const;
     
     // -------------------------------------------------------------------------
@@ -117,13 +122,6 @@ public:
     void transformGradient(const Vector3& refGrad, Vector3& physGrad) const;
     
     // -------------------------------------------------------------------------
-    // Normal vector (for boundary elements)
-    // -------------------------------------------------------------------------
-    
-    /// Get outward normal vector at current integration point (2D/3D)
-    Vector3 normal() const;
-    
-    // -------------------------------------------------------------------------
     // Element vertices (convenience)
     // -------------------------------------------------------------------------
     
@@ -160,7 +158,6 @@ private:
     // -------------------------------------------------------------------------
     const Mesh* mesh_ = nullptr;
     Index elemIdx_ = 0;
-    bool isBoundary_ = false;
     
     Geometry geometry_ = Geometry::Invalid;
     int dim_ = 0;
@@ -186,14 +183,13 @@ private:
 // Inline implementations for simple getters/setters
 // =============================================================================
 
-inline ElementTransform::ElementTransform(const Mesh* mesh, Index elemIdx, bool isBoundary)
-    : mesh_(mesh), elemIdx_(elemIdx), isBoundary_(isBoundary) {
+inline ElementTransform::ElementTransform(const Mesh* mesh, Index elemIdx)
+    : mesh_(mesh), elemIdx_(elemIdx) {
     computeGeometryInfo();
 }
 
-inline void ElementTransform::setElement(Index elemIdx, bool isBoundary) {
+inline void ElementTransform::setElement(Index elemIdx) {
     elemIdx_ = elemIdx;
-    isBoundary_ = isBoundary;
     evalState_ = 0;
     computeGeometryInfo();
 }
