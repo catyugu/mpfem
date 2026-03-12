@@ -169,8 +169,8 @@ inline void PardisoSolver::analyzePattern(const SparseMatrix& A) {
     factorized_ = false;
     
     if (printLevel_ > 0) {
-        std::cout << "[PARDISO] Analysis complete. "
-                  << "Estimated nonzeros in L+U: " << iparm_[17] << std::endl;
+        LOG_INFO( "[PARDISO] Analysis complete. "
+                  << "Estimated nonzeros in L+U: " << iparm_[17] << std::endl);
     }
 }
 
@@ -196,8 +196,8 @@ inline void PardisoSolver::factorize(const SparseMatrix& A) {
     factorized_ = true;
     
     if (printLevel_ > 0) {
-        std::cout << "[PARDISO] Factorization complete. "
-                  << "MFlops: " << iparm_[18] << std::endl;
+        LOG_INFO("[PARDISO] Factorization complete. "
+                  << "MFlops: " << iparm_[18] << std::endl);
     }
 }
 
@@ -229,8 +229,8 @@ inline bool PardisoSolver::solve(const SparseMatrix& A, Vector& x, const Vector&
     residual_ = iparm_[6];  // Number of iterative refinement steps
     
     if (printLevel_ > 0) {
-        std::cout << "[PARDISO] Solve complete. "
-                  << "Refinement steps: " << iparm_[6] << std::endl;
+        LOG_INFO("[PARDISO] Solve complete. "
+                  << "Refinement steps: " << iparm_[6] << std::endl);
     }
     
     return error == 0;

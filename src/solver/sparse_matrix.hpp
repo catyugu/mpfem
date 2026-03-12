@@ -122,13 +122,6 @@ namespace mpfem
             return mat_.isCompressed();
         }
 
-        /// Print matrix info
-        void printInfo() const
-        {
-            std::cout << "SparseMatrix: " << rows() << " x " << cols()
-                      << ", nnz = " << nonZeros() << std::endl;
-        }
-
         /// Write to Matrix Market format
         void writeToMatrixMarket(const std::string &filename) const
         {
