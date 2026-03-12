@@ -25,12 +25,13 @@ void MeshTopology::build() {
     LOG_INFO << "Building mesh topology...";
     
     // Clear previous data
-    faceToElement_.clear();
-    faceVertices_.clear();
-    faceToIndex_.clear();
+    faceInfoList_.clear();
+    faceKeyToIndex_.clear();
     elementToFace_.clear();
     boundaryFaceIndices_.clear();
     interiorFaceIndices_.clear();
+    bdrElementToFace_.clear();
+    faceToBdrElement_.clear();
     
     // Build face -> element mapping
     buildFaceToElementMap();
@@ -41,11 +42,18 @@ void MeshTopology::build() {
     // Identify boundary faces
     identifyBoundaryFaces();
     
+    // Build boundary element mapping
+    buildBoundaryElementMapping();
+    
     LOG_INFO << "Topology built: " << boundaryFaceIndices_.size() << " boundary faces, "
-             << interiorFaceIndices_.size() << " interior faces";
+             << interiorFaceIndices_.size() << " interior faces, "
+             << bdrElementToFace_.size() << " boundary elements mapped";
 }
 
 void MeshTopology::buildFaceToElementMap() {
+    // Temporary map for building
+    std::unordered_map<FaceKey, FaceInfo, FaceKeyHash> faceMap;
+    
     // Process each element
     for (Index elemIdx = 0; elemIdx < mesh_->numElements(); ++elemIdx) {
         const Element& elem = mesh_->element(elemIdx);
@@ -63,8 +71,8 @@ void MeshTopology::buildFaceToElementMap() {
             std::sort(key.begin(), key.end());
             
             // Check if face already exists
-            auto it = faceToElement_.find(key);
-            if (it == faceToElement_.end()) {
+            auto it = faceMap.find(key);
+            if (it == faceMap.end()) {
                 // New face
                 FaceInfo info;
                 info.elem1 = elemIdx;
@@ -72,9 +80,9 @@ void MeshTopology::buildFaceToElementMap() {
                 info.localFace1 = f;
                 info.localFace2 = -1;
                 info.isBoundary = true;
+                info.vertices = faceVerts;
                 
-                faceToElement_[key] = info;
-                faceVertices_[key] = std::move(faceVerts);
+                faceMap[key] = std::move(info);
             } else {
                 // Face already exists - this is an interior face
                 it->second.elem2 = elemIdx;
@@ -83,30 +91,32 @@ void MeshTopology::buildFaceToElementMap() {
             }
         }
     }
+    
+    // Transfer to vector for O(1) access
+    faceInfoList_.reserve(faceMap.size());
+    Index faceIdx = 0;
+    for (auto& [key, info] : faceMap) {
+        faceInfoList_.push_back(std::move(info));
+        faceKeyToIndex_[key] = faceIdx++;
+    }
 }
 
 void MeshTopology::buildElementToFaceMap() {
     elementToFace_.clear();
     elementToFace_.resize(mesh_->numElements());
     
-    // First assign face indices
-    Index faceIdx = 0;
-    for (const auto& [key, info] : faceToElement_) {
-        faceToIndex_[key] = faceIdx++;
-    }
-    
-    // Now build element to face mapping
-    for (const auto& [key, info] : faceToElement_) {
-        Index idx = faceToIndex_[key];
+    // Build element to face mapping using the face index
+    for (Index faceIdx = 0; faceIdx < static_cast<Index>(faceInfoList_.size()); ++faceIdx) {
+        const auto& info = faceInfoList_[faceIdx];
         
         // Add face to element 1
-        if (info.elem1 >= 0 && info.elem1 < static_cast<Index>(elementToFace_.size())) {
-            elementToFace_[info.elem1].push_back({info.localFace1, idx});
+        if (info.elem1 != InvalidIndex && info.elem1 < static_cast<Index>(elementToFace_.size())) {
+            elementToFace_[info.elem1].push_back({info.localFace1, faceIdx});
         }
         
         // Add face to element 2 (if exists)
         if (info.elem2 != InvalidIndex && info.elem2 < static_cast<Index>(elementToFace_.size())) {
-            elementToFace_[info.elem2].push_back({info.localFace2, idx});
+            elementToFace_[info.elem2].push_back({info.localFace2, faceIdx});
         }
     }
 }
@@ -115,10 +125,8 @@ void MeshTopology::identifyBoundaryFaces() {
     boundaryFaceIndices_.clear();
     interiorFaceIndices_.clear();
     
-    for (const auto& [key, info] : faceToElement_) {
-        Index faceIdx = faceToIndex_[key];
-        
-        if (info.isBoundary) {
+    for (Index faceIdx = 0; faceIdx < static_cast<Index>(faceInfoList_.size()); ++faceIdx) {
+        if (faceInfoList_[faceIdx].isBoundary) {
             boundaryFaceIndices_.push_back(faceIdx);
         } else {
             interiorFaceIndices_.push_back(faceIdx);
@@ -126,36 +134,30 @@ void MeshTopology::identifyBoundaryFaces() {
     }
 }
 
-Index MeshTopology::numFaces() const {
-    return static_cast<Index>(faceToElement_.size());
-}
-
-Index MeshTopology::numBoundaryFaces() const {
-    return static_cast<Index>(boundaryFaceIndices_.size());
-}
-
-Index MeshTopology::numInteriorFaces() const {
-    return static_cast<Index>(interiorFaceIndices_.size());
-}
-
-bool MeshTopology::isExternalBoundary(Index faceIdx) const {
-    for (const auto& [key, info] : faceToElement_) {
-        auto it = faceToIndex_.find(key);
-        if (it != faceToIndex_.end() && it->second == faceIdx) {
-            return info.isBoundary;
+void MeshTopology::buildBoundaryElementMapping() {
+    // Match boundary elements to topology faces
+    // A boundary element should match a boundary face by its vertices
+    
+    for (Index bdrIdx = 0; bdrIdx < mesh_->numBdrElements(); ++bdrIdx) {
+        const Element& bdrElem = mesh_->bdrElement(bdrIdx);
+        
+        // Get sorted vertex key for boundary element
+        FaceKey key;
+        const auto& verts = bdrElem.vertices();
+        key.reserve(verts.size());
+        for (Index v : verts) {
+            key.push_back(v);
+        }
+        std::sort(key.begin(), key.end());
+        
+        // Find matching face
+        auto it = faceKeyToIndex_.find(key);
+        if (it != faceKeyToIndex_.end()) {
+            Index faceIdx = it->second;
+            bdrElementToFace_[bdrIdx] = faceIdx;
+            faceToBdrElement_[faceIdx] = bdrIdx;
         }
     }
-    return false;
-}
-
-std::pair<Index, Index> MeshTopology::getAdjacentElements(Index faceIdx) const {
-    for (const auto& [key, info] : faceToElement_) {
-        auto it = faceToIndex_.find(key);
-        if (it != faceToIndex_.end() && it->second == faceIdx) {
-            return {info.elem1, info.elem2};
-        }
-    }
-    return {InvalidIndex, InvalidIndex};
 }
 
 std::vector<Index> MeshTopology::getBoundaryElementsForBoundary(Index boundaryId) const {
