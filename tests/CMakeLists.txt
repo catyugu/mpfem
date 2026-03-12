@@ -169,3 +169,18 @@ target_link_libraries(mpfem_test_fe_space_quadratic
 )
 
 add_test(NAME FESpaceQuadratic COMMAND mpfem_test_fe_space_quadratic)
+
+# =============================================================================
+# Coefficient Tests (includes order 1 and order 2 tests)
+# =============================================================================
+add_executable(mpfem_test_coefficient
+    test_coefficient.cpp
+)
+
+target_link_libraries(mpfem_test_coefficient
+    PRIVATE mpfem::mesh
+    PRIVATE mpfem::fe
+    PRIVATE GTest::gtest_main
+)
+
+add_test(NAME Coefficient COMMAND mpfem_test_coefficient)

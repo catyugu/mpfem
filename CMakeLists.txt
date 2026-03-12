@@ -97,6 +97,7 @@ add_library(mpfem_fe
     src/fe/facet_element_transform.cpp
     src/fe/grid_function.cpp
     src/fe/fe_values.cpp
+    src/fe/coefficient.cpp
 )
 
 add_library(mpfem_mesh
