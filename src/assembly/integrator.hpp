@@ -24,9 +24,8 @@ class GridFunction;
  * partial differential equations.
  * 
  * Resource Management:
- * - Coefficients are managed via std::shared_ptr for shared ownership
- * - Use setCoefficientShared() for owned coefficients
- * - Use setCoefficientRef() for external references (creates non-owning shared_ptr)
+ * - All Coefficients are managed via std::shared_ptr for clear ownership
+ * - Use setCoefficient() to set with shared ownership
  * 
  * Design inspired by MFEM's BilinearFormIntegrator and LinearFormIntegrator.
  */
@@ -45,18 +44,13 @@ class BilinearFormIntegrator {
 public:
     BilinearFormIntegrator() = default;
     
-    /// Construct with shared coefficient ownership
+    /// Construct with coefficient
     explicit BilinearFormIntegrator(std::shared_ptr<Coefficient> q) : q_(std::move(q)) {}
     
     virtual ~BilinearFormIntegrator() = default;
     
-    /// Set coefficient with shared ownership
-    void setCoefficientShared(std::shared_ptr<Coefficient> q) { q_ = std::move(q); }
-    
-    /// Set coefficient from external reference (non-owning)
-    void setCoefficientRef(Coefficient& q) { 
-        q_ = std::shared_ptr<Coefficient>(&q, [](Coefficient*){}); 
-    }
+    /// Set coefficient (takes shared ownership)
+    void setCoefficient(std::shared_ptr<Coefficient> q) { q_ = std::move(q); }
     
     /// Get the coefficient (may be nullptr)
     Coefficient* coefficient() const { return q_.get(); }
@@ -98,10 +92,7 @@ public:
     explicit LinearFormIntegrator(std::shared_ptr<Coefficient> q) : q_(std::move(q)) {}
     virtual ~LinearFormIntegrator() = default;
     
-    void setCoefficientShared(std::shared_ptr<Coefficient> q) { q_ = std::move(q); }
-    void setCoefficientRef(Coefficient& q) { 
-        q_ = std::shared_ptr<Coefficient>(&q, [](Coefficient*){}); 
-    }
+    void setCoefficient(std::shared_ptr<Coefficient> q) { q_ = std::move(q); }
     
     Coefficient* coefficient() const { return q_.get(); }
     bool hasCoefficient() const { return q_ != nullptr; }
@@ -138,10 +129,7 @@ public:
     explicit VectorBilinearFormIntegrator(std::shared_ptr<Coefficient> q) : q_(std::move(q)) {}
     virtual ~VectorBilinearFormIntegrator() = default;
     
-    void setCoefficientShared(std::shared_ptr<Coefficient> q) { q_ = std::move(q); }
-    void setCoefficientRef(Coefficient& q) { 
-        q_ = std::shared_ptr<Coefficient>(&q, [](Coefficient*){}); 
-    }
+    void setCoefficient(std::shared_ptr<Coefficient> q) { q_ = std::move(q); }
     
     Coefficient* coefficient() const { return q_.get(); }
     bool hasCoefficient() const { return q_ != nullptr; }
@@ -169,10 +157,7 @@ public:
     explicit VectorLinearFormIntegrator(std::shared_ptr<Coefficient> q) : q_(std::move(q)) {}
     virtual ~VectorLinearFormIntegrator() = default;
     
-    void setCoefficientShared(std::shared_ptr<Coefficient> q) { q_ = std::move(q); }
-    void setCoefficientRef(Coefficient& q) { 
-        q_ = std::shared_ptr<Coefficient>(&q, [](Coefficient*){}); 
-    }
+    void setCoefficient(std::shared_ptr<Coefficient> q) { q_ = std::move(q); }
     
     Coefficient* coefficient() const { return q_.get(); }
     bool hasCoefficient() const { return q_ != nullptr; }

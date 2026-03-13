@@ -220,18 +220,20 @@ private:
  * 
  * Evaluates a finite element field at integration points.
  * Optionally extracts a single component from a vector field.
+ * 
+ * Note: Does NOT own the GridFunction - lifetime managed externally.
  */
 class GridFunctionCoefficient : public Coefficient {
 public:
     GridFunctionCoefficient() : gf_(nullptr), component_(1) {}
     
-    /// Construct from GridFunction (non-owning pointer)
+    /// Construct from GridFunction (non-owning reference)
     explicit GridFunctionCoefficient(const GridFunction* gf, int component = 1)
         : gf_(gf), component_(component) {}
     
     Real eval(ElementTransform& trans) const override;
     
-    /// Set the GridFunction
+    /// Set the GridFunction (non-owning reference)
     void setGridFunction(const GridFunction* gf) { gf_ = gf; }
     
     /// Get the GridFunction
@@ -241,51 +243,19 @@ public:
     void setComponent(int comp) { component_ = comp; }
     
 private:
-    const GridFunction* gf_;
+    const GridFunction* gf_;  // Non-owning reference - lifetime managed externally
     int component_;
 };
 
 /**
- * @brief Coefficient that is zero outside specified attributes.
- */
-class RestrictedCoefficient : public Coefficient {
-public:
-    RestrictedCoefficient() : coef_(nullptr) {}
-    
-    /// Construct from coefficient and active attributes
-    RestrictedCoefficient(Coefficient& coef, const std::vector<int>& activeAttr)
-        : coef_(&coef), activeAttr_(activeAttr.begin(), activeAttr.end()) {}
-    
-    Real eval(ElementTransform& trans) const override;
-    
-    /// Set the coefficient
-    void setCoefficient(Coefficient& coef) { coef_ = &coef; }
-    
-    /// Set active attributes
-    void setActiveAttributes(const std::vector<int>& attrs) {
-        activeAttr_ = std::set<int>(attrs.begin(), attrs.end());
-    }
-    
-    /// Add an active attribute
-    void addActiveAttribute(int attr) { activeAttr_.insert(attr); }
-    
-    /// Set time
-    void setTime(Real t) override {
-        Coefficient::setTime(t);
-        if (coef_) coef_->setTime(t);
-    }
-    
-private:
-    Coefficient* coef_;
-    std::set<int> activeAttr_;
-};
-
-/**
  * @brief Product of two coefficients.
+ * 
+ * Owns both coefficient objects via shared_ptr for safe lifetime management.
  */
 class ProductCoefficient : public Coefficient {
 public:
-    ProductCoefficient(Coefficient* a, Coefficient* b) : a_(a), b_(b) {}
+    ProductCoefficient(std::shared_ptr<Coefficient> a, std::shared_ptr<Coefficient> b)
+        : a_(std::move(a)), b_(std::move(b)) {}
     
     Real eval(ElementTransform& trans) const override {
         return a_->eval(trans) * b_->eval(trans);
@@ -293,43 +263,48 @@ public:
     
     void setTime(Real t) override {
         Coefficient::setTime(t);
-        a_->setTime(t);
-        b_->setTime(t);
+        if (a_) a_->setTime(t);
+        if (b_) b_->setTime(t);
     }
     
 private:
-    Coefficient* a_;
-    Coefficient* b_;
+    std::shared_ptr<Coefficient> a_;
+    std::shared_ptr<Coefficient> b_;
 };
 
 /**
  * @brief Ratio of two coefficients.
+ * 
+ * Owns both coefficient objects via shared_ptr for safe lifetime management.
  */
 class RatioCoefficient : public Coefficient {
 public:
-    RatioCoefficient(Coefficient* num, Coefficient* denom) 
-        : num_(num), denom_(denom) {}
+    RatioCoefficient(std::shared_ptr<Coefficient> num, std::shared_ptr<Coefficient> denom)
+        : num_(std::move(num)), denom_(std::move(denom)) {}
     
     Real eval(ElementTransform& trans) const override;
     
     void setTime(Real t) override {
         Coefficient::setTime(t);
-        num_->setTime(t);
-        denom_->setTime(t);
+        if (num_) num_->setTime(t);
+        if (denom_) denom_->setTime(t);
     }
     
 private:
-    Coefficient* num_;
-    Coefficient* denom_;
+    std::shared_ptr<Coefficient> num_;
+    std::shared_ptr<Coefficient> denom_;
 };
 
 /**
- * @brief Sum of two coefficients.
+ * @brief Sum of two coefficients with scaling factors.
+ * 
+ * Owns both coefficient objects via shared_ptr for safe lifetime management.
  */
 class SumCoefficient : public Coefficient {
 public:
-    SumCoefficient(Coefficient* a, Coefficient* b, Real alpha = 1.0, Real beta = 1.0)
-        : a_(a), b_(b), alpha_(alpha), beta_(beta) {}
+    SumCoefficient(std::shared_ptr<Coefficient> a, std::shared_ptr<Coefficient> b,
+                   Real alpha = 1.0, Real beta = 1.0)
+        : a_(std::move(a)), b_(std::move(b)), alpha_(alpha), beta_(beta) {}
     
     Real eval(ElementTransform& trans) const override {
         return alpha_ * a_->eval(trans) + beta_ * b_->eval(trans);
@@ -337,19 +312,21 @@ public:
     
     void setTime(Real t) override {
         Coefficient::setTime(t);
-        a_->setTime(t);
-        b_->setTime(t);
+        if (a_) a_->setTime(t);
+        if (b_) b_->setTime(t);
     }
     
 private:
-    Coefficient* a_;
-    Coefficient* b_;
+    std::shared_ptr<Coefficient> a_;
+    std::shared_ptr<Coefficient> b_;
     Real alpha_;
     Real beta_;
 };
 
 /**
  * @brief Transformed coefficient: f(coef(x)).
+ * 
+ * Owns coefficient objects via shared_ptr for safe lifetime management.
  */
 class TransformedCoefficient : public Coefficient {
 public:
@@ -357,12 +334,13 @@ public:
     using Transform2 = std::function<Real(Real, Real)>;
     
     /// Single operand transform
-    TransformedCoefficient(Coefficient* q, Transform1 f)
-        : q1_(q), q2_(nullptr), transform1_(std::move(f)) {}
+    TransformedCoefficient(std::shared_ptr<Coefficient> q, Transform1 f)
+        : q1_(std::move(q)), q2_(nullptr), transform1_(std::move(f)) {}
     
     /// Two operand transform
-    TransformedCoefficient(Coefficient* q1, Coefficient* q2, Transform2 f)
-        : q1_(q1), q2_(q2), transform2_(std::move(f)) {}
+    TransformedCoefficient(std::shared_ptr<Coefficient> q1, 
+                           std::shared_ptr<Coefficient> q2, Transform2 f)
+        : q1_(std::move(q1)), q2_(std::move(q2)), transform2_(std::move(f)) {}
     
     Real eval(ElementTransform& trans) const override;
     
@@ -373,8 +351,8 @@ public:
     }
     
 private:
-    Coefficient* q1_;
-    Coefficient* q2_;
+    std::shared_ptr<Coefficient> q1_;
+    std::shared_ptr<Coefficient> q2_;
     Transform1 transform1_;
     Transform2 transform2_;
 };
@@ -389,6 +367,8 @@ private:
  * Implements linear resistivity model:
  *   rho(T) = rho0 * (1 + alpha * (T - Tref))
  *   sigma(T) = 1 / rho(T)
+ * 
+ * Note: Does NOT own the temperature field - lifetime managed externally.
  */
 class TemperatureDependentConductivityCoefficient : public Coefficient {
 public:
@@ -402,7 +382,7 @@ public:
         const std::vector<Real>& sigma0    ///< Constant conductivity (if rho0=0)
     );
     
-    /// Set temperature field
+    /// Set temperature field (non-owning reference)
     void setTemperatureField(const GridFunction* temperature) {
         temperature_ = temperature;
     }
@@ -414,11 +394,13 @@ private:
     std::vector<Real> alpha_;
     std::vector<Real> tref_;
     std::vector<Real> sigma0_;
-    const GridFunction* temperature_ = nullptr;
+    const GridFunction* temperature_ = nullptr;  // Non-owning reference - lifetime managed externally
 };
 
 /**
  * @brief Temperature-dependent thermal conductivity coefficient.
+ * 
+ * Note: Does NOT own the temperature field - lifetime managed externally.
  */
 class TemperatureDependentThermalConductivityCoefficient : public Coefficient {
 public:
@@ -431,7 +413,7 @@ public:
         const std::vector<Real>& tref      ///< Reference temperature
     );
     
-    /// Set temperature field
+    /// Set temperature field (non-owning reference)
     void setTemperatureField(const GridFunction* temperature) {
         temperature_ = temperature;
     }
@@ -442,7 +424,7 @@ private:
     std::vector<Real> k0_;
     std::vector<Real> alpha_;
     std::vector<Real> tref_;
-    const GridFunction* temperature_ = nullptr;
+    const GridFunction* temperature_ = nullptr;  // Non-owning reference - lifetime managed externally
 };
 
 // =============================================================================
@@ -514,6 +496,8 @@ private:
 
 /**
  * @brief Vector coefficient defined by a vector GridFunction.
+ * 
+ * Note: Does NOT own the GridFunction - lifetime managed externally.
  */
 class VectorGridFunctionCoefficient : public VectorCoefficient {
 public:
@@ -526,7 +510,7 @@ public:
     void setGridFunction(const GridFunction* gf);
     
 private:
-    const GridFunction* gf_;
+    const GridFunction* gf_;  // Non-owning reference - lifetime managed externally
 };
 
 // =============================================================================
@@ -620,11 +604,13 @@ private:
 
 /**
  * @brief Diagonal matrix from scalar coefficient.
+ * 
+ * Owns the scalar coefficient via shared_ptr for safe lifetime management.
  */
 class DiagonalFromScalarCoefficient : public MatrixCoefficient {
 public:
-    DiagonalFromScalarCoefficient(int dim, Coefficient* scalar)
-        : MatrixCoefficient(dim, dim), scalar_(scalar) {}
+    DiagonalFromScalarCoefficient(int dim, std::shared_ptr<Coefficient> scalar)
+        : MatrixCoefficient(dim, dim), scalar_(std::move(scalar)) {}
     
     void eval(ElementTransform& trans, Real* result) const override {
         Real v = scalar_->eval(trans);
@@ -637,11 +623,11 @@ public:
     
     void setTime(Real t) override {
         MatrixCoefficient::setTime(t);
-        scalar_->setTime(t);
+        if (scalar_) scalar_->setTime(t);
     }
     
 private:
-    Coefficient* scalar_;
+    std::shared_ptr<Coefficient> scalar_;
 };
 
 /**
@@ -693,9 +679,17 @@ inline std::unique_ptr<Coefficient> makePWConst(const std::vector<Real>& values)
     return std::make_unique<PWConstCoefficient>(values);
 }
 
-/// Create product coefficient
-inline std::unique_ptr<Coefficient> makeProduct(Coefficient* a, Coefficient* b) {
-    return std::make_unique<ProductCoefficient>(a, b);
+/// Create product coefficient (takes ownership)
+inline std::unique_ptr<Coefficient> makeProduct(
+    std::shared_ptr<Coefficient> a, std::shared_ptr<Coefficient> b) {
+    return std::make_unique<ProductCoefficient>(std::move(a), std::move(b));
+}
+
+/// Create sum coefficient (takes ownership)
+inline std::unique_ptr<Coefficient> makeSum(
+    std::shared_ptr<Coefficient> a, std::shared_ptr<Coefficient> b,
+    Real alpha = 1.0, Real beta = 1.0) {
+    return std::make_unique<SumCoefficient>(std::move(a), std::move(b), alpha, beta);
 }
 
 }  // namespace mpfem

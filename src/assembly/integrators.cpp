@@ -1,4 +1,5 @@
 #include "assembly/integrators.hpp"
+#include "core/logger.hpp"
 #include <Eigen/Dense>
 
 namespace mpfem {

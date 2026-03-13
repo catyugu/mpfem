@@ -1,6 +1,15 @@
 #include "electrostatics_solver.hpp"
+#include "fe/coefficient.hpp"
 
 namespace mpfem {
+
+void ElectrostaticsSolver::setTemperatureField(const GridFunction *temperature) {
+    temperatureField_ = temperature;
+    // If conductivity is a TemperatureDependentConductivityCoefficient, set its temperature field
+    if (auto* tempDepCond = dynamic_cast<TemperatureDependentConductivityCoefficient*>(conductivity_.get())) {
+        tempDepCond->setTemperatureField(temperature);
+    }
+}
 
 bool ElectrostaticsSolver::computeJouleHeat(std::vector<Real>& Q) const {
     if (!V_ || !mesh_ || !conductivity_) {
@@ -37,12 +46,6 @@ bool ElectrostaticsSolver::computeJouleHeat(std::vector<Real>& Q) const {
     }
     
     return true;
-}
-
-void ElectrostaticsSolver::updateConductivity() {
-    // If temperature field is set, we could update conductivity based on temperature
-    // For now, this is a placeholder for temperature-dependent conductivity
-    // TODO: Implement temperature-dependent conductivity update
 }
 
 } // namespace mpfem

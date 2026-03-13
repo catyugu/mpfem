@@ -25,6 +25,8 @@ BilinearFormAssembler::BilinearFormAssembler(const FESpace* fes)
 void BilinearFormAssembler::assemble() {
     assembleDomain();
     assembleBoundary();
+    // Final assembly of all triplets (domain + boundary)
+    mat_.assemble();
 }
 
 void BilinearFormAssembler::assembleDomain() {
@@ -36,7 +38,6 @@ void BilinearFormAssembler::assembleDomain() {
     const Index numElements = mesh->numElements();
     
     // Pre-allocate element matrix and DOF vector outside loop (reused)
-    // Get max DOFs per element for pre-allocation
     int maxDofs = 0;
     for (Index e = 0; e < numElements; ++e) {
         const ReferenceElement* refElem = fes_->elementRefElement(e);
@@ -98,7 +99,7 @@ void BilinearFormAssembler::assembleDomain() {
             dofs.resize(nd);
             fes_->getElementDofs(e, dofs);
             
-            // Collect triplets
+            // Collect triplets to thread-local storage
             for (int i = 0; i < nd; ++i) {
                 if (dofs[i] == InvalidIndex) continue;
                 for (int j = 0; j < nd; ++j) {
@@ -109,16 +110,18 @@ void BilinearFormAssembler::assembleDomain() {
         }
     }
     
-    // Merge thread-local triplets
+    // Count total triplets and reserve space
     size_t totalCount = 0;
     for (const auto& tt : threadTriplets) {
         totalCount += tt.size();
     }
-    allTriplets.reserve(totalCount);
-    for (auto& tt : threadTriplets) {
-        allTriplets.insert(allTriplets.end(), 
-                          std::make_move_iterator(tt.begin()),
-                          std::make_move_iterator(tt.end()));
+    // Access internal triplets vector directly for efficiency
+    auto& matTriplets = mat_.triplets();
+    matTriplets.reserve(matTriplets.size() + totalCount);
+    
+    // Merge thread-local triplets into matrix's triplet list
+    for (const auto& tt : threadTriplets) {
+        matTriplets.insert(matTriplets.end(), tt.begin(), tt.end());
     }
 #else
     // Serial version with optimized memory usage
@@ -154,19 +157,16 @@ void BilinearFormAssembler::assembleDomain() {
         // Get global DOF indices
         fes_->getElementDofs(e, dofs);
         
-        // Collect triplets
+        // Collect triplets using addTriplet (accumulate with boundary contributions)
         for (size_t i = 0; i < dofs.size(); ++i) {
             if (dofs[i] == InvalidIndex) continue;
             for (size_t j = 0; j < dofs.size(); ++j) {
                 if (dofs[j] == InvalidIndex) continue;
-                allTriplets.emplace_back(dofs[i], dofs[j], elmat(i, j));
+                mat_.addTriplet(dofs[i], dofs[j], elmat(i, j));
             }
         }
     }
 #endif
-    
-    // Finalize assembly
-    mat_.setFromTriplets(std::move(allTriplets));
 }
 
 void BilinearFormAssembler::assembleBoundary() {
@@ -177,28 +177,50 @@ void BilinearFormAssembler::assembleBoundary() {
     
     Matrix elmat;
     std::vector<Index> dofs;
+    int processedBoundaries = 0;
+    int totalContributions = 0;
+    
+    FacetElementTransform trans;
+    trans.setMesh(mesh);
     
     for (Index b = 0; b < mesh->numBdrElements(); ++b) {
         const ReferenceElement* refElem = fes_->bdrElementRefElement(b);
         if (!refElem) continue;
         
         // Setup facet transform
-        FacetElementTransform trans(mesh, b);
+        trans.setBoundaryElement(b);
+        
+        // Get boundary attribute
+        Index bdrAttr = trans.attribute();
         
         // Initialize element matrix
         elmat.setZero(refElem->numDofs(), refElem->numDofs());
+        bool hasIntegrator = false;
         
-        // Apply all boundary integrators
-        for (const auto& integ : boundaryIntegs_) {
+        // Apply all boundary integrators that match this boundary
+        for (size_t i = 0; i < boundaryIntegs_.size(); ++i) {
+            // Check if this integrator applies to this boundary
+            // boundaryIds_[i] < 0 means apply to all boundaries (no filter)
+            // Otherwise check if it matches current boundary attribute
+            if (boundaryIds_[i] >= 0 && boundaryIds_[i] != static_cast<int>(bdrAttr)) {
+                continue;  // Skip integrators that don't match
+            }
+            
             Matrix temp;
-            integ->assembleFaceMatrix(*refElem, trans, temp);
+            boundaryIntegs_[i]->assembleFaceMatrix(*refElem, trans, temp);
             elmat += temp;
+            hasIntegrator = true;
         }
+        
+        // Apply all boundary integrator references
         for (const auto& integ : boundaryIntegRefs_) {
             Matrix temp;
             integ->assembleFaceMatrix(*refElem, trans, temp);
             elmat += temp;
+            hasIntegrator = true;
         }
+        
+        if (!hasIntegrator) continue;
         
         // Get global DOF indices
         fes_->getBdrElementDofs(b, dofs);
@@ -209,12 +231,13 @@ void BilinearFormAssembler::assembleBoundary() {
             for (size_t j = 0; j < dofs.size(); ++j) {
                 if (dofs[j] == InvalidIndex) continue;
                 mat_.addTriplet(dofs[i], dofs[j], elmat(i, j));
+                totalContributions++;
             }
         }
+        processedBoundaries++;
     }
     
-    // Finalize
-    mat_.assemble();
+    // Don't call mat_.assemble() here - it will be called in assemble() after all contributions
 }
 
 void BilinearFormAssembler::assembleElement(Index elemIdx, Matrix& elmat) {
@@ -472,18 +495,31 @@ void LinearFormAssembler::assembleBoundary() {
         bdrTrans_.setMesh(mesh);
         bdrTrans_.setBoundaryElement(b);
         
-        elvec.setZero(refElem->numDofs());
+        // Get boundary attribute
+        Index bdrAttr = bdrTrans_.attribute();
         
-        for (const auto& integ : boundaryIntegs_) {
+        elvec.setZero(refElem->numDofs());
+        bool hasIntegrator = false;
+        
+        for (size_t i = 0; i < boundaryIntegs_.size(); ++i) {
+            // Check if this integrator applies to this boundary
+            if (boundaryIds_[i] >= 0 && boundaryIds_[i] != static_cast<int>(bdrAttr)) {
+                continue;  // Skip integrators that don't match
+            }
+            
             Vector temp;
-            integ->assembleFaceVector(*refElem, bdrTrans_, temp);
+            boundaryIntegs_[i]->assembleFaceVector(*refElem, bdrTrans_, temp);
             elvec += temp;
+            hasIntegrator = true;
         }
         for (const auto& integ : boundaryIntegRefs_) {
             Vector temp;
             integ->assembleFaceVector(*refElem, bdrTrans_, temp);
             elvec += temp;
+            hasIntegrator = true;
         }
+        
+        if (!hasIntegrator) continue;
         
         // Get global DOF indices
         fes_->getBdrElementDofs(b, dofs);

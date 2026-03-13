@@ -35,22 +35,24 @@ void GridFunction::getElementValues(Index elemIdx, std::vector<Real>& values) co
         return;
     }
     
-    fes_->getElementDofs(elemIdx, dofCache_);
-    values.resize(dofCache_.size());
+    std::vector<Index> dofs;  // Thread-safe: local variable
+    fes_->getElementDofs(elemIdx, dofs);
+    values.resize(dofs.size());
     
-    for (size_t i = 0; i < dofCache_.size(); ++i) {
-        values[i] = values_[dofCache_[i]];
+    for (size_t i = 0; i < dofs.size(); ++i) {
+        values[i] = values_[dofs[i]];
     }
 }
 
 Eigen::VectorXd GridFunction::getElementValues(Index elemIdx) const {
     if (!fes_) return Eigen::VectorXd();
     
-    fes_->getElementDofs(elemIdx, dofCache_);
-    Eigen::VectorXd localValues(dofCache_.size());
+    std::vector<Index> dofs;  // Thread-safe: local variable
+    fes_->getElementDofs(elemIdx, dofs);
+    Eigen::VectorXd localValues(dofs.size());
     
-    for (size_t i = 0; i < dofCache_.size(); ++i) {
-        localValues[i] = values_[dofCache_[i]];
+    for (size_t i = 0; i < dofs.size(); ++i) {
+        localValues[i] = values_[dofs[i]];
     }
     
     return localValues;
@@ -59,20 +61,22 @@ Eigen::VectorXd GridFunction::getElementValues(Index elemIdx) const {
 void GridFunction::addElementValues(Index elemIdx, const Eigen::VectorXd& localValues, Real scale) {
     if (!fes_) return;
     
-    fes_->getElementDofs(elemIdx, dofCache_);
+    std::vector<Index> dofs;  // Thread-safe: local variable
+    fes_->getElementDofs(elemIdx, dofs);
     
-    for (size_t i = 0; i < dofCache_.size() && i < static_cast<size_t>(localValues.size()); ++i) {
-        values_[dofCache_[i]] += scale * localValues[i];
+    for (size_t i = 0; i < dofs.size() && i < static_cast<size_t>(localValues.size()); ++i) {
+        values_[dofs[i]] += scale * localValues[i];
     }
 }
 
 void GridFunction::setElementValues(Index elemIdx, const Eigen::VectorXd& localValues) {
     if (!fes_) return;
     
-    fes_->getElementDofs(elemIdx, dofCache_);
+    std::vector<Index> dofs;  // Thread-safe: local variable
+    fes_->getElementDofs(elemIdx, dofs);
     
-    for (size_t i = 0; i < dofCache_.size() && i < static_cast<size_t>(localValues.size()); ++i) {
-        values_[dofCache_[i]] = localValues[i];
+    for (size_t i = 0; i < dofs.size() && i < static_cast<size_t>(localValues.size()); ++i) {
+        values_[dofs[i]] = localValues[i];
     }
 }
 
@@ -92,15 +96,16 @@ Real GridFunction::eval(Index elemIdx, const Real* xi) const {
     auto shapeValues = refElem->shapeFunction()->evalValues(xi);
     
     // Get element DOFs
-    fes_->getElementDofs(elemIdx, dofCache_);
+    std::vector<Index> dofs;  // Thread-safe: local variable
+    fes_->getElementDofs(elemIdx, dofs);
     
     // Interpolate: u(xi) = sum_i phi_i(xi) * u_i
     Real value = 0.0;
     int nd = std::min(static_cast<int>(shapeValues.size()), 
-                      static_cast<int>(dofCache_.size()));
+                      static_cast<int>(dofs.size()));
     
     for (int i = 0; i < nd; ++i) {
-        value += shapeValues[i] * values_[dofCache_[i]];
+        value += shapeValues[i] * values_[dofs[i]];
     }
     
     return value;
@@ -115,7 +120,8 @@ Vector3 GridFunction::evalVector(Index elemIdx, const Real* xi) const {
     if (!refElem) return Vector3::Zero();
     
     auto shapeValues = refElem->shapeFunction()->evalValues(xi);
-    fes_->getElementDofs(elemIdx, dofCache_);
+    std::vector<Index> dofs;  // Thread-safe: local variable
+    fes_->getElementDofs(elemIdx, dofs);
     
     int nd = refElem->numDofs();
     int vdim = fes_->vdim();
@@ -126,8 +132,8 @@ Vector3 GridFunction::evalVector(Index elemIdx, const Real* xi) const {
         Real compValue = 0.0;
         for (int i = 0; i < nd; ++i) {
             Index dofIdx = c * nd + i;
-            if (dofIdx < static_cast<Index>(dofCache_.size())) {
-                compValue += shapeValues[i] * values_[dofCache_[dofIdx]];
+            if (dofIdx < static_cast<Index>(dofs.size())) {
+                compValue += shapeValues[i] * values_[dofs[dofIdx]];
             }
         }
         result[c] = compValue;
@@ -145,16 +151,17 @@ Vector3 GridFunction::gradient(Index elemIdx, const Real* xi, ElementTransform& 
     // Get shape function values and gradients in reference coordinates
     ShapeValues shapeVals = refElem->shapeFunction()->eval(xi);
     
-    // Get element DOFs
-    fes_->getElementDofs(elemIdx, dofCache_);
+    // Get element DOFs (use local variable for thread safety)
+    std::vector<Index> dofs;
+    fes_->getElementDofs(elemIdx, dofs);
     
     // Compute gradient in reference coordinates
     Vector3 gradRef = Vector3::Zero();
     int nd = std::min(static_cast<int>(shapeVals.size()),
-                      static_cast<int>(dofCache_.size()));
+                      static_cast<int>(dofs.size()));
     
     for (int i = 0; i < nd; ++i) {
-        gradRef += shapeVals.gradients[i] * values_[dofCache_[i]];
+        gradRef += shapeVals.gradients[i] * values_[dofs[i]];
     }
     
     // Transform to physical coordinates using inverse Jacobian

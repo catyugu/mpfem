@@ -76,6 +76,10 @@ namespace mpfem
             triplets_.clear();
             triplets_.shrink_to_fit();
         }
+        
+        /// Get reference to internal triplets (for efficient merging)
+        std::vector<Triplet>& triplets() { return triplets_; }
+        const std::vector<Triplet>& triplets() const { return triplets_; }
 
         /// Clear all data
         void clear()
@@ -107,10 +111,6 @@ namespace mpfem
 
         /// Get underlying Eigen matrix (mutable)
         Storage &eigen() { return mat_; }
-
-        /// Get triplets (for external assembly)
-        std::vector<Triplet> &triplets() { return triplets_; }
-        const std::vector<Triplet> &triplets() const { return triplets_; }
 
         /// Make compressed (required for some solvers)
         void makeCompressed()

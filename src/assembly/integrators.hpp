@@ -93,6 +93,13 @@ public:
     explicit BoundaryLFIntegrator(std::shared_ptr<Coefficient> g) 
         : LinearFormIntegrator(std::move(g)) {}
     
+    /// Volume integrator not used for boundary integrator
+    void assembleElementVector(const ReferenceElement& /*refElem*/,
+                               ElementTransform& /*trans*/,
+                               Vector& elvec) const override {
+        elvec.setZero(0);
+    }
+    
     void assembleFaceVector(const ReferenceElement& refElem,
                             FacetElementTransform& trans,
                             Vector& elvec) const override;
@@ -122,6 +129,13 @@ public:
     
     void setAmbientTemperature(std::shared_ptr<Coefficient> Tinf) { Tinf_ = std::move(Tinf); }
     Coefficient* ambientTemperature() const { return Tinf_.get(); }
+    
+    /// Volume integrator not used for boundary integrator
+    void assembleElementMatrix(const ReferenceElement& /*refElem*/,
+                               ElementTransform& /*trans*/,
+                               Matrix& elmat) const override {
+        elmat.setZero(0, 0);
+    }
     
     void assembleFaceMatrix(const ReferenceElement& refElem,
                             FacetElementTransform& trans,

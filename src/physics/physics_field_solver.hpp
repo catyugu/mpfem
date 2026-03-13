@@ -71,9 +71,9 @@ public:
     /**
      * @brief Add a Dirichlet boundary condition with coefficient.
      * @param boundaryId Boundary attribute ID
-     * @param coef The prescribed value as a coefficient
+     * @param coef The prescribed value as a coefficient (shared ownership)
      */
-    virtual void addDirichletBC(int boundaryId, Coefficient* coef) = 0;
+    virtual void addDirichletBC(int boundaryId, std::shared_ptr<Coefficient> coef) = 0;
     
     /**
      * @brief Clear all boundary conditions.

@@ -1,5 +1,6 @@
 #include "coefficient.hpp"
 #include "element_transform.hpp"
+#include "facet_element_transform.hpp"
 #include "grid_function.hpp"
 #include "quadrature.hpp"
 #include "core/logger.hpp"
@@ -101,25 +102,8 @@ Real GridFunctionCoefficient::eval(ElementTransform& trans) const {
     
     // For vector fields, return the specified component
     // Note: This is a simplified implementation
-    // A full implementation would extract just the component
+    // TODO: A full implementation would extract just the component
     return gf_->eval(elemIdx, ip);
-}
-
-// =============================================================================
-// RestrictedCoefficient
-// =============================================================================
-
-Real RestrictedCoefficient::eval(ElementTransform& trans) const {
-    if (!coef_) {
-        MPFEM_THROW(Exception, "RestrictedCoefficient: null coefficient");
-    }
-    
-    Index attr = trans.attribute();
-    if (activeAttr_.count(attr) > 0) {
-        return coef_->eval(trans);
-    }
-    
-    return 0.0;
 }
 
 // =============================================================================
@@ -183,13 +167,39 @@ Real TemperatureDependentConductivityCoefficient::eval(ElementTransform& trans) 
         
         Real temp = tref;
         if (temperature_) {
-            temp = temperature_->eval(trans.elementIndex(), trans.integrationPoint());
+            // For boundary elements, we need to get the adjacent volume element
+            Index elemIdx = trans.elementIndex();
+            IntegrationPoint ip = trans.integrationPoint();
+            
+            // Check if this is a boundary element transform
+            if (trans.elementType() == ElementTransform::BOUNDARY) {
+                // Cast to FacetElementTransform to get adjacent element info
+                FacetElementTransform& facetTrans = static_cast<FacetElementTransform&>(trans);
+                
+                // Get adjacent volume element index
+                Index adjElemIdx = facetTrans.adjacentElementIndex();
+                if (adjElemIdx != InvalidIndex) {
+                    elemIdx = adjElemIdx;
+                    
+                    // Map boundary integration point to volume element
+                    Real volXi[3] = {0.0, 0.0, 0.0};
+                    facetTrans.mapToVolumeElement(&ip.xi, volXi);
+                    ip.xi = volXi[0];
+                    ip.eta = volXi[1];
+                    ip.zeta = volXi[2];
+                }
+            }
+            
+            temp = temperature_->eval(elemIdx, ip);
         }
         
         // Linear resistivity model: rho = rho0 * (1 + alpha * (T - Tref))
         Real rho = rho0 * (1.0 + alpha * (temp - tref));
         
         if (!std::isfinite(rho) || rho <= 0.0) {
+            LOG_ERROR << "TemperatureDependentConductivity: invalid resistivity " << rho 
+                      << " at temperature " << temp << " K for attribute " << attr
+                      << ", rho0=" << rho0 << ", alpha=" << alpha << ", Tref=" << tref;
             MPFEM_THROW(Exception, 
                 "TemperatureDependentConductivity: invalid resistivity " 
                 + std::to_string(rho) + " at temperature " + std::to_string(temp));

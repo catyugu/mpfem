@@ -181,7 +181,7 @@ protected:
     int spaceDim_ = 0;   ///< Physical space dimension
     int geomOrder_ = 1;
     
-    std::unique_ptr<ShapeFunction> shapeFunc_;
+    std::unique_ptr<ShapeFunction> shapeFunc_; 
     std::vector<Vector3> nodes_;
     std::vector<Index> nodeIndices_;
     

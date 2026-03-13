@@ -170,7 +170,7 @@ public:
 private:
     const FESpace* fes_ = nullptr;
     GridVector values_;
-    mutable std::vector<Index> dofCache_;  ///< Cache for DOF indices
+    // Note: dofCache_ removed for thread safety. Each method now uses local variables.
 };
 
 }  // namespace mpfem

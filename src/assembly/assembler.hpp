@@ -59,6 +59,13 @@ public:
     /// Add a boundary integrator (takes ownership)
     void addBoundaryIntegrator(std::unique_ptr<BilinearFormIntegrator> integ) {
         boundaryIntegs_.push_back(std::move(integ));
+        boundaryIds_.push_back(-1);  // -1 means apply to all boundaries
+    }
+    
+    /// Add a boundary integrator for a single boundary ID (takes ownership)
+    void addBoundaryIntegrator(std::unique_ptr<BilinearFormIntegrator> integ, int boundaryId) {
+        boundaryIntegs_.push_back(std::move(integ));
+        boundaryIds_.push_back(boundaryId);
     }
     
     /// Add a domain integrator (non-owning reference)
@@ -153,6 +160,7 @@ private:
     std::vector<std::unique_ptr<BilinearFormIntegrator>> boundaryIntegs_;
     std::vector<BilinearFormIntegrator*> domainIntegRefs_;
     std::vector<BilinearFormIntegrator*> boundaryIntegRefs_;
+    std::vector<int> boundaryIds_;  // -1 means apply to all boundaries
     
     SparseMatrix mat_;
     ElementTransform defaultTrans_;
@@ -195,6 +203,13 @@ public:
     /// Add a boundary integrator (takes ownership)
     void addBoundaryIntegrator(std::unique_ptr<LinearFormIntegrator> integ) {
         boundaryIntegs_.push_back(std::move(integ));
+        boundaryIds_.push_back(-1);  // -1 means apply to all boundaries
+    }
+    
+    /// Add a boundary integrator for a single boundary ID (takes ownership)
+    void addBoundaryIntegrator(std::unique_ptr<LinearFormIntegrator> integ, int boundaryId) {
+        boundaryIntegs_.push_back(std::move(integ));
+        boundaryIds_.push_back(boundaryId);
     }
     
     /// Add a domain integrator (non-owning reference)
@@ -260,6 +275,7 @@ private:
     std::vector<std::unique_ptr<LinearFormIntegrator>> boundaryIntegs_;
     std::vector<LinearFormIntegrator*> domainIntegRefs_;
     std::vector<LinearFormIntegrator*> boundaryIntegRefs_;
+    std::vector<int> boundaryIds_;  // -1 means apply to all boundaries
     
     Vector vec_;
     ElementTransform elemTrans_;

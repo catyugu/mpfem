@@ -268,42 +268,19 @@ TEST_F(CoefficientMeshTest, GridFunctionCoefficient_LinerField) {
     EXPECT_NEAR(val, 0.5, 0.1);  // Allow some tolerance for numerical issues
 }
 
-// =============================================================================
+// =============================================================================  
 // SumCoefficient Tests
 // =============================================================================
 
 TEST_F(CoefficientTest, SumCoefficient_Basic) {
-    ConstantCoefficient a(3.0);
-    ConstantCoefficient b(4.0);
+    auto a = std::make_shared<ConstantCoefficient>(3.0);
+    auto b = std::make_shared<ConstantCoefficient>(4.0);
     
-    SumCoefficient sum(&a, &b, 2.0, 3.0);  // 2*a + 3*b = 2*3 + 3*4 = 18
+    SumCoefficient sum(a, b, 2.0, 3.0);  // 2*a + 3*b = 2*3 + 3*4 = 18
     
     // Verification through construction
     EXPECT_NE(&sum, nullptr);
 }
-
-// =============================================================================
-// RestrictedCoefficient Tests
-// =============================================================================
-
-TEST_F(CoefficientMeshTest, RestrictedCoefficient_Basic) {
-    ConstantCoefficient constCoef(10.0);
-    
-    // Restrict to attribute 1 only
-    RestrictedCoefficient restricted(constCoef, {1});
-    
-    ElementTransform trans(mesh_.get(), 0);
-    IntegrationPoint ip(0.0, 0.0, 0.0, 1.0);
-    trans.setIntegrationPoint(ip);
-    
-    // Element 0 has attribute 1, should return 10.0
-    EXPECT_DOUBLE_EQ(restricted.eval(trans), 10.0);
-    
-    // Element 1 has attribute 2, should return 0.0
-    trans.setElement(1);
-    EXPECT_DOUBLE_EQ(restricted.eval(trans), 0.0);
-}
-
 // =============================================================================
 // TemperatureDependentConductivity Tests
 // =============================================================================
@@ -424,8 +401,8 @@ TEST_F(CoefficientTest, DiagonalMatrixCoefficient_Basic) {
 }
 
 TEST_F(CoefficientMeshTest, DiagonalFromScalarCoefficient_Basic) {
-    ConstantCoefficient scalar(4.0);
-    DiagonalFromScalarCoefficient coef(3, &scalar);
+    auto scalar = std::make_shared<ConstantCoefficient>(4.0);
+    DiagonalFromScalarCoefficient coef(3, scalar);
     
     ElementTransform trans(mesh_.get(), 0);
     IntegrationPoint ip(0.0, 0.0, 0.0, 1.0);
