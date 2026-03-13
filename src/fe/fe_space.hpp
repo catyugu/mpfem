@@ -108,13 +108,6 @@ public:
     /// Get local to global dof mapping for a boundary element
     void getBdrElementDofs(Index bdrIdx, std::vector<Index>& dofs) const;
     
-    /// Get local to global dof mapping (return vector)
-    std::vector<Index> elementDofs(Index elemIdx) const {
-        std::vector<Index> dofs;
-        getElementDofs(elemIdx, dofs);
-        return dofs;
-    }
-    
     /// Get number of dofs for an element
     int numElementDofs(Index elemIdx) const;
     

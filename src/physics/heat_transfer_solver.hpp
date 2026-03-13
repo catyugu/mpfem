@@ -22,7 +22,6 @@ public:
                     const PWConstCoefficient& conductivity) override;
     
     void addDirichletBC(int bid, Real val) override { bcValues_[bid] = val; }
-    void addDirichletBC(int, std::shared_ptr<Coefficient>) override {}
     void clearBoundaryConditions() override { bcValues_.clear(); convBCs_.clear(); }
     
     /// 添加对流边界条件
@@ -40,12 +39,8 @@ public:
     GridFunction& field() override { return *T_; }
     const FESpace& feSpace() const override { return *fes_; }
     Index numDofs() const override { return fes_->numDofs(); }
-    Real minValue() const override { return T_->values().minCoeff(); }
-    Real maxValue() const override { return T_->values().maxCoeff(); }
     
 private:
-    void applyBCs();
-    
     struct ConvBC { Real h, Tinf; };
     
     const Mesh* mesh_ = nullptr;
@@ -64,24 +59,25 @@ private:
     std::map<int, ConvBC> convBCs_;
 };
 
-/// 焦耳热系数（解耦设计）
+/// 焦耳热系数（优化设计：直接持有指针，避免 std::function 开销）
 class JouleHeatCoefficient : public Coefficient {
 public:
-    using GradientFunc = std::function<Vector3(int, const Real*, ElementTransform&)>;
-    using ConductivityFunc = std::function<Real(ElementTransform&)>;
+    /// 设置电势场（非拥有指针）
+    void setPotential(const GridFunction* V) { V_ = V; }
     
-    void setGradientFunc(GradientFunc f) { gradFunc_ = std::move(f); }
-    void setConductivityFunc(ConductivityFunc f) { sigmaFunc_ = std::move(f); }
+    /// 设置电导率系数（非拥有指针）
+    void setConductivity(const Coefficient* sigma) { sigma_ = sigma; }
     
     Real eval(ElementTransform& trans) const override {
-        if (!gradFunc_ || !sigmaFunc_) return 0.0;
-        auto g = gradFunc_(trans.elementIndex(), &trans.integrationPoint().xi, trans);
-        return sigmaFunc_(trans) * g.squaredNorm();
+        if (!V_ || !sigma_) return 0.0;
+        // 直接计算梯度，避免 std::function 间接调用
+        Vector3 g = V_->gradient(trans.elementIndex(), &trans.integrationPoint().xi, trans);
+        return sigma_->eval(trans) * g.squaredNorm();
     }
     
 private:
-    GradientFunc gradFunc_;
-    ConductivityFunc sigmaFunc_;
+    const GridFunction* V_ = nullptr;
+    const Coefficient* sigma_ = nullptr;
 };
 
 }  // namespace mpfem

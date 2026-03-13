@@ -28,8 +28,6 @@ public:
         bcValues_[boundaryId] = value;
     }
     
-    void addDirichletBC(int, std::shared_ptr<Coefficient>) override {}  // 简化：只支持常量BC
-    
     void clearBoundaryConditions() override { bcValues_.clear(); }
     
     void assemble() override;
@@ -39,8 +37,6 @@ public:
     GridFunction& field() override { return *V_; }
     const FESpace& feSpace() const override { return *fes_; }
     Index numDofs() const override { return fes_->numDofs(); }
-    Real minValue() const override { return V_->values().minCoeff(); }
-    Real maxValue() const override { return V_->values().maxCoeff(); }
     
     /// 设置电导率（非拥有指针）
     void setConductivity(const Coefficient* sigma) { sigma_ = sigma; }
@@ -52,8 +48,6 @@ public:
     void computeJouleHeat(std::vector<Real>& Q) const;
     
 private:
-    void applyBCs();
-    
     // 最小成员集
     const Mesh* mesh_ = nullptr;
     std::unique_ptr<FECollection> fec_;

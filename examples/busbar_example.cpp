@@ -42,12 +42,14 @@ int main(int argc, char* argv[]) {
         
         // Print results
         if (setup.hasElectrostatics()) {
-            LOG_INFO << "Potential range: [" << setup.electrostatics->minValue() 
-                     << ", " << setup.electrostatics->maxValue() << "] V";
+            const auto& V = setup.electrostatics->field().values();
+            LOG_INFO << "Potential range: [" << V.minCoeff() 
+                     << ", " << V.maxCoeff() << "] V";
         }
         if (setup.hasHeatTransfer()) {
-            Real minT = setup.heatTransfer->minValue();
-            Real maxT = setup.heatTransfer->maxValue();
+            const auto& T = setup.heatTransfer->field().values();
+            Real minT = T.minCoeff();
+            Real maxT = T.maxCoeff();
             LOG_INFO << "Temperature range: [" << minT << ", " << maxT << "] K";
             LOG_INFO << "Temperature range: [" << (minT - 273.15) << ", " 
                      << (maxT - 273.15) << "] C";

@@ -41,22 +41,28 @@ Real GridFunctionCoefficient::eval(ElementTransform& trans) const {
 // =============================================================================
 
 Real TemperatureDependentConductivity::eval(ElementTransform& trans) const {
-    int domainId = static_cast<int>(trans.attribute());
+    int attr = static_cast<int>(trans.attribute());
+    if (attr < 1 || attr > static_cast<int>(rho0_.size())) return 1.0;
     
-    auto it = rho0_.find(domainId);
-    if (it == rho0_.end()) return 1.0;
+    Real rho0 = rho0_[attr - 1];
     
-    Real rho0 = it->second;
-    Real alpha = alpha_.at(domainId);
-    Real tref = tref_.at(domainId);
-    
-    Real temp = tref;
-    if (tempFunc_) {
-        const auto& ip = trans.integrationPoint();
-        Real xi[3] = {ip.xi, ip.eta, ip.zeta};
-        temp = tempFunc_(trans.elementIndex(), xi);
+    // rho0 = 0 表示使用常量电导率
+    if (rho0 == 0.0) {
+        return sigma_[attr - 1];
     }
     
+    Real alpha = alpha_[attr - 1];
+    Real tref = tref_[attr - 1];
+    
+    // 获取温度
+    Real temp = tref;
+    if (T_) {
+        const auto& ip = trans.integrationPoint();
+        Real xi[3] = {ip.xi, ip.eta, ip.zeta};
+        temp = T_->eval(trans.elementIndex(), xi);
+    }
+    
+    // 线性电阻率模型: rho = rho0 * (1 + alpha * (T - Tref))
     Real rho = rho0 * (1.0 + alpha * (temp - tref));
     return 1.0 / rho;
 }

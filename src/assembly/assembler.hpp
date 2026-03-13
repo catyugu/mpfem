@@ -15,17 +15,21 @@
 namespace mpfem {
 
 // =============================================================================
-// 线程本地缓冲区（零分配）
+// 编译期常量
 // =============================================================================
 
 constexpr int MAX_DOFS = 27;      // 二阶六面体
 constexpr int MAX_DIM = 3;
 
+// =============================================================================
+// 线程本地缓冲区（零分配）
+// =============================================================================
+
 struct alignas(64) ThreadBuffer {
     Eigen::Matrix<Real, MAX_DOFS, MAX_DOFS, Eigen::RowMajor> elmat;
     Eigen::Matrix<Real, MAX_DOFS, 1> elvec;
-    Eigen::Matrix<Real, MAX_DOFS, MAX_DIM, Eigen::RowMajor> grads;
     std::array<Index, MAX_DOFS> dofs;
+    int numDofs = 0;
 };
 
 // =============================================================================
@@ -45,7 +49,7 @@ public:
     }
     
     void clearIntegrators() { domainIntegs_.clear(); bdrIntegs_.clear(); bdrIds_.clear(); }
-    void clear() { mat_.clear(); }
+    void clear() { mat_.setZero(); }
     
     void computeSparsityPattern();
     void assemble();
@@ -61,6 +65,9 @@ private:
     std::vector<int> bdrIds_;
     SparseMatrix mat_;
     std::vector<ThreadBuffer> buffers_;
+    
+    // 预分配的三元组缓冲区（复用以避免重复分配）
+    std::vector<SparseMatrix::Triplet> triplets_;
 };
 
 // =============================================================================
@@ -93,6 +100,9 @@ private:
     std::vector<int> bdrIds_;
     Vector vec_;
     std::vector<ThreadBuffer> buffers_;
+    
+    // 并行组装用的线程局部向量
+    std::vector<Vector> threadVectors_;
 };
 
 }  // namespace mpfem

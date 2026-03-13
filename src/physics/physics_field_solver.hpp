@@ -25,7 +25,6 @@ public:
     virtual bool initialize(const Mesh& mesh, const PWConstCoefficient& param) = 0;
     
     virtual void addDirichletBC(int boundaryId, Real value) = 0;
-    virtual void addDirichletBC(int boundaryId, std::shared_ptr<Coefficient> coef) = 0;
     virtual void clearBoundaryConditions() = 0;
     
     virtual void assemble() = 0;
@@ -35,8 +34,6 @@ public:
     virtual GridFunction& field() = 0;
     virtual const FESpace& feSpace() const = 0;
     virtual Index numDofs() const = 0;
-    virtual Real minValue() const = 0;
-    virtual Real maxValue() const = 0;
     
     void setOrder(int o) { order_ = o; }
     void setSolver(const std::string& type, int maxIter = 1000, Real tol = 1e-10) {

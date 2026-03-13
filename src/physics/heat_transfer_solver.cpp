@@ -1,5 +1,6 @@
 #include "heat_transfer_solver.hpp"
 #include "assembly/integrators.hpp"
+#include "assembly/dirichlet_bc.hpp"
 #include "solver/solver_factory.hpp"
 #include "core/logger.hpp"
 
@@ -37,10 +38,13 @@ void HeatTransferSolver::assemble() {
     matAsm_->addDomainIntegrator(std::move(diff));
     
     for (const auto& [bid, bc] : convBCs_) {
-        auto conv = std::make_unique<ConvectionBoundaryIntegrator>(new ConstantCoefficient(bc.h));
+        // 使用拥有语义构造积分器，避免内存泄漏
+        auto conv = std::make_unique<ConvectionBoundaryIntegrator>(
+            std::make_unique<ConstantCoefficient>(bc.h));
         matAsm_->addBoundaryIntegrator(std::move(conv), bid);
         
-        auto rhsInt = std::make_unique<BoundaryLFIntegrator>(new ConstantCoefficient(bc.h * bc.Tinf));
+        auto rhsInt = std::make_unique<BoundaryLFIntegrator>(
+            std::make_unique<ConstantCoefficient>(bc.h * bc.Tinf));
         vecAsm_->addBoundaryIntegrator(std::move(rhsInt), bid);
     }
     
@@ -52,29 +56,11 @@ void HeatTransferSolver::assemble() {
     }
     
     vecAsm_->assemble();
-    applyBCs();
+    
+    // 使用公共函数应用边界条件
+    applyDirichletBC(matAsm_->matrix(), vecAsm_->vector(), T_->values(),
+                     *fes_, *mesh_, bcValues_);
     matAsm_->finalize();
-}
-
-void HeatTransferSolver::applyBCs() {
-    std::map<Index, Real> dofVals;
-    
-    for (const auto& [bid, val] : bcValues_) {
-        for (Index b = 0; b < mesh_->numBdrElements(); ++b) {
-            if (mesh_->bdrElement(b).attribute() == bid) {
-                std::vector<Index> dofs;
-                fes_->getBdrElementDofs(b, dofs);
-                for (Index d : dofs) {
-                    if (d != InvalidIndex && dofVals.find(d) == dofVals.end()) {
-                        dofVals[d] = val;
-                    }
-                }
-            }
-        }
-    }
-    
-    matAsm_->matrix().eliminateRows(dofVals, vecAsm_->vector());
-    for (const auto& [d, v] : dofVals) T_->values()(d) = v;
 }
 
 bool HeatTransferSolver::solve() {

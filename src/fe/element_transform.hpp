@@ -94,10 +94,6 @@ public:
     const std::vector<Vector3>& nodes() const { return nodes_; }
     int numNodes() const { return static_cast<int>(nodes_.size()); }
     
-    // Aliases for compatibility
-    const std::vector<Vector3>& vertices() const { return nodes_; }
-    int numVertices() const { return numNodes(); }
-    
     const IntegrationPoint& integrationPoint() const { return ip_; }
     
 protected:

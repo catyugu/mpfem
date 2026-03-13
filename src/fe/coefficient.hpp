@@ -95,34 +95,50 @@ private:
 };
 
 // =============================================================================
-// 温度依赖系数（解耦设计：通过回调获取温度）
+// 温度依赖电导率系数（高效设计）
 // =============================================================================
 
-class TemperatureDependentCoefficient : public Coefficient {
+/// 温度依赖电导率：sigma = 1 / (rho0 * (1 + alpha * (T - Tref)))
+/// 使用 Vector 存储，O(1) 属性索引访问
+class TemperatureDependentConductivity : public Coefficient {
 public:
-    using TempFunc = std::function<Real(int elemIdx, const Real* xi)>;
+    TemperatureDependentConductivity() = default;
     
-    void setTemperatureCallback(TempFunc func) { tempFunc_ = std::move(func); }
-    
-protected:
-    TempFunc tempFunc_;
-};
-
-/// 温度依赖电导率
-class TemperatureDependentConductivity : public TemperatureDependentCoefficient {
-public:
+    /// 设置材料参数
     void setMaterial(int domainId, Real rho0, Real alpha, Real tref) {
-        rho0_[domainId] = rho0;
-        alpha_[domainId] = alpha;
-        tref_[domainId] = tref;
+        ensureSize(domainId);
+        rho0_[domainId - 1] = rho0;
+        alpha_[domainId - 1] = alpha;
+        tref_[domainId - 1] = tref;
     }
+    
+    /// 设置常量电导率（非温度依赖）
+    void setConstantConductivity(int domainId, Real sigma) {
+        ensureSize(domainId);
+        sigma_[domainId - 1] = sigma;
+        rho0_[domainId - 1] = 0.0;  // rho0 = 0 表示使用常量电导率
+    }
+    
+    /// 设置温度场（非拥有指针）
+    void setTemperatureField(const GridFunction* T) { T_ = T; }
     
     Real eval(ElementTransform& trans) const override;
     
 private:
-    std::map<int, Real> rho0_;
-    std::map<int, Real> alpha_;
-    std::map<int, Real> tref_;
+    void ensureSize(int domainId) {
+        if (static_cast<int>(rho0_.size()) < domainId) {
+            rho0_.resize(domainId, 0.0);
+            alpha_.resize(domainId, 0.0);
+            tref_.resize(domainId, 293.15);
+            sigma_.resize(domainId, 0.0);
+        }
+    }
+    
+    std::vector<Real> rho0_;   ///< 参考温度下的电阻率
+    std::vector<Real> alpha_;  ///< 温度系数
+    std::vector<Real> tref_;   ///< 参考温度
+    std::vector<Real> sigma_;  ///< 常量电导率（非温度依赖时使用）
+    const GridFunction* T_ = nullptr;  ///< 温度场（非拥有）
 };
 
 // =============================================================================

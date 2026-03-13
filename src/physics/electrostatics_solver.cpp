@@ -1,5 +1,6 @@
 #include "electrostatics_solver.hpp"
 #include "assembly/integrators.hpp"
+#include "assembly/dirichlet_bc.hpp"
 #include "solver/solver_factory.hpp"
 #include "core/logger.hpp"
 
@@ -38,29 +39,10 @@ void ElectrostaticsSolver::assemble() {
     matAsm_->assemble();
     vecAsm_->assemble();
     
-    applyBCs();
+    // 使用公共函数应用边界条件
+    applyDirichletBC(matAsm_->matrix(), vecAsm_->vector(), V_->values(),
+                     *fes_, *mesh_, bcValues_);
     matAsm_->finalize();
-}
-
-void ElectrostaticsSolver::applyBCs() {
-    std::map<Index, Real> dofVals;
-    
-    for (const auto& [bid, val] : bcValues_) {
-        for (Index b = 0; b < mesh_->numBdrElements(); ++b) {
-            if (mesh_->bdrElement(b).attribute() == bid) {
-                std::vector<Index> dofs;
-                fes_->getBdrElementDofs(b, dofs);
-                for (Index d : dofs) {
-                    if (d != InvalidIndex && dofVals.find(d) == dofVals.end()) {
-                        dofVals[d] = val;
-                    }
-                }
-            }
-        }
-    }
-    
-    matAsm_->matrix().eliminateRows(dofVals, vecAsm_->vector());
-    for (const auto& [d, v] : dofVals) V_->values()(d) = v;
 }
 
 bool ElectrostaticsSolver::solve() {

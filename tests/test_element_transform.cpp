@@ -104,7 +104,7 @@ protected:
 TEST_F(TetrahedronTransformTest, GeometryInfo) {
     EXPECT_EQ(transform_->geometry(), Geometry::Tetrahedron);
     EXPECT_EQ(transform_->dim(), 3);
-    EXPECT_EQ(transform_->numVertices(), 4);
+    EXPECT_EQ(transform_->numNodes(), 4);
 }
 
 TEST_F(TetrahedronTransformTest, TransformReferenceToPhysical) {
@@ -203,7 +203,7 @@ protected:
 TEST_F(HexahedronTransformTest, GeometryInfo) {
     EXPECT_EQ(transform_->geometry(), Geometry::Cube);
     EXPECT_EQ(transform_->dim(), 3);
-    EXPECT_EQ(transform_->numVertices(), 8);
+    EXPECT_EQ(transform_->numNodes(), 8);
 }
 
 TEST_F(HexahedronTransformTest, TransformCorners) {
@@ -262,7 +262,7 @@ protected:
 TEST_F(TriangleFacetTransformTest, GeometryInfo) {
     EXPECT_EQ(transform_->geometry(), Geometry::Triangle);
     EXPECT_EQ(transform_->dim(), 2);
-    EXPECT_EQ(transform_->numVertices(), 3);
+    EXPECT_EQ(transform_->numNodes(), 3);
 }
 
 TEST_F(TriangleFacetTransformTest, TransformVertices) {
@@ -321,7 +321,7 @@ protected:
 TEST_F(SquareFacetTransformTest, GeometryInfo) {
     EXPECT_EQ(transform_->geometry(), Geometry::Square);
     EXPECT_EQ(transform_->dim(), 2);
-    EXPECT_EQ(transform_->numVertices(), 4);
+    EXPECT_EQ(transform_->numNodes(), 4);
 }
 
 TEST_F(SquareFacetTransformTest, TransformCorners) {

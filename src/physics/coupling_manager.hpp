@@ -59,16 +59,9 @@ private:
             htSolver_->setHeatSource(jouleHeat_.get());
         }
         
-        // 设置焦耳热回调
-        auto* V = &esSolver_->field();
-        const auto* sigma = esSolver_->conductivity();
-        
-        jouleHeat_->setGradientFunc([V](int e, const Real* xi, ElementTransform& t) {
-            return V->gradient(e, xi, t);
-        });
-        jouleHeat_->setConductivityFunc([sigma](ElementTransform& t) {
-            return sigma ? sigma->eval(t) : 1.0;
-        });
+        // 直接设置场指针，避免 std::function 开销
+        jouleHeat_->setPotential(&esSolver_->field());
+        jouleHeat_->setConductivity(esSolver_->conductivity());
     }
     
     Real computeError() {
