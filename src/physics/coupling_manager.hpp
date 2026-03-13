@@ -30,6 +30,11 @@ public:
         if (!esSolver_ || !htSolver_) return result;
         
         for (int i = 0; i < maxIter_; ++i) {
+            // 更新温度依赖电导率
+            if (esSolver_->hasTempDepSigma()) {
+                esSolver_->setTemperatureField(&htSolver_->field());
+            }
+            
             // 解静电场
             esSolver_->assemble();
             esSolver_->solve();
@@ -43,6 +48,8 @@ public:
             Real err = computeError();
             result.iterations = i + 1;
             result.residual = err;
+            
+            LOG_INFO << "Coupling iteration " << (i+1) << ", residual = " << err;
             
             if (err < tol_) {
                 result.converged = true;
@@ -59,7 +66,6 @@ private:
             htSolver_->setHeatSource(jouleHeat_.get());
         }
         
-        // 直接设置场指针，避免 std::function 开销
         jouleHeat_->setPotential(&esSolver_->field());
         jouleHeat_->setConductivity(esSolver_->conductivity());
     }

@@ -105,18 +105,47 @@ private:
         LOG_INFO << "Building electrostatics solver, order = " << physics.order;
         
         auto conductivity = std::make_unique<PWConstCoefficient>(maxDomainId);
+        bool hasTempDepSigma = false;
         
+        // 检查是否有材料设置了温度依赖电阻率
+        for (const auto& [domId, matTag] : setup.domainMaterial) {
+            const MaterialPropertyModel* mat = materials.getMaterial(matTag);
+            if (mat && mat->rho0 > 0.0) {
+                hasTempDepSigma = true;
+                break;
+            }
+        }
+        
+        // 设置电导率
         for (const auto& [domId, matTag] : setup.domainMaterial) {
             const MaterialPropertyModel* mat = materials.getMaterial(matTag);
             if (mat) {
                 conductivity->set(domId, mat->electricConductivity);
-                LOG_INFO << "Domain " << domId << " (" << matTag << "): sigma = " << mat->electricConductivity;
+                if (mat->rho0 > 0.0) {
+                    LOG_INFO << "Domain " << domId << " (" << matTag 
+                             << "): temp-dep sigma, rho0 = " << mat->rho0 
+                             << ", alpha = " << mat->alpha;
+                } else {
+                    LOG_INFO << "Domain " << domId << " (" << matTag 
+                             << "): sigma = " << mat->electricConductivity;
+                }
             }
         }
         
         setup.electrostatics = std::make_unique<ElectrostaticsSolver>(physics.order);
         setup.electrostatics->setSolver(physics.solver.type, physics.solver.maxIterations, physics.solver.relativeTolerance);
         setup.electrostatics->initialize(*setup.mesh, *conductivity);
+        
+        // 如果有温度依赖电导率，设置参数
+        if (hasTempDepSigma) {
+            for (const auto& [domId, matTag] : setup.domainMaterial) {
+                const MaterialPropertyModel* mat = materials.getMaterial(matTag);
+                if (mat) {
+                    setup.electrostatics->setTempDepSigma(
+                        domId, mat->rho0, mat->alpha, mat->tref, mat->electricConductivity);
+                }
+            }
+        }
         
         for (const auto& bc : physics.boundaries) {
             if (bc.kind == "voltage") {

@@ -2,16 +2,46 @@
 #define MPFEM_ELECTROSTATICS_SOLVER_HPP
 
 #include "physics_field_solver.hpp"
+#include "fe/coefficient.hpp"
 #include "assembly/assembler.hpp"
 #include <memory>
 
 namespace mpfem {
 
+/// 温度依赖电导率系数
+class TempDepSigmaCoefficient : public Coefficient {
+public:
+    void setMaterial(int domainId, Real rho0, Real alpha, Real tref, Real sigma0) {
+        ensureSize(domainId);
+        rho0_[domainId - 1] = rho0;
+        alpha_[domainId - 1] = alpha;
+        tref_[domainId - 1] = tref;
+        sigma0_[domainId - 1] = sigma0;
+    }
+    
+    void setTemperatureField(const GridFunction* T) { T_ = T; }
+    
+    Real eval(ElementTransform& trans) const override;
+    
+private:
+    void ensureSize(int domainId) {
+        if (static_cast<int>(rho0_.size()) < domainId) {
+            rho0_.resize(domainId, 0.0);
+            alpha_.resize(domainId, 0.0);
+            tref_.resize(domainId, 293.15);
+            sigma0_.resize(domainId, 0.0);
+        }
+    }
+    
+    std::vector<Real> rho0_;
+    std::vector<Real> alpha_;
+    std::vector<Real> tref_;
+    std::vector<Real> sigma0_;
+    const GridFunction* T_ = nullptr;
+};
+
 /**
  * @brief 静电场求解器 - 最小化设计
- * 
- * 只持有必要的成员：FE空间、解、组装器
- * 边界条件通过assemble()参数传入
  */
 class ElectrostaticsSolver : public PhysicsFieldSolver {
 public:
@@ -44,11 +74,26 @@ public:
     /// 获取电导率
     const Coefficient* conductivity() const { return sigma_; }
     
-    /// 计算焦耳热
-    void computeJouleHeat(std::vector<Real>& Q) const;
+    /// 设置温度依赖电导率参数
+    void setTempDepSigma(int domainId, Real rho0, Real alpha, Real tref, Real sigma0) {
+        if (!tempDepSigma_) {
+            tempDepSigma_ = std::make_unique<TempDepSigmaCoefficient>();
+        }
+        tempDepSigma_->setMaterial(domainId, rho0, alpha, tref, sigma0);
+        sigma_ = tempDepSigma_.get();
+    }
+    
+    /// 设置温度场（用于温度依赖电导率）
+    void setTemperatureField(const GridFunction* T) {
+        if (tempDepSigma_) {
+            tempDepSigma_->setTemperatureField(T);
+        }
+    }
+    
+    /// 是否启用了温度依赖电导率
+    bool hasTempDepSigma() const { return tempDepSigma_ != nullptr; }
     
 private:
-    // 最小成员集
     const Mesh* mesh_ = nullptr;
     std::unique_ptr<FECollection> fec_;
     std::unique_ptr<FESpace> fes_;
@@ -57,8 +102,9 @@ private:
     std::unique_ptr<LinearFormAssembler> vecAsm_;
     std::unique_ptr<LinearSolver> solver_;
     
-    PWConstCoefficient sigmaInternal_;  // 内部拥有的电导率
-    const Coefficient* sigma_ = nullptr;  // 当前使用的电导率（非拥有）
+    PWConstCoefficient sigmaInternal_;
+    std::unique_ptr<TempDepSigmaCoefficient> tempDepSigma_;
+    const Coefficient* sigma_ = nullptr;
     
     std::map<int, Real> bcValues_;
 };
