@@ -92,8 +92,11 @@ Real GridFunction::eval(Index elemIdx, const Real* xi) const {
             std::to_string(elemIdx));
     }
     
-    // Get shape function values
-    auto shapeValues = refElem->shapeFunction()->evalValues(xi);
+    // Get shape function values (pre-allocated storage)
+    const ShapeFunction* shapeFunc = refElem->shapeFunction();
+    const int numDofs = shapeFunc->numDofs();
+    std::vector<Real> shapeValues(numDofs);
+    shapeFunc->evalValues(xi, shapeValues.data());
     
     // Get element DOFs
     std::vector<Index> dofs;  // Thread-safe: local variable
@@ -101,8 +104,7 @@ Real GridFunction::eval(Index elemIdx, const Real* xi) const {
     
     // Interpolate: u(xi) = sum_i phi_i(xi) * u_i
     Real value = 0.0;
-    int nd = std::min(static_cast<int>(shapeValues.size()), 
-                      static_cast<int>(dofs.size()));
+    int nd = std::min(numDofs, static_cast<int>(dofs.size()));
     
     for (int i = 0; i < nd; ++i) {
         value += shapeValues[i] * values_[dofs[i]];
@@ -119,7 +121,12 @@ Vector3 GridFunction::evalVector(Index elemIdx, const Real* xi) const {
     const ReferenceElement* refElem = fes_->elementRefElement(elemIdx);
     if (!refElem) return Vector3::Zero();
     
-    auto shapeValues = refElem->shapeFunction()->evalValues(xi);
+    // Get shape function values (pre-allocated storage)
+    const ShapeFunction* shapeFunc = refElem->shapeFunction();
+    const int numDofs = shapeFunc->numDofs();
+    std::vector<Real> shapeValues(numDofs);
+    shapeFunc->evalValues(xi, shapeValues.data());
+    
     std::vector<Index> dofs;  // Thread-safe: local variable
     fes_->getElementDofs(elemIdx, dofs);
     
@@ -148,8 +155,11 @@ Vector3 GridFunction::gradient(Index elemIdx, const Real* xi, ElementTransform& 
     const ReferenceElement* refElem = fes_->elementRefElement(elemIdx);
     if (!refElem) return Vector3::Zero();
     
-    // Get shape function values and gradients in reference coordinates
-    ShapeValues shapeVals = refElem->shapeFunction()->eval(xi);
+    // Get shape function gradients in reference coordinates (only gradients needed)
+    const ShapeFunction* shapeFunc = refElem->shapeFunction();
+    const int numDofs = shapeFunc->numDofs();
+    std::vector<Vector3> shapeGrads(numDofs);
+    shapeFunc->evalGrads(xi, shapeGrads.data());
     
     // Get element DOFs (use local variable for thread safety)
     std::vector<Index> dofs;
@@ -157,11 +167,10 @@ Vector3 GridFunction::gradient(Index elemIdx, const Real* xi, ElementTransform& 
     
     // Compute gradient in reference coordinates
     Vector3 gradRef = Vector3::Zero();
-    int nd = std::min(static_cast<int>(shapeVals.size()),
-                      static_cast<int>(dofs.size()));
+    int nd = std::min(numDofs, static_cast<int>(dofs.size()));
     
     for (int i = 0; i < nd; ++i) {
-        gradRef += shapeVals.gradients[i] * values_[dofs[i]];
+        gradRef += shapeGrads[i] * values_[dofs[i]];
     }
     
     // Transform to physical coordinates using inverse Jacobian

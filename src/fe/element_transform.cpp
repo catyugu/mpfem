@@ -76,6 +76,13 @@ void ElementTransform::computeGeometryInfo() {
     adjJacobian_.setZero(spaceDim_, dim_);
     
     initGeometricShapeFunction();
+    
+    // Pre-allocate storage for shape function evaluation (avoids runtime allocation during assembly)
+    if (shapeFunc_) {
+        const int numDofs = shapeFunc_->numDofs();
+        shapeValuesOnly_.resize(numDofs);
+        shapeGradsOnly_.resize(numDofs);
+    }
 }
 
 void ElementTransform::initGeometricShapeFunction() {
@@ -87,23 +94,13 @@ void ElementTransform::transform(const Real* xi, Real* x) const {
         MPFEM_THROW(Exception, "ElementTransform::transform: shape function not initialized");
     }
     
-    // Use pre-computed shape values if available, otherwise compute them
-    ShapeValues sv;
-    if (!shapeValues_.values.empty()) {
-        sv = shapeValues_;
-    } else {
-        // Compute shape values at the given reference coordinates
-        IntegrationPoint ip;
-        ip.xi = xi[0];
-        if (dim_ > 1) ip.eta = xi[1];
-        if (dim_ > 2) ip.zeta = xi[2];
-        sv = shapeFunc_->eval(ip);
-    }
+    // Evaluate only shape function values (no gradients needed for coordinate transform)
+    shapeFunc_->evalValues(xi, shapeValuesOnly_.data());
     
     for (int d = 0; d < spaceDim_; ++d) {
         x[d] = 0.0;
-        for (size_t i = 0; i < sv.values.size(); ++i) {
-            x[d] += sv.values[i] * nodes_[i][d];
+        for (size_t i = 0; i < shapeValuesOnly_.size(); ++i) {
+            x[d] += shapeValuesOnly_[i] * nodes_[i][d];
         }
     }
 }
@@ -115,15 +112,13 @@ void ElementTransform::evalJacobian() const {
         MPFEM_THROW(Exception, "ElementTransform::evalJacobian: shape function not initialized");
     }
     
-    // Compute shape values and gradients if not already computed
-    if (shapeValues_.gradients.empty()) {
-        shapeValues_ = shapeFunc_->eval(ip_);
-    }
+    // Evaluate only shape function gradients (no values needed for Jacobian)
+    shapeFunc_->evalGrads(&ip_.xi, shapeGradsOnly_.data());
     
     // J = sum_i (x_i * grad_phi_i^T)
     jacobian_.setZero(spaceDim_, dim_);
-    for (size_t i = 0; i < shapeValues_.gradients.size(); ++i) {
-        const auto& grad = shapeValues_.gradients[i];
+    for (size_t i = 0; i < shapeGradsOnly_.size(); ++i) {
+        const auto& grad = shapeGradsOnly_[i];
         for (int d = 0; d < spaceDim_; ++d) {
             for (int k = 0; k < dim_; ++k) {
                 jacobian_(d, k) += nodes_[i][d] * grad[k];

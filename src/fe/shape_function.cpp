@@ -1,11 +1,11 @@
-#include "fe/shape_function.hpp"
-#include <memory>
+#include "shape_function.hpp"
+#include <cassert>
 
 namespace mpfem
 {
 
 // =============================================================================
-// Factory method implementation
+// Factory
 // =============================================================================
 
 std::unique_ptr<ShapeFunction> ShapeFunction::create(Geometry geom, int order)
@@ -23,125 +23,78 @@ std::unique_ptr<ShapeFunction> ShapeFunction::create(Geometry geom, int order)
     case Geometry::Cube:
         return std::make_unique<H1CubeShape>(order);
     default:
-        MPFEM_THROW(Exception,
-                    "ShapeFunction::create: unsupported geometry type " +
-                        std::to_string(static_cast<int>(geom)));
+        MPFEM_THROW(Exception, "Unsupported geometry for shape function");
     }
 }
 
 // =============================================================================
-// H1SegmentShape implementation
+// H1SegmentShape
 // =============================================================================
 
 H1SegmentShape::H1SegmentShape(int order) : order_(order)
 {
-    // Order must be >= 1
-    if (order_ < 1)
-        order_ = 1;
+    if (order < 1 || order > 2)
+    {
+        MPFEM_THROW(Exception, "H1SegmentShape: only order 1 and 2 supported");
+    }
 }
 
-ShapeValues H1SegmentShape::eval(const Real *xi) const
+void H1SegmentShape::evalValues(const Real* xi, Real* values) const
 {
-    ShapeValues sv;
-    sv.values.resize(numDofs());
-    sv.gradients.resize(numDofs());
-
     const Real x = xi[0];
-
     if (order_ == 1)
     {
-        // Linear: φ0 = (1-x)/2, φ1 = (1+x)/2
-        sv.values[0] = 0.5 * (1.0 - x);
-        sv.values[1] = 0.5 * (1.0 + x);
-        sv.gradients[0] = Vector3(-0.5, 0.0, 0.0);
-        sv.gradients[1] = Vector3(0.5, 0.0, 0.0);
+        // Linear: φ0 = 0.5*(1-x), φ1 = 0.5*(1+x)
+        values[0] = 0.5 * (1.0 - x);
+        values[1] = 0.5 * (1.0 + x);
     }
-    else if (order_ == 2)
+    else // order_ == 2
     {
-        // Quadratic: φ0 = x(x-1)/2, φ1 = 1-x^2, φ2 = x(x+1)/2
-        sv.values[0] = 0.5 * x * (x - 1.0);
-        sv.values[1] = 1.0 - x * x;
-        sv.values[2] = 0.5 * x * (x + 1.0);
-        sv.gradients[0] = Vector3(x - 0.5, 0.0, 0.0);
-        sv.gradients[1] = Vector3(-2.0 * x, 0.0, 0.0);
-        sv.gradients[2] = Vector3(x + 0.5, 0.0, 0.0);
+        // Quadratic with nodes at -1, 0, 1
+        // φ0 = -0.5*x*(1-x), φ1 = 1-x^2, φ2 = 0.5*x*(1+x)
+        values[0] = -0.5 * x * (1.0 - x);
+        values[1] = 1.0 - x * x;
+        values[2] = 0.5 * x * (1.0 + x);
     }
-    else
-    {
-        // Higher order - evaluate using Lagrange formula
-        // Generate node positions on [-1, 1]
-        std::vector<Real> nodes(numDofs());
-        for (int i = 0; i < numDofs(); ++i)
-        {
-            nodes[i] = -1.0 + 2.0 * i / order_;
-        }
-
-        // Evaluate each shape function
-        for (int i = 0; i < numDofs(); ++i)
-        {
-            Real val = 1.0;
-            Real deriv = 0.0;
-
-            for (int j = 0; j < numDofs(); ++j)
-            {
-                if (j != i)
-                {
-                    val *= (x - nodes[j]) / (nodes[i] - nodes[j]);
-                }
-            }
-
-            // Derivative using product rule
-            for (int k = 0; k < numDofs(); ++k)
-            {
-                if (k == i)
-                    continue;
-                Real term = 1.0 / (nodes[i] - nodes[k]);
-                for (int j = 0; j < numDofs(); ++j)
-                {
-                    if (j != i && j != k)
-                    {
-                        term *= (x - nodes[j]) / (nodes[i] - nodes[j]);
-                    }
-                }
-                deriv += term;
-            }
-
-            sv.values[i] = val;
-            sv.gradients[i] = Vector3(deriv, 0.0, 0.0);
-        }
-    }
-
-    return sv;
 }
 
-std::vector<Real> H1SegmentShape::evalValues(const Real *xi) const
+void H1SegmentShape::evalGrads(const Real* xi, Vector3* grads) const
 {
-    auto sv = eval(xi);
-    return sv.values;
+    const Real x = xi[0];
+    if (order_ == 1)
+    {
+        grads[0] = Vector3(-0.5, 0.0, 0.0);
+        grads[1] = Vector3(0.5, 0.0, 0.0);
+    }
+    else // order_ == 2
+    {
+        grads[0] = Vector3(x - 0.5, 0.0, 0.0);
+        grads[1] = Vector3(-2.0 * x, 0.0, 0.0);
+        grads[2] = Vector3(x + 0.5, 0.0, 0.0);
+    }
 }
 
 std::vector<std::vector<Real>> H1SegmentShape::dofCoords() const
 {
-    std::vector<std::vector<Real>> coords(numDofs());
-    for (int i = 0; i < numDofs(); ++i)
+    if (order_ == 1)
     {
-        coords[i] = {-1.0 + 2.0 * i / order_};
+        return {{-1.0}, {1.0}};
     }
-    return coords;
+    else
+    {
+        return {{-1.0}, {0.0}, {1.0}};
+    }
 }
 
 // =============================================================================
-// H1TriangleShape implementation
+// H1TriangleShape
 // =============================================================================
 
 H1TriangleShape::H1TriangleShape(int order) : order_(order)
 {
-    if (order_ < 1)
-        order_ = 1;
-    if (order_ > 2)
+    if (order < 1 || order > 2)
     {
-        // TODO: Support higher order
-        order_ = 2;
+        MPFEM_THROW(Exception, "H1TriangleShape: only order 1 and 2 supported");
     }
 }
 
@@ -150,285 +103,220 @@ int H1TriangleShape::numDofs() const
     return (order_ + 1) * (order_ + 2) / 2;
 }
 
-ShapeValues H1TriangleShape::eval(const Real *xi) const
+void H1TriangleShape::evalValues(const Real* xi, Real* values) const
 {
-    ShapeValues sv;
-    sv.values.resize(numDofs());
-    sv.gradients.resize(numDofs());
-
-    // Barycentric coordinates
     const Real xi1 = xi[0];
     const Real xi2 = xi[1];
-    const Real xi3 = 1.0 - xi1 - xi2;
 
     if (order_ == 1)
     {
-        // Linear: φi = λi (barycentric coordinate)
-        sv.values[0] = xi3; // Vertex 0
-        sv.values[1] = xi1; // Vertex 1
-        sv.values[2] = xi2; // Vertex 2
-
-        // Gradients: dφi/dξj
-        // φ0 = 1 - ξ1 - ξ2: grad = (-1, -1)
-        // φ1 = ξ1: grad = (1, 0)
-        // φ2 = ξ2: grad = (0, 1)
-        sv.gradients[0] = Vector3(-1.0, -1.0, 0.0);
-        sv.gradients[1] = Vector3(1.0, 0.0, 0.0);
-        sv.gradients[2] = Vector3(0.0, 1.0, 0.0);
+        // Linear: φ0 = 1-ξ-η, φ1 = ξ, φ2 = η
+        values[0] = 1.0 - xi1 - xi2;
+        values[1] = xi1;
+        values[2] = xi2;
     }
-    else if (order_ == 2)
+    else // order_ == 2
     {
-        // Quadratic (6 nodes)
-        // Corner nodes: φi = λi(2λi - 1)
-        // Edge nodes: φij = 4λiλj
-
-        sv.values[0] = xi3 * (2.0 * xi3 - 1.0); // Vertex 0
-        sv.values[1] = xi1 * (2.0 * xi1 - 1.0); // Vertex 1
-        sv.values[2] = xi2 * (2.0 * xi2 - 1.0); // Vertex 2
-        sv.values[3] = 4.0 * xi1 * xi3;         // Edge 0-1
-        sv.values[4] = 4.0 * xi1 * xi2;         // Edge 1-2
-        sv.values[5] = 4.0 * xi2 * xi3;         // Edge 2-0
-
-        // Gradients
-        sv.gradients[0] = Vector3(-4.0 * xi3 + 1.0, -4.0 * xi3 + 1.0, 0.0);
-        sv.gradients[1] = Vector3(4.0 * xi1 - 1.0, 0.0, 0.0);
-        sv.gradients[2] = Vector3(0.0, 4.0 * xi2 - 1.0, 0.0);
-        sv.gradients[3] = Vector3(4.0 * xi3 - 4.0 * xi1, -4.0 * xi1, 0.0);
-        sv.gradients[4] = Vector3(4.0 * xi2, 4.0 * xi1, 0.0);
-        sv.gradients[5] = Vector3(-4.0 * xi2, 4.0 * xi3 - 4.0 * xi2, 0.0);
+        // Quadratic (6 dofs)
+        // Vertex nodes
+        values[0] = (1.0 - xi1 - xi2) * (1.0 - 2.0 * xi1 - 2.0 * xi2);
+        values[1] = xi1 * (2.0 * xi1 - 1.0);
+        values[2] = xi2 * (2.0 * xi2 - 1.0);
+        // Edge nodes
+        values[3] = 4.0 * xi1 * (1.0 - xi1 - xi2);
+        values[4] = 4.0 * xi1 * xi2;
+        values[5] = 4.0 * xi2 * (1.0 - xi1 - xi2);
     }
-
-    return sv;
 }
 
-std::vector<Real> H1TriangleShape::evalValues(const Real *xi) const
+void H1TriangleShape::evalGrads(const Real* xi, Vector3* grads) const
 {
-    auto sv = eval(xi);
-    return sv.values;
+    const Real xi1 = xi[0];
+    const Real xi2 = xi[1];
+
+    if (order_ == 1)
+    {
+        grads[0] = Vector3(-1.0, -1.0, 0.0);
+        grads[1] = Vector3(1.0, 0.0, 0.0);
+        grads[2] = Vector3(0.0, 1.0, 0.0);
+    }
+    else // order_ == 2
+    {
+        // ∇φ0 = ∇[(1-ξ-η)(1-2ξ-2η)]
+        grads[0] = Vector3(4.0 * xi1 + 4.0 * xi2 - 3.0,
+                           4.0 * xi1 + 4.0 * xi2 - 3.0, 0.0);
+        // ∇φ1 = ∇[ξ(2ξ-1)]
+        grads[1] = Vector3(4.0 * xi1 - 1.0, 0.0, 0.0);
+        // ∇φ2 = ∇[η(2η-1)]
+        grads[2] = Vector3(0.0, 4.0 * xi2 - 1.0, 0.0);
+        // ∇φ3 = ∇[4ξ(1-ξ-η)]
+        grads[3] = Vector3(4.0 - 8.0 * xi1 - 4.0 * xi2,
+                           -4.0 * xi1, 0.0);
+        // ∇φ4 = ∇[4ξη]
+        grads[4] = Vector3(4.0 * xi2, 4.0 * xi1, 0.0);
+        // ∇φ5 = ∇[4η(1-ξ-η)]
+        grads[5] = Vector3(-4.0 * xi2,
+                           4.0 - 4.0 * xi1 - 8.0 * xi2, 0.0);
+    }
 }
 
 std::vector<std::vector<Real>> H1TriangleShape::dofCoords() const
 {
-    std::vector<std::vector<Real>> coords(numDofs());
-
     if (order_ == 1)
     {
-        coords[0] = {0.0, 0.0}; // Vertex 0
-        coords[1] = {1.0, 0.0}; // Vertex 1
-        coords[2] = {0.0, 1.0}; // Vertex 2
-    }
-    else if (order_ == 2)
-    {
-        coords[0] = {0.0, 0.0}; // Vertex 0
-        coords[1] = {1.0, 0.0}; // Vertex 1
-        coords[2] = {0.0, 1.0}; // Vertex 2
-        coords[3] = {0.5, 0.0}; // Edge 0-1
-        coords[4] = {0.5, 0.5}; // Edge 1-2
-        coords[5] = {0.0, 0.5}; // Edge 2-0
-    }
-
-    return coords;
-}
-
-// =============================================================================
-// H1SquareShape implementation
-// =============================================================================
-
-H1SquareShape::H1SquareShape(int order)
-    : order_(order), segment1d_(order)
-{
-    if (order_ < 1)
-        order_ = 1;
-}
-
-ShapeValues H1SquareShape::eval(const Real *xi) const
-{
-    ShapeValues sv;
-    sv.values.resize(numDofs());
-    sv.gradients.resize(numDofs());
-
-    const int n = order_ + 1;
-
-    if (order_ == 1)
-    {
-        // Linear: tensor product
-        // Use local temporary to avoid data race in parallel environment
-        H1SegmentShape seg(order_);
-        auto shape1d_x = seg.evalValues(&xi[0]);
-        auto shape1d_y = seg.evalValues(&xi[1]);
-        auto sv_x = seg.eval(&xi[0]);
-        auto sv_y = seg.eval(&xi[1]);
-
-        for (int j = 0; j < n; ++j)
-        {
-            for (int i = 0; i < n; ++i)
-            {
-                int idx = j * n + i;
-                sv.values[idx] = shape1d_x[i] * shape1d_y[j];
-                sv.gradients[idx] = Vector3(
-                    sv_x.gradients[i].x() * shape1d_y[j],
-                    shape1d_x[i] * sv_y.gradients[j].x(),
-                    0.0);
-            }
-        }
-    }
-    else if (order_ == 2)
-    {
-        // Quadratic: use geometric node ordering (corners -> edges -> center)
-        // Node ordering: 4 corners + 4 edges + 1 center = 9 nodes
-        // This matches COMSOL convention
-
-        const Real x = xi[0];
-        const Real y = xi[1];
-
-        // 1D quadratic shape functions on [-1, 1]:
-        // L0(x) = x(x-1)/2, L1(x) = 1-x^2, L2(x) = x(x+1)/2
-
-        auto eval1D = [](Real t) -> std::array<Real, 3>
-        {
-            return {t * (t - 1) * 0.5, 1 - t * t, t * (t + 1) * 0.5};
-        };
-        auto eval1DGrad = [](Real t) -> std::array<Real, 3>
-        {
-            return {t - 0.5, -2 * t, t + 0.5};
-        };
-
-        auto Lx = eval1D(x);
-        auto Ly = eval1D(y);
-        auto dLx = eval1DGrad(x);
-        auto dLy = eval1DGrad(y);
-
-        // Corner nodes (0-3): vertices at corners
-        // Corner 0: (-1,-1), Corner 1: (1,-1), Corner 2: (1,1), Corner 3: (-1,1)
-        // Maps to tensor product indices: (0,0), (2,0), (2,2), (0,2)
-        sv.values[0] = Lx[0] * Ly[0]; // (-1,-1)
-        sv.values[1] = Lx[2] * Ly[0]; // (1,-1)
-        sv.values[2] = Lx[2] * Ly[2]; // (1,1)
-        sv.values[3] = Lx[0] * Ly[2]; // (-1,1)
-
-        sv.gradients[0] = Vector3(dLx[0] * Ly[0], Lx[0] * dLy[0], 0.0);
-        sv.gradients[1] = Vector3(dLx[2] * Ly[0], Lx[2] * dLy[0], 0.0);
-        sv.gradients[2] = Vector3(dLx[2] * Ly[2], Lx[2] * dLy[2], 0.0);
-        sv.gradients[3] = Vector3(dLx[0] * Ly[2], Lx[0] * dLy[2], 0.0);
-
-        // Edge nodes (4-7): midpoints of edges
-        // Edge 0: bottom (y=-1), nodes (0,1) -> midpoint at (0,-1)
-        // Edge 1: right (x=1), nodes (1,2) -> midpoint at (1,0)
-        // Edge 2: top (y=1), nodes (2,3) -> midpoint at (0,1)
-        // Edge 3: left (x=-1), nodes (3,0) -> midpoint at (-1,0)
-        // Maps to tensor product: (1,0), (2,1), (1,2), (0,1)
-        sv.values[4] = Lx[1] * Ly[0]; // (0,-1)
-        sv.values[5] = Lx[2] * Ly[1]; // (1,0)
-        sv.values[6] = Lx[1] * Ly[2]; // (0,1)
-        sv.values[7] = Lx[0] * Ly[1]; // (-1,0)
-
-        sv.gradients[4] = Vector3(dLx[1] * Ly[0], Lx[1] * dLy[0], 0.0);
-        sv.gradients[5] = Vector3(dLx[2] * Ly[1], Lx[2] * dLy[1], 0.0);
-        sv.gradients[6] = Vector3(dLx[1] * Ly[2], Lx[1] * dLy[2], 0.0);
-        sv.gradients[7] = Vector3(dLx[0] * Ly[1], Lx[0] * dLy[1], 0.0);
-
-        // Center node (8): center at (0,0)
-        // Maps to tensor product: (1,1)
-        sv.values[8] = Lx[1] * Ly[1];
-        sv.gradients[8] = Vector3(dLx[1] * Ly[1], Lx[1] * dLy[1], 0.0);
+        return {{0.0, 0.0}, {1.0, 0.0}, {0.0, 1.0}};
     }
     else
     {
-        // Higher order: tensor product with uniform node spacing
-        // Use local temporary to avoid data race in parallel environment
-        H1SegmentShape seg(order_);
-        auto shape1d_x = seg.evalValues(&xi[0]);
-        auto shape1d_y = seg.evalValues(&xi[1]);
-        auto sv_x = seg.eval(&xi[0]);
-        auto sv_y = seg.eval(&xi[1]);
-
-        for (int j = 0; j < n; ++j)
-        {
-            for (int i = 0; i < n; ++i)
-            {
-                int idx = j * n + i;
-                sv.values[idx] = shape1d_x[i] * shape1d_y[j];
-                sv.gradients[idx] = Vector3(
-                    sv_x.gradients[i].x() * shape1d_y[j],
-                    shape1d_x[i] * sv_y.gradients[j].x(),
-                    0.0);
-            }
-        }
+        return {
+            {0.0, 0.0}, {1.0, 0.0}, {0.0, 1.0}, // vertices
+            {0.5, 0.0}, {0.5, 0.5}, {0.0, 0.5}  // edge midpoints
+        };
     }
-
-    return sv;
 }
 
-std::vector<Real> H1SquareShape::evalValues(const Real *xi) const
+// =============================================================================
+// H1SquareShape
+// =============================================================================
+
+H1SquareShape::H1SquareShape(int order) : order_(order), segment1d_(order)
 {
-    auto sv = eval(xi);
-    return sv.values;
+    if (order < 1 || order > 2)
+    {
+        MPFEM_THROW(Exception, "H1SquareShape: only order 1 and 2 supported");
+    }
+}
+
+void H1SquareShape::evalValues(const Real* xi, Real* values) const
+{
+    const Real x = xi[0];
+    const Real y = xi[1];
+
+    if (order_ == 1)
+    {
+        // Bilinear: φ = φ_x * φ_y (tensor product)
+        const Real phi0x = 0.5 * (1.0 - x);
+        const Real phi1x = 0.5 * (1.0 + x);
+        const Real phi0y = 0.5 * (1.0 - y);
+        const Real phi1y = 0.5 * (1.0 + y);
+
+        values[0] = phi0x * phi0y; // (-1,-1)
+        values[1] = phi1x * phi0y; // ( 1,-1)
+        values[2] = phi1x * phi1y; // ( 1, 1)
+        values[3] = phi0x * phi1y; // (-1, 1)
+    }
+    else // order_ == 2 (9 dofs with center node)
+    {
+        // Serendipity-like ordering: corners, edges, center
+        // Using Lagrange basis with nodes at -1, 0, 1
+
+        // 1D basis: φ_-1 = -0.5*x*(1-x), φ_0 = 1-x^2, φ_1 = 0.5*x*(1+x)
+        const Real px0 = -0.5 * x * (1.0 - x);
+        const Real px1 = 1.0 - x * x;
+        const Real px2 = 0.5 * x * (1.0 + x);
+        const Real py0 = -0.5 * y * (1.0 - y);
+        const Real py1 = 1.0 - y * y;
+        const Real py2 = 0.5 * y * (1.0 + y);
+
+        // Corner nodes (tensor product of -1 and +1 nodes)
+        values[0] = px0 * py0; // (-1,-1)
+        values[1] = px2 * py0; // ( 1,-1)
+        values[2] = px2 * py2; // ( 1, 1)
+        values[3] = px0 * py2; // (-1, 1)
+
+        // Edge nodes
+        values[4] = px1 * py0; // ( 0,-1) bottom edge
+        values[5] = px2 * py1; // ( 1, 0) right edge
+        values[6] = px1 * py2; // ( 0, 1) top edge
+        values[7] = px0 * py1; // (-1, 0) left edge
+
+        // Center node
+        values[8] = px1 * py1; // ( 0, 0)
+    }
+}
+
+void H1SquareShape::evalGrads(const Real* xi, Vector3* grads) const
+{
+    const Real x = xi[0];
+    const Real y = xi[1];
+
+    if (order_ == 1)
+    {
+        // ∇φ = (∂φ/∂x, ∂φ/∂y) where φ = φ_x(x) * φ_y(y)
+        const Real phi0x = 0.5 * (1.0 - x);
+        const Real phi1x = 0.5 * (1.0 + x);
+        const Real phi0y = 0.5 * (1.0 - y);
+        const Real phi1y = 0.5 * (1.0 + y);
+
+        const Real dphi0x = -0.5;
+        const Real dphi1x = 0.5;
+        const Real dphi0y = -0.5;
+        const Real dphi1y = 0.5;
+
+        grads[0] = Vector3(dphi0x * phi0y, phi0x * dphi0y, 0.0);
+        grads[1] = Vector3(dphi1x * phi0y, phi1x * dphi0y, 0.0);
+        grads[2] = Vector3(dphi1x * phi1y, phi1x * dphi1y, 0.0);
+        grads[3] = Vector3(dphi0x * phi1y, phi0x * dphi1y, 0.0);
+    }
+    else // order_ == 2
+    {
+        // 1D basis and derivatives
+        const Real px0 = -0.5 * x * (1.0 - x);
+        const Real px1 = 1.0 - x * x;
+        const Real px2 = 0.5 * x * (1.0 + x);
+        const Real py0 = -0.5 * y * (1.0 - y);
+        const Real py1 = 1.0 - y * y;
+        const Real py2 = 0.5 * y * (1.0 + y);
+
+        const Real dpx0 = x - 0.5;
+        const Real dpx1 = -2.0 * x;
+        const Real dpx2 = x + 0.5;
+        const Real dpy0 = y - 0.5;
+        const Real dpy1 = -2.0 * y;
+        const Real dpy2 = y + 0.5;
+
+        // Corner nodes
+        grads[0] = Vector3(dpx0 * py0, px0 * dpy0, 0.0);
+        grads[1] = Vector3(dpx2 * py0, px2 * dpy0, 0.0);
+        grads[2] = Vector3(dpx2 * py2, px2 * dpy2, 0.0);
+        grads[3] = Vector3(dpx0 * py2, px0 * dpy2, 0.0);
+
+        // Edge nodes
+        grads[4] = Vector3(dpx1 * py0, px1 * dpy0, 0.0);
+        grads[5] = Vector3(dpx2 * py1, px2 * dpy1, 0.0);
+        grads[6] = Vector3(dpx1 * py2, px1 * dpy2, 0.0);
+        grads[7] = Vector3(dpx0 * py1, px0 * dpy1, 0.0);
+
+        // Center node
+        grads[8] = Vector3(dpx1 * py1, px1 * dpy1, 0.0);
+    }
 }
 
 std::vector<std::vector<Real>> H1SquareShape::dofCoords() const
 {
-    std::vector<std::vector<Real>> coords(numDofs());
-    const int n = order_ + 1;
-
-    // Node ordering for H1 Square:
-    // Order 1 (4 nodes): corners only
-    // Order 2 (9 nodes): 4 corners + 4 edge midpoints + 1 center
-    // Higher order: tensor product nodes
-
     if (order_ == 1)
     {
-        // Corners only - use tensor product ordering to match eval()
-        // Order: (i,j) where i,j ∈ {0,1}, idx = j*2 + i
-        coords[0] = {-1.0, -1.0}; // i=0, j=0
-        coords[1] = {1.0, -1.0};  // i=1, j=0
-        coords[2] = {-1.0, 1.0};  // i=0, j=1
-        coords[3] = {1.0, 1.0};   // i=1, j=1
-    }
-    else if (order_ == 2)
-    {
-        // 4 corners
-        coords[0] = {-1.0, -1.0};
-        coords[1] = {1.0, -1.0};
-        coords[2] = {1.0, 1.0};
-        coords[3] = {-1.0, 1.0};
-        // 4 edge midpoints
-        coords[4] = {0.0, -1.0}; // bottom edge
-        coords[5] = {1.0, 0.0};  // right edge
-        coords[6] = {0.0, 1.0};  // top edge
-        coords[7] = {-1.0, 0.0}; // left edge
-        // 1 center
-        coords[8] = {0.0, 0.0};
+        return {{-1.0, -1.0}, {1.0, -1.0}, {1.0, 1.0}, {-1.0, 1.0}};
     }
     else
     {
-        // Higher order: tensor product nodes
-        for (int j = 0; j < n; ++j)
-        {
-            for (int i = 0; i < n; ++i)
-            {
-                int idx = j * n + i;
-                coords[idx] = {
-                    -1.0 + 2.0 * i / order_,
-                    -1.0 + 2.0 * j / order_};
-            }
-        }
+        return {
+            {-1.0, -1.0}, {1.0, -1.0}, {1.0, 1.0}, {-1.0, 1.0}, // corners
+            {0.0, -1.0}, {1.0, 0.0}, {0.0, 1.0}, {-1.0, 0.0},  // edges
+            {0.0, 0.0}                                          // center
+        };
     }
-
-    return coords;
 }
 
 // =============================================================================
-// H1TetrahedronShape implementation
+// H1TetrahedronShape
 // =============================================================================
 
 H1TetrahedronShape::H1TetrahedronShape(int order) : order_(order)
 {
-    if (order_ < 1)
-        order_ = 1;
-    if (order_ > 2)
+    if (order < 1 || order > 2)
     {
-        // TODO: Support higher order
-        order_ = 2;
+        MPFEM_THROW(Exception, "H1TetrahedronShape: only order 1 and 2 supported");
     }
 }
 
@@ -437,362 +325,302 @@ int H1TetrahedronShape::numDofs() const
     return (order_ + 1) * (order_ + 2) * (order_ + 3) / 6;
 }
 
-ShapeValues H1TetrahedronShape::eval(const Real *xi) const
+void H1TetrahedronShape::evalValues(const Real* xi, Real* values) const
 {
-    ShapeValues sv;
-    sv.values.resize(numDofs());
-    sv.gradients.resize(numDofs());
-
-    // Barycentric coordinates
     const Real xi1 = xi[0];
     const Real xi2 = xi[1];
     const Real xi3 = xi[2];
-    const Real xi4 = 1.0 - xi1 - xi2 - xi3;
 
     if (order_ == 1)
     {
-        // Linear: φi = λi
-        sv.values[0] = xi4; // Vertex 0
-        sv.values[1] = xi1; // Vertex 1
-        sv.values[2] = xi2; // Vertex 2
-        sv.values[3] = xi3; // Vertex 3
-
-        // Gradients
-        sv.gradients[0] = Vector3(-1.0, -1.0, -1.0);
-        sv.gradients[1] = Vector3(1.0, 0.0, 0.0);
-        sv.gradients[2] = Vector3(0.0, 1.0, 0.0);
-        sv.gradients[3] = Vector3(0.0, 0.0, 1.0);
+        // Linear: φ0 = 1-ξ-η-ζ, φ1 = ξ, φ2 = η, φ3 = ζ
+        values[0] = 1.0 - xi1 - xi2 - xi3;
+        values[1] = xi1;
+        values[2] = xi2;
+        values[3] = xi3;
     }
-    else if (order_ == 2)
+    else // order_ == 2 (10 dofs)
     {
-        // Quadratic (10 nodes)
-        // Corner nodes: φi = λi(2λi - 1)
-        // Edge nodes: φij = 4λiλj
+        // Vertex nodes
+        values[0] = (1.0 - xi1 - xi2 - xi3) * (1.0 - 2.0 * xi1 - 2.0 * xi2 - 2.0 * xi3);
+        values[1] = xi1 * (2.0 * xi1 - 1.0);
+        values[2] = xi2 * (2.0 * xi2 - 1.0);
+        values[3] = xi3 * (2.0 * xi3 - 1.0);
 
-        sv.values[0] = xi4 * (2.0 * xi4 - 1.0); // Vertex 0
-        sv.values[1] = xi1 * (2.0 * xi1 - 1.0); // Vertex 1
-        sv.values[2] = xi2 * (2.0 * xi2 - 1.0); // Vertex 2
-        sv.values[3] = xi3 * (2.0 * xi3 - 1.0); // Vertex 3
-        sv.values[4] = 4.0 * xi1 * xi4;         // Edge 0-1
-        sv.values[5] = 4.0 * xi1 * xi2;         // Edge 1-2
-        sv.values[6] = 4.0 * xi2 * xi4;         // Edge 2-0
-        sv.values[7] = 4.0 * xi3 * xi4;         // Edge 0-3
-        sv.values[8] = 4.0 * xi1 * xi3;         // Edge 1-3
-        sv.values[9] = 4.0 * xi2 * xi3;         // Edge 2-3
-
-        // Gradients
-        sv.gradients[0] = Vector3(-4.0 * xi4 + 1.0, -4.0 * xi4 + 1.0, -4.0 * xi4 + 1.0);
-        sv.gradients[1] = Vector3(4.0 * xi1 - 1.0, 0.0, 0.0);
-        sv.gradients[2] = Vector3(0.0, 4.0 * xi2 - 1.0, 0.0);
-        sv.gradients[3] = Vector3(0.0, 0.0, 4.0 * xi3 - 1.0);
-        sv.gradients[4] = Vector3(4.0 * xi4 - 4.0 * xi1, -4.0 * xi1, -4.0 * xi1);
-        sv.gradients[5] = Vector3(4.0 * xi2, 4.0 * xi1, 0.0);
-        sv.gradients[6] = Vector3(-4.0 * xi2, 4.0 * xi4 - 4.0 * xi2, -4.0 * xi2);
-        sv.gradients[7] = Vector3(-4.0 * xi3, -4.0 * xi3, 4.0 * xi4 - 4.0 * xi3);
-        sv.gradients[8] = Vector3(4.0 * xi3, 0.0, 4.0 * xi1);
-        sv.gradients[9] = Vector3(0.0, 4.0 * xi3, 4.0 * xi2);
+        // Edge nodes (midpoints)
+        values[4] = 4.0 * xi1 * (1.0 - xi1 - xi2 - xi3); // edge 0-1
+        values[5] = 4.0 * xi1 * xi2;                     // edge 1-2
+        values[6] = 4.0 * xi2 * (1.0 - xi1 - xi2 - xi3); // edge 0-2
+        values[7] = 4.0 * xi3 * (1.0 - xi1 - xi2 - xi3); // edge 0-3
+        values[8] = 4.0 * xi1 * xi3;                     // edge 1-3
+        values[9] = 4.0 * xi2 * xi3;                     // edge 2-3
     }
-
-    return sv;
 }
 
-std::vector<Real> H1TetrahedronShape::evalValues(const Real *xi) const
+void H1TetrahedronShape::evalGrads(const Real* xi, Vector3* grads) const
 {
-    auto sv = eval(xi);
-    return sv.values;
+    const Real xi1 = xi[0];
+    const Real xi2 = xi[1];
+    const Real xi3 = xi[2];
+
+    if (order_ == 1)
+    {
+        grads[0] = Vector3(-1.0, -1.0, -1.0);
+        grads[1] = Vector3(1.0, 0.0, 0.0);
+        grads[2] = Vector3(0.0, 1.0, 0.0);
+        grads[3] = Vector3(0.0, 0.0, 1.0);
+    }
+    else // order_ == 2
+    {
+        // ∇φ0 = ∇[(1-ξ-η-ζ)(1-2ξ-2η-2ζ)]
+        grads[0] = Vector3(4.0 * xi1 + 4.0 * xi2 + 4.0 * xi3 - 3.0,
+                           4.0 * xi1 + 4.0 * xi2 + 4.0 * xi3 - 3.0,
+                           4.0 * xi1 + 4.0 * xi2 + 4.0 * xi3 - 3.0);
+        // ∇φ1 = ∇[ξ(2ξ-1)]
+        grads[1] = Vector3(4.0 * xi1 - 1.0, 0.0, 0.0);
+        // ∇φ2 = ∇[η(2η-1)]
+        grads[2] = Vector3(0.0, 4.0 * xi2 - 1.0, 0.0);
+        // ∇φ3 = ∇[ζ(2ζ-1)]
+        grads[3] = Vector3(0.0, 0.0, 4.0 * xi3 - 1.0);
+        // ∇φ4 = ∇[4ξ(1-ξ-η-ζ)]
+        grads[4] = Vector3(4.0 - 8.0 * xi1 - 4.0 * xi2 - 4.0 * xi3,
+                           -4.0 * xi1, -4.0 * xi1);
+        // ∇φ5 = ∇[4ξη]
+        grads[5] = Vector3(4.0 * xi2, 4.0 * xi1, 0.0);
+        // ∇φ6 = ∇[4η(1-ξ-η-ζ)]
+        grads[6] = Vector3(-4.0 * xi2,
+                           4.0 - 4.0 * xi1 - 8.0 * xi2 - 4.0 * xi3,
+                           -4.0 * xi2);
+        // ∇φ7 = ∇[4ζ(1-ξ-η-ζ)]
+        grads[7] = Vector3(-4.0 * xi3, -4.0 * xi3,
+                           4.0 - 4.0 * xi1 - 4.0 * xi2 - 8.0 * xi3);
+        // ∇φ8 = ∇[4ξζ]
+        grads[8] = Vector3(4.0 * xi3, 0.0, 4.0 * xi1);
+        // ∇φ9 = ∇[4ηζ]
+        grads[9] = Vector3(0.0, 4.0 * xi3, 4.0 * xi2);
+    }
 }
 
 std::vector<std::vector<Real>> H1TetrahedronShape::dofCoords() const
 {
-    std::vector<std::vector<Real>> coords(numDofs());
-
     if (order_ == 1)
     {
-        coords[0] = {0.0, 0.0, 0.0}; // Vertex 0
-        coords[1] = {1.0, 0.0, 0.0}; // Vertex 1
-        coords[2] = {0.0, 1.0, 0.0}; // Vertex 2
-        coords[3] = {0.0, 0.0, 1.0}; // Vertex 3
-    }
-    else if (order_ == 2)
-    {
-        coords[0] = {0.0, 0.0, 0.0}; // Vertex 0
-        coords[1] = {1.0, 0.0, 0.0}; // Vertex 1
-        coords[2] = {0.0, 1.0, 0.0}; // Vertex 2
-        coords[3] = {0.0, 0.0, 1.0}; // Vertex 3
-        coords[4] = {0.5, 0.0, 0.0}; // Edge 0-1
-        coords[5] = {0.5, 0.5, 0.0}; // Edge 1-2
-        coords[6] = {0.0, 0.5, 0.0}; // Edge 2-0
-        coords[7] = {0.0, 0.0, 0.5}; // Edge 0-3
-        coords[8] = {0.5, 0.0, 0.5}; // Edge 1-3
-        coords[9] = {0.0, 0.5, 0.5}; // Edge 2-3
-    }
-
-    return coords;
-}
-
-// =============================================================================
-// H1CubeShape implementation
-// =============================================================================
-
-H1CubeShape::H1CubeShape(int order)
-    : order_(order), segment1d_(order)
-{
-    if (order_ < 1)
-        order_ = 1;
-}
-
-ShapeValues H1CubeShape::eval(const Real *xi) const
-{
-    ShapeValues sv;
-    sv.values.resize(numDofs());
-    sv.gradients.resize(numDofs());
-
-    const int n = order_ + 1;
-
-    if (order_ == 1)
-    {
-        // Linear: tensor product
-        auto shape1d_x = segment1d_.evalValues(&xi[0]);
-        auto shape1d_y = segment1d_.evalValues(&xi[1]);
-        auto shape1d_z = segment1d_.evalValues(&xi[2]);
-        auto sv_x = segment1d_.eval(&xi[0]);
-        auto sv_y = segment1d_.eval(&xi[1]);
-        auto sv_z = segment1d_.eval(&xi[2]);
-
-        for (int k = 0; k < n; ++k)
-        {
-            for (int j = 0; j < n; ++j)
-            {
-                for (int i = 0; i < n; ++i)
-                {
-                    int idx = k * n * n + j * n + i;
-                    sv.values[idx] = shape1d_x[i] * shape1d_y[j] * shape1d_z[k];
-                    sv.gradients[idx] = Vector3(
-                        sv_x.gradients[i].x() * shape1d_y[j] * shape1d_z[k],
-                        shape1d_x[i] * sv_y.gradients[j].x() * shape1d_z[k],
-                        shape1d_x[i] * shape1d_y[j] * sv_z.gradients[k].x());
-                }
-            }
-        }
-    }
-    else if (order_ == 2)
-    {
-        // Quadratic: use geometric node ordering
-        // Node ordering: 8 corners + 12 edges + 6 faces + 1 center = 27 nodes
-        // This matches COMSOL convention
-
-        const Real x = xi[0];
-        const Real y = xi[1];
-        const Real z = xi[2];
-
-        // 1D quadratic shape functions
-        auto eval1D = [](Real t) -> std::array<Real, 3>
-        {
-            return {t * (t - 1) * 0.5, 1 - t * t, t * (t + 1) * 0.5};
-        };
-        auto eval1DGrad = [](Real t) -> std::array<Real, 3>
-        {
-            return {t - 0.5, -2 * t, t + 0.5};
-        };
-
-        auto Lx = eval1D(x);
-        auto Ly = eval1D(y);
-        auto Lz = eval1D(z);
-        auto dLx = eval1DGrad(x);
-        auto dLy = eval1DGrad(y);
-        auto dLz = eval1DGrad(z);
-
-        int idx = 0;
-
-        // 8 corners (0-7)
-        // Corner vertices: (-1,-1,-1), (1,-1,-1), (1,1,-1), (-1,1,-1),
-        //                  (-1,-1,1), (1,-1,1), (1,1,1), (-1,1,1)
-        // Maps to tensor product (i,j,k): (0,0,0), (2,0,0), (2,2,0), (0,2,0),
-        //                                 (0,0,2), (2,0,2), (2,2,2), (0,2,2)
-        sv.values[idx] = Lx[0] * Ly[0] * Lz[0];
-        sv.gradients[idx++] = Vector3(dLx[0] * Ly[0] * Lz[0], Lx[0] * dLy[0] * Lz[0], Lx[0] * Ly[0] * dLz[0]); // (-1,-1,-1)
-        sv.values[idx] = Lx[2] * Ly[0] * Lz[0];
-        sv.gradients[idx++] = Vector3(dLx[2] * Ly[0] * Lz[0], Lx[2] * dLy[0] * Lz[0], Lx[2] * Ly[0] * dLz[0]); // ( 1,-1,-1)
-        sv.values[idx] = Lx[2] * Ly[2] * Lz[0];
-        sv.gradients[idx++] = Vector3(dLx[2] * Ly[2] * Lz[0], Lx[2] * dLy[2] * Lz[0], Lx[2] * Ly[2] * dLz[0]); // ( 1, 1,-1)
-        sv.values[idx] = Lx[0] * Ly[2] * Lz[0];
-        sv.gradients[idx++] = Vector3(dLx[0] * Ly[2] * Lz[0], Lx[0] * dLy[2] * Lz[0], Lx[0] * Ly[2] * dLz[0]); // (-1, 1,-1)
-        sv.values[idx] = Lx[0] * Ly[0] * Lz[2];
-        sv.gradients[idx++] = Vector3(dLx[0] * Ly[0] * Lz[2], Lx[0] * dLy[0] * Lz[2], Lx[0] * Ly[0] * dLz[2]); // (-1,-1, 1)
-        sv.values[idx] = Lx[2] * Ly[0] * Lz[2];
-        sv.gradients[idx++] = Vector3(dLx[2] * Ly[0] * Lz[2], Lx[2] * dLy[0] * Lz[2], Lx[2] * Ly[0] * dLz[2]); // ( 1,-1, 1)
-        sv.values[idx] = Lx[2] * Ly[2] * Lz[2];
-        sv.gradients[idx++] = Vector3(dLx[2] * Ly[2] * Lz[2], Lx[2] * dLy[2] * Lz[2], Lx[2] * Ly[2] * dLz[2]); // ( 1, 1, 1)
-        sv.values[idx] = Lx[0] * Ly[2] * Lz[2];
-        sv.gradients[idx++] = Vector3(dLx[0] * Ly[2] * Lz[2], Lx[0] * dLy[2] * Lz[2], Lx[0] * Ly[2] * dLz[2]); // (-1, 1, 1)
-
-        // 12 edge midpoints (8-19)
-        // Edge ordering matches geometry.hpp edge_table::Cube:
-        // Bottom: 0:(0,1), 1:(1,2), 2:(2,3), 3:(3,0)
-        // Top: 4:(4,5), 5:(5,6), 6:(6,7), 7:(7,4)
-        // Vertical: 8:(0,4), 9:(1,5), 10:(2,6), 11:(3,7)
-        // Maps to tensor product midpoints
-        sv.values[idx] = Lx[1] * Ly[0] * Lz[0];
-        sv.gradients[idx++] = Vector3(dLx[1] * Ly[0] * Lz[0], Lx[1] * dLy[0] * Lz[0], Lx[1] * Ly[0] * dLz[0]); // (0,-1,-1)
-        sv.values[idx] = Lx[2] * Ly[1] * Lz[0];
-        sv.gradients[idx++] = Vector3(dLx[2] * Ly[1] * Lz[0], Lx[2] * dLy[1] * Lz[0], Lx[2] * Ly[1] * dLz[0]); // (1, 0,-1)
-        sv.values[idx] = Lx[1] * Ly[2] * Lz[0];
-        sv.gradients[idx++] = Vector3(dLx[1] * Ly[2] * Lz[0], Lx[1] * dLy[2] * Lz[0], Lx[1] * Ly[2] * dLz[0]); // (0, 1,-1)
-        sv.values[idx] = Lx[0] * Ly[1] * Lz[0];
-        sv.gradients[idx++] = Vector3(dLx[0] * Ly[1] * Lz[0], Lx[0] * dLy[1] * Lz[0], Lx[0] * Ly[1] * dLz[0]); // (-1,0,-1)
-        sv.values[idx] = Lx[1] * Ly[0] * Lz[2];
-        sv.gradients[idx++] = Vector3(dLx[1] * Ly[0] * Lz[2], Lx[1] * dLy[0] * Lz[2], Lx[1] * Ly[0] * dLz[2]); // (0,-1, 1)
-        sv.values[idx] = Lx[2] * Ly[1] * Lz[2];
-        sv.gradients[idx++] = Vector3(dLx[2] * Ly[1] * Lz[2], Lx[2] * dLy[1] * Lz[2], Lx[2] * Ly[1] * dLz[2]); // (1, 0, 1)
-        sv.values[idx] = Lx[1] * Ly[2] * Lz[2];
-        sv.gradients[idx++] = Vector3(dLx[1] * Ly[2] * Lz[2], Lx[1] * dLy[2] * Lz[2], Lx[1] * Ly[2] * dLz[2]); // (0, 1, 1)
-        sv.values[idx] = Lx[0] * Ly[1] * Lz[2];
-        sv.gradients[idx++] = Vector3(dLx[0] * Ly[1] * Lz[2], Lx[0] * dLy[1] * Lz[2], Lx[0] * Ly[1] * dLz[2]); // (-1,0, 1)
-        sv.values[idx] = Lx[0] * Ly[0] * Lz[1];
-        sv.gradients[idx++] = Vector3(dLx[0] * Ly[0] * Lz[1], Lx[0] * dLy[0] * Lz[1], Lx[0] * Ly[0] * dLz[1]); // (-1,-1,0)
-        sv.values[idx] = Lx[2] * Ly[0] * Lz[1];
-        sv.gradients[idx++] = Vector3(dLx[2] * Ly[0] * Lz[1], Lx[2] * dLy[0] * Lz[1], Lx[2] * Ly[0] * dLz[1]); // ( 1,-1,0)
-        sv.values[idx] = Lx[2] * Ly[2] * Lz[1];
-        sv.gradients[idx++] = Vector3(dLx[2] * Ly[2] * Lz[1], Lx[2] * dLy[2] * Lz[1], Lx[2] * Ly[2] * dLz[1]); // ( 1, 1,0)
-        sv.values[idx] = Lx[0] * Ly[2] * Lz[1];
-        sv.gradients[idx++] = Vector3(dLx[0] * Ly[2] * Lz[1], Lx[0] * dLy[2] * Lz[1], Lx[0] * Ly[2] * dLz[1]); // (-1, 1,0)
-
-        // 6 face centers (20-25)
-        // Face ordering matches geometry.hpp face_table::Cube:
-        // 0: bottom (-z), 1: top (+z), 2: front (-y), 3: back (+y), 4: left (-x), 5: right (+x)
-        sv.values[idx] = Lx[1] * Ly[1] * Lz[0];
-        sv.gradients[idx++] = Vector3(dLx[1] * Ly[1] * Lz[0], Lx[1] * dLy[1] * Lz[0], Lx[1] * Ly[1] * dLz[0]); // (0,0,-1)
-        sv.values[idx] = Lx[1] * Ly[1] * Lz[2];
-        sv.gradients[idx++] = Vector3(dLx[1] * Ly[1] * Lz[2], Lx[1] * dLy[1] * Lz[2], Lx[1] * Ly[1] * dLz[2]); // (0,0, 1)
-        sv.values[idx] = Lx[1] * Ly[0] * Lz[1];
-        sv.gradients[idx++] = Vector3(dLx[1] * Ly[0] * Lz[1], Lx[1] * dLy[0] * Lz[1], Lx[1] * Ly[0] * dLz[1]); // (0,-1,0)
-        sv.values[idx] = Lx[1] * Ly[2] * Lz[1];
-        sv.gradients[idx++] = Vector3(dLx[1] * Ly[2] * Lz[1], Lx[1] * dLy[2] * Lz[1], Lx[1] * Ly[2] * dLz[1]); // (0, 1,0)
-        sv.values[idx] = Lx[0] * Ly[1] * Lz[1];
-        sv.gradients[idx++] = Vector3(dLx[0] * Ly[1] * Lz[1], Lx[0] * dLy[1] * Lz[1], Lx[0] * Ly[1] * dLz[1]); // (-1,0,0)
-        sv.values[idx] = Lx[2] * Ly[1] * Lz[1];
-        sv.gradients[idx++] = Vector3(dLx[2] * Ly[1] * Lz[1], Lx[2] * dLy[1] * Lz[1], Lx[2] * Ly[1] * dLz[1]); // ( 1,0,0)
-
-        // 1 volume center (26)
-        sv.values[idx] = Lx[1] * Ly[1] * Lz[1];
-        sv.gradients[idx] = Vector3(dLx[1] * Ly[1] * Lz[1], Lx[1] * dLy[1] * Lz[1], Lx[1] * Ly[1] * dLz[1]); // (0,0,0)
+        return {{0.0, 0.0, 0.0}, {1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, 0.0, 1.0}};
     }
     else
     {
-        // Higher order: tensor product
-        auto shape1d_x = segment1d_.evalValues(&xi[0]);
-        auto shape1d_y = segment1d_.evalValues(&xi[1]);
-        auto shape1d_z = segment1d_.evalValues(&xi[2]);
-        auto sv_x = segment1d_.eval(&xi[0]);
-        auto sv_y = segment1d_.eval(&xi[1]);
-        auto sv_z = segment1d_.eval(&xi[2]);
-
-        for (int k = 0; k < n; ++k)
-        {
-            for (int j = 0; j < n; ++j)
-            {
-                for (int i = 0; i < n; ++i)
-                {
-                    int idx = k * n * n + j * n + i;
-                    sv.values[idx] = shape1d_x[i] * shape1d_y[j] * shape1d_z[k];
-                    sv.gradients[idx] = Vector3(
-                        sv_x.gradients[i].x() * shape1d_y[j] * shape1d_z[k],
-                        shape1d_x[i] * sv_y.gradients[j].x() * shape1d_z[k],
-                        shape1d_x[i] * shape1d_y[j] * sv_z.gradients[k].x());
-                }
-            }
-        }
+        return {
+            {0.0, 0.0, 0.0}, {1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, 0.0, 1.0}, // vertices
+            {0.5, 0.0, 0.0}, {0.5, 0.5, 0.0}, {0.0, 0.5, 0.0},                  // edges on z=0
+            {0.0, 0.0, 0.5}, {0.5, 0.0, 0.5}, {0.0, 0.5, 0.5}                   // edges to z
+        };
     }
-
-    return sv;
 }
 
-std::vector<Real> H1CubeShape::evalValues(const Real *xi) const
+// =============================================================================
+// H1CubeShape
+// =============================================================================
+
+H1CubeShape::H1CubeShape(int order) : order_(order), segment1d_(order)
 {
-    auto sv = eval(xi);
-    return sv.values;
+    if (order < 1 || order > 2)
+    {
+        MPFEM_THROW(Exception, "H1CubeShape: only order 1 and 2 supported");
+    }
+}
+
+void H1CubeShape::evalValues(const Real* xi, Real* values) const
+{
+    const Real x = xi[0];
+    const Real y = xi[1];
+    const Real z = xi[2];
+
+    if (order_ == 1)
+    {
+        // Trilinear: φ = φ_x * φ_y * φ_z
+        const Real phi0x = 0.5 * (1.0 - x);
+        const Real phi1x = 0.5 * (1.0 + x);
+        const Real phi0y = 0.5 * (1.0 - y);
+        const Real phi1y = 0.5 * (1.0 + y);
+        const Real phi0z = 0.5 * (1.0 - z);
+        const Real phi1z = 0.5 * (1.0 + z);
+
+        // Order: z varies fastest, then y, then x (tensor product ordering)
+        values[0] = phi0x * phi0y * phi0z; // (-1,-1,-1)
+        values[1] = phi1x * phi0y * phi0z; // ( 1,-1,-1)
+        values[2] = phi1x * phi1y * phi0z; // ( 1, 1,-1)
+        values[3] = phi0x * phi1y * phi0z; // (-1, 1,-1)
+        values[4] = phi0x * phi0y * phi1z; // (-1,-1, 1)
+        values[5] = phi1x * phi0y * phi1z; // ( 1,-1, 1)
+        values[6] = phi1x * phi1y * phi1z; // ( 1, 1, 1)
+        values[7] = phi0x * phi1y * phi1z; // (-1, 1, 1)
+    }
+    else // order_ == 2 (27 dofs)
+    {
+        // 1D Lagrange basis with nodes at -1, 0, 1
+        const Real px0 = -0.5 * x * (1.0 - x);
+        const Real px1 = 1.0 - x * x;
+        const Real px2 = 0.5 * x * (1.0 + x);
+        const Real py0 = -0.5 * y * (1.0 - y);
+        const Real py1 = 1.0 - y * y;
+        const Real py2 = 0.5 * y * (1.0 + y);
+        const Real pz0 = -0.5 * z * (1.0 - z);
+        const Real pz1 = 1.0 - z * z;
+        const Real pz2 = 0.5 * z * (1.0 + z);
+
+        // Ordering: corners (8), edges (12), faces (6), center (1)
+        // Corners
+        values[0] = px0 * py0 * pz0;
+        values[1] = px2 * py0 * pz0;
+        values[2] = px2 * py2 * pz0;
+        values[3] = px0 * py2 * pz0;
+        values[4] = px0 * py0 * pz2;
+        values[5] = px2 * py0 * pz2;
+        values[6] = px2 * py2 * pz2;
+        values[7] = px0 * py2 * pz2;
+
+        // Edges (along x, y, z directions)
+        values[8] = px1 * py0 * pz0;  // x-edge, y=-1, z=-1
+        values[9] = px2 * py1 * pz0;  // y-edge, x=1, z=-1
+        values[10] = px1 * py2 * pz0; // x-edge, y=1, z=-1
+        values[11] = px0 * py1 * pz0; // y-edge, x=-1, z=-1
+        values[12] = px0 * py0 * pz1; // z-edge, x=-1, y=-1
+        values[13] = px2 * py0 * pz1; // z-edge, x=1, y=-1
+        values[14] = px2 * py2 * pz1; // z-edge, x=1, y=1
+        values[15] = px0 * py2 * pz1; // z-edge, x=-1, y=1
+        values[16] = px1 * py0 * pz2; // x-edge, y=-1, z=1
+        values[17] = px2 * py1 * pz2; // y-edge, x=1, z=1
+        values[18] = px1 * py2 * pz2; // x-edge, y=1, z=1
+        values[19] = px0 * py1 * pz2; // y-edge, x=-1, z=1
+
+        // Faces
+        values[20] = px1 * py1 * pz0; // z=-1 face
+        values[21] = px1 * py0 * pz1; // y=-1 face
+        values[22] = px2 * py1 * pz1; // x=1 face
+        values[23] = px1 * py2 * pz1; // y=1 face
+        values[24] = px0 * py1 * pz1; // x=-1 face
+        values[25] = px1 * py1 * pz2; // z=1 face
+
+        // Center
+        values[26] = px1 * py1 * pz1;
+    }
+}
+
+void H1CubeShape::evalGrads(const Real* xi, Vector3* grads) const
+{
+    const Real x = xi[0];
+    const Real y = xi[1];
+    const Real z = xi[2];
+
+    if (order_ == 1)
+    {
+        const Real phi0x = 0.5 * (1.0 - x);
+        const Real phi1x = 0.5 * (1.0 + x);
+        const Real phi0y = 0.5 * (1.0 - y);
+        const Real phi1y = 0.5 * (1.0 + y);
+        const Real phi0z = 0.5 * (1.0 - z);
+        const Real phi1z = 0.5 * (1.0 + z);
+
+        const Real dphi0x = -0.5;
+        const Real dphi1x = 0.5;
+        const Real dphi0y = -0.5;
+        const Real dphi1y = 0.5;
+        const Real dphi0z = -0.5;
+        const Real dphi1z = 0.5;
+
+        grads[0] = Vector3(dphi0x * phi0y * phi0z, phi0x * dphi0y * phi0z, phi0x * phi0y * dphi0z);
+        grads[1] = Vector3(dphi1x * phi0y * phi0z, phi1x * dphi0y * phi0z, phi1x * phi0y * dphi0z);
+        grads[2] = Vector3(dphi1x * phi1y * phi0z, phi1x * dphi1y * phi0z, phi1x * phi1y * dphi0z);
+        grads[3] = Vector3(dphi0x * phi1y * phi0z, phi0x * dphi1y * phi0z, phi0x * phi1y * dphi0z);
+        grads[4] = Vector3(dphi0x * phi0y * phi1z, phi0x * dphi0y * phi1z, phi0x * phi0y * dphi1z);
+        grads[5] = Vector3(dphi1x * phi0y * phi1z, phi1x * dphi0y * phi1z, phi1x * phi0y * dphi1z);
+        grads[6] = Vector3(dphi1x * phi1y * phi1z, phi1x * dphi1y * phi1z, phi1x * phi1y * dphi1z);
+        grads[7] = Vector3(dphi0x * phi1y * phi1z, phi0x * dphi1y * phi1z, phi0x * phi1y * dphi1z);
+    }
+    else // order_ == 2
+    {
+        // 1D basis and derivatives
+        const Real px0 = -0.5 * x * (1.0 - x);
+        const Real px1 = 1.0 - x * x;
+        const Real px2 = 0.5 * x * (1.0 + x);
+        const Real py0 = -0.5 * y * (1.0 - y);
+        const Real py1 = 1.0 - y * y;
+        const Real py2 = 0.5 * y * (1.0 + y);
+        const Real pz0 = -0.5 * z * (1.0 - z);
+        const Real pz1 = 1.0 - z * z;
+        const Real pz2 = 0.5 * z * (1.0 + z);
+
+        const Real dpx0 = x - 0.5;
+        const Real dpx1 = -2.0 * x;
+        const Real dpx2 = x + 0.5;
+        const Real dpy0 = y - 0.5;
+        const Real dpy1 = -2.0 * y;
+        const Real dpy2 = y + 0.5;
+        const Real dpz0 = z - 0.5;
+        const Real dpz1 = -2.0 * z;
+        const Real dpz2 = z + 0.5;
+
+        // Corners
+        grads[0] = Vector3(dpx0 * py0 * pz0, px0 * dpy0 * pz0, px0 * py0 * dpz0);
+        grads[1] = Vector3(dpx2 * py0 * pz0, px2 * dpy0 * pz0, px2 * py0 * dpz0);
+        grads[2] = Vector3(dpx2 * py2 * pz0, px2 * dpy2 * pz0, px2 * py2 * dpz0);
+        grads[3] = Vector3(dpx0 * py2 * pz0, px0 * dpy2 * pz0, px0 * py2 * dpz0);
+        grads[4] = Vector3(dpx0 * py0 * pz2, px0 * dpy0 * pz2, px0 * py0 * dpz2);
+        grads[5] = Vector3(dpx2 * py0 * pz2, px2 * dpy0 * pz2, px2 * py0 * dpz2);
+        grads[6] = Vector3(dpx2 * py2 * pz2, px2 * dpy2 * pz2, px2 * py2 * dpz2);
+        grads[7] = Vector3(dpx0 * py2 * pz2, px0 * dpy2 * pz2, px0 * py2 * dpz2);
+
+        // Edges
+        grads[8] = Vector3(dpx1 * py0 * pz0, px1 * dpy0 * pz0, px1 * py0 * dpz0);
+        grads[9] = Vector3(dpx2 * py1 * pz0, px2 * dpy1 * pz0, px2 * py1 * dpz0);
+        grads[10] = Vector3(dpx1 * py2 * pz0, px1 * dpy2 * pz0, px1 * py2 * dpz0);
+        grads[11] = Vector3(dpx0 * py1 * pz0, px0 * dpy1 * pz0, px0 * py1 * dpz0);
+        grads[12] = Vector3(dpx0 * py0 * pz1, px0 * dpy0 * pz1, px0 * py0 * dpz1);
+        grads[13] = Vector3(dpx2 * py0 * pz1, px2 * dpy0 * pz1, px2 * py0 * dpz1);
+        grads[14] = Vector3(dpx2 * py2 * pz1, px2 * dpy2 * pz1, px2 * py2 * dpz1);
+        grads[15] = Vector3(dpx0 * py2 * pz1, px0 * dpy2 * pz1, px0 * py2 * dpz1);
+        grads[16] = Vector3(dpx1 * py0 * pz2, px1 * dpy0 * pz2, px1 * py0 * dpz2);
+        grads[17] = Vector3(dpx2 * py1 * pz2, px2 * dpy1 * pz2, px2 * py1 * dpz2);
+        grads[18] = Vector3(dpx1 * py2 * pz2, px1 * dpy2 * pz2, px1 * py2 * dpz2);
+        grads[19] = Vector3(dpx0 * py1 * pz2, px0 * dpy1 * pz2, px0 * py1 * dpz2);
+
+        // Faces
+        grads[20] = Vector3(dpx1 * py1 * pz0, px1 * dpy1 * pz0, px1 * py1 * dpz0);
+        grads[21] = Vector3(dpx1 * py0 * pz1, px1 * dpy0 * pz1, px1 * py0 * dpz1);
+        grads[22] = Vector3(dpx2 * py1 * pz1, px2 * dpy1 * pz1, px2 * py1 * dpz1);
+        grads[23] = Vector3(dpx1 * py2 * pz1, px1 * dpy2 * pz1, px1 * py2 * dpz1);
+        grads[24] = Vector3(dpx0 * py1 * pz1, px0 * dpy1 * pz1, px0 * py1 * dpz1);
+        grads[25] = Vector3(dpx1 * py1 * pz2, px1 * dpy1 * pz2, px1 * py1 * dpz2);
+
+        // Center
+        grads[26] = Vector3(dpx1 * py1 * pz1, px1 * dpy1 * pz1, px1 * py1 * dpz1);
+    }
 }
 
 std::vector<std::vector<Real>> H1CubeShape::dofCoords() const
 {
-    std::vector<std::vector<Real>> coords(numDofs());
-    const int n = order_ + 1;
-
-    // Node ordering for H1 Cube:
-    // Order 1 (8 nodes): corners only
-    // Order 2 (27 nodes): 8 corners + 12 edge midpoints + 6 face centers + 1 volume center
-    // Higher order: tensor product nodes
-
     if (order_ == 1)
     {
-        // 8 corners only - use tensor product ordering to match eval()
-        // Order: (i,j,k) where i,j,k ∈ {0,1}, idx = k*4 + j*2 + i
-        // Corresponding to xi ∈ {-1,1}, eta ∈ {-1,1}, zeta ∈ {-1,1}
-        coords[0] = {-1.0, -1.0, -1.0}; // i=0, j=0, k=0
-        coords[1] = {1.0, -1.0, -1.0};  // i=1, j=0, k=0
-        coords[2] = {-1.0, 1.0, -1.0};  // i=0, j=1, k=0
-        coords[3] = {1.0, 1.0, -1.0};   // i=1, j=1, k=0
-        coords[4] = {-1.0, -1.0, 1.0};  // i=0, j=0, k=1
-        coords[5] = {1.0, -1.0, 1.0};   // i=1, j=0, k=1
-        coords[6] = {-1.0, 1.0, 1.0};   // i=0, j=1, k=1
-        coords[7] = {1.0, 1.0, 1.0};    // i=1, j=1, k=1
-    }
-    else if (order_ == 2)
-    {
-        // 8 corners (0-7)
-        coords[0] = {-1.0, -1.0, -1.0};
-        coords[1] = {1.0, -1.0, -1.0};
-        coords[2] = {1.0, 1.0, -1.0};
-        coords[3] = {-1.0, 1.0, -1.0};
-        coords[4] = {-1.0, -1.0, 1.0};
-        coords[5] = {1.0, -1.0, 1.0};
-        coords[6] = {1.0, 1.0, 1.0};
-        coords[7] = {-1.0, 1.0, 1.0};
-
-        // 12 edge midpoints (8-19)
-        coords[8] = {0.0, -1.0, -1.0};  // edge 0: bottom front
-        coords[9] = {1.0, 0.0, -1.0};   // edge 1: bottom right
-        coords[10] = {0.0, 1.0, -1.0};  // edge 2: bottom back
-        coords[11] = {-1.0, 0.0, -1.0}; // edge 3: bottom left
-        coords[12] = {0.0, -1.0, 1.0};  // edge 4: top front
-        coords[13] = {1.0, 0.0, 1.0};   // edge 5: top right
-        coords[14] = {0.0, 1.0, 1.0};   // edge 6: top back
-        coords[15] = {-1.0, 0.0, 1.0};  // edge 7: top left
-        coords[16] = {-1.0, -1.0, 0.0}; // edge 8: front left vertical
-        coords[17] = {1.0, -1.0, 0.0};  // edge 9: front right vertical
-        coords[18] = {1.0, 1.0, 0.0};   // edge 10: back right vertical
-        coords[19] = {-1.0, 1.0, 0.0};  // edge 11: back left vertical
-
-        // 6 face centers (20-25)
-        coords[20] = {0.0, 0.0, -1.0}; // face 0: bottom (-z)
-        coords[21] = {0.0, 0.0, 1.0};  // face 1: top (+z)
-        coords[22] = {0.0, -1.0, 0.0}; // face 2: front (-y)
-        coords[23] = {0.0, 1.0, 0.0};  // face 3: back (+y)
-        coords[24] = {-1.0, 0.0, 0.0}; // face 4: left (-x)
-        coords[25] = {1.0, 0.0, 0.0};  // face 5: right (+x)
-
-        // 1 volume center (26)
-        coords[26] = {0.0, 0.0, 0.0};
+        return {
+            {-1.0, -1.0, -1.0}, {1.0, -1.0, -1.0}, {1.0, 1.0, -1.0}, {-1.0, 1.0, -1.0},
+            {-1.0, -1.0, 1.0}, {1.0, -1.0, 1.0}, {1.0, 1.0, 1.0}, {-1.0, 1.0, 1.0}};
     }
     else
     {
-        // Higher order: tensor product nodes
-        for (int k = 0; k < n; ++k)
-        {
-            for (int j = 0; j < n; ++j)
-            {
-                for (int i = 0; i < n; ++i)
-                {
-                    int idx = k * n * n + j * n + i;
-                    coords[idx] = {
-                        -1.0 + 2.0 * i / order_,
-                        -1.0 + 2.0 * j / order_,
-                        -1.0 + 2.0 * k / order_};
-                }
-            }
-        }
+        return {
+            // Corners
+            {-1.0, -1.0, -1.0}, {1.0, -1.0, -1.0}, {1.0, 1.0, -1.0}, {-1.0, 1.0, -1.0},
+            {-1.0, -1.0, 1.0}, {1.0, -1.0, 1.0}, {1.0, 1.0, 1.0}, {-1.0, 1.0, 1.0},
+            // Edges
+            {0.0, -1.0, -1.0}, {1.0, 0.0, -1.0}, {0.0, 1.0, -1.0}, {-1.0, 0.0, -1.0},
+            {-1.0, -1.0, 0.0}, {1.0, -1.0, 0.0}, {1.0, 1.0, 0.0}, {-1.0, 1.0, 0.0},
+            {0.0, -1.0, 1.0}, {1.0, 0.0, 1.0}, {0.0, 1.0, 1.0}, {-1.0, 0.0, 1.0},
+            // Faces
+            {0.0, 0.0, -1.0}, {0.0, -1.0, 0.0}, {1.0, 0.0, 0.0},
+            {0.0, 1.0, 0.0}, {-1.0, 0.0, 0.0}, {0.0, 0.0, 1.0},
+            // Center
+            {0.0, 0.0, 0.0}};
     }
-    return coords;
 }
 
 } // namespace mpfem

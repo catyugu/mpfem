@@ -58,6 +58,13 @@ void FacetElementTransform::computeGeometryInfo() {
     
     initGeometricShapeFunction();
     
+    // Pre-allocate storage for shape function evaluation (avoids runtime allocation during assembly)
+    if (shapeFunc_) {
+        const int numDofs = shapeFunc_->numDofs();
+        shapeValuesOnly_.resize(numDofs);
+        shapeGradsOnly_.resize(numDofs);
+    }
+    
     // Reset cached adjacent element info
     adjElemComputed_ = false;
     adjElemIdx_ = InvalidIndex;

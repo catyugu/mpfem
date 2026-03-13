@@ -50,16 +50,6 @@ public:
     /// Get shape function evaluator
     const ShapeFunction* shapeFunction() const { return shapeFunc_.get(); }
     
-    /// Evaluate shape functions at reference coordinates
-    ShapeValues evalShape(const Real* xi) const {
-        return shapeFunc_->eval(xi);
-    }
-    
-    /// Evaluate shape functions at integration point
-    ShapeValues evalShape(const IntegrationPoint& ip) const {
-        return shapeFunc_->eval(ip);
-    }
-    
     /// Get dof coordinates in reference element
     std::vector<std::vector<Real>> dofCoords() const {
         return shapeFunc_->dofCoords();
@@ -227,18 +217,23 @@ inline void ReferenceElement::precomputeShapeValues() {
     shapeValues_.resize(static_cast<size_t>(nq) * numDofs_);
     shapeGradients_.resize(static_cast<size_t>(nq) * numDofs_);
     
+    // Pre-allocate temporary storage for reuse
+    std::vector<Real> vals(numDofs_);
+    std::vector<Vector3> grads(numDofs_);
+    
     // Precompute values at each quadrature point
     for (int q = 0; q < nq; ++q) {
         const IntegrationPoint& ip = quadrature_[q];
-        ShapeValues sv = shapeFunc_->eval(ip);
+        shapeFunc_->evalValues(&ip.xi, vals.data());
+        shapeFunc_->evalGrads(&ip.xi, grads.data());
         
         // Copy to contiguous storage
-        Real* vals = &shapeValues_[static_cast<size_t>(q) * numDofs_];
-        Vector3* grads = &shapeGradients_[static_cast<size_t>(q) * numDofs_];
+        Real* valPtr = &shapeValues_[static_cast<size_t>(q) * numDofs_];
+        Vector3* gradPtr = &shapeGradients_[static_cast<size_t>(q) * numDofs_];
         
         for (int i = 0; i < numDofs_; ++i) {
-            vals[i] = sv.values[i];
-            grads[i] = sv.gradients[i];
+            valPtr[i] = vals[i];
+            gradPtr[i] = grads[i];
         }
     }
 }

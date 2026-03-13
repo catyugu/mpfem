@@ -195,7 +195,10 @@ protected:
     mutable Real detJ_ = 0.0;
     mutable Real weight_ = 0.0;
     mutable int evalState_ = 0;
-    mutable ShapeValues shapeValues_;
+    
+    // Pre-allocated storage for shape function evaluation (avoids runtime allocation)
+    mutable std::vector<Real> shapeValuesOnly_;     ///< Shape function values only
+    mutable std::vector<Vector3> shapeGradsOnly_;   ///< Shape function gradients only
 };
 
 // =============================================================================
@@ -210,9 +213,7 @@ inline ElementTransform::ElementTransform(const Mesh* mesh, Index elemIdx, Eleme
 inline void ElementTransform::setIntegrationPoint(const IntegrationPoint& ip) {
     ip_ = ip;
     evalState_ = 0;
-    // Don't compute shape values here - delay until needed in evalJacobian()
-    // This avoids memory allocation when setting integration points
-    shapeValues_ = ShapeValues();  // Clear cached values
+    // Shape values/gradients will be computed on demand in evalJacobian()
 }
 
 inline void ElementTransform::setIntegrationPoint(const Real* xi) {
@@ -220,8 +221,7 @@ inline void ElementTransform::setIntegrationPoint(const Real* xi) {
     if (dim_ > 1) ip_.eta = xi[1];
     if (dim_ > 2) ip_.zeta = xi[2];
     evalState_ = 0;
-    // Don't compute shape values here - delay until needed in evalJacobian()
-    shapeValues_ = ShapeValues();  // Clear cached values
+    // Shape values/gradients will be computed on demand in evalJacobian()
 }
 
 inline void ElementTransform::transform(const Real* xi, Vector3& x) const {

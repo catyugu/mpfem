@@ -29,12 +29,31 @@ namespace mpfem
 
         /// Check if empty
         bool empty() const { return values.empty(); }
+        
+        /// Resize vectors (avoids reallocation if size matches)
+        void resize(int n) {
+            values.resize(n);
+            gradients.resize(n);
+        }
+        
+        /// Check if has capacity for n values
+        bool hasCapacity(int n) const {
+            return static_cast<int>(values.size()) == n && 
+                   static_cast<int>(gradients.size()) == n;
+        }
     };
 
     /**
      * @brief Abstract base class for finite element shape functions.
      *
      * Provides shape function evaluation on reference elements.
+     * 
+     * Performance-oriented interface:
+     * - evalValues(xi, values): Compute only shape function values
+     * - evalGrads(xi, grads): Compute only gradients
+     * - eval(xi, sv): Compute both (convenience method)
+     * 
+     * All methods accept pre-allocated arrays to avoid runtime memory allocation.
      */
     class ShapeFunction
     {
@@ -54,24 +73,35 @@ namespace mpfem
         virtual int dim() const = 0;
 
         /**
-         * @brief Evaluate shape functions at reference coordinates.
+         * @brief Evaluate shape function values only (no gradients).
          * @param xi Reference coordinates (size = dim())
-         * @return Shape function values and gradients
+         * @param values Pre-allocated array of size numDofs()
          */
-        virtual ShapeValues eval(const Real *xi) const = 0;
+        virtual void evalValues(const Real* xi, Real* values) const = 0;
 
         /**
-         * @brief Evaluate shape functions at integration point.
+         * @brief Evaluate shape function gradients only.
+         * @param xi Reference coordinates (size = dim())
+         * @param grads Pre-allocated array of size numDofs()
          */
-        ShapeValues eval(const IntegrationPoint &ip) const
-        {
-            return eval(&ip.xi);
+        virtual void evalGrads(const Real* xi, Vector3* grads) const = 0;
+
+        /**
+         * @brief Evaluate both values and gradients into pre-allocated storage.
+         * @param xi Reference coordinates (size = dim())
+         * @param sv Pre-allocated ShapeValues
+         */
+        virtual void eval(const Real* xi, ShapeValues& sv) const {
+            evalValues(xi, sv.values.data());
+            evalGrads(xi, sv.gradients.data());
         }
 
         /**
-         * @brief Get shape function values only (no gradients).
+         * @brief Evaluate at integration point.
          */
-        virtual std::vector<Real> evalValues(const Real *xi) const = 0;
+        void eval(const IntegrationPoint& ip, ShapeValues& sv) const {
+            eval(&ip.xi, sv);
+        }
 
         /**
          * @brief Get the reference coordinates of the dof points.
@@ -102,8 +132,8 @@ namespace mpfem
         int numDofs() const override { return order_ + 1; }
         int dim() const override { return 1; }
 
-        ShapeValues eval(const Real *xi) const override;
-        std::vector<Real> evalValues(const Real *xi) const override;
+        void evalValues(const Real* xi, Real* values) const override;
+        void evalGrads(const Real* xi, Vector3* grads) const override;
         std::vector<std::vector<Real>> dofCoords() const override;
 
     private:
@@ -123,8 +153,8 @@ namespace mpfem
         int numDofs() const override;
         int dim() const override { return 2; }
 
-        ShapeValues eval(const Real *xi) const override;
-        std::vector<Real> evalValues(const Real *xi) const override;
+        void evalValues(const Real* xi, Real* values) const override;
+        void evalGrads(const Real* xi, Vector3* grads) const override;
         std::vector<std::vector<Real>> dofCoords() const override;
 
     private:
@@ -144,8 +174,8 @@ namespace mpfem
         int numDofs() const override { return (order_ + 1) * (order_ + 1); }
         int dim() const override { return 2; }
 
-        ShapeValues eval(const Real *xi) const override;
-        std::vector<Real> evalValues(const Real *xi) const override;
+        void evalValues(const Real* xi, Real* values) const override;
+        void evalGrads(const Real* xi, Vector3* grads) const override;
         std::vector<std::vector<Real>> dofCoords() const override;
 
     private:
@@ -166,8 +196,8 @@ namespace mpfem
         int numDofs() const override;
         int dim() const override { return 3; }
 
-        ShapeValues eval(const Real *xi) const override;
-        std::vector<Real> evalValues(const Real *xi) const override;
+        void evalValues(const Real* xi, Real* values) const override;
+        void evalGrads(const Real* xi, Vector3* grads) const override;
         std::vector<std::vector<Real>> dofCoords() const override;
 
     private:
@@ -187,8 +217,8 @@ namespace mpfem
         int numDofs() const override { return (order_ + 1) * (order_ + 1) * (order_ + 1); }
         int dim() const override { return 3; }
 
-        ShapeValues eval(const Real *xi) const override;
-        std::vector<Real> evalValues(const Real *xi) const override;
+        void evalValues(const Real* xi, Real* values) const override;
+        void evalGrads(const Real* xi, Vector3* grads) const override;
         std::vector<std::vector<Real>> dofCoords() const override;
 
     private:
