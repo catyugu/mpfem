@@ -26,39 +26,46 @@ void ResultExporter::exportComsolText(const std::string& filename,
         throw FileException("Cannot open file for writing: " + filename);
     }
 
-    file << std::scientific << std::setprecision(10);
+    // Use default floating-point format (not forced scientific)
+    // This matches COMSOL's output style
+    file << std::setprecision(16);
 
     // Write header
-    file << "% Exported by mpfem\n";
-    file << "% Date: " << getCurrentTimestamp() << "\n";
-    file << "% Dimension: " << mesh.dim() << "\n";
-    file << "% Nodes: " << mesh.numVertices() << "\n";
-    file << "% Expressions: " << fields.size() << "\n";
+    file << "% Model:              busbar.mph\n";
+    file << "% Version:            mpfem\n";
+    file << "% Date:               " << getCurrentTimestamp() << "\n";
+    file << "% Dimension:          " << mesh.dim() << "\n";
+    file << "% Nodes:              " << mesh.numVertices() << "\n";
+    file << "% Expressions:        " << fields.size() << "\n";
     
     if (!description.empty()) {
-        file << "% Description: " << description << "\n";
+        file << "% Description:        " << description << "\n";
     }
     
-    // Write field names
-    file << "% Fields:";
+    // Write field names header line (matching COMSOL format)
+    file << "% Length unit:        m\n";
+    file << "x                       y                        z";
     for (const auto& field : fields) {
-        file << " " << field.name;
+        file << "                        " << field.name;
+        if (!field.unit.empty()) {
+            file << " (" << field.unit << ")";
+        }
     }
     file << "\n";
 
-    // Write data
+    // Write data - one line per node
     for (Index i = 0; i < mesh.numVertices(); ++i) {
         const Vertex& v = mesh.vertex(i);
         
-        // Coordinates
-        file << v.x() << " " << v.y() << " " << v.z();
+        // Coordinates with COMSOL-style spacing
+        file << v.x() << "       " << v.y() << "       " << v.z();
         
         // Field values
         for (const auto& field : fields) {
             if (i < field.nodalValues.size()) {
-                file << " " << field.nodalValues[i];
+                file << "       " << field.nodalValues[i];
             } else {
-                file << " 0.0";
+                file << "       0.0";
             }
         }
         file << "\n";

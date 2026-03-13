@@ -81,8 +81,25 @@ int main(int argc, char* argv[]) {
             fields.push_back(f);
         }
         
+        // Add displacement field placeholder (zeros) for comparison
+        // TODO: Implement solid mechanics solver
+        {
+            FieldResult f;
+            f.name = "disp";
+            f.unit = "m";
+            f.nodalValues.resize(setup.mesh->numVertices(), 0.0);
+            fields.push_back(f);
+        }
+        
         ResultExporter::exportVtu(outputPath, *setup.mesh, fields);
         LOG_INFO << "Results exported to: " << outputPath;
+        
+        // Export COMSOL-format result file for comparison
+        std::string comsolOutput = "results/mpfem_result.txt";
+        ResultExporter::exportComsolText(comsolOutput, *setup.mesh, fields,
+            "Electric potential, Temperature, Displacement magnitude");
+        LOG_INFO << "COMSOL format results exported to: " << comsolOutput;
+        
         LOG_INFO << "=== Example completed successfully! ===";
         return 0;
         
