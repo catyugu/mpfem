@@ -434,7 +434,6 @@ class ElementTransformation {
     double w;          // 权重
     int ElementNo;
     Geometry::Type geom;
-    // 积分点级惰性计算
     mutable double Wght;  // 缓存
 };
 ```

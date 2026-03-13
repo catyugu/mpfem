@@ -1,21 +1,17 @@
 #include "fe/element_transform.hpp"
 #include "core/exception.hpp"
 #include <cmath>
+#include <iostream>
 
 namespace mpfem {
 
-// =============================================================================
-// ElementTransform Implementation
-// =============================================================================
-
 void ElementTransform::setMesh(const Mesh* mesh) {
     mesh_ = mesh;
-    evalState_ = 0;
+    computeGeometryInfo();
 }
 
 void ElementTransform::setElement(Index elemIdx) {
     elemIdx_ = elemIdx;
-    evalState_ = 0;
     computeGeometryInfo();
 }
 
@@ -27,22 +23,16 @@ Index ElementTransform::attribute() const {
     if (elemType_ == VOLUME) {
         if (elemIdx_ >= mesh_->numElements()) {
             MPFEM_THROW(RangeException, 
-                "ElementTransform::attribute: invalid element index " + 
-                std::to_string(elemIdx_) + ", num elements = " + 
-                std::to_string(mesh_->numElements()));
+                "ElementTransform::attribute: invalid element index");
         }
         return mesh_->element(elemIdx_).attribute();
-    } else if (elemType_ == BOUNDARY) {
+    } else {
         if (elemIdx_ >= mesh_->numBdrElements()) {
             MPFEM_THROW(RangeException, 
-                "ElementTransform::attribute: invalid boundary element index " + 
-                std::to_string(elemIdx_) + ", num boundary elements = " + 
-                std::to_string(mesh_->numBdrElements()));
+                "ElementTransform::attribute: invalid boundary element index");
         }
         return mesh_->bdrElement(elemIdx_).attribute();
     }
-    
-    MPFEM_THROW(Exception, "ElementTransform::attribute: unknown element type");
 }
 
 void ElementTransform::computeGeometryInfo() {
@@ -50,10 +40,10 @@ void ElementTransform::computeGeometryInfo() {
     
     const Element* elem = nullptr;
     if (elemType_ == VOLUME) {
-        if (elemIdx_ >= mesh_->numElements()) return;
+        if (elemIdx_ < 0 || elemIdx_ >= static_cast<Index>(mesh_->numElements())) return;
         elem = &mesh_->element(elemIdx_);
     } else {
-        if (elemIdx_ >= mesh_->numBdrElements()) return;
+        if (elemIdx_ < 0 || elemIdx_ >= static_cast<Index>(mesh_->numBdrElements())) return;
         elem = &mesh_->bdrElement(elemIdx_);
     }
     
@@ -75,50 +65,27 @@ void ElementTransform::computeGeometryInfo() {
     invJacobianT_.setZero(spaceDim_, dim_);
     adjJacobian_.setZero(spaceDim_, dim_);
     
-    initGeometricShapeFunction();
+    // Create shape function
+    shapeFunc_ = ShapeFunction::create(geometry_, geomOrder_);
     
-    // Pre-allocate storage for shape function evaluation (avoids runtime allocation during assembly)
+    // Pre-allocate shape function buffers
     if (shapeFunc_) {
         const int numDofs = shapeFunc_->numDofs();
-        shapeValuesOnly_.resize(numDofs);
-        shapeGradsOnly_.resize(numDofs);
+        shapeValuesBuf_.resize(numDofs);
+        shapeGradsBuf_.resize(numDofs);
     }
 }
 
-void ElementTransform::initGeometricShapeFunction() {
-    shapeFunc_ = ShapeFunction::create(geometry_, geomOrder_);
-}
-
-void ElementTransform::transform(const Real* xi, Real* x) const {
-    if (!shapeFunc_) {
-        MPFEM_THROW(Exception, "ElementTransform::transform: shape function not initialized");
-    }
+void ElementTransform::computeJacobianAtIP() {
+    if (!shapeFunc_) return;
     
-    // Evaluate only shape function values (no gradients needed for coordinate transform)
-    shapeFunc_->evalValues(xi, shapeValuesOnly_.data());
+    // Evaluate shape function gradients at integration point
+    shapeFunc_->evalGrads(&ip_.xi, shapeGradsBuf_.data());
     
-    for (int d = 0; d < spaceDim_; ++d) {
-        x[d] = 0.0;
-        for (size_t i = 0; i < shapeValuesOnly_.size(); ++i) {
-            x[d] += shapeValuesOnly_[i] * nodes_[i][d];
-        }
-    }
-}
-
-void ElementTransform::evalJacobian() const {
-    if (evalState_ & JACOBIAN_MASK) return;
-    
-    if (!shapeFunc_) {
-        MPFEM_THROW(Exception, "ElementTransform::evalJacobian: shape function not initialized");
-    }
-    
-    // Evaluate only shape function gradients (no values needed for Jacobian)
-    shapeFunc_->evalGrads(&ip_.xi, shapeGradsOnly_.data());
-    
-    // J = sum_i (x_i * grad_phi_i^T)
+    // Compute Jacobian: J = sum_i (x_i * grad_phi_i^T)
     jacobian_.setZero(spaceDim_, dim_);
-    for (size_t i = 0; i < shapeGradsOnly_.size(); ++i) {
-        const auto& grad = shapeGradsOnly_[i];
+    for (size_t i = 0; i < shapeGradsBuf_.size(); ++i) {
+        const auto& grad = shapeGradsBuf_[i];
         for (int d = 0; d < spaceDim_; ++d) {
             for (int k = 0; k < dim_; ++k) {
                 jacobian_(d, k) += nodes_[i][d] * grad[k];
@@ -126,81 +93,46 @@ void ElementTransform::evalJacobian() const {
         }
     }
     
-    evalState_ |= JACOBIAN_MASK;
-}
-
-void ElementTransform::evalWeight() const {
-    if (evalState_ & WEIGHT_MASK) return;
-    
-    evalJacobian();
-    
+    // Compute weight
     if (dim_ == spaceDim_) {
-        // Square Jacobian: weight = |det(J)|
         detJ_ = jacobian_.determinant();
         weight_ = std::abs(detJ_);
     } else {
-        // Non-square Jacobian (boundary element):
-        // weight = sqrt(det(J^T J)) = area/volume scaling factor
-        // detJ should also be this value for consistency
         Matrix JtJ = jacobian_.transpose() * jacobian_;
         weight_ = std::sqrt(std::abs(JtJ.determinant()));
         detJ_ = weight_;
     }
     
-    evalState_ |= WEIGHT_MASK;
-}
-
-void ElementTransform::evalAdjugate() const {
-    if (evalState_ & ADJUGATE_MASK) return;
-    
-    evalJacobian();
-    evalWeight();
-    
-    if (dim_ == spaceDim_ && dim_ > 0) {
-        // adj(J) = det(J) * J^{-1} = cofactor matrix
-        adjJacobian_ = jacobian_.inverse() * detJ_;
-    } else {
-        // For non-square, use pseudo-inverse approach
+    // Compute inverse Jacobian
+    if (dim_ == spaceDim_ && std::abs(detJ_) > 1e-15) {
+        invJacobian_ = jacobian_.inverse();
+        adjJacobian_ = invJacobian_ * detJ_;
+    } else if (dim_ < spaceDim_) {
+        Matrix JtJ = jacobian_.transpose() * jacobian_;
+        invJacobian_ = JtJ.ldlt().solve(jacobian_.transpose());
         adjJacobian_ = jacobian_;
     }
     
-    evalState_ |= ADJUGATE_MASK;
-}
-
-void ElementTransform::evalInverse() const {
-    if (evalState_ & INVERSE_MASK) return;
-    
-    evalJacobian();
-    evalWeight();
-    
-    if (dim_ == spaceDim_ && std::abs(detJ_) > 1e-15) {
-        invJacobian_ = jacobian_.inverse();
-    } else if (dim_ < spaceDim_) {
-        // Use pseudo-inverse: J^+ = (J^T J)^{-1} J^T
-        Matrix JtJ = jacobian_.transpose() * jacobian_;
-        invJacobian_ = JtJ.ldlt().solve(jacobian_.transpose());
-    }
-    
-    evalState_ |= INVERSE_MASK;
-}
-
-void ElementTransform::evalInvJacobianT() const {
-    if (evalState_ & INV_JACOBIAN_T_MASK) return;
-    
-    evalInverse();
+    // Compute transpose
     invJacobianT_ = invJacobian_.transpose();
-    
-    evalState_ |= INV_JACOBIAN_T_MASK;
 }
 
-Real ElementTransform::weight() const {
-    evalWeight();
-    return weight_;
+void ElementTransform::transform(const Real* xi, Real* x) const {
+    if (!shapeFunc_) return;
+    
+    // Evaluate shape values
+    std::vector<Real> vals(shapeValuesBuf_.size());
+    shapeFunc_->evalValues(xi, vals.data());
+    
+    for (int d = 0; d < spaceDim_; ++d) {
+        x[d] = 0.0;
+        for (size_t i = 0; i < vals.size(); ++i) {
+            x[d] += vals[i] * nodes_[i][d];
+        }
+    }
 }
 
 void ElementTransform::transformGradient(const Real* refGrad, Real* physGrad) const {
-    evalInvJacobianT();
-    
     // physGrad = J^{-T} * refGrad
     for (int d = 0; d < spaceDim_; ++d) {
         physGrad[d] = 0.0;

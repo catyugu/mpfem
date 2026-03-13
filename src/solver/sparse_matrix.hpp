@@ -45,10 +45,13 @@ namespace mpfem
             mat_.resize(rows, cols);
         }
 
-        /// Reserve space for non-zeros
-        void reserve(Index nonZeros)
+        /// Reserve space for non-zeros per column
+        void reserve(Index nonZerosPerCol)
         {
-            mat_.reserve(nonZeros);
+            if (mat_.rows() == 0 || mat_.cols() == 0) return;
+            Eigen::VectorXi reserveSize(mat_.cols());
+            reserveSize.setConstant(nonZerosPerCol);
+            mat_.reserve(reserveSize);
         }
 
         /// Set from triplets (efficient batch insertion)

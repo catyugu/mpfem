@@ -1,51 +1,95 @@
 #include "electrostatics_solver.hpp"
-#include "fe/coefficient.hpp"
+#include "assembly/integrators.hpp"
+#include "solver/solver_factory.hpp"
+#include "core/logger.hpp"
 
 namespace mpfem {
 
-void ElectrostaticsSolver::setTemperatureField(const GridFunction *temperature) {
-    temperatureField_ = temperature;
-    // If conductivity is a TemperatureDependentConductivityCoefficient, set its temperature field
-    if (auto* tempDepCond = dynamic_cast<TemperatureDependentConductivityCoefficient*>(conductivity_.get())) {
-        tempDepCond->setTemperatureField(temperature);
-    }
+bool ElectrostaticsSolver::initialize(const Mesh& mesh, 
+                                       const PWConstCoefficient& conductivity) {
+    mesh_ = &mesh;
+    
+    fec_ = std::make_unique<FECollection>(order_, FECollection::Type::H1);
+    fes_ = std::make_unique<FESpace>(&mesh, fec_.get());
+    V_ = std::make_unique<GridFunction>(fes_.get());
+    V_->setZero();
+    
+    sigmaInternal_ = conductivity;
+    sigma_ = &sigmaInternal_;
+    
+    matAsm_ = std::make_unique<BilinearFormAssembler>(fes_.get());
+    vecAsm_ = std::make_unique<LinearFormAssembler>(fes_.get());
+    matAsm_->computeSparsityPattern();
+    
+    solver_ = SolverFactory::create(solverType_, maxIter_, tol_);
+    
+    LOG_INFO << "ElectrostaticsSolver: " << fes_->numDofs() << " DOFs";
+    return true;
 }
 
-bool ElectrostaticsSolver::computeJouleHeat(std::vector<Real>& Q) const {
-    if (!V_ || !mesh_ || !conductivity_) {
-        return false;
+void ElectrostaticsSolver::assemble() {
+    matAsm_->clear();
+    vecAsm_->clear();
+    matAsm_->clearIntegrators();
+    vecAsm_->clearIntegrators();
+    
+    auto integ = std::make_unique<DiffusionIntegrator>(sigma_);
+    matAsm_->addDomainIntegrator(std::move(integ));
+    matAsm_->assemble();
+    vecAsm_->assemble();
+    
+    applyBCs();
+    matAsm_->finalize();
+}
+
+void ElectrostaticsSolver::applyBCs() {
+    std::map<Index, Real> dofVals;
+    
+    for (const auto& [bid, val] : bcValues_) {
+        for (Index b = 0; b < mesh_->numBdrElements(); ++b) {
+            if (mesh_->bdrElement(b).attribute() == bid) {
+                std::vector<Index> dofs;
+                fes_->getBdrElementDofs(b, dofs);
+                for (Index d : dofs) {
+                    if (d != InvalidIndex && dofVals.find(d) == dofVals.end()) {
+                        dofVals[d] = val;
+                    }
+                }
+            }
+        }
     }
     
-    Index numElements = mesh_->numElements();
-    Q.resize(numElements);
-    std::fill(Q.begin(), Q.end(), 0.0);
+    matAsm_->matrix().eliminateRows(dofVals, vecAsm_->vector());
+    for (const auto& [d, v] : dofVals) V_->values()(d) = v;
+}
+
+bool ElectrostaticsSolver::solve() {
+    if (!solver_) return false;
+    bool ok = solver_->solve(matAsm_->matrix(), V_->values(), vecAsm_->vector());
+    if (ok) {
+        iter_ = solver_->iterations();
+        res_ = solver_->residual();
+        LOG_INFO << "Electrostatics converged: iter=" << iter_ << " res=" << res_;
+    }
+    return ok;
+}
+
+void ElectrostaticsSolver::computeJouleHeat(std::vector<Real>& Q) const {
+    if (!V_ || !mesh_ || !sigma_) return;
     
+    Q.resize(mesh_->numElements(), 0.0);
     ElementTransform trans;
     trans.setMesh(mesh_);
     
-    for (Index e = 0; e < numElements; ++e) {
+    for (Index e = 0; e < mesh_->numElements(); ++e) {
         trans.setElement(e);
-        
-        // Use element center for simplified evaluation
-        Real xi[3] = {0.0, 0.0, 0.0};
+        Real xi[3] = {0, 0, 0};
         trans.setIntegrationPoint(xi);
         
-        // Get element DOFs
-        std::vector<Index> dofs;
-        fes_->getElementDofs(e, dofs);
-        
-        // Compute gradient of V at element center
-        Vector3 gradV = V_->gradient(e, xi, trans);
-        
-        // Get conductivity for this element
-        Real sigma = conductivity_->eval(trans);
-        
-        // Q = sigma * |gradV|^2
-        Real gradMagSq = gradV.x()*gradV.x() + gradV.y()*gradV.y() + gradV.z()*gradV.z();
-        Q[e] = sigma * gradMagSq;
+        Vector3 g = V_->gradient(e, xi, trans);
+        Real sig = sigma_->eval(trans);
+        Q[e] = sig * g.squaredNorm();
     }
-    
-    return true;
 }
 
 } // namespace mpfem
