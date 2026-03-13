@@ -62,7 +62,7 @@ void BilinearFormAssembler::computeSparsityPattern() {
 }
 
 void BilinearFormAssembler::assemble() {
-    if (!fes_ || domainIntegs_.empty()) return;
+    if (!fes_) return;
     const Mesh* mesh = fes_->mesh();
     if (!mesh) return;
     

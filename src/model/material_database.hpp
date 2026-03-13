@@ -29,7 +29,7 @@ struct MaterialPropertyModel {
     // Temperature-dependent resistivity: rho(T) = rho0 * (1 + alpha * (T - Tref))
     double rho0 = 0.0;                   // Reference resistivity [ohm·m]
     double alpha = 0.0;                  // Temperature coefficient [1/K]
-    double tref = 293.15;                // Reference temperature [K]
+    double tref = 298;                // Reference temperature [K]
     
     // Conductivities (isotropic values extracted from tensor)
     double electricConductivity = 0.0;   // sigma [S/m]

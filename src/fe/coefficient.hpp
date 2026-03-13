@@ -135,7 +135,7 @@ private:
         if (static_cast<int>(rho0_.size()) < domainId) {
             rho0_.resize(domainId, 0.0);
             alpha_.resize(domainId, 0.0);
-            tref_.resize(domainId, 293.15);
+            tref_.resize(domainId, 298);
             sigma0_.resize(domainId, 0.0);
         }
     }
