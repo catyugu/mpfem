@@ -70,9 +70,11 @@ public:
     
     Real eval(ElementTransform& trans) const override {
         if (!V_ || !sigma_) return 0.0;
-        // 直接计算梯度，避免 std::function 间接调用
+        // 关键：先计算sigma，再计算梯度
+        // 因为gradient()会调用setIntegrationPoint改变trans状态
+        Real sigma_val = sigma_->eval(trans);
         Vector3 g = V_->gradient(trans.elementIndex(), &trans.integrationPoint().xi, trans);
-        return sigma_->eval(trans) * g.squaredNorm();
+        return sigma_val * g.squaredNorm();
     }
     
 private:

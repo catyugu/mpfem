@@ -46,9 +46,9 @@ Real TemperatureDependentConductivity::eval(ElementTransform& trans) const {
     
     Real rho0 = rho0_[attr - 1];
     
-    // rho0 = 0 表示使用常量电导率
-    if (rho0 == 0.0) {
-        return sigma_[attr - 1];
+    // rho0 <= 0 表示使用常量电导率
+    if (rho0 <= 0.0) {
+        return sigma0_[attr - 1];
     }
     
     Real alpha = alpha_[attr - 1];
@@ -63,7 +63,15 @@ Real TemperatureDependentConductivity::eval(ElementTransform& trans) const {
     }
     
     // 线性电阻率模型: rho = rho0 * (1 + alpha * (T - Tref))
-    Real rho = rho0 * (1.0 + alpha * (temp - tref));
+    Real factor = 1.0 + alpha * (temp - tref);
+    
+    // 数值保护：防止负电阻率或零电阻率
+    if (factor <= 0.0) {
+        // 温度过低导致电阻率为负，限制最小电阻率
+        factor = 1e-10;
+    }
+    
+    Real rho = rho0 * factor;
     return 1.0 / rho;
 }
 

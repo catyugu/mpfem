@@ -68,10 +68,10 @@ disp    9.269475e-09    3.351310e-08    9.775915e-03    3.403081e-04
 
 ```text
 python .\scripts\compare_comsol_results.py ./results/mpfem_result.txt ./cases/busbar/result.txt
-field   L2      Linf    max_relative    L2_relative
-V       7.577947e-05    1.370374e-04    1.755934e-02    1.042270e-02
-T       9.161004e-01    9.664351e-01    2.986729e-03    2.836634e-03
-disp    2.771064e-05    5.287332e-05    5.287332e+11    0.000000e+00
+field      L2      Linf    max_relative    L2_relative
+V  2.713546e-06    4.890131e-06    6.161658e-04    3.711015e-04
+T  1.215823e+00    1.279006e+00    3.956539e-03    3.768203e-03
+disp       2.771064e-05    5.287332e-05    5.287332e+11    0.000000e+00
 ```
 
 ## 需修复

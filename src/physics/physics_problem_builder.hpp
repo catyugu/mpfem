@@ -93,6 +93,8 @@ private:
             setup.couplingManager = std::make_unique<CouplingManager>();
             setup.couplingManager->setElectrostaticsSolver(setup.electrostatics.get());
             setup.couplingManager->setHeatTransferSolver(setup.heatTransfer.get());
+            setup.couplingManager->setTolerance(caseDef.couplingConfig.tolerance);
+            setup.couplingManager->setMaxIterations(caseDef.couplingConfig.maxIterations);
         }
     }
     

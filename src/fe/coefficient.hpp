@@ -104,18 +104,24 @@ class TemperatureDependentConductivity : public Coefficient {
 public:
     TemperatureDependentConductivity() = default;
     
-    /// 设置材料参数
-    void setMaterial(int domainId, Real rho0, Real alpha, Real tref) {
+    /// 设置材料参数（温度依赖）
+    /// @param domainId 域ID（从1开始）
+    /// @param rho0 参考温度下的电阻率 (ohm*m)
+    /// @param alpha 温度系数 (1/K)
+    /// @param tref 参考温度 (K)
+    /// @param sigma0 参考温度下的电导率 (S/m)，用于rho0<=0时
+    void setMaterial(int domainId, Real rho0, Real alpha, Real tref, Real sigma0 = 0.0) {
         ensureSize(domainId);
         rho0_[domainId - 1] = rho0;
         alpha_[domainId - 1] = alpha;
         tref_[domainId - 1] = tref;
+        sigma0_[domainId - 1] = sigma0;
     }
     
     /// 设置常量电导率（非温度依赖）
     void setConstantConductivity(int domainId, Real sigma) {
         ensureSize(domainId);
-        sigma_[domainId - 1] = sigma;
+        sigma0_[domainId - 1] = sigma;
         rho0_[domainId - 1] = 0.0;  // rho0 = 0 表示使用常量电导率
     }
     
@@ -130,14 +136,14 @@ private:
             rho0_.resize(domainId, 0.0);
             alpha_.resize(domainId, 0.0);
             tref_.resize(domainId, 293.15);
-            sigma_.resize(domainId, 0.0);
+            sigma0_.resize(domainId, 0.0);
         }
     }
     
     std::vector<Real> rho0_;   ///< 参考温度下的电阻率
     std::vector<Real> alpha_;  ///< 温度系数
     std::vector<Real> tref_;   ///< 参考温度
-    std::vector<Real> sigma_;  ///< 常量电导率（非温度依赖时使用）
+    std::vector<Real> sigma0_; ///< 常量电导率（rho0<=0时使用）
     const GridFunction* T_ = nullptr;  ///< 温度场（非拥有）
 };
 

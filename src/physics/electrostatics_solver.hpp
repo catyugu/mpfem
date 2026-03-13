@@ -8,38 +8,6 @@
 
 namespace mpfem {
 
-/// 温度依赖电导率系数
-class TempDepSigmaCoefficient : public Coefficient {
-public:
-    void setMaterial(int domainId, Real rho0, Real alpha, Real tref, Real sigma0) {
-        ensureSize(domainId);
-        rho0_[domainId - 1] = rho0;
-        alpha_[domainId - 1] = alpha;
-        tref_[domainId - 1] = tref;
-        sigma0_[domainId - 1] = sigma0;
-    }
-    
-    void setTemperatureField(const GridFunction* T) { T_ = T; }
-    
-    Real eval(ElementTransform& trans) const override;
-    
-private:
-    void ensureSize(int domainId) {
-        if (static_cast<int>(rho0_.size()) < domainId) {
-            rho0_.resize(domainId, 0.0);
-            alpha_.resize(domainId, 0.0);
-            tref_.resize(domainId, 293.15);
-            sigma0_.resize(domainId, 0.0);
-        }
-    }
-    
-    std::vector<Real> rho0_;
-    std::vector<Real> alpha_;
-    std::vector<Real> tref_;
-    std::vector<Real> sigma0_;
-    const GridFunction* T_ = nullptr;
-};
-
 /**
  * @brief 静电场求解器 - 最小化设计
  */
@@ -77,7 +45,7 @@ public:
     /// 设置温度依赖电导率参数
     void setTempDepSigma(int domainId, Real rho0, Real alpha, Real tref, Real sigma0) {
         if (!tempDepSigma_) {
-            tempDepSigma_ = std::make_unique<TempDepSigmaCoefficient>();
+            tempDepSigma_ = std::make_unique<TemperatureDependentConductivity>();
         }
         tempDepSigma_->setMaterial(domainId, rho0, alpha, tref, sigma0);
         sigma_ = tempDepSigma_.get();
@@ -103,7 +71,7 @@ private:
     std::unique_ptr<LinearSolver> solver_;
     
     PWConstCoefficient sigmaInternal_;
-    std::unique_ptr<TempDepSigmaCoefficient> tempDepSigma_;
+    std::unique_ptr<TemperatureDependentConductivity> tempDepSigma_;
     const Coefficient* sigma_ = nullptr;
     
     std::map<int, Real> bcValues_;
