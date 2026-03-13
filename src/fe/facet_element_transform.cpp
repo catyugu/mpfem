@@ -4,82 +4,49 @@
 
 namespace mpfem {
 
-// =============================================================================
-// FacetElementTransform Implementation
-// =============================================================================
-
 FacetElementTransform::FacetElementTransform(const Mesh* mesh, 
                                              const MeshTopology* topo, 
                                              Index bdrElemIdx)
     : ElementTransform(mesh, bdrElemIdx, BOUNDARY), topo_(topo) {
+    computeAdjacentElementInfo();
 }
 
 void FacetElementTransform::setMesh(const Mesh* mesh) {
     ElementTransform::setMesh(mesh);
-    adjElemComputed_ = false;
+    computeAdjacentElementInfo();
 }
 
 void FacetElementTransform::setElement(Index bdrElemIdx) {
     elemIdx_ = bdrElemIdx;
     elemType_ = BOUNDARY;
-    evalState_ = 0;
-    adjElemComputed_ = false;
     computeGeometryInfo();
+    computeAdjacentElementInfo();
 }
 
 void FacetElementTransform::setTopology(const MeshTopology* topo) {
     topo_ = topo;
-    adjElemComputed_ = false;
+    computeAdjacentElementInfo();
 }
 
-void FacetElementTransform::computeGeometryInfo() {
-    if (!mesh_) return;
-    
-    if (elemIdx_ >= mesh_->numBdrElements()) return;
-    
-    const Element& elem = mesh_->bdrElement(elemIdx_);
-    geometry_ = elem.geometry();
-    spaceDim_ = mesh_->dim();
-    dim_ = geom::dim(geometry_);
-    geomOrder_ = elem.order();
-    
-    // Get node coordinates
-    nodeIndices_ = elem.vertices();
-    nodes_.resize(nodeIndices_.size());
-    for (size_t i = 0; i < nodeIndices_.size(); ++i) {
-        nodes_[i] = mesh_->vertex(nodeIndices_[i]).toVector();
-    }
-    
-    // Pre-allocate matrices
-    jacobian_.setZero(spaceDim_, dim_);
-    invJacobian_.setZero(dim_, spaceDim_);
-    invJacobianT_.setZero(spaceDim_, dim_);
-    adjJacobian_.setZero(spaceDim_, dim_);
-    
-    initGeometricShapeFunction();
-    
-    // Reset cached adjacent element info
-    adjElemComputed_ = false;
+void FacetElementTransform::computeAdjacentElementInfo() {
     adjElemIdx_ = InvalidIndex;
     localFaceIdx_ = -1;
+    
+    if (!mesh_ || !topo_) return;
+    
+    Index faceIdx = topo_->getBoundaryFaceIndex(elemIdx_);
+    if (faceIdx == InvalidIndex) return;
+    
+    const auto& faceInfo = topo_->getFaceInfo(faceIdx);
+    adjElemIdx_ = faceInfo.elem1;
+    localFaceIdx_ = faceInfo.localFace1;
 }
 
 Index FacetElementTransform::boundaryAttribute() const {
-    return attribute();  // Already handled in base class
-}
-
-Index FacetElementTransform::adjacentElementIndex() const {
-    computeAdjacentElementInfo();
-    return adjElemIdx_;
-}
-
-int FacetElementTransform::localFaceIndex() const {
-    computeAdjacentElementInfo();
-    return localFaceIdx_;
+    return attribute();
 }
 
 bool FacetElementTransform::getAdjacentElementTransform(ElementTransform& trans) const {
-    computeAdjacentElementInfo();
     if (adjElemIdx_ == InvalidIndex) return false;
     trans.setMesh(mesh_);
     trans.setElement(adjElemIdx_);
@@ -87,27 +54,20 @@ bool FacetElementTransform::getAdjacentElementTransform(ElementTransform& trans)
 }
 
 Vector3 FacetElementTransform::normal() const {
-    evalJacobian();
-    
     Vector3 n(0.0, 0.0, 0.0);
     
     if (dim_ == 2 && spaceDim_ == 3) {
-        // Surface in 3D: n = (dF/dxi x dF/deta) / |dF/dxi x dF/deta|
         Vector3 t1(jacobian_(0, 0), jacobian_(1, 0), jacobian_(2, 0));
         Vector3 t2(jacobian_(0, 1), jacobian_(1, 1), jacobian_(2, 1));
         n = t1.cross(t2);
         n.normalize();
     }
     else if (dim_ == 1 && spaceDim_ == 2) {
-        // Curve in 2D: n = tangent rotated 90 degrees
         Vector3 t(jacobian_(0, 0), jacobian_(1, 0), 0.0);
-        // Rotate 90 degrees counterclockwise (outward normal convention)
         n = Vector3(-t.y(), t.x(), 0.0);
         n.normalize();
     }
     else if (dim_ == 1 && spaceDim_ == 3) {
-        // Curve in 3D: need additional information for normal
-        // Use cross product with a reference direction
         Vector3 t(jacobian_(0, 0), jacobian_(1, 0), jacobian_(2, 0));
         Vector3 ref(0, 0, 1);
         if (std::abs(t.dot(ref)) > 0.9) {
@@ -120,37 +80,7 @@ Vector3 FacetElementTransform::normal() const {
     return n;
 }
 
-void FacetElementTransform::computeAdjacentElementInfo() const {
-    if (adjElemComputed_) return;
-    
-    adjElemIdx_ = InvalidIndex;
-    localFaceIdx_ = -1;
-    
-    if (!mesh_ || !topo_) {
-        adjElemComputed_ = true;
-        return;
-    }
-    
-    // Get the topology face index for this boundary element
-    Index faceIdx = topo_->getBoundaryFaceIndex(elemIdx_);
-    if (faceIdx == InvalidIndex) {
-        adjElemComputed_ = true;
-        return;
-    }
-    
-    // Get the face info
-    const auto& faceInfo = topo_->getFaceInfo(faceIdx);
-    
-    // For boundary faces, elem1 is the interior element
-    adjElemIdx_ = faceInfo.elem1;
-    localFaceIdx_ = faceInfo.localFace1;
-    
-    adjElemComputed_ = true;
-}
-
 bool FacetElementTransform::mapToVolumeElement(const Real* bdrXi, Real* volXi) const {
-    computeAdjacentElementInfo();
-    
     if (adjElemIdx_ == InvalidIndex || localFaceIdx_ < 0) {
         return false;
     }
@@ -158,7 +88,6 @@ bool FacetElementTransform::mapToVolumeElement(const Real* bdrXi, Real* volXi) c
     const Element& volElem = mesh_->element(adjElemIdx_);
     Geometry volGeom = volElem.geometry();
     
-    // Tetrahedron mapping
     if (volGeom == Geometry::Tetrahedron) {
         const Real xi = bdrXi[0];
         const Real eta = bdrXi[1];
@@ -173,7 +102,6 @@ bool FacetElementTransform::mapToVolumeElement(const Real* bdrXi, Real* volXi) c
         return true;
     }
     
-    // Hexahedron mapping
     if (volGeom == Geometry::Cube) {
         const Real xi = bdrXi[0];
         const Real eta = bdrXi[1];
@@ -190,7 +118,6 @@ bool FacetElementTransform::mapToVolumeElement(const Real* bdrXi, Real* volXi) c
         return true;
     }
     
-    // Triangle mapping (2D)
     if (volGeom == Geometry::Triangle) {
         const Real xi = bdrXi[0];
         
@@ -203,7 +130,6 @@ bool FacetElementTransform::mapToVolumeElement(const Real* bdrXi, Real* volXi) c
         return true;
     }
     
-    // Square mapping (2D)
     if (volGeom == Geometry::Square) {
         const Real xi = bdrXi[0];
         

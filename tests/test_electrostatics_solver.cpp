@@ -52,3 +52,8 @@ TEST_F(BusbarElectrostaticsTest, SolverConvergence) {
     EXPECT_GE(minV, -1e-6) << "Minimum potential should be >= 0";
     EXPECT_LE(maxV, 0.02 + 1e-6) << "Maximum potential should be <= 0.02V";
 }
+
+int main(int argc, char** argv) {
+    ::testing::InitGoogleTest(&argc, argv);
+    return RUN_ALL_TESTS();
+}

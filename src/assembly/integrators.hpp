@@ -3,162 +3,80 @@
 
 #include "integrator.hpp"
 #include "fe/facet_element_transform.hpp"
-#include <cmath>
 
 namespace mpfem {
 
-/**
- * @file integrators.hpp
- * @brief Concrete implementations of common integrators.
- */
-
-// =============================================================================
-// Diffusion Integrator
-// =============================================================================
-
-/**
- * @brief Integrator for diffusion term: ∫ σ ∇φᵢ · ∇φⱼ dΩ
- * 
- * Vectorized implementation using Eigen matrix operations.
- */
+/// 扩散积分器: ∫ σ ∇φᵢ · ∇φⱼ dΩ
 class DiffusionIntegrator : public BilinearFormIntegrator {
 public:
     DiffusionIntegrator() = default;
-    explicit DiffusionIntegrator(std::shared_ptr<Coefficient> q) 
-        : BilinearFormIntegrator(std::move(q)) {}
+    explicit DiffusionIntegrator(const Coefficient* q) : BilinearFormIntegrator(q) {}
     
-    void assembleElementMatrix(const ReferenceElement& refElem,
+    void assembleElementMatrix(const ReferenceElement& ref,
                                ElementTransform& trans,
                                Matrix& elmat) const override;
-    
-    const char* name() const override { return "DiffusionIntegrator"; }
 };
 
-// =============================================================================
-// Mass Integrator
-// =============================================================================
-
-/**
- * @brief Integrator for mass term: ∫ ρ φᵢ φⱼ dΩ
- * 
- * Vectorized implementation using outer product.
- */
+/// 质量积分器: ∫ ρ φᵢ φⱼ dΩ
 class MassIntegrator : public BilinearFormIntegrator {
 public:
     MassIntegrator() = default;
-    explicit MassIntegrator(std::shared_ptr<Coefficient> q) 
-        : BilinearFormIntegrator(std::move(q)) {}
+    explicit MassIntegrator(const Coefficient* q) : BilinearFormIntegrator(q) {}
     
-    void assembleElementMatrix(const ReferenceElement& refElem,
+    void assembleElementMatrix(const ReferenceElement& ref,
                                ElementTransform& trans,
                                Matrix& elmat) const override;
-    
-    const char* name() const override { return "MassIntegrator"; }
 };
 
-// =============================================================================
-// Domain Load Integrator
-// =============================================================================
-
-/**
- * @brief Integrator for domain load: ∫ f φᵢ dΩ
- * 
- * Vectorized implementation.
- */
+/// 域载荷积分器: ∫ f φᵢ dΩ
 class DomainLFIntegrator : public LinearFormIntegrator {
 public:
     DomainLFIntegrator() = default;
-    explicit DomainLFIntegrator(std::shared_ptr<Coefficient> f) 
-        : LinearFormIntegrator(std::move(f)) {}
+    explicit DomainLFIntegrator(const Coefficient* f) : LinearFormIntegrator(f) {}
     
-    void assembleElementVector(const ReferenceElement& refElem,
+    void assembleElementVector(const ReferenceElement& ref,
                                ElementTransform& trans,
                                Vector& elvec) const override;
-    
-    const char* name() const override { return "DomainLFIntegrator"; }
 };
 
-// =============================================================================
-// Boundary Load Integrator
-// =============================================================================
-
-/**
- * @brief Integrator for boundary load (Neumann BC): ∫ g φᵢ dΓ
- * 
- * Vectorized implementation.
- */
+/// 边界载荷积分器: ∫ g φᵢ dΓ
 class BoundaryLFIntegrator : public LinearFormIntegrator {
 public:
     BoundaryLFIntegrator() = default;
-    explicit BoundaryLFIntegrator(std::shared_ptr<Coefficient> g) 
-        : LinearFormIntegrator(std::move(g)) {}
+    explicit BoundaryLFIntegrator(const Coefficient* g) : LinearFormIntegrator(g) {}
     
-    void assembleFaceVector(const ReferenceElement& refElem,
+    void assembleElementVector(const ReferenceElement&, ElementTransform&, Vector& elvec) const override {
+        elvec.setZero(0);
+    }
+    
+    void assembleFaceVector(const ReferenceElement& ref,
                             FacetElementTransform& trans,
                             Vector& elvec) const override;
-    
-    const char* name() const override { return "BoundaryLFIntegrator"; }
 };
 
-// =============================================================================
-// Convection Boundary Integrator (Robin BC)
-// =============================================================================
-
-/**
- * @brief Integrator for convection boundary condition (Robin BC).
- * 
- * Bilinear term: ∫ h φᵢ φⱼ dΓ
- * Linear term: ∫ h T∞ φᵢ dΓ
- * 
- * Vectorized implementation.
- */
+/// 对流边界积分器 (Robin BC): ∫ h φᵢ φⱼ dΓ
 class ConvectionBoundaryIntegrator : public BilinearFormIntegrator {
 public:
     ConvectionBoundaryIntegrator() = default;
+    ConvectionBoundaryIntegrator(const Coefficient* h, const Coefficient* Tinf = nullptr)
+        : BilinearFormIntegrator(h), Tinf_(Tinf) {}
     
-    ConvectionBoundaryIntegrator(std::shared_ptr<Coefficient> h, 
-                                  std::shared_ptr<Coefficient> Tinf = nullptr)
-        : BilinearFormIntegrator(std::move(h)), Tinf_(std::move(Tinf)) {}
+    void setAmbientTemperature(const Coefficient* Tinf) { Tinf_ = Tinf; }
     
-    void setAmbientTemperature(std::shared_ptr<Coefficient> Tinf) { Tinf_ = std::move(Tinf); }
-    Coefficient* ambientTemperature() const { return Tinf_.get(); }
+    void assembleElementMatrix(const ReferenceElement&, ElementTransform&, Matrix& elmat) const override {
+        elmat.setZero(0, 0);
+    }
     
-    void assembleFaceMatrix(const ReferenceElement& refElem,
+    void assembleFaceMatrix(const ReferenceElement& ref,
                             FacetElementTransform& trans,
                             Matrix& elmat) const override;
     
-    void assembleFaceVector(const ReferenceElement& refElem,
+    void assembleFaceVector(const ReferenceElement& ref,
                             FacetElementTransform& trans,
                             Vector& elvec) const;
     
-    const char* name() const override { return "ConvectionBoundaryIntegrator"; }
-    
 private:
-    std::shared_ptr<Coefficient> Tinf_;
-};
-
-// =============================================================================
-// Vector Mass Integrator
-// =============================================================================
-
-/**
- * @brief Integrator for vector mass term: ∫ ρ φᵢ · φⱼ dΩ
- * 
- * For vector fields (e.g., displacement), forms block diagonal mass matrix.
- * Vectorized implementation.
- */
-class VectorMassIntegrator : public VectorBilinearFormIntegrator {
-public:
-    VectorMassIntegrator() = default;
-    explicit VectorMassIntegrator(std::shared_ptr<Coefficient> rho) 
-        : VectorBilinearFormIntegrator(std::move(rho)) {}
-    
-    void assembleElementMatrix(const ReferenceElement& refElem,
-                               ElementTransform& trans,
-                               int vdim,
-                               Matrix& elmat) const override;
-    
-    const char* name() const override { return "VectorMassIntegrator"; }
+    const Coefficient* Tinf_ = nullptr;
 };
 
 }  // namespace mpfem

@@ -153,6 +153,16 @@ protected:
         cube2_ = std::make_unique<H1CubeShape>(2);
     }
     
+    // Helper to get ShapeValues (for testing convenience)
+    ShapeValues evalShape(const ShapeFunction* shape, const Real* xi) const {
+        ShapeValues sv;
+        sv.values.resize(shape->numDofs());
+        sv.gradients.resize(shape->numDofs());
+        shape->evalValues(xi, sv.values.data());
+        shape->evalGrads(xi, sv.gradients.data());
+        return sv;
+    }
+    
     std::unique_ptr<H1TriangleShape> tri2_;
     std::unique_ptr<H1TetrahedronShape> tet2_;
     std::unique_ptr<H1SquareShape> square2_;
@@ -162,7 +172,7 @@ protected:
 TEST_F(QuadraticShapeFunctionTest, Triangle2PartitionOfUnity) {
     // Sum of shape functions should be 1 at any point
     Real xi[] = {0.3, 0.2};
-    auto sv = tri2_->eval(xi);
+    auto sv = evalShape(tri2_.get(), xi);
     
     Real sum = 0.0;
     for (int i = 0; i < tri2_->numDofs(); ++i) {
@@ -176,7 +186,7 @@ TEST_F(QuadraticShapeFunctionTest, Triangle2KroneckerDelta) {
     auto coords = tri2_->dofCoords();
     
     for (int i = 0; i < tri2_->numDofs(); ++i) {
-        auto sv = tri2_->eval(coords[i].data());
+        auto sv = evalShape(tri2_.get(), coords[i].data());
         
         for (int j = 0; j < tri2_->numDofs(); ++j) {
             if (i == j) {
@@ -190,7 +200,7 @@ TEST_F(QuadraticShapeFunctionTest, Triangle2KroneckerDelta) {
 
 TEST_F(QuadraticShapeFunctionTest, Tetrahedron2PartitionOfUnity) {
     Real xi[] = {0.2, 0.3, 0.1};
-    auto sv = tet2_->eval(xi);
+    auto sv = evalShape(tet2_.get(), xi);
     
     Real sum = 0.0;
     for (int i = 0; i < tet2_->numDofs(); ++i) {
@@ -203,7 +213,7 @@ TEST_F(QuadraticShapeFunctionTest, Tetrahedron2KroneckerDelta) {
     auto coords = tet2_->dofCoords();
     
     for (int i = 0; i < tet2_->numDofs(); ++i) {
-        auto sv = tet2_->eval(coords[i].data());
+        auto sv = evalShape(tet2_.get(), coords[i].data());
         
         for (int j = 0; j < tet2_->numDofs(); ++j) {
             if (i == j) {
@@ -217,7 +227,7 @@ TEST_F(QuadraticShapeFunctionTest, Tetrahedron2KroneckerDelta) {
 
 TEST_F(QuadraticShapeFunctionTest, Square2PartitionOfUnity) {
     Real xi[] = {0.3, -0.2};
-    auto sv = square2_->eval(xi);
+    auto sv = evalShape(square2_.get(), xi);
     
     Real sum = 0.0;
     for (int i = 0; i < square2_->numDofs(); ++i) {
@@ -230,7 +240,7 @@ TEST_F(QuadraticShapeFunctionTest, Square2KroneckerDelta) {
     auto coords = square2_->dofCoords();
     
     for (int i = 0; i < square2_->numDofs(); ++i) {
-        auto sv = square2_->eval(coords[i].data());
+        auto sv = evalShape(square2_.get(), coords[i].data());
         
         for (int j = 0; j < square2_->numDofs(); ++j) {
             if (i == j) {
@@ -244,7 +254,7 @@ TEST_F(QuadraticShapeFunctionTest, Square2KroneckerDelta) {
 
 TEST_F(QuadraticShapeFunctionTest, Cube2PartitionOfUnity) {
     Real xi[] = {0.3, -0.2, 0.1};
-    auto sv = cube2_->eval(xi);
+    auto sv = evalShape(cube2_.get(), xi);
     
     Real sum = 0.0;
     for (int i = 0; i < cube2_->numDofs(); ++i) {
@@ -257,7 +267,7 @@ TEST_F(QuadraticShapeFunctionTest, Cube2KroneckerDelta) {
     auto coords = cube2_->dofCoords();
     
     for (int i = 0; i < cube2_->numDofs(); ++i) {
-        auto sv = cube2_->eval(coords[i].data());
+        auto sv = evalShape(cube2_.get(), coords[i].data());
         
         for (int j = 0; j < cube2_->numDofs(); ++j) {
             if (i == j) {

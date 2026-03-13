@@ -14,10 +14,14 @@ protected:
     void SetUp() override {
         order_ = GetParam();
         shape_ = std::make_unique<H1SegmentShape>(order_);
+        values_.resize(shape_->numDofs());
+        grads_.resize(shape_->numDofs());
     }
     
     int order_;
     std::unique_ptr<H1SegmentShape> shape_;
+    std::vector<Real> values_;
+    std::vector<Vector3> grads_;
 };
 
 TEST_P(SegmentShapeTest, GeometryAndOrder) {
@@ -36,9 +40,9 @@ TEST_P(SegmentShapeTest, PartitionOfUnity) {
     auto rule = quadrature::getSegment(std::max(1, order_));
     
     for (const auto& ip : rule) {
-        auto values = shape_->evalValues(&ip.xi);
+        shape_->evalValues(&ip.xi, values_.data());
         Real sum = 0.0;
-        for (Real v : values) {
+        for (Real v : values_) {
             sum += v;
         }
         EXPECT_NEAR(sum, 1.0, 1e-12);
@@ -49,12 +53,12 @@ TEST_P(SegmentShapeTest, KroneckerDelta) {
     // Shape function i = 1 at dof point i
     auto coords = shape_->dofCoords();
     for (size_t i = 0; i < coords.size(); ++i) {
-        auto values = shape_->evalValues(coords[i].data());
-        for (size_t j = 0; j < values.size(); ++j) {
+        shape_->evalValues(coords[i].data(), values_.data());
+        for (size_t j = 0; j < values_.size(); ++j) {
             if (i == j) {
-                EXPECT_NEAR(values[j], 1.0, 1e-12);
+                EXPECT_NEAR(values_[j], 1.0, 1e-12);
             } else {
-                EXPECT_NEAR(values[j], 0.0, 1e-12);
+                EXPECT_NEAR(values_[j], 0.0, 1e-12);
             }
         }
     }
@@ -65,9 +69,9 @@ TEST_P(SegmentShapeTest, GradientSumZero) {
     auto rule = quadrature::getSegment(std::max(1, order_));
     
     for (const auto& ip : rule) {
-        auto sv = shape_->eval(&ip.xi);
+        shape_->evalGrads(&ip.xi, grads_.data());
         Real sum = 0.0;
-        for (const auto& grad : sv.gradients) {
+        for (const auto& grad : grads_) {
             sum += grad.x();
         }
         EXPECT_NEAR(sum, 0.0, 1e-12);
@@ -86,10 +90,14 @@ protected:
     void SetUp() override {
         order_ = GetParam();
         shape_ = std::make_unique<H1TriangleShape>(order_);
+        values_.resize(shape_->numDofs());
+        grads_.resize(shape_->numDofs());
     }
     
     int order_;
     std::unique_ptr<H1TriangleShape> shape_;
+    std::vector<Real> values_;
+    std::vector<Vector3> grads_;
 };
 
 TEST_P(TriangleShapeTest, GeometryAndOrder) {
@@ -109,9 +117,9 @@ TEST_P(TriangleShapeTest, PartitionOfUnity) {
     
     for (const auto& ip : rule) {
         Real xi[] = {ip.xi, ip.eta};
-        auto values = shape_->evalValues(xi);
+        shape_->evalValues(xi, values_.data());
         Real sum = 0.0;
-        for (Real v : values) {
+        for (Real v : values_) {
             sum += v;
         }
         EXPECT_NEAR(sum, 1.0, 1e-12);
@@ -123,11 +131,11 @@ TEST_P(TriangleShapeTest, KroneckerDeltaAtVertices) {
     Real vertices[3][2] = {{0.0, 0.0}, {1.0, 0.0}, {0.0, 1.0}};
     
     for (int i = 0; i < 3; ++i) {
-        auto values = shape_->evalValues(vertices[i]);
-        EXPECT_NEAR(values[i], 1.0, 1e-12);
+        shape_->evalValues(vertices[i], values_.data());
+        EXPECT_NEAR(values_[i], 1.0, 1e-12);
         for (int j = 0; j < 3; ++j) {
             if (i != j) {
-                EXPECT_NEAR(values[j], 0.0, 1e-12);
+                EXPECT_NEAR(values_[j], 0.0, 1e-12);
             }
         }
     }
@@ -138,9 +146,9 @@ TEST_P(TriangleShapeTest, GradientSumZero) {
     
     for (const auto& ip : rule) {
         Real xi[] = {ip.xi, ip.eta};
-        auto sv = shape_->eval(xi);
+        shape_->evalGrads(xi, grads_.data());
         Real sum_x = 0.0, sum_y = 0.0;
-        for (const auto& grad : sv.gradients) {
+        for (const auto& grad : grads_) {
             sum_x += grad.x();
             sum_y += grad.y();
         }
@@ -155,12 +163,13 @@ TEST_P(TriangleShapeTest, LinearGradientConstant) {
         Real xi1[] = {0.1, 0.2};
         Real xi2[] = {0.3, 0.4};
         
-        auto sv1 = shape_->eval(xi1);
-        auto sv2 = shape_->eval(xi2);
+        std::vector<Vector3> grads1(3), grads2(3);
+        shape_->evalGrads(xi1, grads1.data());
+        shape_->evalGrads(xi2, grads2.data());
         
         for (int i = 0; i < 3; ++i) {
-            EXPECT_NEAR(sv1.gradients[i].x(), sv2.gradients[i].x(), 1e-12);
-            EXPECT_NEAR(sv1.gradients[i].y(), sv2.gradients[i].y(), 1e-12);
+            EXPECT_NEAR(grads1[i].x(), grads2[i].x(), 1e-12);
+            EXPECT_NEAR(grads1[i].y(), grads2[i].y(), 1e-12);
         }
     }
 }
@@ -177,10 +186,14 @@ protected:
     void SetUp() override {
         order_ = GetParam();
         shape_ = std::make_unique<H1SquareShape>(order_);
+        values_.resize(shape_->numDofs());
+        grads_.resize(shape_->numDofs());
     }
     
     int order_;
     std::unique_ptr<H1SquareShape> shape_;
+    std::vector<Real> values_;
+    std::vector<Vector3> grads_;
 };
 
 TEST_P(SquareShapeTest, GeometryAndOrder) {
@@ -200,9 +213,9 @@ TEST_P(SquareShapeTest, PartitionOfUnity) {
     
     for (const auto& ip : rule) {
         Real xi[] = {ip.xi, ip.eta};
-        auto values = shape_->evalValues(xi);
+        shape_->evalValues(xi, values_.data());
         Real sum = 0.0;
-        for (Real v : values) {
+        for (Real v : values_) {
             sum += v;
         }
         EXPECT_NEAR(sum, 1.0, 1e-12);
@@ -210,54 +223,54 @@ TEST_P(SquareShapeTest, PartitionOfUnity) {
 }
 
 TEST_P(SquareShapeTest, TensorProductStructure) {
-    // Square shape functions are tensor products of 1D functions
-    // This property holds for order 1 and higher orders with tensor product ordering
-    // For order 2, we use geometric node ordering (corners + edges + center),
-    // so the tensor product structure doesn't apply directly
+    // Square shape functions use geometric node ordering (counter-clockwise)
+    // not pure tensor product ordering (j*n+i)
+    // For order 1: nodes are (-1,-1), (1,-1), (1,1), (-1,1)
     
     if (order_ == 2) {
         // For order 2, test that shape functions have correct values at nodes
-        // instead of tensor product structure
         auto coords = shape_->dofCoords();
         for (size_t i = 0; i < coords.size(); ++i) {
-            auto values = shape_->evalValues(coords[i].data());
-            for (size_t j = 0; j < values.size(); ++j) {
+            shape_->evalValues(coords[i].data(), values_.data());
+            for (size_t j = 0; j < values_.size(); ++j) {
                 if (i == j) {
-                    EXPECT_NEAR(values[j], 1.0, 1e-12);
+                    EXPECT_NEAR(values_[j], 1.0, 1e-12);
                 } else {
-                    EXPECT_NEAR(values[j], 0.0, 1e-12);
+                    EXPECT_NEAR(values_[j], 0.0, 1e-12);
                 }
             }
         }
         return;
     }
     
+    // For order 1, verify each node has the correct shape function value
+    // based on geometric ordering
     H1SegmentShape seg(order_);
+    std::vector<Real> seg_x(order_ + 1), seg_y(order_ + 1);
     
     Real xi[] = {0.3, -0.5};
-    auto sq_values = shape_->evalValues(xi);
-    auto seg_x = seg.evalValues(&xi[0]);
-    auto seg_y = seg.evalValues(&xi[1]);
+    shape_->evalValues(xi, values_.data());
+    seg.evalValues(&xi[0], seg_x.data());
+    seg.evalValues(&xi[1], seg_y.data());
     
-    int n = order_ + 1;
-    for (int j = 0; j < n; ++j) {
-        for (int i = 0; i < n; ++i) {
-            int idx = j * n + i;
-            Real expected = seg_x[i] * seg_y[j];
-            EXPECT_NEAR(sq_values[idx], expected, 1e-12);
-        }
-    }
+    // Geometric ordering: (-1,-1), (1,-1), (1,1), (-1,1)
+    // seg_x[0] = phi at x=-1, seg_x[1] = phi at x=1
+    // seg_y[0] = phi at y=-1, seg_y[1] = phi at y=1
+    EXPECT_NEAR(values_[0], seg_x[0] * seg_y[0], 1e-12);  // (-1,-1)
+    EXPECT_NEAR(values_[1], seg_x[1] * seg_y[0], 1e-12);  // ( 1,-1)
+    EXPECT_NEAR(values_[2], seg_x[1] * seg_y[1], 1e-12);  // ( 1, 1)
+    EXPECT_NEAR(values_[3], seg_x[0] * seg_y[1], 1e-12);  // (-1, 1)
 }
 
 TEST_P(SquareShapeTest, KroneckerDeltaAtNodes) {
     auto coords = shape_->dofCoords();
     for (size_t i = 0; i < coords.size(); ++i) {
-        auto values = shape_->evalValues(coords[i].data());
-        for (size_t j = 0; j < values.size(); ++j) {
+        shape_->evalValues(coords[i].data(), values_.data());
+        for (size_t j = 0; j < values_.size(); ++j) {
             if (i == j) {
-                EXPECT_NEAR(values[j], 1.0, 1e-12);
+                EXPECT_NEAR(values_[j], 1.0, 1e-12);
             } else {
-                EXPECT_NEAR(values[j], 0.0, 1e-12);
+                EXPECT_NEAR(values_[j], 0.0, 1e-12);
             }
         }
     }
@@ -275,10 +288,14 @@ protected:
     void SetUp() override {
         order_ = GetParam();
         shape_ = std::make_unique<H1TetrahedronShape>(order_);
+        values_.resize(shape_->numDofs());
+        grads_.resize(shape_->numDofs());
     }
     
     int order_;
     std::unique_ptr<H1TetrahedronShape> shape_;
+    std::vector<Real> values_;
+    std::vector<Vector3> grads_;
 };
 
 TEST_P(TetrahedronShapeTest, GeometryAndOrder) {
@@ -298,9 +315,9 @@ TEST_P(TetrahedronShapeTest, PartitionOfUnity) {
     
     for (const auto& ip : rule) {
         Real xi[] = {ip.xi, ip.eta, ip.zeta};
-        auto values = shape_->evalValues(xi);
+        shape_->evalValues(xi, values_.data());
         Real sum = 0.0;
-        for (Real v : values) {
+        for (Real v : values_) {
             sum += v;
         }
         EXPECT_NEAR(sum, 1.0, 1e-12);
@@ -317,11 +334,11 @@ TEST_P(TetrahedronShapeTest, KroneckerDeltaAtVertices) {
     };
     
     for (int i = 0; i < 4; ++i) {
-        auto values = shape_->evalValues(vertices[i]);
-        EXPECT_NEAR(values[i], 1.0, 1e-12);
+        shape_->evalValues(vertices[i], values_.data());
+        EXPECT_NEAR(values_[i], 1.0, 1e-12);
         for (int j = 0; j < 4; ++j) {
             if (i != j) {
-                EXPECT_NEAR(values[j], 0.0, 1e-12);
+                EXPECT_NEAR(values_[j], 0.0, 1e-12);
             }
         }
     }
@@ -332,9 +349,9 @@ TEST_P(TetrahedronShapeTest, GradientSumZero) {
     
     for (const auto& ip : rule) {
         Real xi[] = {ip.xi, ip.eta, ip.zeta};
-        auto sv = shape_->eval(xi);
+        shape_->evalGrads(xi, grads_.data());
         Real sum_x = 0.0, sum_y = 0.0, sum_z = 0.0;
-        for (const auto& grad : sv.gradients) {
+        for (const auto& grad : grads_) {
             sum_x += grad.x();
             sum_y += grad.y();
             sum_z += grad.z();
@@ -357,10 +374,14 @@ protected:
     void SetUp() override {
         order_ = GetParam();
         shape_ = std::make_unique<H1CubeShape>(order_);
+        values_.resize(shape_->numDofs());
+        grads_.resize(shape_->numDofs());
     }
     
     int order_;
     std::unique_ptr<H1CubeShape> shape_;
+    std::vector<Real> values_;
+    std::vector<Vector3> grads_;
 };
 
 TEST_P(CubeShapeTest, GeometryAndOrder) {
@@ -380,9 +401,9 @@ TEST_P(CubeShapeTest, PartitionOfUnity) {
     
     for (const auto& ip : rule) {
         Real xi[] = {ip.xi, ip.eta, ip.zeta};
-        auto values = shape_->evalValues(xi);
+        shape_->evalValues(xi, values_.data());
         Real sum = 0.0;
-        for (Real v : values) {
+        for (Real v : values_) {
             sum += v;
         }
         EXPECT_NEAR(sum, 1.0, 1e-12);
@@ -390,46 +411,48 @@ TEST_P(CubeShapeTest, PartitionOfUnity) {
 }
 
 TEST_P(CubeShapeTest, TensorProductStructure) {
-    // Cube shape functions are tensor products of 1D functions
-    // This property holds for order 1 and higher orders with tensor product ordering
-    // For order 2, we use geometric node ordering (corners + edges + faces + center),
-    // so the tensor product structure doesn't apply directly
+    // Cube shape functions use geometric node ordering, not pure tensor product ordering
+    // For order 1: 8 corners arranged geometrically
     
     if (order_ == 2) {
         // For order 2, test that shape functions have correct values at nodes
-        // instead of tensor product structure
         auto coords = shape_->dofCoords();
         for (size_t i = 0; i < coords.size(); ++i) {
-            auto values = shape_->evalValues(coords[i].data());
-            for (size_t j = 0; j < values.size(); ++j) {
+            shape_->evalValues(coords[i].data(), values_.data());
+            for (size_t j = 0; j < values_.size(); ++j) {
                 if (i == j) {
-                    EXPECT_NEAR(values[j], 1.0, 1e-12);
+                    EXPECT_NEAR(values_[j], 1.0, 1e-12);
                 } else {
-                    EXPECT_NEAR(values[j], 0.0, 1e-12);
+                    EXPECT_NEAR(values_[j], 0.0, 1e-12);
                 }
             }
         }
         return;
     }
     
+    // For order 1, verify the geometric node ordering is correct
+    // Node ordering: corners in geometric order
+    // seg_x[0] = phi at x=-1, seg_x[1] = phi at x=1
     H1SegmentShape seg(order_);
+    std::vector<Real> seg_x(order_ + 1), seg_y(order_ + 1), seg_z(order_ + 1);
     
     Real xi[] = {0.2, -0.3, 0.4};
-    auto cube_values = shape_->evalValues(xi);
-    auto seg_x = seg.evalValues(&xi[0]);
-    auto seg_y = seg.evalValues(&xi[1]);
-    auto seg_z = seg.evalValues(&xi[2]);
+    shape_->evalValues(xi, values_.data());
+    seg.evalValues(&xi[0], seg_x.data());
+    seg.evalValues(&xi[1], seg_y.data());
+    seg.evalValues(&xi[2], seg_z.data());
     
-    int n = order_ + 1;
-    for (int k = 0; k < n; ++k) {
-        for (int j = 0; j < n; ++j) {
-            for (int i = 0; i < n; ++i) {
-                int idx = k * n * n + j * n + i;
-                Real expected = seg_x[i] * seg_y[j] * seg_z[k];
-                EXPECT_NEAR(cube_values[idx], expected, 1e-12);
-            }
-        }
-    }
+    // Corner nodes (geometric ordering):
+    // z=-1 level: (-1,-1,-1), (1,-1,-1), (1,1,-1), (-1,1,-1) - counter-clockwise
+    // z=+1 level: (-1,-1,1), (1,-1,1), (1,1,1), (-1,1,1) - counter-clockwise
+    EXPECT_NEAR(values_[0], seg_x[0] * seg_y[0] * seg_z[0], 1e-12);  // (-1,-1,-1)
+    EXPECT_NEAR(values_[1], seg_x[1] * seg_y[0] * seg_z[0], 1e-12);  // ( 1,-1,-1)
+    EXPECT_NEAR(values_[2], seg_x[1] * seg_y[1] * seg_z[0], 1e-12);  // ( 1, 1,-1)
+    EXPECT_NEAR(values_[3], seg_x[0] * seg_y[1] * seg_z[0], 1e-12);  // (-1, 1,-1)
+    EXPECT_NEAR(values_[4], seg_x[0] * seg_y[0] * seg_z[1], 1e-12);  // (-1,-1, 1)
+    EXPECT_NEAR(values_[5], seg_x[1] * seg_y[0] * seg_z[1], 1e-12);  // ( 1,-1, 1)
+    EXPECT_NEAR(values_[6], seg_x[1] * seg_y[1] * seg_z[1], 1e-12);  // ( 1, 1, 1)
+    EXPECT_NEAR(values_[7], seg_x[0] * seg_y[1] * seg_z[1], 1e-12);  // (-1, 1, 1)
 }
 
 INSTANTIATE_TEST_SUITE_P(Orders, CubeShapeTest, 
@@ -443,20 +466,20 @@ TEST(LinearElementsTest, TriangleGradientAccuracy) {
     // For a linear triangle, gradients are constant and known
     H1TriangleShape shape(1);
     
-    // At any point in the triangle
     Real xi[] = {0.2, 0.3};
-    auto sv = shape.eval(xi);
+    std::vector<Vector3> grads(3);
+    shape.evalGrads(xi, grads.data());
     
     // φ0 = 1 - ξ - η, grad = (-1, -1)
     // φ1 = ξ, grad = (1, 0)
     // φ2 = η, grad = (0, 1)
     
-    EXPECT_NEAR(sv.gradients[0].x(), -1.0, 1e-12);
-    EXPECT_NEAR(sv.gradients[0].y(), -1.0, 1e-12);
-    EXPECT_NEAR(sv.gradients[1].x(), 1.0, 1e-12);
-    EXPECT_NEAR(sv.gradients[1].y(), 0.0, 1e-12);
-    EXPECT_NEAR(sv.gradients[2].x(), 0.0, 1e-12);
-    EXPECT_NEAR(sv.gradients[2].y(), 1.0, 1e-12);
+    EXPECT_NEAR(grads[0].x(), -1.0, 1e-12);
+    EXPECT_NEAR(grads[0].y(), -1.0, 1e-12);
+    EXPECT_NEAR(grads[1].x(), 1.0, 1e-12);
+    EXPECT_NEAR(grads[1].y(), 0.0, 1e-12);
+    EXPECT_NEAR(grads[2].x(), 0.0, 1e-12);
+    EXPECT_NEAR(grads[2].y(), 1.0, 1e-12);
 }
 
 TEST(LinearElementsTest, TetrahedronGradientAccuracy) {
@@ -464,19 +487,20 @@ TEST(LinearElementsTest, TetrahedronGradientAccuracy) {
     H1TetrahedronShape shape(1);
     
     Real xi[] = {0.1, 0.2, 0.3};
-    auto sv = shape.eval(xi);
+    std::vector<Vector3> grads(4);
+    shape.evalGrads(xi, grads.data());
     
     // φ0 = 1 - ξ - η - ζ, grad = (-1, -1, -1)
     // φ1 = ξ, grad = (1, 0, 0)
     // φ2 = η, grad = (0, 1, 0)
     // φ3 = ζ, grad = (0, 0, 1)
     
-    EXPECT_NEAR(sv.gradients[0].x(), -1.0, 1e-12);
-    EXPECT_NEAR(sv.gradients[0].y(), -1.0, 1e-12);
-    EXPECT_NEAR(sv.gradients[0].z(), -1.0, 1e-12);
-    EXPECT_NEAR(sv.gradients[1].x(), 1.0, 1e-12);
-    EXPECT_NEAR(sv.gradients[1].y(), 0.0, 1e-12);
-    EXPECT_NEAR(sv.gradients[1].z(), 0.0, 1e-12);
+    EXPECT_NEAR(grads[0].x(), -1.0, 1e-12);
+    EXPECT_NEAR(grads[0].y(), -1.0, 1e-12);
+    EXPECT_NEAR(grads[0].z(), -1.0, 1e-12);
+    EXPECT_NEAR(grads[1].x(), 1.0, 1e-12);
+    EXPECT_NEAR(grads[1].y(), 0.0, 1e-12);
+    EXPECT_NEAR(grads[1].z(), 0.0, 1e-12);
 }
 
 // =============================================================================
@@ -513,10 +537,6 @@ TEST(QuadraticElementsTest, TetrahedronQuadraticDofs) {
     auto coords = shape.dofCoords();
     
     // Check vertex nodes (reference tetrahedron)
-    // Vertex 0: (0, 0, 0)
-    // Vertex 1: (1, 0, 0)
-    // Vertex 2: (0, 1, 0)
-    // Vertex 3: (0, 0, 1)
     EXPECT_NEAR(coords[0][0], 0.0, 1e-12);
     EXPECT_NEAR(coords[0][1], 0.0, 1e-12);
     EXPECT_NEAR(coords[0][2], 0.0, 1e-12);
@@ -534,7 +554,6 @@ TEST(QuadraticElementsTest, TetrahedronQuadraticDofs) {
     EXPECT_NEAR(coords[3][2], 1.0, 1e-12);
     
     // Check edge nodes (midpoints)
-    // Edge 0-1: (0.5, 0, 0)
     EXPECT_NEAR(coords[4][0], 0.5, 1e-12);
     EXPECT_NEAR(coords[4][1], 0.0, 1e-12);
     EXPECT_NEAR(coords[4][2], 0.0, 1e-12);

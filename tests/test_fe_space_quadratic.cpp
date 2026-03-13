@@ -571,11 +571,15 @@ TEST_F(COMSOLMeshTest, ShapeFunctionKroneckerDelta) {
         const ShapeFunction* shapeFunc = refElem->shapeFunction();
         auto dofCoords = shapeFunc->dofCoords();
         
+        // Pre-allocate storage
+        const int numDofs = shapeFunc->numDofs();
+        std::vector<Real> values(numDofs);
+        
         // At each node position, only the corresponding shape function should be 1
         for (size_t i = 0; i < dofCoords.size(); ++i) {
             Real xi[] = {dofCoords[i][0], dofCoords[i][1], dofCoords[i][2]};
             
-            auto values = shapeFunc->evalValues(xi);
+            shapeFunc->evalValues(xi, values.data());
             
             for (size_t j = 0; j < values.size(); ++j) {
                 if (i == j) {

@@ -119,6 +119,8 @@ add_library(mpfem_solver INTERFACE)
 # Physics module
 add_library(mpfem_physics
     src/physics/electrostatics_solver.cpp
+    src/physics/heat_transfer_solver.cpp
+    src/physics/coupling_manager.cpp
 )
 
 # Library aliases for convenience

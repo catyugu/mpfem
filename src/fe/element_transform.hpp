@@ -15,119 +15,75 @@ namespace mpfem {
  * @file element_transform.hpp
  * @brief Element transformation from reference to physical coordinates.
  * 
- * Design inspired by MFEM's ElementTransformation class.
- */
-
-/**
- * @brief Base class for element transformations.
- * 
- * Provides mapping between reference element and physical element,
- * including Jacobian computation and coordinate transformation.
- * 
- * Element types:
- * - VOLUME: Interior elements (tetrahedra, hexahedra, triangles, quads)
- * - BOUNDARY: Boundary elements (triangles, quads in 3D; segments in 2D)
+ * Design: NO mutable members. All geometric quantities are computed
+ * eagerly when setElement() or setIntegrationPoint() is called.
  * 
  * Thread safety: Each thread should have its own transform instance.
  */
+
 class ElementTransform {
 public:
-    /// Element type enumeration
-    enum ElementType {
-        VOLUME = 1,     ///< Interior/volume element
-        BOUNDARY = 2    ///< Boundary/facet element
-    };
+    enum ElementType { VOLUME = 1, BOUNDARY = 2 };
     
     // -------------------------------------------------------------------------
     // Construction
     // -------------------------------------------------------------------------
     
     ElementTransform() = default;
+    
     explicit ElementTransform(const Mesh* mesh, Index elemIdx, 
                               ElementType type = VOLUME);
+    
     virtual ~ElementTransform() = default;
     
     // -------------------------------------------------------------------------
-    // Setup
+    // Setup (computes geometry info eagerly)
     // -------------------------------------------------------------------------
     
     virtual void setMesh(const Mesh* mesh);
     virtual void setElement(Index elemIdx);
     
-    /// Set integration point (invalidates cached data)
+    /// Set integration point (recomputes Jacobian and weight)
     void setIntegrationPoint(const IntegrationPoint& ip);
     void setIntegrationPoint(const Real* xi);
-    
-    /// Reset evaluation state (force recompute on next access)
-    void reset() { evalState_ = 0; }
     
     // -------------------------------------------------------------------------
     // Geometry info
     // -------------------------------------------------------------------------
     
-    /// Get geometry type
     Geometry geometry() const { return geometry_; }
-    
-    /// Get spatial dimension of reference element
     int dim() const { return dim_; }
-    
-    /// Get spatial dimension of physical space
     int spaceDim() const { return spaceDim_; }
-    
-    /// Get element index
     Index elementIndex() const { return elemIdx_; }
-    
-    /// Get element type
     ElementType elementType() const { return elemType_; }
-    
-    /// Get the mesh
     const Mesh* mesh() const { return mesh_; }
-    
-    /// Get the element attribute (domain/boundary ID)
     Index attribute() const;
-    
-    /// Get geometric order
     int geometricOrder() const { return geomOrder_; }
-    
-    /// Check if element is curved (geometric order >= 2)
     bool isCurved() const { return geomOrder_ >= 2; }
     
     // -------------------------------------------------------------------------
     // Transformation
     // -------------------------------------------------------------------------
     
-    /// Transform reference coordinates to physical coordinates
     virtual void transform(const Real* xi, Real* x) const;
     void transform(const Real* xi, Vector3& x) const;
     void transform(const IntegrationPoint& ip, Vector3& x) const;
     
     // -------------------------------------------------------------------------
-    // Jacobian and related quantities
+    // Jacobian and related quantities (computed in setIntegrationPoint)
     // -------------------------------------------------------------------------
     
-    /// Get the Jacobian matrix (spaceDim x dim)
-    const Matrix& jacobian() const;
-    
-    /// Get the inverse Jacobian matrix
-    const Matrix& invJacobian() const;
-    
-    /// Get the transpose of inverse Jacobian (J^{-T})
-    const Matrix& invJacobianT() const;
-    
-    /// Get the Jacobian determinant
-    Real detJ() const;
-    
-    /// Get the weight = |det(J)| for volume elements, or sqrt(det(J^T J)) for surface elements
-    virtual Real weight() const;
-    
-    /// Get the adjugate of the Jacobian
-    const Matrix& adjJacobian() const;
+    const Matrix& jacobian() const { return jacobian_; }
+    const Matrix& invJacobian() const { return invJacobian_; }
+    const Matrix& invJacobianT() const { return invJacobianT_; }
+    Real detJ() const { return detJ_; }
+    virtual Real weight() const { return weight_; }
+    const Matrix& adjJacobian() const { return adjJacobian_; }
     
     // -------------------------------------------------------------------------
     // Gradient transformation
     // -------------------------------------------------------------------------
     
-    /// Transform gradient from reference to physical coordinates
     void transformGradient(const Real* refGrad, Real* physGrad) const;
     void transformGradient(const Vector3& refGrad, Vector3& physGrad) const;
     
@@ -135,39 +91,18 @@ public:
     // Element nodes
     // -------------------------------------------------------------------------
     
-    /// Get geometric node coordinates
     const std::vector<Vector3>& nodes() const { return nodes_; }
-    
-    /// Get number of geometric nodes
     int numNodes() const { return static_cast<int>(nodes_.size()); }
     
-    /// Alias for compatibility
+    // Aliases for compatibility
     const std::vector<Vector3>& vertices() const { return nodes_; }
     int numVertices() const { return numNodes(); }
     
-    /// Get the currently set integration point
     const IntegrationPoint& integrationPoint() const { return ip_; }
     
 protected:
-    // -------------------------------------------------------------------------
-    // Evaluation state management
-    // -------------------------------------------------------------------------
-    enum EvalMask {
-        JACOBIAN_MASK = 1,
-        WEIGHT_MASK   = 2,
-        ADJUGATE_MASK = 4,
-        INVERSE_MASK  = 8,
-        INV_JACOBIAN_T_MASK = 16
-    };
-    
-    virtual void computeGeometryInfo();
-    void evalJacobian() const;
-    void evalWeight() const;
-    void evalAdjugate() const;
-    void evalInverse() const;
-    void evalInvJacobianT() const;
-    
-    void initGeometricShapeFunction();
+    void computeGeometryInfo();
+    void computeJacobianAtIP();
     
     // -------------------------------------------------------------------------
     // Member variables
@@ -177,8 +112,8 @@ protected:
     ElementType elemType_ = VOLUME;
     
     Geometry geometry_ = Geometry::Invalid;
-    int dim_ = 0;        ///< Reference dimension
-    int spaceDim_ = 0;   ///< Physical space dimension
+    int dim_ = 0;
+    int spaceDim_ = 0;
     int geomOrder_ = 1;
     
     std::unique_ptr<ShapeFunction> shapeFunc_;
@@ -187,15 +122,17 @@ protected:
     
     IntegrationPoint ip_;
     
-    // Mutable for lazy evaluation
-    mutable Matrix jacobian_;       ///< spaceDim x dim
-    mutable Matrix invJacobian_;    ///< dim x spaceDim
-    mutable Matrix invJacobianT_;   ///< spaceDim x dim
-    mutable Matrix adjJacobian_;    ///< spaceDim x dim
-    mutable Real detJ_ = 0.0;
-    mutable Real weight_ = 0.0;
-    mutable int evalState_ = 0;
-    mutable ShapeValues shapeValues_;
+    // All computed eagerly (no lazy evaluation)
+    Matrix jacobian_;       // spaceDim x dim
+    Matrix invJacobian_;    // dim x spaceDim
+    Matrix invJacobianT_;   // spaceDim x dim
+    Matrix adjJacobian_;    // spaceDim x dim
+    Real detJ_ = 0.0;
+    Real weight_ = 0.0;
+    
+    // Pre-allocated buffers for shape function evaluation
+    std::vector<Real> shapeValuesBuf_;
+    std::vector<Vector3> shapeGradsBuf_;
 };
 
 // =============================================================================
@@ -209,16 +146,14 @@ inline ElementTransform::ElementTransform(const Mesh* mesh, Index elemIdx, Eleme
 
 inline void ElementTransform::setIntegrationPoint(const IntegrationPoint& ip) {
     ip_ = ip;
-    evalState_ = 0;
-    shapeValues_ = shapeFunc_ ? shapeFunc_->eval(ip_) : ShapeValues();
+    computeJacobianAtIP();
 }
 
 inline void ElementTransform::setIntegrationPoint(const Real* xi) {
     ip_.xi = xi[0];
     if (dim_ > 1) ip_.eta = xi[1];
     if (dim_ > 2) ip_.zeta = xi[2];
-    evalState_ = 0;
-    shapeValues_ = shapeFunc_ ? shapeFunc_->eval(ip_) : ShapeValues();
+    computeJacobianAtIP();
 }
 
 inline void ElementTransform::transform(const Real* xi, Vector3& x) const {
@@ -236,31 +171,6 @@ inline void ElementTransform::transformGradient(const Vector3& refGrad, Vector3&
     Real pg[3];
     transformGradient(rg, pg);
     physGrad = Vector3(pg[0], pg[1], pg[2]);
-}
-
-inline const Matrix& ElementTransform::jacobian() const {
-    evalJacobian();
-    return jacobian_;
-}
-
-inline const Matrix& ElementTransform::invJacobian() const {
-    evalInverse();
-    return invJacobian_;
-}
-
-inline const Matrix& ElementTransform::invJacobianT() const {
-    evalInvJacobianT();
-    return invJacobianT_;
-}
-
-inline Real ElementTransform::detJ() const {
-    evalWeight();
-    return detJ_;
-}
-
-inline const Matrix& ElementTransform::adjJacobian() const {
-    evalAdjugate();
-    return adjJacobian_;
 }
 
 }  // namespace mpfem
