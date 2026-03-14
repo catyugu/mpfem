@@ -4,12 +4,13 @@ namespace mpfem {
 
 void DiffusionIntegrator::assembleElementMatrix(const ReferenceElement& ref,
                                                  ElementTransform& trans,
-                                                 Matrix& elmat) const {
+                                                 Matrix& elmat,
+                                                 int vdim) const {
     const int nd = ref.numDofs();
     const int dim = ref.dim();
     const int nq = ref.numQuadraturePoints();
     
-    elmat.setZero(nd, nd);
+    elmat.setZero(nd * vdim, nd * vdim);
     Eigen::MatrixXd gradMat(nd, dim);
     
     for (int q = 0; q < nq; ++q) {
@@ -29,17 +30,27 @@ void DiffusionIntegrator::assembleElementMatrix(const ReferenceElement& ref,
                 gradMat(i, d) = physGrad[d];
         }
         
-        elmat.noalias() += w * coef * (gradMat * gradMat.transpose());
+        // 标量场：直接组装
+        // 向量场：对每个分量组装对角块
+        if (vdim == 1) {
+            elmat.noalias() += w * coef * (gradMat * gradMat.transpose());
+        } else {
+            for (int c = 0; c < vdim; ++c) {
+                elmat.block(c * nd, c * nd, nd, nd).noalias() += 
+                    w * coef * (gradMat * gradMat.transpose());
+            }
+        }
     }
 }
 
 void MassIntegrator::assembleElementMatrix(const ReferenceElement& ref,
                                             ElementTransform& trans,
-                                            Matrix& elmat) const {
+                                            Matrix& elmat,
+                                            int vdim) const {
     const int nd = ref.numDofs();
     const int nq = ref.numQuadraturePoints();
     
-    elmat.setZero(nd, nd);
+    elmat.setZero(nd * vdim, nd * vdim);
     
     for (int q = 0; q < nq; ++q) {
         const IntegrationPoint& ip = ref.integrationPoint(q);
@@ -51,17 +62,26 @@ void MassIntegrator::assembleElementMatrix(const ReferenceElement& ref,
         
         const Real* phi = ref.shapeValuesAtQuad(q);
         Eigen::Map<const Eigen::VectorXd> phiMap(phi, nd);
-        elmat.noalias() += w * coef * (phiMap * phiMap.transpose());
+        
+        if (vdim == 1) {
+            elmat.noalias() += w * coef * (phiMap * phiMap.transpose());
+        } else {
+            for (int c = 0; c < vdim; ++c) {
+                elmat.block(c * nd, c * nd, nd, nd).noalias() += 
+                    w * coef * (phiMap * phiMap.transpose());
+            }
+        }
     }
 }
 
 void DomainLFIntegrator::assembleElementVector(const ReferenceElement& ref,
                                                 ElementTransform& trans,
-                                                Vector& elvec) const {
+                                                Vector& elvec,
+                                                int vdim) const {
     const int nd = ref.numDofs();
     const int nq = ref.numQuadraturePoints();
     
-    elvec.setZero(nd);
+    elvec.setZero(nd * vdim);
     
     for (int q = 0; q < nq; ++q) {
         const IntegrationPoint& ip = ref.integrationPoint(q);
@@ -73,17 +93,25 @@ void DomainLFIntegrator::assembleElementVector(const ReferenceElement& ref,
         
         const Real* phi = ref.shapeValuesAtQuad(q);
         Eigen::Map<const Eigen::VectorXd> phiMap(phi, nd);
-        elvec.noalias() += w * f * phiMap;
+        
+        if (vdim == 1) {
+            elvec.noalias() += w * f * phiMap;
+        } else {
+            for (int c = 0; c < vdim; ++c) {
+                elvec.segment(c * nd, nd).noalias() += w * f * phiMap;
+            }
+        }
     }
 }
 
 void BoundaryLFIntegrator::assembleFaceVector(const ReferenceElement& ref,
                                                FacetElementTransform& trans,
-                                               Vector& elvec) const {
+                                               Vector& elvec,
+                                               int vdim) const {
     const int nd = ref.numDofs();
     const int nq = ref.numQuadraturePoints();
     
-    elvec.setZero(nd);
+    elvec.setZero(nd * vdim);
     
     for (int q = 0; q < nq; ++q) {
         const IntegrationPoint& ip = ref.integrationPoint(q);
@@ -95,17 +123,25 @@ void BoundaryLFIntegrator::assembleFaceVector(const ReferenceElement& ref,
         
         const Real* phi = ref.shapeValuesAtQuad(q);
         Eigen::Map<const Eigen::VectorXd> phiMap(phi, nd);
-        elvec.noalias() += w * g * phiMap;
+        
+        if (vdim == 1) {
+            elvec.noalias() += w * g * phiMap;
+        } else {
+            for (int c = 0; c < vdim; ++c) {
+                elvec.segment(c * nd, nd).noalias() += w * g * phiMap;
+            }
+        }
     }
 }
 
-void ConvectionBoundaryIntegrator::assembleFaceMatrix(const ReferenceElement& ref,
-                                                       FacetElementTransform& trans,
-                                                       Matrix& elmat) const {
+void ConvectionMassIntegrator::assembleFaceMatrix(const ReferenceElement& ref,
+                                                   FacetElementTransform& trans,
+                                                   Matrix& elmat,
+                                                   int vdim) const {
     const int nd = ref.numDofs();
     const int nq = ref.numQuadraturePoints();
     
-    elmat.setZero(nd, nd);
+    elmat.setZero(nd * vdim, nd * vdim);
     
     for (int q = 0; q < nq; ++q) {
         const IntegrationPoint& ip = ref.integrationPoint(q);
@@ -117,17 +153,26 @@ void ConvectionBoundaryIntegrator::assembleFaceMatrix(const ReferenceElement& re
         
         const Real* phi = ref.shapeValuesAtQuad(q);
         Eigen::Map<const Eigen::VectorXd> phiMap(phi, nd);
-        elmat.noalias() += w * h * (phiMap * phiMap.transpose());
+        
+        if (vdim == 1) {
+            elmat.noalias() += w * h * (phiMap * phiMap.transpose());
+        } else {
+            for (int c = 0; c < vdim; ++c) {
+                elmat.block(c * nd, c * nd, nd, nd).noalias() += 
+                    w * h * (phiMap * phiMap.transpose());
+            }
+        }
     }
 }
 
-void ConvectionBoundaryIntegrator::assembleFaceVector(const ReferenceElement& ref,
-                                                       FacetElementTransform& trans,
-                                                       Vector& elvec) const {
+void ConvectionLFIntegrator::assembleFaceVector(const ReferenceElement& ref,
+                                                 FacetElementTransform& trans,
+                                                 Vector& elvec,
+                                                 int vdim) const {
     const int nd = ref.numDofs();
     const int nq = ref.numQuadraturePoints();
     
-    elvec.setZero(nd);
+    elvec.setZero(nd * vdim);
     
     if (!Tinf_) return;
     
@@ -142,25 +187,32 @@ void ConvectionBoundaryIntegrator::assembleFaceVector(const ReferenceElement& re
         
         const Real* phi = ref.shapeValuesAtQuad(q);
         Eigen::Map<const Eigen::VectorXd> phiMap(phi, nd);
-        elvec.noalias() += w * h * Tinf * phiMap;
+        
+        if (vdim == 1) {
+            elvec.noalias() += w * h * Tinf * phiMap;
+        } else {
+            for (int c = 0; c < vdim; ++c) {
+                elvec.segment(c * nd, nd).noalias() += w * h * Tinf * phiMap;
+            }
+        }
     }
 }
 
 void ElasticityIntegrator::assembleElementMatrix(const ReferenceElement& ref,
                                                   ElementTransform& trans,
-                                                  Matrix& elmat) const {
+                                                  Matrix& elmat,
+                                                  int vdim) const {
     const int nd = ref.numDofs();
     const int dim = ref.dim();
     const int nq = ref.numQuadraturePoints();
-    const int vdim = 3;  // 3D displacement
     
     elmat.setZero(nd * vdim, nd * vdim);
     
-    // Get material properties
+    // 获取材料属性
     Real E = E_ ? E_->eval(trans) : 1.0;
     Real nu = nu_ ? nu_->eval(trans) : 0.3;
     
-    // Lame parameters
+    // Lame参数
     Real lambda = E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu));
     Real mu = E / (2.0 * (1.0 + nu));
     
@@ -172,85 +224,61 @@ void ElasticityIntegrator::assembleElementMatrix(const ReferenceElement& ref,
         const Real w = ip.weight * trans.weight();
         const Vector3* refGrads = ref.shapeGradientsAtQuad(q);
         
-        // Compute physical gradients for all shape functions
-        Eigen::MatrixXd B(dim * vdim, nd * vdim);
+        // 计算所有形函数的物理梯度
+        // B矩阵: 对于每个节点a, B_a是6x3的应变-位移矩阵
+        // epsilon = [du/dx, dv/dy, dw/dz, dv/dz+dw/dy, du/dz+dw/dx, du/dy+dv/dx]
+        Eigen::MatrixXd B(6, nd * vdim);
         B.setZero();
         
-        for (int i = 0; i < nd; ++i) {
+        for (int a = 0; a < nd; ++a) {
             Vector3 physGrad;
-            trans.transformGradient(refGrads[i].data(), physGrad.data());
+            trans.transformGradient(refGrads[a].data(), physGrad.data());
             
-            // Strain-displacement matrix B
-            // epsilon = [du/dx, dv/dy, dw/dz, dv/dz + dw/dy, du/dz + dw/dx, du/dy + dv/dx]
-            // For simplicity, we use the simplified form
-            for (int d = 0; d < dim; ++d) {
-                B(d, i * vdim + d) = physGrad[d];  // diagonal terms
-            }
-            // Shear terms (simplified for now)
-            if (dim >= 2) {
-                B(3, i * vdim + 1) = physGrad[2]; B(3, i * vdim + 2) = physGrad[1];
-                B(5, i * vdim + 0) = physGrad[1]; B(5, i * vdim + 1) = physGrad[0];
-            }
-            if (dim >= 3) {
-                B(4, i * vdim + 0) = physGrad[2]; B(4, i * vdim + 2) = physGrad[0];
-            }
+            // B矩阵的第a个节点的贡献
+            // 对于位移分量 i (0=x, 1=y, 2=z):
+            int col = a * vdim;
+            
+            // du/dx 贡献到 epsilon_11
+            B(0, col + 0) = physGrad[0];
+            // dv/dy 贡献到 epsilon_22
+            B(1, col + 1) = physGrad[1];
+            // dw/dz 贡献到 epsilon_33
+            B(2, col + 2) = physGrad[2];
+            // dv/dz + dw/dy 贡献到 epsilon_23
+            B(3, col + 1) = physGrad[2];
+            B(3, col + 2) = physGrad[1];
+            // du/dz + dw/dx 贡献到 epsilon_13
+            B(4, col + 0) = physGrad[2];
+            B(4, col + 2) = physGrad[0];
+            // du/dy + dv/dx 贡献到 epsilon_12
+            B(5, col + 0) = physGrad[1];
+            B(5, col + 1) = physGrad[0];
         }
         
-        // Constitutive matrix C (isotropic)
+        // 本构矩阵 C (各向同性)
+        // sigma = C * epsilon
+        // 对于平面应变和3D问题:
+        // C_11 = C_22 = C_33 = lambda + 2*mu
+        // C_12 = C_13 = C_23 = lambda
+        // C_44 = C_55 = C_66 = mu
         Eigen::Matrix<Real, 6, 6> C;
         C.setZero();
-        C(0,0) = C(1,1) = C(2,2) = lambda + 2*mu;
-        C(0,1) = C(0,2) = C(1,0) = C(1,2) = C(2,0) = C(2,1) = lambda;
-        C(3,3) = C(4,4) = C(5,5) = mu;
+        C(0, 0) = C(1, 1) = C(2, 2) = lambda + 2.0 * mu;
+        C(0, 1) = C(0, 2) = C(1, 0) = C(1, 2) = C(2, 0) = C(2, 1) = lambda;
+        C(3, 3) = C(4, 4) = C(5, 5) = mu;
         
-        // Simplified: use only the diagonal terms for now
-        // K = B^T * C * B
-        // This is a simplified implementation
-        Eigen::MatrixXd gradMat(nd, dim);
-        for (int i = 0; i < nd; ++i) {
-            Vector3 physGrad;
-            trans.transformGradient(refGrads[i].data(), physGrad.data());
-            for (int d = 0; d < dim; ++d) {
-                gradMat(i, d) = physGrad[d];
-            }
-        }
-        
-        // Simplified stiffness matrix (ignoring Poisson effect for initial implementation)
-        for (int a = 0; a < nd; ++a) {
-            for (int b = 0; b < nd; ++b) {
-                Real divTerm = 0;
-                for (int d = 0; d < dim; ++d) {
-                    divTerm += gradMat(a, d) * gradMat(b, d);
-                }
-                
-                for (int i = 0; i < vdim; ++i) {
-                    for (int j = 0; j < vdim; ++j) {
-                        int row = a * vdim + i;
-                        int col = b * vdim + j;
-                        
-                        if (i == j) {
-                            // Diagonal: lambda * div * div + 2 * mu * grad_i * grad_i
-                            elmat(row, col) += w * (lambda * gradMat(a, i) * gradMat(b, i) + 
-                                                    2 * mu * gradMat(a, i) * gradMat(b, i));
-                        } else {
-                            // Off-diagonal: lambda * grad_i * grad_j + mu * grad_j * grad_i
-                            elmat(row, col) += w * (lambda * gradMat(a, i) * gradMat(b, j) + 
-                                                    mu * gradMat(a, j) * gradMat(b, i));
-                        }
-                    }
-                }
-            }
-        }
+        // 刚度矩阵: K = B^T * C * B
+        elmat.noalias() += w * (B.transpose() * C * B);
     }
 }
 
 void ThermalLoadIntegrator::assembleElementVector(const ReferenceElement& ref,
                                                    ElementTransform& trans,
-                                                   Vector& elvec) const {
+                                                   Vector& elvec,
+                                                   int vdim) const {
     const int nd = ref.numDofs();
     const int dim = ref.dim();
     const int nq = ref.numQuadraturePoints();
-    const int vdim = 3;  // 3D displacement
     
     elvec.setZero(nd * vdim);
     
@@ -263,47 +291,56 @@ void ThermalLoadIntegrator::assembleElementVector(const ReferenceElement& ref,
         
         const Real w = ip.weight * trans.weight();
         
-        // Get material properties
+        // 获取材料属性
         Real E = E_ ? E_->eval(trans) : 1.0;
         Real nu = nu_ ? nu_->eval(trans) : 0.3;
         Real alpha = alphaT_->eval(trans);
         
-        // Get temperature
+        // 获取温度
         Real T_val = T_->eval(trans.elementIndex(), xi);
         Real dT = T_val - Tref_;
         
-        // Bulk modulus K = E / (3 * (1 - 2*nu))
-        Real K = E / (3.0 * (1.0 - 2.0 * nu));
+        // Lame参数
+        Real lambda = E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu));
+        Real mu = E / (2.0 * (1.0 + nu));
         
-        // Thermal strain: epsilon_th = alpha * dT * I
-        // Thermal stress: sigma_th = -3 * K * alpha * dT * I
-        // Thermal load: f = div(sigma_th) = 0 (constant stress)
-        // But we need to integrate: f = B^T * sigma_th
+        // 热应变: epsilon_th = alpha * dT * I
+        // 热应力对应的应变向量: [alpha*dT, alpha*dT, alpha*dT, 0, 0, 0]
+        Eigen::Matrix<Real, 6, 1> epsilon_th;
+        epsilon_th << alpha * dT, alpha * dT, alpha * dT, 0, 0, 0;
         
-        Real thermalStress = 3.0 * K * alpha * dT;
+        // 热应力: sigma_th = C * epsilon_th
+        // 对于各向同性材料: sigma_th = (3*lambda + 2*mu) * alpha * dT * I
+        // 或者用体积模量表示: sigma_th = 3*K*alpha*dT*I, K = lambda + 2/3*mu
+        Eigen::Matrix<Real, 6, 1> sigma_th;
+        Real diag = (3.0 * lambda + 2.0 * mu) * alpha * dT;
+        sigma_th << diag, diag, diag, 0, 0, 0;
         
-        const Real* phi = ref.shapeValuesAtQuad(q);
         const Vector3* refGrads = ref.shapeGradientsAtQuad(q);
         
-        // Thermal load vector: thermal expansion creates initial strain
-        // This contributes to the RHS as: f = integral of (B^T * C * epsilon_th)
-        // For isotropic material: C * epsilon_th = 3 * K * alpha * dT * I
+        // 计算B矩阵
+        Eigen::MatrixXd B(6, nd * vdim);
+        B.setZero();
         
         for (int a = 0; a < nd; ++a) {
             Vector3 physGrad;
             trans.transformGradient(refGrads[a].data(), physGrad.data());
             
-            // Divergence of shape function
-            Real divPhi = 0;
-            for (int d = 0; d < dim; ++d) {
-                divPhi += physGrad[d];
-            }
-            
-            // Thermal load: -3 * K * alpha * dT * div(phi)
-            for (int i = 0; i < vdim; ++i) {
-                elvec(a * vdim + i) -= w * thermalStress * physGrad[i];
-            }
+            int col = a * vdim;
+            B(0, col + 0) = physGrad[0];
+            B(1, col + 1) = physGrad[1];
+            B(2, col + 2) = physGrad[2];
+            B(3, col + 1) = physGrad[2];
+            B(3, col + 2) = physGrad[1];
+            B(4, col + 0) = physGrad[2];
+            B(4, col + 2) = physGrad[0];
+            B(5, col + 0) = physGrad[1];
+            B(5, col + 1) = physGrad[0];
         }
+        
+        // 热载荷向量: f = B^T * sigma_th
+        // 注意符号: 热膨胀产生初始应变，在RHS中为负
+        elvec.noalias() -= w * (B.transpose() * sigma_th);
     }
 }
 

@@ -8,10 +8,12 @@
 namespace mpfem {
 
 /**
- * @brief Heat transfer solver - minimal design for single-field analysis.
+ * @brief 热传导求解器
  * 
- * Design principle: Single-field solver should NOT contain coupling logic.
- * Coupling (like Joule heating) should be handled externally.
+ * 求解：-div(k * grad T) = Q
+ * 
+ * 设计原则：单场求解器不包含耦合逻辑。
+ * 焦耳热等耦合热源应通过setHeatSource()由外部设置。
  */
 class HeatTransferSolver : public PhysicsFieldSolver {
 public:
@@ -27,12 +29,12 @@ public:
     void addDirichletBC(int bid, Real val) override { bcValues_[bid] = val; }
     void clearBoundaryConditions() override { bcValues_.clear(); convBCs_.clear(); }
     
-    /// Add convection boundary condition
+    /// 添加对流边界条件: h*(T - Tinf)
     void addConvectionBC(int bid, Real h, Real Tinf) {
         convBCs_[bid] = {h, Tinf};
     }
     
-    /// Set heat source coefficient (non-owning pointer)
+    /// 设置热源系数（非拥有指针）
     void setHeatSource(const Coefficient* Q) { heatSource_ = Q; }
     
     void assemble() override;

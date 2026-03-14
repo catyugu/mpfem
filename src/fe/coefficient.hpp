@@ -4,7 +4,6 @@
 #include "core/types.hpp"
 #include <functional>
 #include <vector>
-#include <map>
 #include <set>
 
 namespace mpfem {
@@ -13,7 +12,7 @@ class ElementTransform;
 class GridFunction;
 
 // =============================================================================
-// Scalar Coefficient - 最小化接口
+// 标量系数基类
 // =============================================================================
 
 class Coefficient {
@@ -21,6 +20,10 @@ public:
     virtual ~Coefficient() = default;
     virtual Real eval(ElementTransform& trans) const = 0;
 };
+
+// =============================================================================
+// 基础系数
+// =============================================================================
 
 /// 常量系数
 class ConstantCoefficient : public Coefficient {
@@ -33,7 +36,7 @@ private:
     Real value_;
 };
 
-/// 分片常量系数（按域ID）
+/// 分片常量系数（按域ID索引）
 class PWConstCoefficient : public Coefficient {
 public:
     explicit PWConstCoefficient(int numDomains = 0) : values_(numDomains, 0.0) {}
@@ -47,12 +50,10 @@ public:
     }
     Real get(int domainId) const { return values_[domainId - 1]; }
     void resize(int n, Real v = 0.0) { values_.resize(n, v); }
+    int size() const { return static_cast<int>(values_.size()); }
     
-    /// Restrict to specific domains (empty = all domains)
-    void setDomains(const std::set<int>& domains) { domains_ = domains; }
 private:
     std::vector<Real> values_;
-    std::set<int> domains_;  // Optional domain restriction
 };
 
 /// 函数系数
@@ -65,7 +66,7 @@ private:
     Func func_;
 };
 
-/// 场系数（非拥有指针）
+/// 网格函数系数（从解场获取值）
 class GridFunctionCoefficient : public Coefficient {
 public:
     explicit GridFunctionCoefficient(const GridFunction* gf = nullptr) : gf_(gf) {}
@@ -75,52 +76,66 @@ private:
     const GridFunction* gf_;
 };
 
-/// 乘积系数
+// =============================================================================
+// 组合系数
+// =============================================================================
+
+/// 乘积系数: a * b
 class ProductCoefficient : public Coefficient {
 public:
     ProductCoefficient(const Coefficient* a, const Coefficient* b) : a_(a), b_(b) {}
-    Real eval(ElementTransform& trans) const override { 
-        return a_->eval(trans) * b_->eval(trans); 
-    }
+    Real eval(ElementTransform& trans) const override;
 private:
     const Coefficient* a_;
     const Coefficient* b_;
 };
 
-/// 缩放系数
+/// 缩放系数: scale * q
 class ScaledCoefficient : public Coefficient {
 public:
     ScaledCoefficient(const Coefficient* q, Real scale) : q_(q), scale_(scale) {}
-    Real eval(ElementTransform& trans) const override { 
-        return scale_ * q_->eval(trans); 
-    }
+    Real eval(ElementTransform& trans) const override;
 private:
     const Coefficient* q_;
     Real scale_;
 };
 
+/// 域限制系数：仅在指定域上有效
+class DomainRestrictedCoefficient : public Coefficient {
+public:
+    DomainRestrictedCoefficient(const Coefficient* q, const std::set<int>& domains)
+        : q_(q), domains_(domains) {}
+    
+    Real eval(ElementTransform& trans) const override;
+    
+private:
+    const Coefficient* q_;
+    std::set<int> domains_;
+};
+
 // =============================================================================
-// 温度依赖电导率系数（高效设计）
+// 温度依赖电导率系数（统一实现）
 // =============================================================================
 
-/// 温度依赖电导率：sigma = 1 / (rho0 * (1 + alpha * (T - Tref)))
-/// 使用 Vector 存储，O(1) 属性索引访问
+/**
+ * @brief 温度依赖电导率：sigma = 1 / (rho0 * (1 + alpha * (T - Tref)))
+ * 
+ * 模型：
+ *   rho = rho0 * (1 + alpha * (T - Tref))  线性电阻率模型
+ *   sigma = 1 / rho
+ * 
+ * 如果 rho0 <= 0，则使用常量电导率 sigma0
+ */
 class TemperatureDependentConductivity : public Coefficient {
 public:
     TemperatureDependentConductivity() = default;
     
-    /// 设置材料参数（温度依赖）
-    /// @param domainId 域ID（从1开始）
-    /// @param rho0 参考温度下的电阻率 (ohm*m)
-    /// @param alpha 温度系数 (1/K)
-    /// @param tref 参考温度 (K)
-    /// @param sigma0 参考温度下的电导率 (S/m)，用于rho0<=0时
-    void setMaterial(int domainId, Real rho0, Real alpha, Real tref, Real sigma0 = 0.0) {
+    /// 设置温度依赖材料参数
+    void setMaterial(int domainId, Real rho0, Real alpha, Real tref) {
         ensureSize(domainId);
         rho0_[domainId - 1] = rho0;
         alpha_[domainId - 1] = alpha;
         tref_[domainId - 1] = tref;
-        sigma0_[domainId - 1] = sigma0;
     }
     
     /// 设置常量电导率（非温度依赖）
@@ -140,7 +155,7 @@ private:
         if (static_cast<int>(rho0_.size()) < domainId) {
             rho0_.resize(domainId, 0.0);
             alpha_.resize(domainId, 0.0);
-            tref_.resize(domainId, 298);
+            tref_.resize(domainId, 298.0);
             sigma0_.resize(domainId, 0.0);
         }
     }
@@ -148,8 +163,29 @@ private:
     std::vector<Real> rho0_;   ///< 参考温度下的电阻率
     std::vector<Real> alpha_;  ///< 温度系数
     std::vector<Real> tref_;   ///< 参考温度
-    std::vector<Real> sigma0_; ///< 常量电导率（rho0<=0时使用）
-    const GridFunction* T_ = nullptr;  ///< 温度场（非拥有）
+    std::vector<Real> sigma0_; ///< 常量电导率
+    const GridFunction* T_ = nullptr;
+};
+
+// =============================================================================
+// 焦耳热系数
+// =============================================================================
+
+/**
+ * @brief 焦耳热系数: Q = sigma * |grad V|^2
+ */
+class JouleHeatCoefficient : public Coefficient {
+public:
+    void setPotential(const GridFunction* V) { V_ = V; }
+    void setConductivity(const Coefficient* sigma) { sigma_ = sigma; }
+    void setDomains(const std::set<int>& domains) { domains_ = domains; }
+    
+    Real eval(ElementTransform& trans) const override;
+    
+private:
+    const GridFunction* V_ = nullptr;
+    const Coefficient* sigma_ = nullptr;
+    std::set<int> domains_;
 };
 
 // =============================================================================

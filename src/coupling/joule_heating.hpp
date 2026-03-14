@@ -11,66 +11,30 @@ namespace mpfem {
 
 /**
  * @file joule_heating.hpp
- * @brief Joule heating coupling coefficient - independent from single-field solvers.
+ * @brief 焦耳热耦合管理器
  * 
- * Design principle: Coupling should be separate from individual field solvers.
- * This module provides the coupling between electrostatics and heat transfer.
+ * 设计原则：耦合逻辑独立于单场求解器。
+ * 该模块管理电场和热场之间的焦耳热耦合。
  */
 
 /**
- * @brief Joule heat coefficient: Q = sigma * |grad V|^2
+ * @brief 焦耳热耦合管理器
  * 
- * Computes the volumetric heat source from electrical current:
- * Q = sigma * (dV/dx)^2 + sigma * (dV/dy)^2 + sigma * (dV/dz)^2
- */
-class JouleHeatCoefficient : public Coefficient {
-public:
-    /// Set electric potential field (non-owning pointer)
-    void setPotential(const GridFunction* V) { V_ = V; }
-    
-    /// Set conductivity coefficient (non-owning pointer)
-    void setConductivity(const Coefficient* sigma) { sigma_ = sigma; }
-    
-    /// Restrict to specific domains (empty = all domains)
-    void setDomains(const std::set<int>& domains) { domains_ = domains; }
-    
-    Real eval(ElementTransform& trans) const override {
-        if (!V_ || !sigma_) return 0.0;
-        
-        // Check domain restriction
-        if (!domains_.empty()) {
-            int attr = static_cast<int>(trans.attribute());
-            if (domains_.find(attr) == domains_.end()) return 0.0;
-        }
-        
-        // Key: evaluate sigma first, then gradient
-        // Because gradient() calls setIntegrationPoint which changes trans state
-        Real sigma_val = sigma_->eval(trans);
-        Vector3 g = V_->gradient(trans.elementIndex(), &trans.integrationPoint().xi, trans);
-        return sigma_val * g.squaredNorm();
-    }
-    
-private:
-    const GridFunction* V_ = nullptr;
-    const Coefficient* sigma_ = nullptr;
-    std::set<int> domains_;
-};
-
-/**
- * @brief Manager for Joule heating coupling
+ * 管理电势场到热源场的耦合：
+ * Q = sigma * |grad V|^2
  */
 class JouleHeatingCoupling {
 public:
-    /// Set the electrostatics potential field
+    /// 设置电势场（非拥有指针）
     void setPotentialField(const GridFunction* V) { potential_ = V; }
     
-    /// Set the conductivity coefficient
+    /// 设置电导率系数（非拥有指针）
     void setConductivity(const Coefficient* sigma) { conductivity_ = sigma; }
     
-    /// Restrict coupling to specific domains
+    /// 限制耦合到指定域（空集表示所有域）
     void setDomains(const std::set<int>& domains) { domains_ = domains; }
     
-    /// Get the Joule heat coefficient (lazy creation)
+    /// 获取焦耳热系数（延迟创建）
     const Coefficient* getHeatSource() {
         if (!jouleHeat_) {
             jouleHeat_ = std::make_unique<JouleHeatCoefficient>();
@@ -79,11 +43,6 @@ public:
         jouleHeat_->setConductivity(conductivity_);
         jouleHeat_->setDomains(domains_);
         return jouleHeat_.get();
-    }
-    
-    /// Update coupling (call after potential field changes)
-    void update() {
-        // The coefficient evaluates lazily, so no explicit update needed
     }
     
 private:

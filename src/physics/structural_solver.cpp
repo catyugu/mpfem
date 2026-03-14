@@ -15,9 +15,9 @@ bool StructuralSolver::initialize(const Mesh& mesh,
     EInternal_ = youngModulus;
     nuInternal_ = poissonRatio;
     
-    // Create vector H1 elements for displacement (vdim=3)
+    // 创建向量H1单元 (vdim=3)
     fec_ = std::make_unique<FECollection>(order_, FECollection::Type::H1);
-    fes_ = std::make_unique<FESpace>(&mesh, fec_.get(), 3);  // 3D displacement
+    fes_ = std::make_unique<FESpace>(&mesh, fec_.get(), 3);  // 3D位移
     
     u_ = std::make_unique<GridFunction>(fes_.get());
     u_->setZero();
@@ -40,12 +40,12 @@ void StructuralSolver::assemble() {
     matAsm_->clearIntegrators();
     vecAsm_->clearIntegrators();
     
-    // Add elasticity integrator
+    // 添加弹性积分器
     auto elasticity = std::make_unique<ElasticityIntegrator>(&EInternal_, &nuInternal_);
     matAsm_->addDomainIntegrator(std::move(elasticity));
     matAsm_->assemble();
     
-    // Add thermal strain if temperature field is set
+    // 添加热应变载荷（如果设置了温度场）
     if (T_ && alphaT_) {
         auto thermalLoad = std::make_unique<ThermalLoadIntegrator>(
             &EInternal_, &nuInternal_, alphaT_, T_, Tref_);
@@ -53,12 +53,10 @@ void StructuralSolver::assemble() {
     }
     vecAsm_->assemble();
     
-    // Apply Dirichlet BCs (simplified: only supports fixing all components for now)
-    // For structural problems, we typically fix boundaries entirely
+    // 应用Dirichlet边界条件
+    // 对于结构问题，通常固定整个边界
     for (const auto& [bid, disp] : bcValues_) {
-        // For vector field, apply BC to all components
-        // This is a simplified approach
-        Real val = disp.x();  // Use x-component as the value
+        Real val = disp.x();  // 使用x分量作为值
         std::map<int, Real> scalarBC;
         scalarBC[bid] = val;
         applyDirichletBC(matAsm_->matrix(), vecAsm_->vector(), u_->values(),
@@ -84,9 +82,8 @@ bool StructuralSolver::solve() {
 }
 
 void StructuralSolver::computeStressStrain() {
-    // TODO: Implement stress/strain post-processing
-    // This requires evaluating the strain from displacement gradient
-    // and computing stress from constitutive relation
+    // TODO: 实现应力/应变后处理
+    // 需要从位移梯度计算应变，并从本构关系计算应力
 }
 
 }  // namespace mpfem

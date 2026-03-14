@@ -12,12 +12,6 @@ namespace mpfem {
 Real PWConstCoefficient::eval(ElementTransform& trans) const {
     int attr = static_cast<int>(trans.attribute());
     if (attr < 1 || attr > static_cast<int>(values_.size())) return 0.0;
-    
-    // Check domain restriction
-    if (!domains_.empty() && domains_.find(attr) == domains_.end()) {
-        return 0.0;
-    }
-    
     return values_[attr - 1];
 }
 
@@ -40,6 +34,34 @@ Real GridFunctionCoefficient::eval(ElementTransform& trans) const {
     const auto& ip = trans.integrationPoint();
     Real xi[3] = {ip.xi, ip.eta, ip.zeta};
     return gf_->eval(trans.elementIndex(), xi);
+}
+
+// =============================================================================
+// ProductCoefficient
+// =============================================================================
+
+Real ProductCoefficient::eval(ElementTransform& trans) const {
+    return a_->eval(trans) * b_->eval(trans);
+}
+
+// =============================================================================
+// ScaledCoefficient
+// =============================================================================
+
+Real ScaledCoefficient::eval(ElementTransform& trans) const {
+    return scale_ * q_->eval(trans);
+}
+
+// =============================================================================
+// DomainRestrictedCoefficient
+// =============================================================================
+
+Real DomainRestrictedCoefficient::eval(ElementTransform& trans) const {
+    int attr = static_cast<int>(trans.attribute());
+    if (domains_.empty() || domains_.count(attr) > 0) {
+        return q_->eval(trans);
+    }
+    return 0.0;
 }
 
 // =============================================================================
@@ -73,12 +95,30 @@ Real TemperatureDependentConductivity::eval(ElementTransform& trans) const {
     
     // 数值保护：防止负电阻率或零电阻率
     if (factor <= 0.0) {
-        // 温度过低导致电阻率为负，限制最小电阻率
         factor = 1e-10;
     }
     
     Real rho = rho0 * factor;
     return 1.0 / rho;
+}
+
+// =============================================================================
+// JouleHeatCoefficient
+// =============================================================================
+
+Real JouleHeatCoefficient::eval(ElementTransform& trans) const {
+    if (!V_ || !sigma_) return 0.0;
+    
+    // 检查域限制
+    if (!domains_.empty()) {
+        int attr = static_cast<int>(trans.attribute());
+        if (domains_.find(attr) == domains_.end()) return 0.0;
+    }
+    
+    // 先评估电导率，再计算梯度（梯度计算会改变trans状态）
+    Real sigma_val = sigma_->eval(trans);
+    Vector3 g = V_->gradient(trans.elementIndex(), &trans.integrationPoint().xi, trans);
+    return sigma_val * g.squaredNorm();
 }
 
 }  // namespace mpfem

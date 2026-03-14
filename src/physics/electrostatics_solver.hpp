@@ -9,10 +9,12 @@
 namespace mpfem {
 
 /**
- * @brief Electrostatics solver - minimal design for single-field analysis.
+ * @brief 静电场求解器
  * 
- * Design principle: Single-field solver should NOT contain coupling logic.
- * Temperature-dependent conductivity should be handled externally via setConductivity().
+ * 求解：-div(sigma * grad V) = 0
+ * 
+ * 设计原则：单场求解器不包含耦合逻辑。
+ * 温度依赖电导率应通过setConductivity()由外部设置。
  */
 class ElectrostaticsSolver : public PhysicsFieldSolver {
 public:
@@ -39,11 +41,11 @@ public:
     const FESpace& feSpace() const override { return *fes_; }
     Index numDofs() const override { return fes_->numDofs(); }
     
-    /// Set conductivity coefficient (non-owning pointer)
-    /// This allows external coupling modules to provide temperature-dependent conductivity
+    /// 设置电导率系数（非拥有指针）
+    /// 允许外部耦合模块提供温度依赖的电导率
     void setConductivity(const Coefficient* sigma) { sigma_ = sigma; }
     
-    /// Get conductivity coefficient
+    /// 获取电导率系数
     const Coefficient* conductivity() const { return sigma_; }
     
 private:

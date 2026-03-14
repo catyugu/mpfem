@@ -40,7 +40,7 @@ int main(int argc, char* argv[]) {
             }
         }
         
-        // Print results
+        // 打印结果
         if (setup.hasElectrostatics()) {
             const auto& V = setup.electrostatics->field().values();
             LOG_INFO << "Potential range: [" << V.minCoeff() 
@@ -54,8 +54,22 @@ int main(int argc, char* argv[]) {
             LOG_INFO << "Temperature range: [" << (minT - 273.15) << ", " 
                      << (maxT - 273.15) << "] C";
         }
+        if (setup.hasStructural()) {
+            const auto& u = setup.structural->field().values();
+            // 计算位移幅值
+            Index numNodes = setup.mesh->numVertices();
+            Real maxDisp = 0.0;
+            for (Index i = 0; i < numNodes; ++i) {
+                Real dx = u(i * 3);
+                Real dy = u(i * 3 + 1);
+                Real dz = u(i * 3 + 2);
+                Real mag = std::sqrt(dx*dx + dy*dy + dz*dz);
+                maxDisp = std::max(maxDisp, mag);
+            }
+            LOG_INFO << "Max displacement magnitude: " << maxDisp << " m";
+        }
         
-        // Export results
+        // 导出结果
         std::filesystem::create_directories("results");
         std::string outputPath = "results/busbar_results.vtu";
         
@@ -83,9 +97,25 @@ int main(int argc, char* argv[]) {
             fields.push_back(f);
         }
         
-        // Add displacement field placeholder (zeros) for comparison
-        // TODO: Implement solid mechanics solver
-        {
+        // 添加位移场
+        if (setup.hasStructural()) {
+            const GridFunction& u = setup.structural->field();
+            
+            // 位移幅值
+            Index numNodes = setup.mesh->numVertices();
+            FieldResult fDisp;
+            fDisp.name = "disp";
+            fDisp.unit = "m";
+            fDisp.nodalValues.resize(numNodes);
+            for (Index i = 0; i < numNodes; ++i) {
+                Real dx = u.values()(i * 3);
+                Real dy = u.values()(i * 3 + 1);
+                Real dz = u.values()(i * 3 + 2);
+                fDisp.nodalValues[i] = std::sqrt(dx*dx + dy*dy + dz*dz);
+            }
+            fields.push_back(fDisp);
+        } else {
+            // 位移场占位符（如果求解器未启用）
             FieldResult f;
             f.name = "disp";
             f.unit = "m";
@@ -96,7 +126,7 @@ int main(int argc, char* argv[]) {
         ResultExporter::exportVtu(outputPath, *setup.mesh, fields);
         LOG_INFO << "Results exported to: " << outputPath;
         
-        // Export COMSOL-format result file for comparison
+        // 导出COMSOL格式结果文件用于比较
         std::string comsolOutput = "results/mpfem_result.txt";
         ResultExporter::exportComsolText(comsolOutput, *setup.mesh, fields,
             "Electric potential, Temperature, Displacement magnitude");

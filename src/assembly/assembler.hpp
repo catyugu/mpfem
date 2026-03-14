@@ -26,9 +26,9 @@ constexpr int MAX_DIM = 3;
 // =============================================================================
 
 struct alignas(64) ThreadBuffer {
-    Eigen::Matrix<Real, MAX_DOFS, MAX_DOFS, Eigen::RowMajor> elmat;
-    Eigen::Matrix<Real, MAX_DOFS, 1> elvec;
-    std::array<Index, MAX_DOFS> dofs;
+    Eigen::Matrix<Real, MAX_DOFS * 3, MAX_DOFS * 3, Eigen::RowMajor> elmat;
+    Eigen::Matrix<Real, MAX_DOFS * 3, 1> elvec;
+    std::array<Index, MAX_DOFS * 3> dofs;
     int numDofs = 0;
 };
 
@@ -40,10 +40,10 @@ class BilinearFormAssembler {
 public:
     explicit BilinearFormAssembler(const FESpace* fes);
     
-    void addDomainIntegrator(std::unique_ptr<BilinearFormIntegrator> integ) {
+    void addDomainIntegrator(std::unique_ptr<DomainBilinearIntegrator> integ) {
         domainIntegs_.push_back(std::move(integ));
     }
-    void addBoundaryIntegrator(std::unique_ptr<BilinearFormIntegrator> integ, int bid = -1) {
+    void addBoundaryIntegrator(std::unique_ptr<FaceBilinearIntegrator> integ, int bid = -1) {
         bdrIntegs_.push_back(std::move(integ));
         bdrIds_.push_back(bid);
     }
@@ -60,8 +60,8 @@ public:
     
 private:
     const FESpace* fes_;
-    std::vector<std::unique_ptr<BilinearFormIntegrator>> domainIntegs_;
-    std::vector<std::unique_ptr<BilinearFormIntegrator>> bdrIntegs_;
+    std::vector<std::unique_ptr<DomainBilinearIntegrator>> domainIntegs_;
+    std::vector<std::unique_ptr<FaceBilinearIntegrator>> bdrIntegs_;
     std::vector<int> bdrIds_;
     SparseMatrix mat_;
     std::vector<ThreadBuffer> buffers_;
@@ -78,10 +78,10 @@ class LinearFormAssembler {
 public:
     explicit LinearFormAssembler(const FESpace* fes);
     
-    void addDomainIntegrator(std::unique_ptr<LinearFormIntegrator> integ) {
+    void addDomainIntegrator(std::unique_ptr<DomainLinearIntegrator> integ) {
         domainIntegs_.push_back(std::move(integ));
     }
-    void addBoundaryIntegrator(std::unique_ptr<LinearFormIntegrator> integ, int bid = -1) {
+    void addBoundaryIntegrator(std::unique_ptr<FaceLinearIntegrator> integ, int bid = -1) {
         bdrIntegs_.push_back(std::move(integ));
         bdrIds_.push_back(bid);
     }
@@ -95,8 +95,8 @@ public:
     
 private:
     const FESpace* fes_;
-    std::vector<std::unique_ptr<LinearFormIntegrator>> domainIntegs_;
-    std::vector<std::unique_ptr<LinearFormIntegrator>> bdrIntegs_;
+    std::vector<std::unique_ptr<DomainLinearIntegrator>> domainIntegs_;
+    std::vector<std::unique_ptr<FaceLinearIntegrator>> bdrIntegs_;
     std::vector<int> bdrIds_;
     Vector vec_;
     std::vector<ThreadBuffer> buffers_;

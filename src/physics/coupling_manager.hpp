@@ -3,10 +3,13 @@
 
 #include "physics/electrostatics_solver.hpp"
 #include "physics/heat_transfer_solver.hpp"
+#include "physics/structural_solver.hpp"
 #include "coupling/joule_heating.hpp"
-#include "coupling/temperature_dependent_coefficient.hpp"
+#include "fe/coefficient.hpp"
 #include "core/logger.hpp"
 #include <deque>
+#include <memory>
+#include <set>
 
 namespace mpfem {
 
@@ -19,13 +22,13 @@ struct CouplingResult {
 };
 
 /**
- * @brief Coupling manager for electro-thermal analysis.
+ * @brief 电-热-结构耦合管理器
  * 
- * Design principle: Coupling logic is centralized here, NOT in single-field solvers.
- * This manager handles:
- * - Temperature-dependent conductivity coupling
- * - Joule heating coupling
- * - Picard iteration for coupled solve
+ * 设计原则：耦合逻辑集中在此，不在单场求解器中。
+ * 管理：
+ * - 温度依赖电导率耦合
+ * - 焦耳热耦合
+ * - 热膨胀耦合
  */
 class CouplingManager {
 public:
@@ -33,53 +36,61 @@ public:
     
     void setElectrostaticsSolver(ElectrostaticsSolver* s) { esSolver_ = s; }
     void setHeatTransferSolver(HeatTransferSolver* s) { htSolver_ = s; }
+    void setStructuralSolver(StructuralSolver* s) { stSolver_ = s; }
     void setTolerance(Real tol) { tol_ = tol; }
     void setMaxIterations(int n) { maxIter_ = n; }
     
-    /// Enable temperature-dependent conductivity for specific domains
+    /// 启用温度依赖电导率
     void enableTempDependentConductivity(const std::set<int>& domains = {}) {
         tempDepDomains_ = domains;
         hasTempDepSigma_ = true;
     }
     
-    /// Set domains for Joule heating
+    /// 设置焦耳热作用域
     void setJouleHeatDomains(const std::set<int>& domains) {
         jouleHeatDomains_ = domains;
     }
     
-    /// Set material parameters for temperature-dependent conductivity
+    /// 设置温度依赖材料参数
     void setTempDepMaterial(int domainId, Real rho0, Real alpha, Real tref) {
-        ensureTempDepCoupling();
-        tempDepCoupling_->setMaterial(domainId, rho0, alpha, tref);
+        ensureTempDepSigma();
+        tempDepSigma_->setMaterial(domainId, rho0, alpha, tref);
     }
     
-    /// Set constant conductivity for a domain
+    /// 设置常量电导率
     void setConstantConductivity(int domainId, Real sigma) {
-        ensureTempDepCoupling();
-        tempDepCoupling_->setConstant(domainId, sigma);
+        ensureTempDepSigma();
+        tempDepSigma_->setConstantConductivity(domainId, sigma);
     }
     
+    /// 设置热膨胀参数
+    void setThermalExpansion(int domainId, Real alphaT, Real Tref) {
+        thermalAlpha_[domainId] = alphaT;
+        thermalTref_ = Tref;
+    }
+    
+    /// 执行耦合求解
     CouplingResult solve() {
         CouplingResult result;
         if (!esSolver_ || !htSolver_) return result;
         
         for (int i = 0; i < maxIter_; ++i) {
-            // Update temperature-dependent conductivity
-            if (hasTempDepSigma_ && tempDepCoupling_) {
-                tempDepCoupling_->setTemperatureField(&htSolver_->field());
-                esSolver_->setConductivity(tempDepCoupling_->getConductivity());
+            // 更新温度依赖电导率
+            if (hasTempDepSigma_ && tempDepSigma_) {
+                tempDepSigma_->setTemperatureField(&htSolver_->field());
+                esSolver_->setConductivity(tempDepSigma_.get());
             }
             
-            // Solve electrostatics
+            // 求解电场
             esSolver_->assemble();
             esSolver_->solve();
             
-            // Update Joule heat and solve heat transfer
+            // 更新焦耳热并求解热场
             updateJouleHeat();
             htSolver_->assemble();
             htSolver_->solve();
             
-            // Compute error
+            // 计算误差
             Real err = computeError();
             result.iterations = i + 1;
             result.residual = err;
@@ -91,13 +102,19 @@ public:
                 break;
             }
         }
+        
+        // 后处理：求解结构场（如果有热膨胀耦合）
+        if (stSolver_ && !thermalAlpha_.empty()) {
+            solveThermalExpansion();
+        }
+        
         return result;
     }
     
 private:
-    void ensureTempDepCoupling() {
-        if (!tempDepCoupling_) {
-            tempDepCoupling_ = std::make_unique<TemperatureDependentConductivityCoupling>();
+    void ensureTempDepSigma() {
+        if (!tempDepSigma_) {
+            tempDepSigma_ = std::make_unique<TemperatureDependentConductivity>();
         }
     }
     
@@ -112,6 +129,29 @@ private:
         htSolver_->setHeatSource(jouleHeating_->getHeatSource());
     }
     
+    void solveThermalExpansion() {
+        // 获取最大域ID
+        int maxDomainId = 0;
+        for (const auto& [domId, _] : thermalAlpha_) {
+            maxDomainId = std::max(maxDomainId, domId);
+        }
+        
+        // 创建热膨胀系数
+        auto alphaCoef = std::make_unique<PWConstCoefficient>(maxDomainId);
+        for (const auto& [domId, alpha] : thermalAlpha_) {
+            alphaCoef->set(domId, alpha);
+        }
+        
+        // 设置热膨胀参数
+        stSolver_->setTemperatureField(&htSolver_->field());
+        stSolver_->setReferenceTemperature(thermalTref_);
+        stSolver_->setThermalExpansion(alphaCoef.get());
+        
+        // 组装并求解
+        stSolver_->assemble();
+        stSolver_->solve();
+    }
+    
     Real computeError() {
         if (prevT_.size() == 0) {
             prevT_ = htSolver_->field().values();
@@ -124,14 +164,17 @@ private:
     
     ElectrostaticsSolver* esSolver_ = nullptr;
     HeatTransferSolver* htSolver_ = nullptr;
+    StructuralSolver* stSolver_ = nullptr;
     
-    // Coupling modules
+    // 耦合模块
     std::unique_ptr<JouleHeatingCoupling> jouleHeating_;
-    std::unique_ptr<TemperatureDependentConductivityCoupling> tempDepCoupling_;
+    std::unique_ptr<TemperatureDependentConductivity> tempDepSigma_;
     
-    // Configuration
+    // 配置
     std::set<int> tempDepDomains_;
     std::set<int> jouleHeatDomains_;
+    std::map<int, Real> thermalAlpha_;
+    Real thermalTref_ = 293.15;
     bool hasTempDepSigma_ = false;
     
     Vector prevT_;

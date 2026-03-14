@@ -9,11 +9,11 @@
 namespace mpfem {
 
 /**
- * @brief Structural mechanics solver for linear elasticity.
+ * @brief 结构力学求解器（线弹性）
  * 
- * Solves: -div(sigma) = 0
- * where sigma = C : (epsilon - epsilon_thermal)
- * and epsilon_thermal = alpha_T * (T - T_ref) * I
+ * 求解: -div(sigma) = 0
+ * 其中 sigma = C : (epsilon - epsilon_thermal)
+ * epsilon_thermal = alpha_T * (T - T_ref) * I
  */
 class StructuralSolver : public PhysicsFieldSolver {
 public:
@@ -23,25 +23,27 @@ public:
     FieldKind fieldKind() const override { return FieldKind::Displacement; }
     std::string fieldName() const override { return "Displacement"; }
     
-    /// Initialize with isotropic material properties
-    /// @param E Young's modulus [Pa]
-    /// @param nu Poisson's ratio [-]
+    /// 使用单参数初始化（为了兼容基类接口）
+    bool initialize(const Mesh& mesh, const PWConstCoefficient& param) override {
+        // 默认使用param作为杨氏模量，泊松比设为0.3
+        return initialize(mesh, param, PWConstCoefficient(std::vector<Real>{0.3}));
+    }
+    
+    /// 完整初始化
     bool initialize(const Mesh& mesh,
                     const PWConstCoefficient& youngModulus,
                     const PWConstCoefficient& poissonRatio);
     
     void addDirichletBC(int boundaryId, Real value) override {
-        // For displacement, we store vector BCs separately
-        // This is a simplified interface for scalar BC
         bcValues_[boundaryId] = Vector3(value, value, value);
     }
     
-    /// Add Dirichlet BC with vector value
+    /// 添加向量Dirichlet边界条件
     void addDirichletBC(int boundaryId, const Vector3& disp) {
         bcValues_[boundaryId] = disp;
     }
     
-    /// Add Dirichlet BC for specific component (0=x, 1=y, 2=z)
+    /// 添加分量Dirichlet边界条件 (0=x, 1=y, 2=z)
     void addDirichletBC(int boundaryId, int component, Real value) {
         componentBCs_[boundaryId * 3 + component] = value;
     }
@@ -51,19 +53,18 @@ public:
         componentBCs_.clear();
     }
     
-    /// Set thermal strain coefficient: alpha_T * (T - T_ref)
-    /// This is a vector coefficient (3 components for 3D)
+    /// 设置热应变系数: alpha_T * (T - T_ref)
     void setThermalStrain(const VectorCoefficient* thermalStrain) {
         thermalStrain_ = thermalStrain;
     }
     
-    /// Set temperature field for thermal expansion (non-owning)
+    /// 设置温度场（非拥有）
     void setTemperatureField(const GridFunction* T) { T_ = T; }
     
-    /// Set reference temperature for thermal expansion
+    /// 设置参考温度
     void setReferenceTemperature(Real Tref) { Tref_ = Tref; }
     
-    /// Set thermal expansion coefficient (non-owning)
+    /// 设置热膨胀系数（非拥有）
     void setThermalExpansion(const Coefficient* alphaT) { alphaT_ = alphaT; }
     
     void assemble() override;
@@ -74,10 +75,10 @@ public:
     const FESpace& feSpace() const override { return *fes_; }
     Index numDofs() const override { return fes_->numDofs(); }
     
-    /// Get stress field (computed after solve)
+    /// 获取应力场
     const GridFunction& stress() const { return *stress_; }
     
-    /// Get strain field (computed after solve)
+    /// 获取应变场
     const GridFunction& strain() const { return *strain_; }
     
 private:
@@ -86,9 +87,9 @@ private:
     const Mesh* mesh_ = nullptr;
     std::unique_ptr<FECollection> fec_;
     std::unique_ptr<FESpace> fes_;
-    std::unique_ptr<GridFunction> u_;        // Displacement
-    std::unique_ptr<GridFunction> stress_;   // Stress (6 components)
-    std::unique_ptr<GridFunction> strain_;   // Strain (6 components)
+    std::unique_ptr<GridFunction> u_;        // 位移
+    std::unique_ptr<GridFunction> stress_;   // 应力 (6分量)
+    std::unique_ptr<GridFunction> strain_;   // 应变 (6分量)
     std::unique_ptr<BilinearFormAssembler> matAsm_;
     std::unique_ptr<LinearFormAssembler> vecAsm_;
     std::unique_ptr<LinearSolver> solver_;
@@ -96,10 +97,10 @@ private:
     PWConstCoefficient EInternal_;
     PWConstCoefficient nuInternal_;
     
-    const GridFunction* T_ = nullptr;        // Temperature field
-    const Coefficient* alphaT_ = nullptr;    // Thermal expansion coefficient
+    const GridFunction* T_ = nullptr;        // 温度场
+    const Coefficient* alphaT_ = nullptr;    // 热膨胀系数
     const VectorCoefficient* thermalStrain_ = nullptr;
-    Real Tref_ = 293.15;                     // Reference temperature
+    Real Tref_ = 293.15;                     // 参考温度
     
     std::map<int, Vector3> bcValues_;
     std::map<int, Real> componentBCs_;

@@ -3,6 +3,7 @@
 
 #include "electrostatics_solver.hpp"
 #include "heat_transfer_solver.hpp"
+#include "structural_solver.hpp"
 #include "coupling_manager.hpp"
 #include "model/case_definition.hpp"
 #include "model/material_database.hpp"
@@ -26,14 +27,20 @@ struct PhysicsProblemSetup {
     
     std::unique_ptr<ElectrostaticsSolver> electrostatics;
     std::unique_ptr<HeatTransferSolver> heatTransfer;
+    std::unique_ptr<StructuralSolver> structural;
     std::unique_ptr<CouplingManager> couplingManager;
     
     std::unique_ptr<PWConstCoefficient> conductivity;
     std::unique_ptr<PWConstCoefficient> thermalConductivity;
+    std::unique_ptr<PWConstCoefficient> youngModulus;
+    std::unique_ptr<PWConstCoefficient> poissonRatio;
+    std::unique_ptr<PWConstCoefficient> thermalExpansion;
     
     bool hasElectrostatics() const { return electrostatics != nullptr; }
     bool hasHeatTransfer() const { return heatTransfer != nullptr; }
+    bool hasStructural() const { return structural != nullptr; }
     bool hasJouleHeating() const { return hasElectrostatics() && hasHeatTransfer(); }
+    bool hasThermalExpansion() const { return hasHeatTransfer() && hasStructural(); }
 };
 
 class PhysicsProblemBuilder {
@@ -69,7 +76,7 @@ private:
         const auto& caseDef = setup.caseDef;
         const auto& materials = setup.materials;
         
-        // Build domain material mapping
+        // 构建域材料映射
         for (const auto& assign : caseDef.materialAssignments) {
             for (int domId : assign.domainIds) {
                 setup.domainMaterial[domId] = assign.materialTag;
@@ -81,7 +88,7 @@ private:
             maxDomainId = std::max(maxDomainId, domId);
         }
         
-        // Build physics solvers
+        // 构建物理场求解器
         for (const auto& physics : caseDef.physicsDefinitions) {
             if (physics.kind == "electrostatics") {
                 buildElectrostatics(setup, physics, maxDomainId, materials);
@@ -89,25 +96,47 @@ private:
             else if (physics.kind == "heat_transfer") {
                 buildHeatTransfer(setup, physics, maxDomainId, materials);
             }
+            else if (physics.kind == "solid_mechanics") {
+                buildStructural(setup, physics, maxDomainId, materials);
+            }
         }
         
-        // Setup coupling if needed
-        if (setup.hasJouleHeating()) {
+        // 设置耦合
+        if (setup.hasJouleHeating() || setup.hasThermalExpansion()) {
             setup.couplingManager = std::make_unique<CouplingManager>();
-            setup.couplingManager->setElectrostaticsSolver(setup.electrostatics.get());
-            setup.couplingManager->setHeatTransferSolver(setup.heatTransfer.get());
+            
+            if (setup.hasElectrostatics()) {
+                setup.couplingManager->setElectrostaticsSolver(setup.electrostatics.get());
+            }
+            if (setup.hasHeatTransfer()) {
+                setup.couplingManager->setHeatTransferSolver(setup.heatTransfer.get());
+            }
+            if (setup.hasStructural()) {
+                setup.couplingManager->setStructuralSolver(setup.structural.get());
+            }
+            
             setup.couplingManager->setTolerance(caseDef.couplingConfig.tolerance);
             setup.couplingManager->setMaxIterations(caseDef.couplingConfig.maxIterations);
             
-            // Setup Joule heating domains from coupledPhysicsDefinitions
+            // 设置焦耳热耦合
             for (const auto& cp : caseDef.coupledPhysicsDefinitions) {
                 if (cp.kind == "joule_heating") {
                     setup.couplingManager->setJouleHeatDomains(cp.domainIds);
                     LOG_INFO << "Joule heating domains: " << cp.domainIds.size() << " domains";
                 }
+                else if (cp.kind == "thermal_expansion") {
+                    // 设置热膨胀耦合
+                    for (int domId : cp.domainIds) {
+                        const MaterialPropertyModel* mat = materials.getMaterial(setup.domainMaterial[domId]);
+                        if (mat && mat->thermalExpansion > 0.0) {
+                            setup.couplingManager->setThermalExpansion(domId, mat->thermalExpansion, 293.15);
+                        }
+                    }
+                    LOG_INFO << "Thermal expansion coupling enabled";
+                }
             }
             
-            // Setup temperature-dependent conductivity
+            // 设置温度依赖电导率
             setupCoupling(setup, materials);
         }
     }
@@ -122,7 +151,6 @@ private:
         
         auto conductivity = std::make_unique<PWConstCoefficient>(maxDomainId);
         
-        // Set conductivity values
         for (const auto& [domId, matTag] : setup.domainMaterial) {
             const MaterialPropertyModel* mat = materials.getMaterial(matTag);
             if (mat) {
@@ -136,7 +164,6 @@ private:
         setup.electrostatics->setSolver(physics.solver.type, physics.solver.maxIterations, physics.solver.relativeTolerance);
         setup.electrostatics->initialize(*setup.mesh, *conductivity);
         
-        // Apply boundary conditions
         for (const auto& bc : physics.boundaries) {
             if (bc.kind == "voltage") {
                 Real value = parseValue(bc.params, "value", setup.caseDef);
@@ -189,10 +216,52 @@ private:
         setup.thermalConductivity = std::move(thermalConductivity);
     }
     
+    static void buildStructural(
+        PhysicsProblemSetup& setup,
+        const PhysicsDefinition& physics,
+        int maxDomainId,
+        const MaterialDatabase& materials)
+    {
+        LOG_INFO << "Building structural solver, order = " << physics.order;
+        
+        auto youngModulus = std::make_unique<PWConstCoefficient>(maxDomainId);
+        auto poissonRatio = std::make_unique<PWConstCoefficient>(maxDomainId);
+        auto thermalExpansion = std::make_unique<PWConstCoefficient>(maxDomainId);
+        
+        for (const auto& [domId, matTag] : setup.domainMaterial) {
+            const MaterialPropertyModel* mat = materials.getMaterial(matTag);
+            if (mat) {
+                youngModulus->set(domId, mat->youngModulus);
+                poissonRatio->set(domId, mat->poissonRatio);
+                thermalExpansion->set(domId, mat->thermalExpansion);
+                LOG_INFO << "Domain " << domId << " (" << matTag 
+                         << "): E = " << mat->youngModulus 
+                         << ", nu = " << mat->poissonRatio
+                         << ", alpha_T = " << mat->thermalExpansion;
+            }
+        }
+        
+        setup.structural = std::make_unique<StructuralSolver>(physics.order);
+        setup.structural->setSolver(physics.solver.type, physics.solver.maxIterations, physics.solver.relativeTolerance);
+        setup.structural->initialize(*setup.mesh, *youngModulus, *poissonRatio);
+        
+        // 应用边界条件
+        for (const auto& bc : physics.boundaries) {
+            if (bc.kind == "fixed_constraint") {
+                for (int id : bc.ids) {
+                    setup.structural->addDirichletBC(id, Vector3(0.0, 0.0, 0.0));
+                }
+            }
+        }
+        
+        setup.youngModulus = std::move(youngModulus);
+        setup.poissonRatio = std::move(poissonRatio);
+        setup.thermalExpansion = std::move(thermalExpansion);
+    }
+    
     static void setupCoupling(PhysicsProblemSetup& setup, const MaterialDatabase& materials) {
         bool hasTempDepSigma = false;
         
-        // Check if any material has temperature-dependent resistivity
         for (const auto& [domId, matTag] : setup.domainMaterial) {
             const MaterialPropertyModel* mat = materials.getMaterial(matTag);
             if (mat && mat->rho0 > 0.0) {
@@ -203,7 +272,6 @@ private:
         
         if (!hasTempDepSigma) return;
         
-        // Setup temperature-dependent conductivity
         setup.couplingManager->enableTempDependentConductivity();
         
         for (const auto& [domId, matTag] : setup.domainMaterial) {

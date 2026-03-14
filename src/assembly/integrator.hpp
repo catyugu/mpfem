@@ -11,75 +11,93 @@
 namespace mpfem {
 
 // =============================================================================
-// 双线性型积分器基类
+// 基础积分器接口 - 只提供积分规则和系数评估
 // =============================================================================
 
-class BilinearFormIntegrator {
-public:
-    BilinearFormIntegrator() = default;
-    
-    /// 非拥有引用版本
-    explicit BilinearFormIntegrator(const Coefficient* q) : q_(q) {}
-    
-    /// 拥有版本（解决内存泄漏）
-    explicit BilinearFormIntegrator(std::unique_ptr<Coefficient> q)
-        : ownedQ_(std::move(q)), q_(ownedQ_.get()) {}
-    
-    virtual ~BilinearFormIntegrator() = default;
-    
-    // 禁止拷贝，允许移动
-    BilinearFormIntegrator(const BilinearFormIntegrator&) = delete;
-    BilinearFormIntegrator& operator=(const BilinearFormIntegrator&) = delete;
-    BilinearFormIntegrator(BilinearFormIntegrator&&) = default;
-    BilinearFormIntegrator& operator=(BilinearFormIntegrator&&) = default;
-    
-    virtual void assembleElementMatrix(const ReferenceElement& ref, 
-                                        ElementTransform& trans, 
-                                        Matrix& elmat) const = 0;
-    virtual void assembleFaceMatrix(const ReferenceElement& ref,
-                                     FacetElementTransform& trans,
-                                     Matrix& elmat) const {}
-    
+class IntegratorBase {
 protected:
     std::unique_ptr<Coefficient> ownedQ_;  ///< 持有的系数（可选）
     const Coefficient* q_ = nullptr;       ///< 系数指针（拥有或非拥有）
+    
     Real evalCoef(ElementTransform& t) const { return q_ ? q_->eval(t) : 1.0; }
+    Real evalCoef(FacetElementTransform& t) const { return q_ ? q_->eval(t) : 1.0; }
+
+public:
+    IntegratorBase() = default;
+    explicit IntegratorBase(const Coefficient* q) : q_(q) {}
+    explicit IntegratorBase(std::unique_ptr<Coefficient> q)
+        : ownedQ_(std::move(q)), q_(ownedQ_.get()) {}
+    
+    virtual ~IntegratorBase() = default;
+    
+    IntegratorBase(const IntegratorBase&) = delete;
+    IntegratorBase& operator=(const IntegratorBase&) = delete;
+    IntegratorBase(IntegratorBase&&) = default;
+    IntegratorBase& operator=(IntegratorBase&&) = default;
 };
 
 // =============================================================================
-// 线性型积分器基类
+// 双线性型域积分器基类 - 仅用于体积分
 // =============================================================================
 
-class LinearFormIntegrator {
+class DomainBilinearIntegrator : public IntegratorBase {
 public:
-    LinearFormIntegrator() = default;
+    using IntegratorBase::IntegratorBase;
     
-    /// 非拥有引用版本
-    explicit LinearFormIntegrator(const Coefficient* q) : q_(q) {}
+    /// 组装单元矩阵: ∫ coef * L(φ_i) * L(φ_j) dΩ
+    /// @param vdim 向量维度（标量场=1，向量场=3）
+    virtual void assembleElementMatrix(const ReferenceElement& ref, 
+                                        ElementTransform& trans, 
+                                        Matrix& elmat,
+                                        int vdim = 1) const = 0;
+};
+
+// =============================================================================
+// 双线性型边界积分器基类 - 仅用于边界积分
+// =============================================================================
+
+class FaceBilinearIntegrator : public IntegratorBase {
+public:
+    using IntegratorBase::IntegratorBase;
     
-    /// 拥有版本（解决内存泄漏）
-    explicit LinearFormIntegrator(std::unique_ptr<Coefficient> q)
-        : ownedQ_(std::move(q)), q_(ownedQ_.get()) {}
+    /// 组装边界矩阵: ∫ coef * L(φ_i) * L(φ_j) dΓ
+    /// @param vdim 向量维度（标量场=1，向量场=3）
+    virtual void assembleFaceMatrix(const ReferenceElement& ref,
+                                     FacetElementTransform& trans,
+                                     Matrix& elmat,
+                                     int vdim = 1) const = 0;
+};
+
+// =============================================================================
+// 线性型域积分器基类 - 仅用于体积分
+// =============================================================================
+
+class DomainLinearIntegrator : public IntegratorBase {
+public:
+    using IntegratorBase::IntegratorBase;
     
-    virtual ~LinearFormIntegrator() = default;
-    
-    // 禁止拷贝，允许移动
-    LinearFormIntegrator(const LinearFormIntegrator&) = delete;
-    LinearFormIntegrator& operator=(const LinearFormIntegrator&) = delete;
-    LinearFormIntegrator(LinearFormIntegrator&&) = default;
-    LinearFormIntegrator& operator=(LinearFormIntegrator&&) = default;
-    
+    /// 组装单元向量: ∫ coef * L(φ_i) dΩ
+    /// @param vdim 向量维度（标量场=1，向量场=3）
     virtual void assembleElementVector(const ReferenceElement& ref,
                                         ElementTransform& trans,
-                                        Vector& elvec) const = 0;
+                                        Vector& elvec,
+                                        int vdim = 1) const = 0;
+};
+
+// =============================================================================
+// 线性型边界积分器基类 - 仅用于边界积分
+// =============================================================================
+
+class FaceLinearIntegrator : public IntegratorBase {
+public:
+    using IntegratorBase::IntegratorBase;
+    
+    /// 组装边界向量: ∫ coef * L(φ_i) dΓ
+    /// @param vdim 向量维度（标量场=1，向量场=3）
     virtual void assembleFaceVector(const ReferenceElement& ref,
                                      FacetElementTransform& trans,
-                                     Vector& elvec) const {}
-    
-protected:
-    std::unique_ptr<Coefficient> ownedQ_;  ///< 持有的系数（可选）
-    const Coefficient* q_ = nullptr;       ///< 系数指针（拥有或非拥有）
-    Real evalCoef(ElementTransform& t) const { return q_ ? q_->eval(t) : 1.0; }
+                                     Vector& elvec,
+                                     int vdim = 1) const = 0;
 };
 
 }  // namespace mpfem

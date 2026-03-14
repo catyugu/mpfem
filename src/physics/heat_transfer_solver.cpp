@@ -38,14 +38,19 @@ void HeatTransferSolver::assemble() {
     matAsm_->addDomainIntegrator(std::move(diff));
     
     for (const auto& [bid, bc] : convBCs_) {
-        // 使用拥有语义构造积分器，避免内存泄漏
-        auto conv = std::make_unique<ConvectionBoundaryIntegrator>(
-            std::make_unique<ConstantCoefficient>(bc.h));
-        matAsm_->addBoundaryIntegrator(std::move(conv), bid);
+        // 对流边界条件: h(T - Tinf) = 0
+        // 弱形式: ∫ h T φ dΓ - ∫ h Tinf φ dΓ = 0
+        // 矩阵部分: ∫ h φ_i φ_j dΓ
+        // 向量部分: ∫ h Tinf φ_i dΓ
         
-        auto rhsInt = std::make_unique<BoundaryLFIntegrator>(
-            std::make_unique<ConstantCoefficient>(bc.h * bc.Tinf));
-        vecAsm_->addBoundaryIntegrator(std::move(rhsInt), bid);
+        auto convMat = std::make_unique<ConvectionMassIntegrator>(
+            std::make_unique<ConstantCoefficient>(bc.h));
+        matAsm_->addBoundaryIntegrator(std::move(convMat), bid);
+        
+        auto convVec = std::make_unique<ConvectionLFIntegrator>(
+            std::make_unique<ConstantCoefficient>(bc.h),
+            std::make_unique<ConstantCoefficient>(bc.Tinf));
+        vecAsm_->addBoundaryIntegrator(std::move(convVec), bid);
     }
     
     matAsm_->assemble();
@@ -57,7 +62,7 @@ void HeatTransferSolver::assemble() {
     
     vecAsm_->assemble();
     
-    // 使用公共函数应用边界条件
+    // 应用Dirichlet边界条件
     applyDirichletBC(matAsm_->matrix(), vecAsm_->vector(), T_->values(),
                      *fes_, *mesh_, bcValues_);
     matAsm_->finalize();

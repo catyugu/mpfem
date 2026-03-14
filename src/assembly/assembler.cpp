@@ -69,10 +69,11 @@ void BilinearFormAssembler::assemble() {
     mat_.setZero();  // 保留稀疏结构
     
     const Index numElements = mesh->numElements();
+    const int vdim = fes_->vdim();  // 向量维度
     
     // 清空并复用三元组缓冲区（避免重新分配）
     triplets_.clear();
-    triplets_.reserve(numElements * MAX_DOFS * MAX_DOFS / 2);
+    triplets_.reserve(numElements * MAX_DOFS * MAX_DOFS * vdim * vdim / 2);
     
 #ifdef _OPENMP
     // 并行组装
@@ -83,7 +84,7 @@ void BilinearFormAssembler::assemble() {
         
         // 线程局部三元组
         std::vector<SparseMatrix::Triplet> localTriplets;
-        localTriplets.reserve(numElements * MAX_DOFS * MAX_DOFS / buffers_.size() / 2);
+        localTriplets.reserve(numElements * MAX_DOFS * MAX_DOFS * vdim * vdim / buffers_.size() / 2);
         
         ElementTransform trans;
         trans.setMesh(mesh);
@@ -93,24 +94,24 @@ void BilinearFormAssembler::assemble() {
             const ReferenceElement* ref = fes_->elementRefElement(e);
             if (!ref) continue;
             int nd = ref->numDofs();
-            buf.numDofs = nd;
+            buf.numDofs = nd * vdim;
             
             trans.setElement(e);
             buf.elmat.setZero();
             
             for (const auto& integ : domainIntegs_) {
                 Matrix temp;
-                integ->assembleElementMatrix(*ref, trans, temp);
-                buf.elmat.topLeftCorner(nd, nd) += temp;
+                integ->assembleElementMatrix(*ref, trans, temp, vdim);
+                buf.elmat.topLeftCorner(nd * vdim, nd * vdim) += temp;
             }
             
             // 获取 DOFs 到缓冲区
             std::vector<Index> dofs;
             fes_->getElementDofs(e, dofs);
             
-            for (int i = 0; i < nd; ++i) {
+            for (int i = 0; i < nd * vdim; ++i) {
                 if (dofs[i] == InvalidIndex) continue;
-                for (int j = 0; j < nd; ++j) {
+                for (int j = 0; j < nd * vdim; ++j) {
                     if (dofs[j] == InvalidIndex) continue;
                     Real v = buf.elmat(i, j);
                     if (std::abs(v) > 1e-30)
@@ -141,16 +142,16 @@ void BilinearFormAssembler::assemble() {
         
         for (const auto& integ : domainIntegs_) {
             Matrix temp;
-            integ->assembleElementMatrix(*ref, trans, temp);
-            buf.elmat.topLeftCorner(nd, nd) += temp;
+            integ->assembleElementMatrix(*ref, trans, temp, vdim);
+            buf.elmat.topLeftCorner(nd * vdim, nd * vdim) += temp;
         }
         
         std::vector<Index> dofs;
         fes_->getElementDofs(e, dofs);
         
-        for (int i = 0; i < nd; ++i) {
+        for (int i = 0; i < nd * vdim; ++i) {
             if (dofs[i] == InvalidIndex) continue;
-            for (int j = 0; j < nd; ++j) {
+            for (int j = 0; j < nd * vdim; ++j) {
                 if (dofs[j] == InvalidIndex) continue;
                 Real v = buf.elmat(i, j);
                 if (std::abs(v) > 1e-30)
@@ -170,7 +171,7 @@ void BilinearFormAssembler::assemble() {
         for (Index b = 0; b < mesh->numBdrElements(); ++b) {
             int attr = mesh->bdrElement(b).attribute();
             
-            // 跳过内边界 - 基于边界 ID 判断（更高效）
+            // 跳过内边界
             if (!fes_->isExternalBoundaryId(attr)) {
                 continue;
             }
@@ -186,16 +187,16 @@ void BilinearFormAssembler::assemble() {
             for (size_t k = 0; k < bdrIntegs_.size(); ++k) {
                 if (bdrIds_[k] >= 0 && bdrIds_[k] != attr) continue;
                 Matrix temp;
-                bdrIntegs_[k]->assembleFaceMatrix(*ref, btrans, temp);
-                buf.elmat.topLeftCorner(nd, nd) += temp;
+                bdrIntegs_[k]->assembleFaceMatrix(*ref, btrans, temp, vdim);
+                buf.elmat.topLeftCorner(nd * vdim, nd * vdim) += temp;
             }
             
             std::vector<Index> dofs;
             fes_->getBdrElementDofs(b, dofs);
             
-            for (int i = 0; i < nd; ++i) {
+            for (int i = 0; i < nd * vdim; ++i) {
                 if (dofs[i] == InvalidIndex) continue;
-                for (int j = 0; j < nd; ++j) {
+                for (int j = 0; j < nd * vdim; ++j) {
                     if (dofs[j] == InvalidIndex) continue;
                     Real v = buf.elmat(i, j);
                     if (std::abs(v) > 1e-30)
@@ -235,6 +236,8 @@ void LinearFormAssembler::assemble() {
     const Mesh* mesh = fes_->mesh();
     if (!mesh) return;
     
+    const int vdim = fes_->vdim();
+    
 #ifdef _OPENMP
     // 重置线程局部向量
     for (auto& v : threadVectors_) {
@@ -266,15 +269,15 @@ void LinearFormAssembler::assemble() {
                 buf.elvec.setZero();
                 
                 for (const auto& integ : domainIntegs_) {
-                    Vector temp(nd);
+                    Vector temp(nd * vdim);
                     temp.setZero();
-                    integ->assembleElementVector(*ref, trans, temp);
-                    buf.elvec.head(nd) += temp;
+                    integ->assembleElementVector(*ref, trans, temp, vdim);
+                    buf.elvec.head(nd * vdim) += temp;
                 }
                 
                 std::vector<Index> dofs;
                 fes_->getElementDofs(e, dofs);
-                for (int i = 0; i < nd; ++i) {
+                for (int i = 0; i < nd * vdim; ++i) {
                     if (dofs[i] != InvalidIndex)
                         localVec(dofs[i]) += buf.elvec(i);
                 }
@@ -299,15 +302,15 @@ void LinearFormAssembler::assemble() {
             buf.elvec.setZero();
             
             for (const auto& integ : domainIntegs_) {
-                Vector temp(nd);
+                Vector temp(nd * vdim);
                 temp.setZero();
-                integ->assembleElementVector(*ref, trans, temp);
-                buf.elvec.head(nd) += temp;
+                integ->assembleElementVector(*ref, trans, temp, vdim);
+                buf.elvec.head(nd * vdim) += temp;
             }
             
             std::vector<Index> dofs;
             fes_->getElementDofs(e, dofs);
-            for (int i = 0; i < nd; ++i) {
+            for (int i = 0; i < nd * vdim; ++i) {
                 if (dofs[i] != InvalidIndex)
                     vec_(dofs[i]) += buf.elvec(i);
             }
@@ -316,7 +319,6 @@ void LinearFormAssembler::assemble() {
     }
     
     // 边界积分（通常较少，串行处理）
-    // 注意：只对外边界应用边界条件，跳过内边界
     if (!bdrIntegs_.empty()) {
         FacetElementTransform btrans;
         btrans.setMesh(mesh);
@@ -325,7 +327,7 @@ void LinearFormAssembler::assemble() {
         for (Index b = 0; b < mesh->numBdrElements(); ++b) {
             int attr = mesh->bdrElement(b).attribute();
             
-            // 跳过内边界 - 基于边界 ID 判断（更高效）
+            // 跳过内边界
             if (!fes_->isExternalBoundaryId(attr)) {
                 continue;
             }
@@ -340,15 +342,15 @@ void LinearFormAssembler::assemble() {
             
             for (size_t k = 0; k < bdrIntegs_.size(); ++k) {
                 if (bdrIds_[k] >= 0 && bdrIds_[k] != attr) continue;
-                Vector temp(nd);
+                Vector temp(nd * vdim);
                 temp.setZero();
-                bdrIntegs_[k]->assembleFaceVector(*ref, btrans, temp);
-                buf.elvec.head(nd) += temp;
+                bdrIntegs_[k]->assembleFaceVector(*ref, btrans, temp, vdim);
+                buf.elvec.head(nd * vdim) += temp;
             }
             
             std::vector<Index> dofs;
             fes_->getBdrElementDofs(b, dofs);
-            for (int i = 0; i < nd; ++i) {
+            for (int i = 0; i < nd * vdim; ++i) {
                 if (dofs[i] != InvalidIndex)
                     vec_(dofs[i]) += buf.elvec(i);
             }
