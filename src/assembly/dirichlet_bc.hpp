@@ -25,13 +25,14 @@ inline void applyDirichletBC(SparseMatrix& mat, Vector& rhs, Vector& sol,
     
     // 收集所有边界 DOF 及其值
     // 注意：只对外边界应用边界条件，跳过内边界
+    // 使用边界 ID 级别检查（更高效）
     for (const auto& [bid, val] : bcValues) {
+        // 跳过内边界 ID
+        if (!fes.isExternalBoundaryId(bid)) {
+            continue;
+        }
+        
         for (Index b = 0; b < mesh.numBdrElements(); ++b) {
-            // 跳过内边界 - 只对外边界应用 Dirichlet BC
-            if (!fes.isExternalBoundary(b)) {
-                continue;
-            }
-            
             if (mesh.bdrElement(b).attribute() == bid) {
                 std::vector<Index> dofs;
                 fes.getBdrElementDofs(b, dofs);

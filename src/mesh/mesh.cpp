@@ -275,17 +275,23 @@ void Mesh::identifyBoundaryFaces() {
 
 void Mesh::buildBoundaryElementMapping() {
     // Match boundary elements to topology faces
-    // A boundary element should match a boundary face by its vertices
+    // A boundary element should match a boundary face by its CORNER vertices only
+    // (not including edge midpoints for quadratic elements)
+    
+    Index externalCount = 0;
+    Index internalCount = 0;
+    bdrIdExternalCache_.clear();
     
     for (Index bdrIdx = 0; bdrIdx < numBdrElements(); ++bdrIdx) {
         const Element& bdrElem = bdrElement(bdrIdx);
+        Index bdrId = bdrElem.attribute();
         
-        // Get sorted vertex key for boundary element
+        // Get sorted vertex key for boundary element - ONLY CORNER NODES
         FaceKey key;
-        const auto& verts = bdrElem.vertices();
-        key.reserve(verts.size());
-        for (Index v : verts) {
-            key.push_back(v);
+        int numCorners = bdrElem.numCorners();
+        key.reserve(numCorners);
+        for (int i = 0; i < numCorners; ++i) {
+            key.push_back(bdrElem.vertex(i));
         }
         std::sort(key.begin(), key.end());
         
@@ -294,8 +300,25 @@ void Mesh::buildBoundaryElementMapping() {
         if (it != faceKeyToIndex_.end()) {
             Index faceIdx = it->second;
             bdrElementToFace_[bdrIdx] = faceIdx;
+            
+            bool isExternal = faceInfoList_[faceIdx].isBoundary;
+            
+            // Count external vs internal boundaries
+            if (isExternal) {
+                externalCount++;
+            } else {
+                internalCount++;
+            }
+            
+            // Cache boundary ID -> isExternal (first encounter sets the value)
+            if (bdrIdExternalCache_.find(bdrId) == bdrIdExternalCache_.end()) {
+                bdrIdExternalCache_[bdrId] = isExternal;
+            }
         }
     }
+    
+    LOG_INFO << "Boundary mapping: " << externalCount << " external, " 
+             << internalCount << " internal (will skip in BC)";
 }
 
 }  // namespace mpfem

@@ -16,41 +16,45 @@
 [INFO] [0ms] Case directory: cases/busbar
 [INFO] [0ms] Reading case from cases/busbar/case.xml
 [INFO] [1ms] Loaded case definition: busbar with 3 physics fields
-[INFO] [1ms] Reading mesh from cases/busbar/mesh.mphtxt
 [INFO] [2ms] Reading mesh from cases/busbar/mesh.mphtxt
-[INFO] [101ms] Mesh loaded: 7340 vertices, 31021 volume elements, 9138 boundary elements
-[INFO] [102ms] Mesh loaded: 7340 vertices, 31021 elements
-[INFO] [102ms] Reading materials from cases/busbar/material.xml
-[INFO] [103ms] Loaded 2 materials from cases/busbar/material.xml
-[INFO] [103ms] Building electrostatics solver, order = 1
-[INFO] [103ms] Domain 1 (mat1): sigma = 5.998e+07
-[INFO] [103ms] Domain 2 (mat2): sigma = 740700
-[INFO] [104ms] Domain 3 (mat2): sigma = 740700
-[INFO] [104ms] Domain 4 (mat2): sigma = 740700
-[INFO] [104ms] Domain 5 (mat2): sigma = 740700
-[INFO] [104ms] Domain 6 (mat2): sigma = 740700
-[INFO] [104ms] Domain 7 (mat2): sigma = 740700
-[INFO] [119ms] ElectrostaticsSolver: 7340 DOFs
-[INFO] [119ms] Building heat transfer solver, order = 1
-[INFO] [135ms] HeatTransferSolver: 7340 DOFs
-[INFO] [136ms] Running coupled electro-thermal solve...
-[INFO] [219ms] [EigenSparseLU] Solve successful, solution norm: 0.622902
-[INFO] [219ms] Electrostatics converged: iter=1 res=3.81512e-13
-[INFO] [426ms] [EigenSparseLU] Solve successful, solution norm: 27668.6
-[INFO] [426ms] HeatTransfer converged: iter=1 res=4.76993e-11
-[INFO] [501ms] [EigenSparseLU] Solve successful, solution norm: 0.622902
-[INFO] [501ms] Electrostatics converged: iter=1 res=3.80459e-13
-[INFO] [700ms] [EigenSparseLU] Solve successful, solution norm: 27668.6
-[INFO] [700ms] HeatTransfer converged: iter=1 res=4.759e-11
-[INFO] [700ms] Coupling converged in 2 iterations
-[INFO] [700ms] Potential range: [0, 0.02] V
-[INFO] [700ms] Temperature range: [322.497, 330.674] K
-[INFO] [701ms] Temperature range: [49.3474, 57.5238] C
-[INFO] [741ms] Exported VTU results to results/busbar_results.vtu
-[INFO] [742ms] Results exported to: results/busbar_results.vtu
-[INFO] [775ms] Exported results to results/mpfem_result.txt
-[INFO] [775ms] COMSOL format results exported to: results/mpfem_result.txt
-[INFO] [776ms] === Example completed successfully! ===
+[INFO] [2ms] Reading mesh from cases/busbar/mesh.mphtxt
+[INFO] [124ms] Mesh loaded: 7340 vertices, 31021 volume elements, 9138 boundary elements
+[INFO] [220ms] Boundary mapping: 8378 external, 760 internal (will skip in BC)
+[INFO] [222ms] Mesh loaded: 7340 vertices, 31021 elements
+[INFO] [222ms] Reading materials from cases/busbar/material.xml
+[INFO] [222ms] Loaded 2 materials from cases/busbar/material.xml
+[INFO] [223ms] Building electrostatics solver, order = 1
+[INFO] [223ms] Domain 1 (mat1): sigma = 5.998e+07
+[INFO] [223ms] Domain 2 (mat2): sigma = 740700
+[INFO] [223ms] Domain 3 (mat2): sigma = 740700
+[INFO] [223ms] Domain 4 (mat2): sigma = 740700
+[INFO] [224ms] Domain 5 (mat2): sigma = 740700
+[INFO] [224ms] Domain 6 (mat2): sigma = 740700
+[INFO] [224ms] Domain 7 (mat2): sigma = 740700
+[INFO] [243ms] ElectrostaticsSolver: 7340 DOFs
+[INFO] [244ms] Building heat transfer solver, order = 1
+[INFO] [262ms] HeatTransferSolver: 7340 DOFs
+[INFO] [262ms] Domain 1 (mat1): temp-dep sigma, rho0 = 1.72e-08, alpha = 0.0039
+[INFO] [262ms] Running coupled electro-thermal solve...
+[INFO] [364ms] [EigenSparseLU] Solve successful, solution norm: 0.623237
+[INFO] [364ms] Electrostatics converged: iter=1 res=3.79736e-13
+[INFO] [571ms] [EigenSparseLU] Solve successful, solution norm: 27772.3
+[INFO] [571ms] HeatTransfer converged: iter=1 res=4.84604e-11
+[INFO] [571ms] Coupling iteration 1, residual = 1
+[INFO] [658ms] [EigenSparseLU] Solve successful, solution norm: 0.626625
+[INFO] [659ms] Electrostatics converged: iter=1 res=3.54043e-13
+[INFO] [869ms] [EigenSparseLU] Solve successful, solution norm: 27746.8
+[INFO] [869ms] HeatTransfer converged: iter=1 res=4.74386e-11
+[INFO] [870ms] Coupling iteration 2, residual = 0.000920725
+[INFO] [870ms] Coupling converged in 2 iterations
+[INFO] [870ms] Potential range: [0, 0.02] V
+[INFO] [870ms] Temperature range: [323.421, 331.43] K
+[INFO] [870ms] Temperature range: [50.2706, 58.2795] C
+[INFO] [930ms] Exported VTU results to results/busbar_results.vtu
+[INFO] [931ms] Results exported to: results/busbar_results.vtu
+[INFO] [981ms] Exported results to results/mpfem_result.txt
+[INFO] [982ms] COMSOL format results exported to: results/mpfem_result.txt
+[INFO] [982ms] === Example completed successfully! ===
 ```
 
 * 求解正确性也可疑，你需要将结果dump成输出文件。在相同的设置下我们的精度应该达到这个级别：
@@ -69,14 +73,10 @@ disp    9.269475e-09    3.351310e-08    9.775915e-03    3.403081e-04
 ```text
 python .\scripts\compare_comsol_results.py ./results/mpfem_result.txt ./cases/busbar/result.txt
 field      L2      Linf    max_relative    L2_relative
-V  2.713546e-06    4.890131e-06    6.161658e-04    3.711015e-04
-T  1.215823e+00    1.279006e+00    3.956539e-03    3.768203e-03
+V  6.631425e-07    1.193437e-06    1.502601e-04    9.066653e-05
+T  2.772982e-03    4.183303e-03    1.262226e-05    8.562124e-06
 disp       2.771064e-05    5.287332e-05    5.287332e+11    0.000000e+00
 ```
-
-可考虑：
-
-* 边界施加的时候没有跳过内边界。（内边界即使在选择列表中也应该跳过！）
 
 ## 架构修复
 

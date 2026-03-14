@@ -82,6 +82,13 @@ public:
         return mesh_->isExternalBoundary(bdrElemIdx);
     }
     
+    /// Check if a boundary ID (attribute) is an external boundary
+    /// Efficient: same boundary ID means same external/internal status
+    bool isExternalBoundaryId(Index bdrId) const {
+        if (!mesh_) return true;
+        return mesh_->isExternalBoundaryId(bdrId);
+    }
+    
     /// Get the FE collection
     const FECollection* fec() const { 
         return fec_ ? fec_.get() : fecRef_; 

@@ -174,6 +174,14 @@ public:
         return faceInfoList_[it->second].isBoundary;
     }
 
+    /// Check if a boundary ID (attribute) is an external boundary
+    /// This is efficient: same boundary ID means same external/internal status
+    bool isExternalBoundaryId(Index bdrId) const {
+        if (!topologyBuilt_) return true;
+        auto it = bdrIdExternalCache_.find(bdrId);
+        return (it != bdrIdExternalCache_.end()) ? it->second : true;
+    }
+
     /// Get face info by index
     const FaceInfo& getFaceInfo(Index faceIdx) const { return faceInfoList_[faceIdx]; }
 
@@ -221,6 +229,7 @@ private:
     std::vector<Index> boundaryFaceIndices_;
     std::vector<Index> interiorFaceIndices_;
     std::unordered_map<Index, Index> bdrElementToFace_;
+    std::unordered_map<Index, bool> bdrIdExternalCache_;  ///< Cache: boundary ID -> isExternal
 };
 
 }  // namespace mpfem

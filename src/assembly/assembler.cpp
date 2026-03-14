@@ -168,8 +168,10 @@ void BilinearFormAssembler::assemble() {
         ThreadBuffer& buf = buffers_[0];
         
         for (Index b = 0; b < mesh->numBdrElements(); ++b) {
-            // 跳过内边界 - 只对外边界应用边界积分
-            if (!fes_->isExternalBoundary(b)) {
+            int attr = mesh->bdrElement(b).attribute();
+            
+            // 跳过内边界 - 基于边界 ID 判断（更高效）
+            if (!fes_->isExternalBoundaryId(attr)) {
                 continue;
             }
             
@@ -178,7 +180,6 @@ void BilinearFormAssembler::assemble() {
             int nd = ref->numDofs();
             
             btrans.setBoundaryElement(b);
-            int attr = mesh->bdrElement(b).attribute();
             
             buf.elmat.setZero();
             
@@ -322,8 +323,10 @@ void LinearFormAssembler::assemble() {
         ThreadBuffer& buf = buffers_[0];
         
         for (Index b = 0; b < mesh->numBdrElements(); ++b) {
-            // 跳过内边界 - 只对外边界应用边界积分
-            if (!fes_->isExternalBoundary(b)) {
+            int attr = mesh->bdrElement(b).attribute();
+            
+            // 跳过内边界 - 基于边界 ID 判断（更高效）
+            if (!fes_->isExternalBoundaryId(attr)) {
                 continue;
             }
             
@@ -332,7 +335,6 @@ void LinearFormAssembler::assemble() {
             int nd = ref->numDofs();
             
             btrans.setBoundaryElement(b);
-            int attr = mesh->bdrElement(b).attribute();
             
             buf.elvec.setZero();
             

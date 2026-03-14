@@ -170,15 +170,6 @@ private:
                 }
             }
             else if (bc.kind == "convection") {
-                LOG_INFO << "Adding convection BCs for boundary IDs: " 
-                         << [&]{
-                            std::ostringstream oss;
-                            for (int id : bc.ids) {
-                                oss << id << " ";
-                            }
-                            return oss.str();
-                         }()
-                         << "\n";
                 Real h = parseValue(bc.params, "h", setup.caseDef, 5.0);
                 Real Tinf = parseValue(bc.params, "T_inf", setup.caseDef, 293.15);
                 for (int id : bc.ids) {
