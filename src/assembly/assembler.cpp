@@ -161,12 +161,18 @@ void BilinearFormAssembler::assemble() {
 #endif
     
     // 边界积分（通常较少，串行处理）
+    // 注意：只对外边界应用边界条件，跳过内边界
     if (!bdrIntegs_.empty()) {
         FacetElementTransform btrans;
         btrans.setMesh(mesh);
         ThreadBuffer& buf = buffers_[0];
         
         for (Index b = 0; b < mesh->numBdrElements(); ++b) {
+            // 跳过内边界 - 只对外边界应用边界积分
+            if (!fes_->isExternalBoundary(b)) {
+                continue;
+            }
+            
             const ReferenceElement* ref = fes_->bdrElementRefElement(b);
             if (!ref) continue;
             int nd = ref->numDofs();
@@ -309,12 +315,18 @@ void LinearFormAssembler::assemble() {
     }
     
     // 边界积分（通常较少，串行处理）
+    // 注意：只对外边界应用边界条件，跳过内边界
     if (!bdrIntegs_.empty()) {
         FacetElementTransform btrans;
         btrans.setMesh(mesh);
         ThreadBuffer& buf = buffers_[0];
         
         for (Index b = 0; b < mesh->numBdrElements(); ++b) {
+            // 跳过内边界 - 只对外边界应用边界积分
+            if (!fes_->isExternalBoundary(b)) {
+                continue;
+            }
+            
             const ReferenceElement* ref = fes_->bdrElementRefElement(b);
             if (!ref) continue;
             int nd = ref->numDofs();

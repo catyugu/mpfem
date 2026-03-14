@@ -102,7 +102,6 @@ add_library(mpfem_fe
 
 add_library(mpfem_mesh
     src/mesh/mesh.cpp
-    src/mesh/mesh_topology.cpp
     src/mesh/io/mphtxt_reader.cpp
 )
 

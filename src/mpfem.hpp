@@ -18,7 +18,6 @@
 #include "mesh/vertex.hpp"
 #include "mesh/element.hpp"
 #include "mesh/mesh.hpp"
-#include "mesh/mesh_topology.hpp"
 #include "mesh/io/mphtxt_reader.hpp"
 
 // Finite Element

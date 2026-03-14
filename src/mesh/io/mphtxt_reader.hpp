@@ -166,6 +166,8 @@ private:
                  << numVolumeElems << " volume elements, "
                     << numBdrElems << " boundary elements";
         
+        mesh.buildTopology();
+
         return mesh;
     }
 

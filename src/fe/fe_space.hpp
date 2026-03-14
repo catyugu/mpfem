@@ -2,7 +2,6 @@
 #define MPFEM_FE_SPACE_HPP
 
 #include "mesh/mesh.hpp"
-#include "mesh/mesh_topology.hpp"
 #include "fe_collection.hpp"
 #include "core/types.hpp"
 #include "core/exception.hpp"
@@ -74,6 +73,14 @@ public:
     
     /// Get the mesh
     const Mesh* mesh() const { return mesh_; }
+    
+    /// Check if a boundary element is an external boundary (not internal interface)
+    /// Returns true if the boundary element is on an external boundary,
+    /// false if it is an internal interface (shared by two volume elements)
+    bool isExternalBoundary(Index bdrElemIdx) const {
+        if (!mesh_) return true;
+        return mesh_->isExternalBoundary(bdrElemIdx);
+    }
     
     /// Get the FE collection
     const FECollection* fec() const { 

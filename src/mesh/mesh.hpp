@@ -10,23 +10,46 @@
 #include <memory>
 #include <set>
 #include <span>
+#include <unordered_map>
 
 namespace mpfem {
 
-// Forward declaration
-class MeshTopology;
-
 /**
- * @brief Mesh class storing vertices and elements.
+ * @brief Mesh class storing vertices, elements, and topology.
  * 
  * This class manages:
  * - Vertex coordinates
  * - Volume elements (tetrahedra, hexahedra)
  * - Boundary elements (triangles, quads)
  * - Domain and boundary attributes
+ * - Mesh topology for internal/external boundary detection
  */
 class Mesh {
 public:
+    /// Face identifier (sorted vertex indices)
+    using FaceKey = std::vector<Index>;
+
+    /// Hash function for FaceKey
+    struct FaceKeyHash {
+        std::size_t operator()(const FaceKey& face) const {
+            std::size_t seed = 0;
+            for (Index v : face) {
+                seed ^= std::hash<Index>{}(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+            }
+            return seed;
+        }
+    };
+
+    /// Information about a face's adjacent elements
+    struct FaceInfo {
+        Index elem1 = InvalidIndex;     ///< First adjacent element
+        Index elem2 = InvalidIndex;     ///< Second adjacent element (-1 for external boundary)
+        int localFace1 = -1;            ///< Local face index in elem1
+        int localFace2 = -1;            ///< Local face index in elem2
+        bool isBoundary = true;         ///< True if external boundary face
+        std::vector<Index> vertices;    ///< Face vertices (sorted)
+    };
+
     /// Default constructor
     Mesh() = default;
 
@@ -133,6 +156,43 @@ public:
     std::vector<Index> bdrElementsForBoundary(Index boundaryId) const;
 
     // -------------------------------------------------------------------------
+    // Topology queries (for internal/external boundary detection)
+    // -------------------------------------------------------------------------
+
+    /// Build mesh topology (call after mesh is fully loaded)
+    void buildTopology();
+
+    /// Check if topology has been built
+    bool hasTopology() const { return topologyBuilt_; }
+
+    /// Check if a boundary element is an external boundary (not internal interface)
+    /// Returns true if on external boundary, false if internal interface
+    bool isExternalBoundary(Index bdrElemIdx) const {
+        if (!topologyBuilt_) return true;  // Without topology, assume all are external
+        auto it = bdrElementToFace_.find(bdrElemIdx);
+        if (it == bdrElementToFace_.end()) return true;
+        return faceInfoList_[it->second].isBoundary;
+    }
+
+    /// Get face info by index
+    const FaceInfo& getFaceInfo(Index faceIdx) const { return faceInfoList_[faceIdx]; }
+
+    /// Get total number of unique faces
+    Index numFaces() const { return static_cast<Index>(faceInfoList_.size()); }
+
+    /// Get number of boundary faces (external)
+    Index numBoundaryFaces() const { return static_cast<Index>(boundaryFaceIndices_.size()); }
+
+    /// Get number of interior faces
+    Index numInteriorFaces() const { return static_cast<Index>(interiorFaceIndices_.size()); }
+
+    /// Get boundary face index by boundary element index
+    Index getBoundaryFaceIndex(Index bdrElemIdx) const {
+        auto it = bdrElementToFace_.find(bdrElemIdx);
+        return (it != bdrElementToFace_.end()) ? it->second : InvalidIndex;
+    }
+
+    // -------------------------------------------------------------------------
     // Utility
     // -------------------------------------------------------------------------
 
@@ -143,10 +203,24 @@ public:
     std::pair<Vector3, Vector3> getBoundingBox() const;
 
 private:
+    void buildFaceToElementMap();
+    void buildElementToFaceMap();
+    void identifyBoundaryFaces();
+    void buildBoundaryElementMapping();
+
     int dim_ = 3;
     std::vector<Vertex> vertices_;
     std::vector<Element> elements_;
     std::vector<Element> bdrElements_;
+
+    // Topology data
+    bool topologyBuilt_ = false;
+    std::vector<FaceInfo> faceInfoList_;
+    std::unordered_map<FaceKey, Index, FaceKeyHash> faceKeyToIndex_;
+    std::vector<std::vector<std::pair<int, Index>>> elementToFace_;
+    std::vector<Index> boundaryFaceIndices_;
+    std::vector<Index> interiorFaceIndices_;
+    std::unordered_map<Index, Index> bdrElementToFace_;
 };
 
 }  // namespace mpfem
