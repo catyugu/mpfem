@@ -99,6 +99,14 @@ private:
             setup.couplingManager->setTolerance(caseDef.couplingConfig.tolerance);
             setup.couplingManager->setMaxIterations(caseDef.couplingConfig.maxIterations);
             
+            // Setup Joule heating domains from coupledPhysicsDefinitions
+            for (const auto& cp : caseDef.coupledPhysicsDefinitions) {
+                if (cp.kind == "joule_heating") {
+                    setup.couplingManager->setJouleHeatDomains(cp.domainIds);
+                    LOG_INFO << "Joule heating domains: " << cp.domainIds.size() << " domains";
+                }
+            }
+            
             // Setup temperature-dependent conductivity
             setupCoupling(setup, materials);
         }

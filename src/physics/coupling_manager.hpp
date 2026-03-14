@@ -42,6 +42,11 @@ public:
         hasTempDepSigma_ = true;
     }
     
+    /// Set domains for Joule heating
+    void setJouleHeatDomains(const std::set<int>& domains) {
+        jouleHeatDomains_ = domains;
+    }
+    
     /// Set material parameters for temperature-dependent conductivity
     void setTempDepMaterial(int domainId, Real rho0, Real alpha, Real tref) {
         ensureTempDepCoupling();
