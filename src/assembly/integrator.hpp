@@ -11,7 +11,7 @@
 namespace mpfem {
 
 // =============================================================================
-// 基础积分器接口 - 只提供积分规则和系数评估
+// 基础积分器接口 - 只提供系数评估
 // =============================================================================
 
 class IntegratorBase {
@@ -37,7 +37,7 @@ public:
 };
 
 // =============================================================================
-// 双线性型域积分器基类 - 仅用于体积分
+// 双线性型域积分器基类 - 标量场
 // =============================================================================
 
 class DomainBilinearIntegrator : public IntegratorBase {
@@ -45,15 +45,14 @@ public:
     using IntegratorBase::IntegratorBase;
     
     /// 组装单元矩阵: ∫ coef * L(φ_i) * L(φ_j) dΩ
-    /// @param vdim 向量维度（标量场=1，向量场=3）
+    /// 输出 elmat 为 nd x nd 矩阵
     virtual void assembleElementMatrix(const ReferenceElement& ref, 
                                         ElementTransform& trans, 
-                                        Matrix& elmat,
-                                        int vdim = 1) const = 0;
+                                        Matrix& elmat) const = 0;
 };
 
 // =============================================================================
-// 双线性型边界积分器基类 - 仅用于边界积分
+// 双线性型边界积分器基类 - 标量场
 // =============================================================================
 
 class FaceBilinearIntegrator : public IntegratorBase {
@@ -61,15 +60,14 @@ public:
     using IntegratorBase::IntegratorBase;
     
     /// 组装边界矩阵: ∫ coef * L(φ_i) * L(φ_j) dΓ
-    /// @param vdim 向量维度（标量场=1，向量场=3）
+    /// 输出 elmat 为 nd x nd 矩阵
     virtual void assembleFaceMatrix(const ReferenceElement& ref,
                                      FacetElementTransform& trans,
-                                     Matrix& elmat,
-                                     int vdim = 1) const = 0;
+                                     Matrix& elmat) const = 0;
 };
 
 // =============================================================================
-// 线性型域积分器基类 - 仅用于体积分
+// 线性型域积分器基类 - 标量场
 // =============================================================================
 
 class DomainLinearIntegrator : public IntegratorBase {
@@ -77,15 +75,14 @@ public:
     using IntegratorBase::IntegratorBase;
     
     /// 组装单元向量: ∫ coef * L(φ_i) dΩ
-    /// @param vdim 向量维度（标量场=1，向量场=3）
+    /// 输出 elvec 为 nd 维向量
     virtual void assembleElementVector(const ReferenceElement& ref,
                                         ElementTransform& trans,
-                                        Vector& elvec,
-                                        int vdim = 1) const = 0;
+                                        Vector& elvec) const = 0;
 };
 
 // =============================================================================
-// 线性型边界积分器基类 - 仅用于边界积分
+// 线性型边界积分器基类 - 标量场
 // =============================================================================
 
 class FaceLinearIntegrator : public IntegratorBase {
@@ -93,11 +90,39 @@ public:
     using IntegratorBase::IntegratorBase;
     
     /// 组装边界向量: ∫ coef * L(φ_i) dΓ
-    /// @param vdim 向量维度（标量场=1，向量场=3）
+    /// 输出 elvec 为 nd 维向量
     virtual void assembleFaceVector(const ReferenceElement& ref,
                                      FacetElementTransform& trans,
-                                     Vector& elvec,
-                                     int vdim = 1) const = 0;
+                                     Vector& elvec) const = 0;
+};
+
+// =============================================================================
+// 向量场积分器基类（用于位移场等）
+// =============================================================================
+
+/// 向量场域积分器基类
+class VectorDomainBilinearIntegrator : public IntegratorBase {
+public:
+    using IntegratorBase::IntegratorBase;
+    
+    /// 组装单元矩阵（向量场版本）
+    /// vdim 由 FESpace 提供，积分器内部使用
+    virtual void assembleElementMatrix(const ReferenceElement& ref,
+                                        ElementTransform& trans,
+                                        Matrix& elmat,
+                                        int vdim) const = 0;
+};
+
+/// 向量场域线性积分器基类
+class VectorDomainLinearIntegrator : public IntegratorBase {
+public:
+    using IntegratorBase::IntegratorBase;
+    
+    /// 组装单元向量（向量场版本）
+    virtual void assembleElementVector(const ReferenceElement& ref,
+                                        ElementTransform& trans,
+                                        Vector& elvec,
+                                        int vdim) const = 0;
 };
 
 }  // namespace mpfem

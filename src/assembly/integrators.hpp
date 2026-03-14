@@ -8,7 +8,7 @@
 namespace mpfem {
 
 // =============================================================================
-// 域积分器（双线性型）
+// 域积分器（双线性型）- 标量场
 // =============================================================================
 
 /// 扩散积分器: ∫ σ ∇φᵢ · ∇φⱼ dΩ
@@ -18,8 +18,7 @@ public:
     
     void assembleElementMatrix(const ReferenceElement& ref,
                                ElementTransform& trans,
-                               Matrix& elmat,
-                               int vdim = 1) const override;
+                               Matrix& elmat) const override;
 };
 
 /// 质量积分器: ∫ ρ φᵢ φⱼ dΩ
@@ -29,12 +28,11 @@ public:
     
     void assembleElementMatrix(const ReferenceElement& ref,
                                ElementTransform& trans,
-                               Matrix& elmat,
-                               int vdim = 1) const override;
+                               Matrix& elmat) const override;
 };
 
 // =============================================================================
-// 域积分器（线性型）
+// 域积分器（线性型）- 标量场
 // =============================================================================
 
 /// 域载荷积分器: ∫ f φᵢ dΩ
@@ -44,12 +42,11 @@ public:
     
     void assembleElementVector(const ReferenceElement& ref,
                                ElementTransform& trans,
-                               Vector& elvec,
-                               int vdim = 1) const override;
+                               Vector& elvec) const override;
 };
 
 // =============================================================================
-// 边界积分器（线性型）
+// 边界积分器（线性型）- 标量场
 // =============================================================================
 
 /// 边界载荷积分器: ∫ g φᵢ dΓ
@@ -59,12 +56,11 @@ public:
     
     void assembleFaceVector(const ReferenceElement& ref,
                             FacetElementTransform& trans,
-                            Vector& elvec,
-                            int vdim = 1) const override;
+                            Vector& elvec) const override;
 };
 
 // =============================================================================
-// 边界积分器（双线性型）
+// 边界积分器（双线性型）- 标量场
 // =============================================================================
 
 /// 对流边界质量积分器 (Robin BC矩阵部分): ∫ h φᵢ φⱼ dΓ
@@ -74,8 +70,7 @@ public:
     
     void assembleFaceMatrix(const ReferenceElement& ref,
                             FacetElementTransform& trans,
-                            Matrix& elmat,
-                            int vdim = 1) const override;
+                            Matrix& elmat) const override;
 };
 
 /// 对流边界载荷积分器 (Robin BC向量部分): ∫ h Tinf φᵢ dΓ
@@ -83,11 +78,9 @@ class ConvectionLFIntegrator : public FaceLinearIntegrator {
 public:
     ConvectionLFIntegrator() = default;
     
-    /// 非拥有引用版本
     ConvectionLFIntegrator(const Coefficient* h, const Coefficient* Tinf)
         : FaceLinearIntegrator(h), Tinf_(Tinf) {}
     
-    /// 拥有版本
     ConvectionLFIntegrator(std::unique_ptr<Coefficient> h, std::unique_ptr<Coefficient> Tinf)
         : FaceLinearIntegrator(std::move(h)), ownedTinf_(std::move(Tinf)), Tinf_(ownedTinf_.get()) {}
     
@@ -95,8 +88,7 @@ public:
     
     void assembleFaceVector(const ReferenceElement& ref,
                             FacetElementTransform& trans,
-                            Vector& elvec,
-                            int vdim = 1) const override;
+                            Vector& elvec) const override;
     
 private:
     std::unique_ptr<Coefficient> ownedTinf_;
@@ -104,11 +96,11 @@ private:
 };
 
 // =============================================================================
-// 弹性力学积分器
+// 弹性力学积分器 - 向量场专用
 // =============================================================================
 
 /// 弹性积分器: ∫ (λ div(u) div(v) + 2μ ε(u):ε(v)) dΩ
-/// λ = E*nu/((1+nu)*(1-2*nu)), μ = E/(2*(1+nu))
+/// 输出 elmat 为 (nd*3) x (nd*3) 矩阵
 class ElasticityIntegrator : public DomainBilinearIntegrator {
 public:
     ElasticityIntegrator(const Coefficient* E, const Coefficient* nu)
@@ -116,8 +108,7 @@ public:
     
     void assembleElementMatrix(const ReferenceElement& ref,
                                ElementTransform& trans,
-                               Matrix& elmat,
-                               int vdim = 3) const override;
+                               Matrix& elmat) const override;
     
 private:
     const Coefficient* E_ = nullptr;
@@ -125,6 +116,7 @@ private:
 };
 
 /// 热膨胀载荷积分器: ∫ (3K α_T (T - T_ref) div(v)) dΩ
+/// 输出 elvec 为 (nd*3) 维向量
 class ThermalLoadIntegrator : public DomainLinearIntegrator {
 public:
     ThermalLoadIntegrator(const Coefficient* E, const Coefficient* nu,
@@ -133,8 +125,7 @@ public:
     
     void assembleElementVector(const ReferenceElement& ref,
                                ElementTransform& trans,
-                               Vector& elvec,
-                               int vdim = 3) const override;
+                               Vector& elvec) const override;
     
 private:
     const Coefficient* E_ = nullptr;

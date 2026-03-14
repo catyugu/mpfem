@@ -26,8 +26,10 @@ constexpr int MAX_DIM = 3;
 // =============================================================================
 
 struct alignas(64) ThreadBuffer {
-    Eigen::Matrix<Real, MAX_DOFS * 3, MAX_DOFS * 3, Eigen::RowMajor> elmat;
-    Eigen::Matrix<Real, MAX_DOFS * 3, 1> elvec;
+    Eigen::Matrix<Real, MAX_DOFS, MAX_DOFS, Eigen::RowMajor> elmatScalar;
+    Eigen::Matrix<Real, MAX_DOFS * 3, MAX_DOFS * 3, Eigen::RowMajor> elmatVector;
+    Eigen::Matrix<Real, MAX_DOFS, 1> elvecScalar;
+    Eigen::Matrix<Real, MAX_DOFS * 3, 1> elvecVector;
     std::array<Index, MAX_DOFS * 3> dofs;
     int numDofs = 0;
 };
@@ -59,14 +61,15 @@ public:
     Index rows() const { return mat_.rows(); }
     
 private:
+    /// 扩展标量矩阵到向量场对角块
+    void expandScalarToVector(const Matrix& scalarMat, Matrix& vectorMat, int nd, int vdim);
+    
     const FESpace* fes_;
     std::vector<std::unique_ptr<DomainBilinearIntegrator>> domainIntegs_;
     std::vector<std::unique_ptr<FaceBilinearIntegrator>> bdrIntegs_;
     std::vector<int> bdrIds_;
     SparseMatrix mat_;
     std::vector<ThreadBuffer> buffers_;
-    
-    // 预分配的三元组缓冲区（复用以避免重复分配）
     std::vector<SparseMatrix::Triplet> triplets_;
 };
 
@@ -94,14 +97,15 @@ public:
     Vector& vector() { return vec_; }
     
 private:
+    /// 扩展标量向量到向量场
+    void expandScalarToVector(const Vector& scalarVec, Vector& vectorVec, int nd, int vdim);
+    
     const FESpace* fes_;
     std::vector<std::unique_ptr<DomainLinearIntegrator>> domainIntegs_;
     std::vector<std::unique_ptr<FaceLinearIntegrator>> bdrIntegs_;
     std::vector<int> bdrIds_;
     Vector vec_;
     std::vector<ThreadBuffer> buffers_;
-    
-    // 并行组装用的线程局部向量
     std::vector<Vector> threadVectors_;
 };
 
