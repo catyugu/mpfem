@@ -5,6 +5,7 @@
 #include <functional>
 #include <vector>
 #include <map>
+#include <set>
 
 namespace mpfem {
 
@@ -46,8 +47,12 @@ public:
     }
     Real get(int domainId) const { return values_[domainId - 1]; }
     void resize(int n, Real v = 0.0) { values_.resize(n, v); }
+    
+    /// Restrict to specific domains (empty = all domains)
+    void setDomains(const std::set<int>& domains) { domains_ = domains; }
 private:
     std::vector<Real> values_;
+    std::set<int> domains_;  // Optional domain restriction
 };
 
 /// 函数系数

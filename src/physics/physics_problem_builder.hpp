@@ -69,6 +69,7 @@ private:
         const auto& caseDef = setup.caseDef;
         const auto& materials = setup.materials;
         
+        // Build domain material mapping
         for (const auto& assign : caseDef.materialAssignments) {
             for (int domId : assign.domainIds) {
                 setup.domainMaterial[domId] = assign.materialTag;
@@ -80,6 +81,7 @@ private:
             maxDomainId = std::max(maxDomainId, domId);
         }
         
+        // Build physics solvers
         for (const auto& physics : caseDef.physicsDefinitions) {
             if (physics.kind == "electrostatics") {
                 buildElectrostatics(setup, physics, maxDomainId, materials);
@@ -89,12 +91,16 @@ private:
             }
         }
         
+        // Setup coupling if needed
         if (setup.hasJouleHeating()) {
             setup.couplingManager = std::make_unique<CouplingManager>();
             setup.couplingManager->setElectrostaticsSolver(setup.electrostatics.get());
             setup.couplingManager->setHeatTransferSolver(setup.heatTransfer.get());
             setup.couplingManager->setTolerance(caseDef.couplingConfig.tolerance);
             setup.couplingManager->setMaxIterations(caseDef.couplingConfig.maxIterations);
+            
+            // Setup temperature-dependent conductivity
+            setupCoupling(setup, materials);
         }
     }
     
@@ -107,30 +113,14 @@ private:
         LOG_INFO << "Building electrostatics solver, order = " << physics.order;
         
         auto conductivity = std::make_unique<PWConstCoefficient>(maxDomainId);
-        bool hasTempDepSigma = false;
         
-        // 检查是否有材料设置了温度依赖电阻率
-        for (const auto& [domId, matTag] : setup.domainMaterial) {
-            const MaterialPropertyModel* mat = materials.getMaterial(matTag);
-            if (mat && mat->rho0 > 0.0) {
-                hasTempDepSigma = true;
-                break;
-            }
-        }
-        
-        // 设置电导率
+        // Set conductivity values
         for (const auto& [domId, matTag] : setup.domainMaterial) {
             const MaterialPropertyModel* mat = materials.getMaterial(matTag);
             if (mat) {
                 conductivity->set(domId, mat->electricConductivity);
-                if (mat->rho0 > 0.0) {
-                    LOG_INFO << "Domain " << domId << " (" << matTag 
-                             << "): temp-dep sigma, rho0 = " << mat->rho0 
-                             << ", alpha = " << mat->alpha;
-                } else {
-                    LOG_INFO << "Domain " << domId << " (" << matTag 
-                             << "): sigma = " << mat->electricConductivity;
-                }
+                LOG_INFO << "Domain " << domId << " (" << matTag 
+                         << "): sigma = " << mat->electricConductivity;
             }
         }
         
@@ -138,17 +128,7 @@ private:
         setup.electrostatics->setSolver(physics.solver.type, physics.solver.maxIterations, physics.solver.relativeTolerance);
         setup.electrostatics->initialize(*setup.mesh, *conductivity);
         
-        // 如果有温度依赖电导率，设置参数
-        if (hasTempDepSigma) {
-            for (const auto& [domId, matTag] : setup.domainMaterial) {
-                const MaterialPropertyModel* mat = materials.getMaterial(matTag);
-                if (mat) {
-                    setup.electrostatics->setTempDepSigma(
-                        domId, mat->rho0, mat->alpha, mat->tref, mat->electricConductivity);
-                }
-            }
-        }
-        
+        // Apply boundary conditions
         for (const auto& bc : physics.boundaries) {
             if (bc.kind == "voltage") {
                 Real value = parseValue(bc.params, "value", setup.caseDef);
@@ -199,6 +179,40 @@ private:
         }
         
         setup.thermalConductivity = std::move(thermalConductivity);
+    }
+    
+    static void setupCoupling(PhysicsProblemSetup& setup, const MaterialDatabase& materials) {
+        bool hasTempDepSigma = false;
+        
+        // Check if any material has temperature-dependent resistivity
+        for (const auto& [domId, matTag] : setup.domainMaterial) {
+            const MaterialPropertyModel* mat = materials.getMaterial(matTag);
+            if (mat && mat->rho0 > 0.0) {
+                hasTempDepSigma = true;
+                break;
+            }
+        }
+        
+        if (!hasTempDepSigma) return;
+        
+        // Setup temperature-dependent conductivity
+        setup.couplingManager->enableTempDependentConductivity();
+        
+        for (const auto& [domId, matTag] : setup.domainMaterial) {
+            const MaterialPropertyModel* mat = materials.getMaterial(matTag);
+            if (mat) {
+                if (mat->rho0 > 0.0) {
+                    LOG_INFO << "Domain " << domId << " (" << matTag 
+                             << "): temp-dep sigma, rho0 = " << mat->rho0 
+                             << ", alpha = " << mat->alpha;
+                    setup.couplingManager->setTempDepMaterial(
+                        domId, mat->rho0, mat->alpha, mat->tref);
+                } else {
+                    setup.couplingManager->setConstantConductivity(
+                        domId, mat->electricConductivity);
+                }
+            }
+        }
     }
     
     static Real parseValue(const std::map<std::string, std::string>& params, 

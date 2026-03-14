@@ -186,7 +186,7 @@ private:
     std::unique_ptr<FECollection> fec_;   ///< Owned FE collection
     const FECollection* fecRef_ = nullptr; ///< Non-owning reference
     int vdim_ = 1;
-    Ordering ordering_ = Ordering::byVDim;
+    Ordering ordering_ = Ordering::byNodes;  // Default: byNodes (more common convention)
     
     Index numDofs_ = 0;
     Index numTrueDofs_ = 0;

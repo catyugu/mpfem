@@ -12,6 +12,12 @@ namespace mpfem {
 Real PWConstCoefficient::eval(ElementTransform& trans) const {
     int attr = static_cast<int>(trans.attribute());
     if (attr < 1 || attr > static_cast<int>(values_.size())) return 0.0;
+    
+    // Check domain restriction
+    if (!domains_.empty() && domains_.find(attr) == domains_.end()) {
+        return 0.0;
+    }
+    
     return values_[attr - 1];
 }
 

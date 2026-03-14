@@ -3,6 +3,7 @@
 
 #include "integrator.hpp"
 #include "fe/facet_element_transform.hpp"
+#include "fe/grid_function.hpp"
 
 namespace mpfem {
 
@@ -100,6 +101,44 @@ public:
 private:
     std::unique_ptr<Coefficient> ownedTinf_;  ///< 持有的环境温度系数
     const Coefficient* Tinf_ = nullptr;       ///< 环境温度系数指针
+};
+
+/// Elasticity integrator for linear isotropic elasticity
+/// Assembles: ∫ (λ div(u) div(v) + 2μ ε(u):ε(v)) dΩ
+/// where λ = E*nu/((1+nu)*(1-2*nu)), μ = E/(2*(1+nu))
+class ElasticityIntegrator : public BilinearFormIntegrator {
+public:
+    ElasticityIntegrator(const Coefficient* E, const Coefficient* nu)
+        : E_(E), nu_(nu) {}
+    
+    void assembleElementMatrix(const ReferenceElement& ref,
+                               ElementTransform& trans,
+                               Matrix& elmat) const override;
+    
+private:
+    const Coefficient* E_ = nullptr;   ///< Young's modulus
+    const Coefficient* nu_ = nullptr;  ///< Poisson's ratio
+};
+
+/// Thermal load integrator for thermal expansion
+/// Assembles: ∫ (3K α_T (T - T_ref) div(v)) dΩ
+/// where K = E/(3*(1-2*nu)) is the bulk modulus
+class ThermalLoadIntegrator : public LinearFormIntegrator {
+public:
+    ThermalLoadIntegrator(const Coefficient* E, const Coefficient* nu,
+                          const Coefficient* alphaT, const GridFunction* T, Real Tref)
+        : E_(E), nu_(nu), alphaT_(alphaT), T_(T), Tref_(Tref) {}
+    
+    void assembleElementVector(const ReferenceElement& ref,
+                               ElementTransform& trans,
+                               Vector& elvec) const override;
+    
+private:
+    const Coefficient* E_ = nullptr;       ///< Young's modulus
+    const Coefficient* nu_ = nullptr;      ///< Poisson's ratio
+    const Coefficient* alphaT_ = nullptr;  ///< Thermal expansion coefficient
+    const GridFunction* T_ = nullptr;      ///< Temperature field
+    Real Tref_;                            ///< Reference temperature
 };
 
 }  // namespace mpfem

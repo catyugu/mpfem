@@ -10,5 +10,3 @@ target_link_libraries(busbar_example
     PRIVATE mpfem::mesh
     PRIVATE mpfem::fe
 )
-
-# Add more examples as needed

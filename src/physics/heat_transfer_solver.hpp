@@ -8,7 +8,10 @@
 namespace mpfem {
 
 /**
- * @brief 热传导求解器 - 最小化设计
+ * @brief Heat transfer solver - minimal design for single-field analysis.
+ * 
+ * Design principle: Single-field solver should NOT contain coupling logic.
+ * Coupling (like Joule heating) should be handled externally.
  */
 class HeatTransferSolver : public PhysicsFieldSolver {
 public:
@@ -24,12 +27,12 @@ public:
     void addDirichletBC(int bid, Real val) override { bcValues_[bid] = val; }
     void clearBoundaryConditions() override { bcValues_.clear(); convBCs_.clear(); }
     
-    /// 添加对流边界条件
+    /// Add convection boundary condition
     void addConvectionBC(int bid, Real h, Real Tinf) {
         convBCs_[bid] = {h, Tinf};
     }
     
-    /// 设置热源（非拥有指针）
+    /// Set heat source coefficient (non-owning pointer)
     void setHeatSource(const Coefficient* Q) { heatSource_ = Q; }
     
     void assemble() override;
@@ -57,29 +60,6 @@ private:
     
     std::map<int, Real> bcValues_;
     std::map<int, ConvBC> convBCs_;
-};
-
-/// 焦耳热系数（优化设计：直接持有指针，避免 std::function 开销）
-class JouleHeatCoefficient : public Coefficient {
-public:
-    /// 设置电势场（非拥有指针）
-    void setPotential(const GridFunction* V) { V_ = V; }
-    
-    /// 设置电导率系数（非拥有指针）
-    void setConductivity(const Coefficient* sigma) { sigma_ = sigma; }
-    
-    Real eval(ElementTransform& trans) const override {
-        if (!V_ || !sigma_) return 0.0;
-        // 关键：先计算sigma，再计算梯度
-        // 因为gradient()会调用setIntegrationPoint改变trans状态
-        Real sigma_val = sigma_->eval(trans);
-        Vector3 g = V_->gradient(trans.elementIndex(), &trans.integrationPoint().xi, trans);
-        return sigma_val * g.squaredNorm();
-    }
-    
-private:
-    const GridFunction* V_ = nullptr;
-    const Coefficient* sigma_ = nullptr;
 };
 
 }  // namespace mpfem

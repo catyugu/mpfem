@@ -9,7 +9,10 @@
 namespace mpfem {
 
 /**
- * @brief 静电场求解器 - 最小化设计
+ * @brief Electrostatics solver - minimal design for single-field analysis.
+ * 
+ * Design principle: Single-field solver should NOT contain coupling logic.
+ * Temperature-dependent conductivity should be handled externally via setConductivity().
  */
 class ElectrostaticsSolver : public PhysicsFieldSolver {
 public:
@@ -36,30 +39,12 @@ public:
     const FESpace& feSpace() const override { return *fes_; }
     Index numDofs() const override { return fes_->numDofs(); }
     
-    /// 设置电导率（非拥有指针）
+    /// Set conductivity coefficient (non-owning pointer)
+    /// This allows external coupling modules to provide temperature-dependent conductivity
     void setConductivity(const Coefficient* sigma) { sigma_ = sigma; }
     
-    /// 获取电导率
+    /// Get conductivity coefficient
     const Coefficient* conductivity() const { return sigma_; }
-    
-    /// 设置温度依赖电导率参数
-    void setTempDepSigma(int domainId, Real rho0, Real alpha, Real tref, Real sigma0) {
-        if (!tempDepSigma_) {
-            tempDepSigma_ = std::make_unique<TemperatureDependentConductivity>();
-        }
-        tempDepSigma_->setMaterial(domainId, rho0, alpha, tref, sigma0);
-        sigma_ = tempDepSigma_.get();
-    }
-    
-    /// 设置温度场（用于温度依赖电导率）
-    void setTemperatureField(const GridFunction* T) {
-        if (tempDepSigma_) {
-            tempDepSigma_->setTemperatureField(T);
-        }
-    }
-    
-    /// 是否启用了温度依赖电导率
-    bool hasTempDepSigma() const { return tempDepSigma_ != nullptr; }
     
 private:
     const Mesh* mesh_ = nullptr;
@@ -71,7 +56,6 @@ private:
     std::unique_ptr<LinearSolver> solver_;
     
     PWConstCoefficient sigmaInternal_;
-    std::unique_ptr<TemperatureDependentConductivity> tempDepSigma_;
     const Coefficient* sigma_ = nullptr;
     
     std::map<int, Real> bcValues_;

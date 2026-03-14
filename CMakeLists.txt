@@ -96,7 +96,6 @@ add_library(mpfem_fe
     src/fe/element_transform.cpp
     src/fe/facet_element_transform.cpp
     src/fe/grid_function.cpp
-    src/fe/fe_values.cpp
     src/fe/coefficient.cpp
     src/fe/shape_function.cpp
 )
@@ -116,10 +115,14 @@ add_library(mpfem_assembly
 # Solver module (header-only for now)
 add_library(mpfem_solver INTERFACE)
 
+# Coupling module (header-only)
+add_library(mpfem_coupling INTERFACE)
+
 # Physics module
 add_library(mpfem_physics
     src/physics/electrostatics_solver.cpp
     src/physics/heat_transfer_solver.cpp
+    src/physics/structural_solver.cpp
     src/physics/coupling_manager.cpp
 )
 
@@ -131,6 +134,7 @@ add_library(mpfem::fe ALIAS mpfem_fe)
 add_library(mpfem::mesh ALIAS mpfem_mesh)
 add_library(mpfem::assembly ALIAS mpfem_assembly)
 add_library(mpfem::solver ALIAS mpfem_solver)
+add_library(mpfem::coupling ALIAS mpfem_coupling)
 add_library(mpfem::physics ALIAS mpfem_physics)
 
 # =============================================================================
@@ -228,6 +232,18 @@ target_link_libraries(mpfem_solver
     INTERFACE mpfem_core
 )
 
+# mpfem_coupling (header-only)
+target_include_directories(mpfem_coupling
+    INTERFACE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+        $<INSTALL_INTERFACE:include>
+)
+target_link_libraries(mpfem_coupling
+    INTERFACE Eigen3::Eigen
+    INTERFACE mpfem_core
+    INTERFACE mpfem_fe
+)
+
 # mpfem_physics
 target_include_directories(mpfem_physics
     PUBLIC
@@ -241,6 +257,7 @@ target_link_libraries(mpfem_physics
     PUBLIC mpfem_fe
     PUBLIC mpfem_assembly
     PUBLIC mpfem_solver
+    PUBLIC mpfem_coupling
     PUBLIC mpfem_io
     PUBLIC mpfem_model
 )
