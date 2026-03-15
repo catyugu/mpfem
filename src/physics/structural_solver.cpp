@@ -8,12 +8,8 @@
 
 namespace mpfem {
 
-bool StructuralSolver::initialize(const Mesh& mesh,
-                                   const Coefficient& youngModulus,
-                                   const Coefficient& poissonRatio) {
+bool StructuralSolver::initialize(const Mesh& mesh) {
     mesh_ = &mesh;
-    E_ = &youngModulus;
-    nu_ = &poissonRatio;
     
     // 创建向量H1单元 (vdim=3)
     fec_ = std::make_unique<FECollection>(order_, FECollection::Type::H1);
@@ -35,6 +31,11 @@ bool StructuralSolver::initialize(const Mesh& mesh,
 void StructuralSolver::assemble() {
     if (!fes_) return;
     
+    if (!E_ || !nu_) {
+        LOG_ERROR << "StructuralSolver: material not set";
+        return;
+    }
+    
     matAsm_->clear();
     vecAsm_->clear();
     matAsm_->clearIntegrators();
@@ -53,9 +54,9 @@ void StructuralSolver::assemble() {
     
     vecAsm_->assemble();
     
-    // 应用向量 Dirichlet 边界条件
+    // 应用位移边界条件
     applyDirichletBC(matAsm_->matrix(), vecAsm_->vector(), u_->values(),
-                     *fes_, *mesh_, bcValues_, 3);
+                     *fes_, *mesh_, displacementBCs_, 3);
     
     // 应用分量边界条件
     if (!componentBCs_.empty()) {

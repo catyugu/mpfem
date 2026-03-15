@@ -8,9 +8,8 @@
 
 namespace mpfem {
 
-bool ElectrostaticsSolver::initialize(const Mesh& mesh, const Coefficient& conductivity) {
+bool ElectrostaticsSolver::initialize(const Mesh& mesh) {
     mesh_ = &mesh;
-    sigma_ = &conductivity;
     
     fec_ = std::make_unique<FECollection>(order_, FECollection::Type::H1);
     fes_ = std::make_unique<FESpace>(&mesh, fec_.get());
@@ -28,6 +27,11 @@ bool ElectrostaticsSolver::initialize(const Mesh& mesh, const Coefficient& condu
 }
 
 void ElectrostaticsSolver::assemble() {
+    if (!sigma_) {
+        LOG_ERROR << "ElectrostaticsSolver: conductivity not set";
+        return;
+    }
+    
     matAsm_->clear();
     vecAsm_->clear();
     matAsm_->clearIntegrators();
@@ -40,7 +44,7 @@ void ElectrostaticsSolver::assemble() {
     
     // 应用边界条件
     applyDirichletBC(matAsm_->matrix(), vecAsm_->vector(), V_->values(),
-                     *fes_, *mesh_, bcValues_);
+                     *fes_, *mesh_, voltageBCs_);
     matAsm_->finalize();
 }
 

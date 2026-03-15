@@ -8,10 +8,9 @@
 #include "coupling/joule_heating.hpp"
 #include "fe/coefficient.hpp"
 #include "core/logger.hpp"
-#include <deque>
 #include <memory>
 #include <set>
-#include <vector>
+#include <map>
 
 namespace mpfem {
 
@@ -26,21 +25,38 @@ struct CouplingResult {
 /**
  * @brief 电-热-结构耦合管理器
  * 
- * 设计原则：耦合逻辑集中在此，不在单场求解器中。
- * 管理：
- * - 温度依赖电导率耦合
- * - 焦耳热耦合
- * - 热膨胀耦合
+ * 设计原则：
+ * - 耦合逻辑集中在此，不在单场求解器中
+ * - 求解器引用为非拥有指针，生命周期由外部管理
+ * - 耦合专用系数由本类持有所有权
+ * 
+ * 所有权策略：
+ * - esSolver_, htSolver_, stSolver_: 非拥有指针，由 PhysicsProblemSetup 管理
+ * - structE_, structNu_: 非拥有指针，由 PhysicsProblemSetup 管理
+ * - jouleHeating_, tempDepSigma_, thermalAlphaCoef_: 拥有所有权
  */
 class CouplingManager {
 public:
     CouplingManager() = default;
     
+    // =========================================================================
+    // 求解器设置（非拥有指针）
+    // =========================================================================
+    
     void setElectrostaticsSolver(ElectrostaticsSolver* s) { esSolver_ = s; }
     void setHeatTransferSolver(HeatTransferSolver* s) { htSolver_ = s; }
     void setStructuralSolver(StructuralSolver* s) { stSolver_ = s; }
+    
+    // =========================================================================
+    // 求解参数
+    // =========================================================================
+    
     void setTolerance(Real tol) { tol_ = tol; }
     void setMaxIterations(int n) { maxIter_ = n; }
+    
+    // =========================================================================
+    // 温度依赖电导率设置
+    // =========================================================================
     
     /// 启用温度依赖电导率
     void enableTempDependentConductivity(const std::set<int>& domains = {}) {
@@ -48,22 +64,24 @@ public:
         hasTempDepSigma_ = true;
     }
     
+    /// 设置温度依赖材料参数
+    void setTempDepMaterial(int domainId, Real rho0, Real alpha, Real tref);
+    
+    /// 设置常量电导率
+    void setConstantConductivity(int domainId, Real sigma);
+    
+    // =========================================================================
+    // 焦耳热耦合设置
+    // =========================================================================
+    
     /// 设置焦耳热作用域
     void setJouleHeatDomains(const std::set<int>& domains) {
         jouleHeatDomains_ = domains;
     }
     
-    /// 设置温度依赖材料参数
-    void setTempDepMaterial(int domainId, Real rho0, Real alpha, Real tref) {
-        ensureTempDepSigma();
-        tempDepSigma_->setMaterial(domainId, rho0, alpha, tref);
-    }
-    
-    /// 设置常量电导率
-    void setConstantConductivity(int domainId, Real sigma) {
-        ensureTempDepSigma();
-        tempDepSigma_->setConstantConductivity(domainId, sigma);
-    }
+    // =========================================================================
+    // 热膨胀耦合设置
+    // =========================================================================
     
     /// 设置热膨胀参数
     void setThermalExpansion(int domainId, Real alphaT, Real Tref) {
@@ -71,126 +89,47 @@ public:
         thermalTref_ = Tref;
     }
     
-    /// 设置结构场材料参数（用于热膨胀计算）
+    /// 设置结构场材料参数（非拥有指针，用于热膨胀计算）
     void setStructuralMaterial(const Coefficient* E, const Coefficient* nu) {
         structE_ = E;
         structNu_ = nu;
     }
     
+    // =========================================================================
+    // 求解接口
+    // =========================================================================
+    
     /// 执行耦合求解
-    CouplingResult solve() {
-        CouplingResult result;
-        if (!esSolver_ || !htSolver_) return result;
-        
-        for (int i = 0; i < maxIter_; ++i) {
-            // 更新温度依赖电导率
-            if (hasTempDepSigma_ && tempDepSigma_) {
-                tempDepSigma_->setTemperatureField(&htSolver_->field());
-                esSolver_->setConductivity(tempDepSigma_.get());
-            }
-            
-            // 求解电场
-            esSolver_->assemble();
-            esSolver_->solve();
-            
-            // 更新焦耳热并求解热场
-            updateJouleHeat();
-            htSolver_->assemble();
-            htSolver_->solve();
-            
-            // 计算误差
-            Real err = computeError();
-            result.iterations = i + 1;
-            result.residual = err;
-            
-            LOG_INFO << "Coupling iteration " << (i+1) << ", residual = " << err;
-            
-            if (err < tol_) {
-                result.converged = true;
-                break;
-            }
-        }
-        
-        // 后处理：求解结构场（如果有热膨胀耦合）
-        if (stSolver_ && !thermalAlpha_.empty()) {
-            solveThermalExpansion();
-        }
-        
-        return result;
-    }
+    CouplingResult solve();
     
 private:
-    void ensureTempDepSigma() {
-        if (!tempDepSigma_) {
-            tempDepSigma_ = std::make_unique<TemperatureDependentConductivity>();
-        }
-    }
+    void ensureTempDepSigma();
+    void updateJouleHeat();
+    void solveThermalExpansion();
+    Real computeError();
     
-    void updateJouleHeat() {
-        if (!jouleHeating_) {
-            jouleHeating_ = std::make_unique<JouleHeatingCoupling>();
-            jouleHeating_->setDomains(jouleHeatDomains_);
-        }
-        
-        jouleHeating_->setPotentialField(&esSolver_->field());
-        jouleHeating_->setConductivity(esSolver_->conductivity());
-        htSolver_->setHeatSource(jouleHeating_->getHeatSource());
-    }
-    
-    void solveThermalExpansion() {
-        // 获取最大域ID
-        int maxDomainId = 0;
-        for (const auto& [domId, _] : thermalAlpha_) {
-            maxDomainId = std::max(maxDomainId, domId);
-        }
-        
-        // 创建热膨胀系数（作为成员变量避免悬空指针）
-        thermalAlphaCoef_ = std::make_unique<PWConstCoefficient>(maxDomainId);
-        for (const auto& [domId, alpha] : thermalAlpha_) {
-            thermalAlphaCoef_->set(domId, alpha);
-        }
-        
-        // 添加热膨胀载荷积分器到结构求解器
-        auto thermalLoad = std::make_unique<ThermalLoadIntegrator>(
-            structE_, structNu_, thermalAlphaCoef_.get(), 
-            &htSolver_->field(), thermalTref_);
-        stSolver_->addLinearIntegrator(std::move(thermalLoad));
-        
-        // 组装并求解
-        stSolver_->assemble();
-        stSolver_->solve();
-    }
-    
-    Real computeError() {
-        if (prevT_.size() == 0) {
-            prevT_ = htSolver_->field().values();
-            return 1.0;
-        }
-        Real diff = (htSolver_->field().values() - prevT_).norm();
-        prevT_ = htSolver_->field().values();
-        return diff / (htSolver_->field().values().norm() + 1e-15);
-    }
-    
+    // 求解器引用（非拥有）
     ElectrostaticsSolver* esSolver_ = nullptr;
     HeatTransferSolver* htSolver_ = nullptr;
     StructuralSolver* stSolver_ = nullptr;
     
-    // 耦合模块（拥有）
+    // 耦合模块（拥有所有权）
     std::unique_ptr<JouleHeatingCoupling> jouleHeating_;
     std::unique_ptr<TemperatureDependentConductivity> tempDepSigma_;
-    std::unique_ptr<PWConstCoefficient> thermalAlphaCoef_;  // 热膨胀系数（避免悬空指针）
+    std::unique_ptr<PWConstCoefficient> thermalAlphaCoef_;
     
-    // 结构场材料参数（非拥有）
+    // 外部材料参数（非拥有）
     const Coefficient* structE_ = nullptr;
     const Coefficient* structNu_ = nullptr;
     
-    // 配置
+    // 配置参数
     std::set<int> tempDepDomains_;
     std::set<int> jouleHeatDomains_;
     std::map<int, Real> thermalAlpha_;
     Real thermalTref_ = 293.15;
     bool hasTempDepSigma_ = false;
     
+    // 迭代状态
     Vector prevT_;
     int maxIter_ = 20;
     Real tol_ = 1e-6;

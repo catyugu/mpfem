@@ -6,9 +6,8 @@
 
 namespace mpfem {
 
-bool HeatTransferSolver::initialize(const Mesh& mesh, const Coefficient& conductivity) {
+bool HeatTransferSolver::initialize(const Mesh& mesh) {
     mesh_ = &mesh;
-    k_ = &conductivity;
     
     fec_ = std::make_unique<FECollection>(order_, FECollection::Type::H1);
     fes_ = std::make_unique<FESpace>(&mesh, fec_.get());
@@ -26,32 +25,50 @@ bool HeatTransferSolver::initialize(const Mesh& mesh, const Coefficient& conduct
 }
 
 void HeatTransferSolver::assemble() {
+    if (!k_) {
+        LOG_ERROR << "HeatTransferSolver: conductivity not set";
+        return;
+    }
+    
     matAsm_->clear();
     vecAsm_->clear();
     matAsm_->clearIntegrators();
     vecAsm_->clearIntegrators();
     
+    // 清除之前持有的边界条件系数
+    ownedConvH_.clear();
+    ownedConvTinf_.clear();
+    
+    // 扩散积分器
     auto diff = std::make_unique<DiffusionIntegrator>(k_);
     matAsm_->addDomainIntegrator(std::move(diff));
     
+    // 对流边界条件
     for (const auto& [bid, bc] : convBCs_) {
+        // 创建并持有系数（避免悬空指针）
+        auto hCoef = std::make_unique<ConstantCoefficient>(bc.h);
+        auto tinfCoef = std::make_unique<ConstantCoefficient>(bc.Tinf);
+        
+        const Coefficient* hPtr = hCoef.get();
+        const Coefficient* tinfPtr = tinfCoef.get();
+        
+        ownedConvH_.push_back(std::move(hCoef));
+        ownedConvTinf_.push_back(std::move(tinfCoef));
+        
         // 对流边界条件: h(T - Tinf) = 0
         // 弱形式: ∫ h T φ dΓ - ∫ h Tinf φ dΓ = 0
         // 矩阵部分: ∫ h φ_i φ_j dΓ
-        // 向量部分: ∫ h Tinf φ_i dΓ
-        
-        auto convMat = std::make_unique<ConvectionMassIntegrator>(
-            std::make_unique<ConstantCoefficient>(bc.h));
+        auto convMat = std::make_unique<ConvectionMassIntegrator>(hPtr);
         matAsm_->addBoundaryIntegrator(std::move(convMat), bid);
         
-        auto convVec = std::make_unique<ConvectionLFIntegrator>(
-            std::make_unique<ConstantCoefficient>(bc.h),
-            std::make_unique<ConstantCoefficient>(bc.Tinf));
+        // 向量部分: ∫ h Tinf φ_i dΓ
+        auto convVec = std::make_unique<ConvectionLFIntegrator>(hPtr, tinfPtr);
         vecAsm_->addBoundaryIntegrator(std::move(convVec), bid);
     }
     
     matAsm_->assemble();
     
+    // 热源
     if (heatSource_) {
         auto src = std::make_unique<DomainLFIntegrator>(heatSource_);
         vecAsm_->addDomainIntegrator(std::move(src));
@@ -59,9 +76,9 @@ void HeatTransferSolver::assemble() {
     
     vecAsm_->assemble();
     
-    // 应用Dirichlet边界条件
+    // 应用温度边界条件
     applyDirichletBC(matAsm_->matrix(), vecAsm_->vector(), T_->values(),
-                     *fes_, *mesh_, bcValues_);
+                     *fes_, *mesh_, temperatureBCs_);
     matAsm_->finalize();
 }
 

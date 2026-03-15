@@ -74,15 +74,14 @@ public:
 };
 
 /// 对流边界载荷积分器 (Robin BC向量部分): ∫ h Tinf φᵢ dΓ
+/// 注意：系数生命周期由调用者管理
 class ConvectionLFIntegrator : public FaceLinearIntegrator {
 public:
     ConvectionLFIntegrator() = default;
     
+    /// 构造函数：传入对流系数和环境温度系数（非拥有）
     ConvectionLFIntegrator(const Coefficient* h, const Coefficient* Tinf)
         : FaceLinearIntegrator(h), Tinf_(Tinf) {}
-    
-    ConvectionLFIntegrator(std::unique_ptr<Coefficient> h, std::unique_ptr<Coefficient> Tinf)
-        : FaceLinearIntegrator(std::move(h)), ownedTinf_(std::move(Tinf)), Tinf_(ownedTinf_.get()) {}
     
     void setAmbientTemperature(const Coefficient* Tinf) { Tinf_ = Tinf; }
     
@@ -91,8 +90,7 @@ public:
                             Vector& elvec) const override;
     
 private:
-    std::unique_ptr<Coefficient> ownedTinf_;
-    const Coefficient* Tinf_ = nullptr;
+    const Coefficient* Tinf_ = nullptr;  ///< 环境温度系数（非拥有）
 };
 
 // =============================================================================

@@ -14,26 +14,43 @@ namespace mpfem {
 // 基础积分器接口 - 只提供系数评估
 // =============================================================================
 
+/**
+ * @brief 积分器基类
+ * 
+ * 所有权策略：积分器不持有系数所有权。
+ * - 系数的生命周期由调用者（如求解器、CouplingManager）管理
+ * - 积分器仅持有非拥有的原始指针引用
+ */
 class IntegratorBase {
 protected:
-    std::unique_ptr<Coefficient> ownedQ_;  ///< 持有的系数（可选）
-    const Coefficient* q_ = nullptr;       ///< 系数指针（拥有或非拥有）
+    const Coefficient* q_ = nullptr;  ///< 系数指针（非拥有，生命周期由外部管理）
     
     Real evalCoef(ElementTransform& t) const { return q_ ? q_->eval(t) : 1.0; }
     Real evalCoef(FacetElementTransform& t) const { return q_ ? q_->eval(t) : 1.0; }
 
 public:
     IntegratorBase() = default;
+    
+    /// 构造函数：传入系数指针（非拥有，调用者负责生命周期）
     explicit IntegratorBase(const Coefficient* q) : q_(q) {}
-    explicit IntegratorBase(std::unique_ptr<Coefficient> q)
-        : ownedQ_(std::move(q)), q_(ownedQ_.get()) {}
     
     virtual ~IntegratorBase() = default;
     
+    // 禁止拷贝
     IntegratorBase(const IntegratorBase&) = delete;
     IntegratorBase& operator=(const IntegratorBase&) = delete;
-    IntegratorBase(IntegratorBase&&) = default;
-    IntegratorBase& operator=(IntegratorBase&&) = default;
+    
+    // 允许移动
+    IntegratorBase(IntegratorBase&& other) noexcept : q_(other.q_) {
+        other.q_ = nullptr;
+    }
+    IntegratorBase& operator=(IntegratorBase&& other) noexcept {
+        if (this != &other) {
+            q_ = other.q_;
+            other.q_ = nullptr;
+        }
+        return *this;
+    }
 };
 
 // =============================================================================
