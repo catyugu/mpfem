@@ -29,6 +29,8 @@ bool StructuralSolver::initialize(const Mesh& mesh) {
 }
 
 void StructuralSolver::assemble() {
+    ScopedTimer timer("Structural assemble");
+    
     if (!fes_) return;
     
     if (!E_ || !nu_) {

@@ -27,6 +27,8 @@ bool ElectrostaticsSolver::initialize(const Mesh& mesh) {
 }
 
 void ElectrostaticsSolver::assemble() {
+    ScopedTimer timer("Electrostatics assemble");
+    
     if (!sigma_) {
         LOG_ERROR << "ElectrostaticsSolver: conductivity not set";
         return;

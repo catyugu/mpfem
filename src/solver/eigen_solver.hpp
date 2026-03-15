@@ -27,7 +27,8 @@ public:
     }
     
     bool solve(const SparseMatrix& A, Vector& x, const Vector& b) override {
-
+        ScopedTimer timer("Linear solve (SparseLU)");
+        
         // Analyze + factorize + solve in one call if not already done
         solver_.compute(A.eigen());
         

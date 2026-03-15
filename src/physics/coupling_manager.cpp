@@ -1,4 +1,5 @@
 #include "coupling_manager.hpp"
+#include "core/logger.hpp"
 
 namespace mpfem {
 
@@ -30,6 +31,7 @@ void CouplingManager::updateJouleHeat() {
 }
 
 void CouplingManager::solveThermalExpansion() {
+
     // 获取最大域ID
     int maxDomainId = 0;
     for (const auto& [domId, _] : thermalAlpha_) {
@@ -64,6 +66,8 @@ Real CouplingManager::computeError() {
 }
 
 CouplingResult CouplingManager::solve() {
+    ScopedTimer timer("Coupling solve");
+    
     CouplingResult result;
     if (!esSolver_ || !htSolver_) return result;
     

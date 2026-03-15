@@ -25,6 +25,8 @@ bool HeatTransferSolver::initialize(const Mesh& mesh) {
 }
 
 void HeatTransferSolver::assemble() {
+    ScopedTimer timer("HeatTransfer assemble");
+    
     if (!k_) {
         LOG_ERROR << "HeatTransferSolver: conductivity not set";
         return;
