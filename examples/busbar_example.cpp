@@ -73,6 +73,15 @@ int main(int argc, char* argv[]) {
         std::filesystem::create_directories("results");
         std::string outputPath = "results/busbar_results.vtu";
         
+        // 检查是否为高阶网格
+        Index numCorners = setup.mesh->numCornerVertices();
+        Index numVerts = setup.mesh->numVertices();
+        bool isHighOrder = (numCorners < numVerts);
+        if (isHighOrder) {
+            LOG_INFO << "High-order mesh detected: " << numVerts << " vertices, "
+                     << numCorners << " corner vertices";
+        }
+        
         std::vector<FieldResult> fields;
         
         if (setup.hasElectrostatics()) {
@@ -80,9 +89,9 @@ int main(int argc, char* argv[]) {
             FieldResult f;
             f.name = "V";
             f.unit = "V";
-            f.nodalValues.resize(V.numDofs());
-            for (Index i = 0; i < V.numDofs(); ++i)
-                f.nodalValues[i] = V.values()(i);
+            // 对于高阶网格，投影到角点
+            Eigen::VectorXd cornerV = V.projectToCorners(*setup.mesh);
+            f.nodalValues.assign(cornerV.data(), cornerV.data() + cornerV.size());
             fields.push_back(f);
         }
         
@@ -91,9 +100,9 @@ int main(int argc, char* argv[]) {
             FieldResult f;
             f.name = "T";
             f.unit = "K";
-            f.nodalValues.resize(T.numDofs());
-            for (Index i = 0; i < T.numDofs(); ++i)
-                f.nodalValues[i] = T.values()(i);
+            // 对于高阶网格，投影到角点
+            Eigen::VectorXd cornerT = T.projectToCorners(*setup.mesh);
+            f.nodalValues.assign(cornerT.data(), cornerT.data() + cornerT.size());
             fields.push_back(f);
         }
         
@@ -101,13 +110,13 @@ int main(int argc, char* argv[]) {
         if (setup.hasStructural()) {
             const GridFunction& u = setup.structural->field();
             
-            // 位移幅值
-            Index numNodes = setup.mesh->numVertices();
+            // 位移幅值（在角点上计算）
+            Index numExport = numCorners;
             FieldResult fDisp;
             fDisp.name = "disp";
             fDisp.unit = "m";
-            fDisp.nodalValues.resize(numNodes);
-            for (Index i = 0; i < numNodes; ++i) {
+            fDisp.nodalValues.resize(numExport);
+            for (Index i = 0; i < numExport; ++i) {
                 Real dx = u.values()(i * 3);
                 Real dy = u.values()(i * 3 + 1);
                 Real dz = u.values()(i * 3 + 2);
@@ -119,7 +128,7 @@ int main(int argc, char* argv[]) {
             FieldResult f;
             f.name = "disp";
             f.unit = "m";
-            f.nodalValues.resize(setup.mesh->numVertices(), 0.0);
+            f.nodalValues.resize(numCorners, 0.0);
             fields.push_back(f);
         }
         

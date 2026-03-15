@@ -209,12 +209,30 @@ public:
 
     /// Get bounding box (min, max)
     std::pair<Vector3, Vector3> getBoundingBox() const;
+    
+    // -------------------------------------------------------------------------
+    // Corner vertices (topological vertices for high-order meshes)
+    // -------------------------------------------------------------------------
+    
+    /// Get number of corner vertices (topological vertices)
+    /// For linear meshes, this equals numVertices()
+    /// For quadratic meshes, this returns only the geometric corners
+    Index numCornerVertices() const;
+    
+    /// Get corner vertex indices (lazy evaluation, cached)
+    /// Returns a sorted list of unique corner vertex indices
+    const std::vector<Index>& cornerVertexIndices() const;
+    
+    /// Get mapping from vertex index to corner index
+    /// Returns InvalidIndex if vertex is not a corner
+    Index vertexToCornerIndex(Index vertexIdx) const;
 
 private:
     void buildFaceToElementMap();
     void buildElementToFaceMap();
     void identifyBoundaryFaces();
     void buildBoundaryElementMapping();
+    void buildCornerVertexMap() const;
 
     int dim_ = 3;
     std::vector<Vertex> vertices_;
@@ -230,6 +248,11 @@ private:
     std::vector<Index> interiorFaceIndices_;
     std::unordered_map<Index, Index> bdrElementToFace_;
     std::unordered_map<Index, bool> bdrIdExternalCache_;  ///< Cache: boundary ID -> isExternal
+    
+    // Corner vertex cache (for high-order meshes)
+    mutable std::vector<Index> cornerVertexIndices_;       ///< Sorted list of corner vertex indices
+    mutable std::vector<Index> cornerVertexMap_;           ///< Mapping: vertex index -> corner index (InvalidIndex if not corner)
+    mutable bool cornerVertexMapBuilt_ = false;
 };
 
 }  // namespace mpfem

@@ -26,6 +26,16 @@ void ResultExporter::exportComsolText(const std::string& filename,
         throw FileException("Cannot open file for writing: " + filename);
     }
 
+    // Determine number of points to export from first field
+    // (for quadratic meshes, this may be less than mesh.numVertices())
+    Index numExportPoints = mesh.numVertices();
+    bool useCornerVertices = false;
+    
+    if (!fields.empty() && fields[0].nodalValues.size() < static_cast<size_t>(numExportPoints)) {
+        numExportPoints = static_cast<Index>(fields[0].nodalValues.size());
+        useCornerVertices = true;
+    }
+
     // Use default floating-point format (not forced scientific)
     // This matches COMSOL's output style
     file << std::setprecision(16);
@@ -35,7 +45,7 @@ void ResultExporter::exportComsolText(const std::string& filename,
     file << "% Version:            mpfem\n";
     file << "% Date:               " << getCurrentTimestamp() << "\n";
     file << "% Dimension:          " << mesh.dim() << "\n";
-    file << "% Nodes:              " << mesh.numVertices() << "\n";
+    file << "% Nodes:              " << numExportPoints << "\n";
     file << "% Expressions:        " << fields.size() << "\n";
     
     if (!description.empty()) {
@@ -53,16 +63,24 @@ void ResultExporter::exportComsolText(const std::string& filename,
     }
     file << "\n";
 
-    // Write data - one line per node
-    for (Index i = 0; i < mesh.numVertices(); ++i) {
-        const Vertex& v = mesh.vertex(i);
+    // Get corner vertex indices if needed
+    const std::vector<Index>* cornerIndices = nullptr;
+    if (useCornerVertices) {
+        cornerIndices = &mesh.cornerVertexIndices();
+    }
+
+    // Write data - one line per node (only export numExportPoints)
+    for (Index i = 0; i < numExportPoints; ++i) {
+        // Get the actual vertex index (for corner vertices or all vertices)
+        Index vIdx = (cornerIndices) ? (*cornerIndices)[i] : i;
+        const Vertex& v = mesh.vertex(vIdx);
         
         // Coordinates with COMSOL-style spacing
         file << v.x() << "       " << v.y() << "       " << v.z();
         
         // Field values
         for (const auto& field : fields) {
-            if (i < field.nodalValues.size()) {
+            if (i < static_cast<Index>(field.nodalValues.size())) {
                 file << "       " << field.nodalValues[i];
             } else {
                 file << "       0.0";

@@ -134,6 +134,9 @@ void Mesh::clear() {
     boundaryFaceIndices_.clear();
     interiorFaceIndices_.clear();
     bdrElementToFace_.clear();
+    cornerVertexMapBuilt_ = false;
+    cornerVertexIndices_.clear();
+    cornerVertexMap_.clear();
 }
 
 std::pair<Vector3, Vector3> Mesh::getBoundingBox() const {
@@ -151,6 +154,61 @@ std::pair<Vector3, Vector3> Mesh::getBoundingBox() const {
     }
     
     return {minCoord, maxCoord};
+}
+
+// =============================================================================
+// Corner vertices (topological vertices)
+// =============================================================================
+
+Index Mesh::numCornerVertices() const {
+    buildCornerVertexMap();
+    return static_cast<Index>(cornerVertexIndices_.size());
+}
+
+const std::vector<Index>& Mesh::cornerVertexIndices() const {
+    buildCornerVertexMap();
+    return cornerVertexIndices_;
+}
+
+Index Mesh::vertexToCornerIndex(Index vertexIdx) const {
+    buildCornerVertexMap();
+    if (vertexIdx >= static_cast<Index>(cornerVertexMap_.size())) {
+        return InvalidIndex;
+    }
+    return cornerVertexMap_[vertexIdx];
+}
+
+void Mesh::buildCornerVertexMap() const {
+    if (cornerVertexMapBuilt_) return;
+    
+    // Collect all corner vertices from all volume elements
+    std::set<Index> cornerSet;
+    for (const auto& e : elements_) {
+        int nc = e.numCorners();
+        for (int i = 0; i < nc; ++i) {
+            cornerSet.insert(e.vertex(i));
+        }
+    }
+    
+    // Build sorted list of corner vertex indices
+    cornerVertexIndices_.clear();
+    cornerVertexIndices_.reserve(cornerSet.size());
+    for (Index v : cornerSet) {
+        cornerVertexIndices_.push_back(v);
+    }
+    std::sort(cornerVertexIndices_.begin(), cornerVertexIndices_.end());
+    
+    // Build reverse mapping: full vertex index -> corner vertex index (or InvalidIndex)
+    cornerVertexMap_.clear();
+    cornerVertexMap_.resize(numVertices(), InvalidIndex);
+    for (Index i = 0; i < static_cast<Index>(cornerVertexIndices_.size()); ++i) {
+        cornerVertexMap_[cornerVertexIndices_[i]] = i;
+    }
+    
+    cornerVertexMapBuilt_ = true;
+    
+    LOG_DEBUG << "Corner vertex map built: " << cornerVertexIndices_.size() 
+              << " corner vertices out of " << numVertices() << " total vertices";
 }
 
 // =============================================================================
