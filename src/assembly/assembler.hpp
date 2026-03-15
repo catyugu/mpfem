@@ -45,12 +45,15 @@ public:
     void addDomainIntegrator(std::unique_ptr<DomainBilinearIntegrator> integ) {
         domainIntegs_.push_back(std::move(integ));
     }
+    void addDomainIntegrator(std::unique_ptr<VectorDomainBilinearIntegrator> integ) {
+        vectorDomainIntegs_.push_back(std::move(integ));
+    }
     void addBoundaryIntegrator(std::unique_ptr<FaceBilinearIntegrator> integ, int bid = -1) {
         bdrIntegs_.push_back(std::move(integ));
         bdrIds_.push_back(bid);
     }
     
-    void clearIntegrators() { domainIntegs_.clear(); bdrIntegs_.clear(); bdrIds_.clear(); }
+    void clearIntegrators() { domainIntegs_.clear(); vectorDomainIntegs_.clear(); bdrIntegs_.clear(); bdrIds_.clear(); }
     void clear() { mat_.setZero(); }
     
     void computeSparsityPattern();
@@ -66,6 +69,7 @@ private:
     
     const FESpace* fes_;
     std::vector<std::unique_ptr<DomainBilinearIntegrator>> domainIntegs_;
+    std::vector<std::unique_ptr<VectorDomainBilinearIntegrator>> vectorDomainIntegs_;
     std::vector<std::unique_ptr<FaceBilinearIntegrator>> bdrIntegs_;
     std::vector<int> bdrIds_;
     SparseMatrix mat_;
@@ -84,12 +88,15 @@ public:
     void addDomainIntegrator(std::unique_ptr<DomainLinearIntegrator> integ) {
         domainIntegs_.push_back(std::move(integ));
     }
+    void addDomainIntegrator(std::unique_ptr<VectorDomainLinearIntegrator> integ) {
+        vectorDomainIntegs_.push_back(std::move(integ));
+    }
     void addBoundaryIntegrator(std::unique_ptr<FaceLinearIntegrator> integ, int bid = -1) {
         bdrIntegs_.push_back(std::move(integ));
         bdrIds_.push_back(bid);
     }
     
-    void clearIntegrators() { domainIntegs_.clear(); bdrIntegs_.clear(); bdrIds_.clear(); }
+    void clearIntegrators() { domainIntegs_.clear(); vectorDomainIntegs_.clear(); bdrIntegs_.clear(); bdrIds_.clear(); }
     void clear() { vec_.setZero(); }
     
     void assemble();
@@ -102,6 +109,7 @@ private:
     
     const FESpace* fes_;
     std::vector<std::unique_ptr<DomainLinearIntegrator>> domainIntegs_;
+    std::vector<std::unique_ptr<VectorDomainLinearIntegrator>> vectorDomainIntegs_;
     std::vector<std::unique_ptr<FaceLinearIntegrator>> bdrIntegs_;
     std::vector<int> bdrIds_;
     Vector vec_;

@@ -8,21 +8,14 @@
 
 namespace mpfem {
 
-// =============================================================================
-// ElectrostaticsSolver
-// =============================================================================
-
-bool ElectrostaticsSolver::initialize(const Mesh& mesh, 
-                                       const PWConstCoefficient& conductivity) {
+bool ElectrostaticsSolver::initialize(const Mesh& mesh, const Coefficient& conductivity) {
     mesh_ = &mesh;
+    sigma_ = &conductivity;
     
     fec_ = std::make_unique<FECollection>(order_, FECollection::Type::H1);
     fes_ = std::make_unique<FESpace>(&mesh, fec_.get());
     V_ = std::make_unique<GridFunction>(fes_.get());
     V_->setZero();
-    
-    sigmaInternal_ = conductivity;
-    sigma_ = &sigmaInternal_;
     
     matAsm_ = std::make_unique<BilinearFormAssembler>(fes_.get());
     vecAsm_ = std::make_unique<LinearFormAssembler>(fes_.get());

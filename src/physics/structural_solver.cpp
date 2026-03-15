@@ -9,11 +9,11 @@
 namespace mpfem {
 
 bool StructuralSolver::initialize(const Mesh& mesh,
-                                   const PWConstCoefficient& youngModulus,
-                                   const PWConstCoefficient& poissonRatio) {
+                                   const Coefficient& youngModulus,
+                                   const Coefficient& poissonRatio) {
     mesh_ = &mesh;
-    EInternal_ = youngModulus;
-    nuInternal_ = poissonRatio;
+    E_ = &youngModulus;
+    nu_ = &poissonRatio;
     
     // 创建向量H1单元 (vdim=3)
     fec_ = std::make_unique<FECollection>(order_, FECollection::Type::H1);
@@ -40,27 +40,27 @@ void StructuralSolver::assemble() {
     matAsm_->clearIntegrators();
     vecAsm_->clearIntegrators();
     
-    // 添加弹性积分器
-    auto elasticity = std::make_unique<ElasticityIntegrator>(&EInternal_, &nuInternal_);
+    // 添加弹性积分器（向量场）
+    auto elasticity = std::make_unique<ElasticityIntegrator>(E_, nu_);
     matAsm_->addDomainIntegrator(std::move(elasticity));
     matAsm_->assemble();
     
-    // 添加热应变载荷（如果设置了温度场）
-    if (T_ && alphaT_) {
-        auto thermalLoad = std::make_unique<ThermalLoadIntegrator>(
-            &EInternal_, &nuInternal_, alphaT_, T_, Tref_);
-        vecAsm_->addDomainIntegrator(std::move(thermalLoad));
+    // 添加外部线性积分器（用于耦合载荷）
+    for (auto& integrator : linearIntegrators_) {
+        vecAsm_->addDomainIntegrator(std::move(integrator));
     }
+    linearIntegrators_.clear();
+    
     vecAsm_->assemble();
     
-    // 应用Dirichlet边界条件
-    // 对于结构问题，通常固定整个边界
-    for (const auto& [bid, disp] : bcValues_) {
-        Real val = disp.x();  // 使用x分量作为值
-        std::map<int, Real> scalarBC;
-        scalarBC[bid] = val;
-        applyDirichletBC(matAsm_->matrix(), vecAsm_->vector(), u_->values(),
-                         *fes_, *mesh_, scalarBC);
+    // 应用向量 Dirichlet 边界条件
+    applyDirichletBC(matAsm_->matrix(), vecAsm_->vector(), u_->values(),
+                     *fes_, *mesh_, bcValues_, 3);
+    
+    // 应用分量边界条件
+    if (!componentBCs_.empty()) {
+        applyDirichletBCComponent(matAsm_->matrix(), vecAsm_->vector(), u_->values(),
+                                  *fes_, *mesh_, componentBCs_, 3);
     }
     
     matAsm_->finalize();
@@ -75,7 +75,6 @@ bool StructuralSolver::solve() {
         iter_ = solver_->iterations();
         res_ = solver_->residual();
         LOG_INFO << "StructuralSolver: displacement norm = " << u_->values().norm();
-        // computeStressStrain();
     }
     
     return success;
@@ -83,7 +82,6 @@ bool StructuralSolver::solve() {
 
 void StructuralSolver::computeStressStrain() {
     // TODO: 实现应力/应变后处理
-    // 需要从位移梯度计算应变，并从本构关系计算应力
 }
 
 }  // namespace mpfem

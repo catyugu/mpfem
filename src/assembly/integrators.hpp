@@ -100,15 +100,16 @@ private:
 // =============================================================================
 
 /// 弹性积分器: ∫ (λ div(u) div(v) + 2μ ε(u):ε(v)) dΩ
-/// 输出 elmat 为 (nd*3) x (nd*3) 矩阵
-class ElasticityIntegrator : public DomainBilinearIntegrator {
+/// 输出 elmat 为 (nd*vdim) x (nd*vdim) 矩阵
+class ElasticityIntegrator : public VectorDomainBilinearIntegrator {
 public:
     ElasticityIntegrator(const Coefficient* E, const Coefficient* nu)
         : E_(E), nu_(nu) {}
     
     void assembleElementMatrix(const ReferenceElement& ref,
                                ElementTransform& trans,
-                               Matrix& elmat) const override;
+                               Matrix& elmat,
+                               int vdim) const override;
     
 private:
     const Coefficient* E_ = nullptr;
@@ -116,8 +117,8 @@ private:
 };
 
 /// 热膨胀载荷积分器: ∫ (3K α_T (T - T_ref) div(v)) dΩ
-/// 输出 elvec 为 (nd*3) 维向量
-class ThermalLoadIntegrator : public DomainLinearIntegrator {
+/// 输出 elvec 为 (nd*vdim) 维向量
+class ThermalLoadIntegrator : public VectorDomainLinearIntegrator {
 public:
     ThermalLoadIntegrator(const Coefficient* E, const Coefficient* nu,
                           const Coefficient* alphaT, const GridFunction* T, Real Tref)
@@ -125,7 +126,8 @@ public:
     
     void assembleElementVector(const ReferenceElement& ref,
                                ElementTransform& trans,
-                               Vector& elvec) const override;
+                               Vector& elvec,
+                               int vdim) const override;
     
 private:
     const Coefficient* E_ = nullptr;

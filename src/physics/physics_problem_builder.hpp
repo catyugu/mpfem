@@ -113,6 +113,9 @@ private:
             }
             if (setup.hasStructural()) {
                 setup.couplingManager->setStructuralSolver(setup.structural.get());
+                // 设置结构场材料参数用于热膨胀计算
+                setup.couplingManager->setStructuralMaterial(
+                    setup.youngModulus.get(), setup.poissonRatio.get());
             }
             
             setup.couplingManager->setTolerance(caseDef.couplingConfig.tolerance);

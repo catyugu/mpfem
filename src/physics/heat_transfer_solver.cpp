@@ -6,17 +6,14 @@
 
 namespace mpfem {
 
-bool HeatTransferSolver::initialize(const Mesh& mesh, 
-                                     const PWConstCoefficient& conductivity) {
+bool HeatTransferSolver::initialize(const Mesh& mesh, const Coefficient& conductivity) {
     mesh_ = &mesh;
+    k_ = &conductivity;
     
     fec_ = std::make_unique<FECollection>(order_, FECollection::Type::H1);
     fes_ = std::make_unique<FESpace>(&mesh, fec_.get());
     T_ = std::make_unique<GridFunction>(fes_.get());
     T_->values().setConstant(293.15);
-    
-    kInternal_ = conductivity;
-    k_ = &kInternal_;
     
     matAsm_ = std::make_unique<BilinearFormAssembler>(fes_.get());
     vecAsm_ = std::make_unique<LinearFormAssembler>(fes_.get());

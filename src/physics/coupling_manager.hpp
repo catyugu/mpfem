@@ -4,12 +4,14 @@
 #include "physics/electrostatics_solver.hpp"
 #include "physics/heat_transfer_solver.hpp"
 #include "physics/structural_solver.hpp"
+#include "assembly/integrators.hpp"
 #include "coupling/joule_heating.hpp"
 #include "fe/coefficient.hpp"
 #include "core/logger.hpp"
 #include <deque>
 #include <memory>
 #include <set>
+#include <vector>
 
 namespace mpfem {
 
@@ -67,6 +69,12 @@ public:
     void setThermalExpansion(int domainId, Real alphaT, Real Tref) {
         thermalAlpha_[domainId] = alphaT;
         thermalTref_ = Tref;
+    }
+    
+    /// 设置结构场材料参数（用于热膨胀计算）
+    void setStructuralMaterial(const Coefficient* E, const Coefficient* nu) {
+        structE_ = E;
+        structNu_ = nu;
     }
     
     /// 执行耦合求解
@@ -136,16 +144,17 @@ private:
             maxDomainId = std::max(maxDomainId, domId);
         }
         
-        // 创建热膨胀系数
-        auto alphaCoef = std::make_unique<PWConstCoefficient>(maxDomainId);
+        // 创建热膨胀系数（作为成员变量避免悬空指针）
+        thermalAlphaCoef_ = std::make_unique<PWConstCoefficient>(maxDomainId);
         for (const auto& [domId, alpha] : thermalAlpha_) {
-            alphaCoef->set(domId, alpha);
+            thermalAlphaCoef_->set(domId, alpha);
         }
         
-        // 设置热膨胀参数
-        stSolver_->setTemperatureField(&htSolver_->field());
-        stSolver_->setReferenceTemperature(thermalTref_);
-        stSolver_->setThermalExpansion(alphaCoef.get());
+        // 添加热膨胀载荷积分器到结构求解器
+        auto thermalLoad = std::make_unique<ThermalLoadIntegrator>(
+            structE_, structNu_, thermalAlphaCoef_.get(), 
+            &htSolver_->field(), thermalTref_);
+        stSolver_->addLinearIntegrator(std::move(thermalLoad));
         
         // 组装并求解
         stSolver_->assemble();
@@ -166,9 +175,14 @@ private:
     HeatTransferSolver* htSolver_ = nullptr;
     StructuralSolver* stSolver_ = nullptr;
     
-    // 耦合模块
+    // 耦合模块（拥有）
     std::unique_ptr<JouleHeatingCoupling> jouleHeating_;
     std::unique_ptr<TemperatureDependentConductivity> tempDepSigma_;
+    std::unique_ptr<PWConstCoefficient> thermalAlphaCoef_;  // 热膨胀系数（避免悬空指针）
+    
+    // 结构场材料参数（非拥有）
+    const Coefficient* structE_ = nullptr;
+    const Coefficient* structNu_ = nullptr;
     
     // 配置
     std::set<int> tempDepDomains_;

@@ -2,9 +2,7 @@
 #define MPFEM_ELECTROSTATICS_SOLVER_HPP
 
 #include "physics_field_solver.hpp"
-#include "fe/coefficient.hpp"
-#include "assembly/assembler.hpp"
-#include <memory>
+#include <map>
 
 namespace mpfem {
 
@@ -24,42 +22,32 @@ public:
     FieldKind fieldKind() const override { return FieldKind::ElectricPotential; }
     std::string fieldName() const override { return "ElectricPotential"; }
     
-    bool initialize(const Mesh& mesh, 
-                    const PWConstCoefficient& conductivity) override;
+    /// 初始化求解器
+    /// @param mesh 网格
+    /// @param conductivity 电导率系数
+    bool initialize(const Mesh& mesh, const Coefficient& conductivity);
     
-    void addDirichletBC(int boundaryId, Real value) override {
+    void addDirichletBC(int boundaryId, Real value) {
         bcValues_[boundaryId] = value;
     }
     
-    void clearBoundaryConditions() override { bcValues_.clear(); }
+    void clearBoundaryConditions() { bcValues_.clear(); }
     
     void assemble() override;
     bool solve() override;
     
     const GridFunction& field() const override { return *V_; }
     GridFunction& field() override { return *V_; }
-    const FESpace& feSpace() const override { return *fes_; }
-    Index numDofs() const override { return fes_->numDofs(); }
     
     /// 设置电导率系数（非拥有指针）
-    /// 允许外部耦合模块提供温度依赖的电导率
     void setConductivity(const Coefficient* sigma) { sigma_ = sigma; }
     
     /// 获取电导率系数
     const Coefficient* conductivity() const { return sigma_; }
     
 private:
-    const Mesh* mesh_ = nullptr;
-    std::unique_ptr<FECollection> fec_;
-    std::unique_ptr<FESpace> fes_;
     std::unique_ptr<GridFunction> V_;
-    std::unique_ptr<BilinearFormAssembler> matAsm_;
-    std::unique_ptr<LinearFormAssembler> vecAsm_;
-    std::unique_ptr<LinearSolver> solver_;
-    
-    PWConstCoefficient sigmaInternal_;
     const Coefficient* sigma_ = nullptr;
-    
     std::map<int, Real> bcValues_;
 };
 

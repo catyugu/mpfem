@@ -2,8 +2,7 @@
 #define MPFEM_HEAT_TRANSFER_SOLVER_HPP
 
 #include "physics_field_solver.hpp"
-#include "assembly/assembler.hpp"
-#include <memory>
+#include <map>
 
 namespace mpfem {
 
@@ -23,11 +22,13 @@ public:
     FieldKind fieldKind() const override { return FieldKind::Temperature; }
     std::string fieldName() const override { return "Temperature"; }
     
-    bool initialize(const Mesh& mesh, 
-                    const PWConstCoefficient& conductivity) override;
+    /// 初始化求解器
+    /// @param mesh 网格
+    /// @param conductivity 热导率系数
+    bool initialize(const Mesh& mesh, const Coefficient& conductivity);
     
-    void addDirichletBC(int bid, Real val) override { bcValues_[bid] = val; }
-    void clearBoundaryConditions() override { bcValues_.clear(); convBCs_.clear(); }
+    void addDirichletBC(int bid, Real val) { bcValues_[bid] = val; }
+    void clearBoundaryConditions() { bcValues_.clear(); convBCs_.clear(); }
     
     /// 添加对流边界条件: h*(T - Tinf)
     void addConvectionBC(int bid, Real h, Real Tinf) {
@@ -42,21 +43,11 @@ public:
     
     const GridFunction& field() const override { return *T_; }
     GridFunction& field() override { return *T_; }
-    const FESpace& feSpace() const override { return *fes_; }
-    Index numDofs() const override { return fes_->numDofs(); }
     
 private:
     struct ConvBC { Real h, Tinf; };
     
-    const Mesh* mesh_ = nullptr;
-    std::unique_ptr<FECollection> fec_;
-    std::unique_ptr<FESpace> fes_;
     std::unique_ptr<GridFunction> T_;
-    std::unique_ptr<BilinearFormAssembler> matAsm_;
-    std::unique_ptr<LinearFormAssembler> vecAsm_;
-    std::unique_ptr<LinearSolver> solver_;
-    
-    PWConstCoefficient kInternal_;
     const Coefficient* k_ = nullptr;
     const Coefficient* heatSource_ = nullptr;
     

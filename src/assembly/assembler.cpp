@@ -111,16 +111,17 @@ void BilinearFormAssembler::assemble() {
                 Matrix temp;
                 integ->assembleElementMatrix(*ref, trans, temp);
                 
-                // 根据输出矩阵大小判断是否需要扩展
-                if (temp.rows() == nd && temp.cols() == nd) {
-                    // 标量积分器输出：扩展到向量场对角块
-                    for (int c = 0; c < vdim; ++c) {
-                        buf.elmatVector.block(c * nd, c * nd, nd, nd) += temp;
-                    }
-                } else if (temp.rows() == totalDofs && temp.cols() == totalDofs) {
-                    // 向量积分器输出：直接使用
-                    buf.elmatVector.topLeftCorner(totalDofs, totalDofs) += temp;
+                // 标量积分器输出：扩展到向量场对角块
+                for (int c = 0; c < vdim; ++c) {
+                    buf.elmatVector.block(c * nd, c * nd, nd, nd) += temp;
                 }
+            }
+            
+            // 向量场积分器
+            for (const auto& integ : vectorDomainIntegs_) {
+                Matrix temp;
+                integ->assembleElementMatrix(*ref, trans, temp, vdim);
+                buf.elmatVector.topLeftCorner(totalDofs, totalDofs) += temp;
             }
             
             for (int i = 0; i < totalDofs; ++i) {
@@ -161,13 +162,16 @@ void BilinearFormAssembler::assemble() {
             Matrix temp;
             integ->assembleElementMatrix(*ref, trans, temp);
             
-            if (temp.rows() == nd && temp.cols() == nd) {
-                for (int c = 0; c < vdim; ++c) {
-                    buf.elmatVector.block(c * nd, c * nd, nd, nd) += temp;
-                }
-            } else if (temp.rows() == totalDofs && temp.cols() == totalDofs) {
-                buf.elmatVector.topLeftCorner(totalDofs, totalDofs) += temp;
+            for (int c = 0; c < vdim; ++c) {
+                buf.elmatVector.block(c * nd, c * nd, nd, nd) += temp;
             }
+        }
+        
+        // 向量场积分器
+        for (const auto& integ : vectorDomainIntegs_) {
+            Matrix temp;
+            integ->assembleElementMatrix(*ref, trans, temp, vdim);
+            buf.elmatVector.topLeftCorner(totalDofs, totalDofs) += temp;
         }
         
         for (int i = 0; i < totalDofs; ++i) {
@@ -278,7 +282,7 @@ void LinearFormAssembler::assemble() {
     }
 #endif
     
-    if (!domainIntegs_.empty()) {
+    if (!domainIntegs_.empty() || !vectorDomainIntegs_.empty()) {
         const Index numElements = mesh->numElements();
         
 #ifdef _OPENMP
@@ -309,13 +313,16 @@ void LinearFormAssembler::assemble() {
                     Vector temp;
                     integ->assembleElementVector(*ref, trans, temp);
                     
-                    if (temp.size() == nd) {
-                        for (int c = 0; c < vdim; ++c) {
-                            buf.elvecVector.segment(c * nd, nd) += temp;
-                        }
-                    } else if (temp.size() == totalDofs) {
-                        buf.elvecVector.head(totalDofs) += temp;
+                    for (int c = 0; c < vdim; ++c) {
+                        buf.elvecVector.segment(c * nd, nd) += temp;
                     }
+                }
+                
+                // 向量场积分器
+                for (const auto& integ : vectorDomainIntegs_) {
+                    Vector temp;
+                    integ->assembleElementVector(*ref, trans, temp, vdim);
+                    buf.elvecVector.head(totalDofs) += temp;
                 }
                 
                 for (int i = 0; i < totalDofs; ++i) {
@@ -350,13 +357,16 @@ void LinearFormAssembler::assemble() {
                 Vector temp;
                 integ->assembleElementVector(*ref, trans, temp);
                 
-                if (temp.size() == nd) {
-                    for (int c = 0; c < vdim; ++c) {
-                        buf.elvecVector.segment(c * nd, nd) += temp;
-                    }
-                } else if (temp.size() == totalDofs) {
-                    buf.elvecVector.head(totalDofs) += temp;
+                for (int c = 0; c < vdim; ++c) {
+                    buf.elvecVector.segment(c * nd, nd) += temp;
                 }
+            }
+            
+            // 向量场积分器
+            for (const auto& integ : vectorDomainIntegs_) {
+                Vector temp;
+                integ->assembleElementVector(*ref, trans, temp, vdim);
+                buf.elvecVector.head(totalDofs) += temp;
             }
             
             for (int i = 0; i < totalDofs; ++i) {
