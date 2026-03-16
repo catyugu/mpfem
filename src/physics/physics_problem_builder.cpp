@@ -138,7 +138,7 @@ namespace mpfem
                 std::string key = "conductivity_" + std::to_string(domId);
                 setup.bcCoefficients[key] = std::make_unique<ConstantCoefficient>(mat->electricConductivity);
                 setup.electrostatics->setConductivity({domId}, setup.bcCoefficients[key].get());
-                LOG_INFO << "Domain " << domId << " (" << matTag
+                LOG_DEBUG << "Domain " << domId << " (" << matTag
                          << "): sigma = " << mat->electricConductivity;
             }
         }
@@ -236,7 +236,7 @@ namespace mpfem
                 setup.structural->setYoungModulus({domId}, setup.bcCoefficients[eKey].get());
                 setup.structural->setPoissonRatio({domId}, setup.bcCoefficients[nuKey].get());
 
-                LOG_INFO << "Domain " << domId << " (" << matTag
+                LOG_DEBUG << "Domain " << domId << " (" << matTag
                          << "): E = " << mat->youngModulus
                          << ", nu = " << mat->poissonRatio;
             }
@@ -283,7 +283,7 @@ namespace mpfem
             {
                 if (mat->rho0 > 0.0)
                 {
-                    LOG_INFO << "Domain " << domId << " (" << matTag
+                    LOG_DEBUG << "Domain " << domId << " (" << matTag
                              << "): temp-dep sigma, rho0 = " << mat->rho0
                              << ", alpha = " << mat->alpha;
                     tempDepSigma->setMaterial(domId, mat->rho0, mat->alpha, mat->tref);
