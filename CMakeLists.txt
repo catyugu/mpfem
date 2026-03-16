@@ -12,12 +12,8 @@ project(mpfem
 option(MPFEM_BUILD_TESTS "Build unit tests" ON)
 option(MPFEM_BUILD_EXAMPLES "Build examples" ON)
 option(MPFEM_USE_OPENMP "Use OpenMP for parallelization" ON)
-option(MPFEM_USE_MKL "Use Intel MKL (PARDISO solver and Eigen acceleration)" OFF)
 option(MPFEM_USE_SUPERLU "Use SuperLU solver" ON)
 option(MPFEM_USE_UMFPACK "Use UMFPACK solver" OFF)
-
-# MKL path (can be overridden by user)
-set(MKL_ROOT "E:/env/cpp/intel/oneAPI/mkl" CACHE PATH "Path to Intel MKL installation")
 
 # =============================================================================
 # C++ Standard
@@ -43,30 +39,6 @@ find_package(Eigen3 REQUIRED)
 # OpenMP (optional)
 if(MPFEM_USE_OPENMP)
     find_package(OpenMP REQUIRED)
-endif()
-
-# MKL (optional - for PARDISO solver and Eigen acceleration)
-if(MPFEM_USE_MKL)
-    # Find MKL
-    find_path(MKL_INCLUDE_DIR NAMES mkl.h 
-        PATHS "${MKL_ROOT}/include" 
-        NO_DEFAULT_PATH)
-    find_library(MKL_CORE_LIBRARY NAMES mkl_core 
-        PATHS "${MKL_ROOT}/lib/intel64" 
-        NO_DEFAULT_PATH)
-    find_library(MKL_INTEL_LP64_LIBRARY NAMES mkl_intel_lp64 
-        PATHS "${MKL_ROOT}/lib/intel64" 
-        NO_DEFAULT_PATH)
-    find_library(MKL_SEQUENTIAL_LIBRARY NAMES mkl_sequential 
-        PATHS "${MKL_ROOT}/lib/intel64" 
-        NO_DEFAULT_PATH)
-    
-    if(NOT MKL_INCLUDE_DIR OR NOT MKL_CORE_LIBRARY OR NOT MKL_INTEL_LP64_LIBRARY OR NOT MKL_SEQUENTIAL_LIBRARY)
-        message(FATAL_ERROR "MKL not found. Please check MKL_ROOT path: ${MKL_ROOT}")
-    endif()
-    
-    message(STATUS "Found MKL include: ${MKL_INCLUDE_DIR}")
-    message(STATUS "Found MKL libraries in: ${MKL_ROOT}/lib/intel64")
 endif()
 
 # SuperLU (optional)
@@ -330,17 +302,6 @@ mpfem_set_default_compiler_options(mpfem_physics)
 # =============================================================================
 # Compile definitions
 # =============================================================================
-
-if(MPFEM_USE_MKL)
-    target_compile_definitions(mpfem_core PUBLIC MPFEM_USE_MKL)
-    # Enable Eigen MKL acceleration
-    target_compile_definitions(mpfem_core PUBLIC EIGEN_USE_MKL_ALL)
-    target_include_directories(mpfem_core PUBLIC ${MKL_INCLUDE_DIR})
-    target_link_libraries(mpfem_core PUBLIC 
-        ${MKL_INTEL_LP64_LIBRARY}
-        ${MKL_SEQUENTIAL_LIBRARY}
-        ${MKL_CORE_LIBRARY})
-endif()
 
 if(MPFEM_USE_SUPERLU)
     target_compile_definitions(mpfem_core PUBLIC MPFEM_USE_SUPERLU)

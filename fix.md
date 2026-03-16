@@ -17,10 +17,10 @@
 
 ## 工作任务1
 
-* MKL安装在`E:\env\cpp\intel\oneAPI\mkl`下，如果有可能，尝试启用Eigen库的MKL加速支持。
-* 需要正确地添加SuiteSparse的求解器。注意线性求解器配置不应该有fallback逻辑，如果不支持则在运行时直接抛出异常！！
+* MKL安装在`E:\env\cpp\intel\oneAPI\mkl\latest`下，如果有可能，尝试启用Eigen库的MKL加速支持`EIGEN_USE_MKL_ALL`。
+* 正确地添加SuiteSparse的求解器。注意线性求解器配置不应该有fallback逻辑，如果不支持则在运行时直接抛出异常！！
 * Eigen, SuiteSparse，OpenBLAS等已经正确安装，如果还有其他需要，可以通过MSYS2 CLANG64的pacman命令安装依赖。
-* 现在求解器工厂的管理太混乱了，修改、添加或者删除一个求解器支持要改很多处代码，请重构这一块的设计。
+* 现在求解器工厂的管理太混乱了，有很多同质接口，字符串名字、枚举类型混用，请采取一个统一的结构化求解器配置入口。
 
 ## 工作任务2
 

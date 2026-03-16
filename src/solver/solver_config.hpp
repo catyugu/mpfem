@@ -24,7 +24,6 @@ enum class SolverType {
     
     // External direct solvers (conditionally available)
     SuperLU_LU,           ///< superlu.lu - SuperLU direct solver
-    MKL_Pardiso,          ///< mkl.pardiso - Intel MKL PARDISO
     Umfpack_LU,           ///< umfpack.lu - SuiteSparse UMFPACK
     
     // Special types
@@ -50,14 +49,6 @@ namespace solver {
 
 inline constexpr bool isSuperLUAvailable() {
 #ifdef MPFEM_USE_SUPERLU
-    return true;
-#else
-    return false;
-#endif
-}
-
-inline constexpr bool isMKLAvailable() {
-#ifdef MPFEM_USE_MKL
     return true;
 #else
     return false;
@@ -91,7 +82,6 @@ inline constexpr SolverMeta solverMetaTable[] = {
     
     // External solvers
     {SolverType::SuperLU_LU,  "superlu.lu",    false, false},
-    {SolverType::MKL_Pardiso, "mkl.pardiso",   false, false},
     {SolverType::Umfpack_LU,  "umfpack.lu",    false, false},
 };
 
@@ -107,7 +97,6 @@ inline constexpr bool solverAvailability[] = {
     true,   // Eigen_BiCGSTABILUT
     // External solvers
     solver::isSuperLUAvailable(),   // SuperLU_LU
-    solver::isMKLAvailable(),       // MKL_Pardiso
     solver::isUmfpackAvailable(),   // Umfpack_LU
 };
 

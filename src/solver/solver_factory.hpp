@@ -5,7 +5,6 @@
 #include "linear_solver.hpp"
 #include "eigen_solver.hpp"
 #include "superlu_solver.hpp"
-#include "pardiso_solver.hpp"
 #include "umfpack_solver.hpp"
 #include "core/logger.hpp"
 #include <memory>
@@ -65,8 +64,6 @@ public:
             // External solvers (conditionally available)
             case SolverType::SuperLU_LU:
                 return std::make_unique<SuperLUSolver>();
-            case SolverType::MKL_Pardiso:
-                return std::make_unique<PardisoSolver>();
             case SolverType::Umfpack_LU:
                 return std::make_unique<UmfpackSolver>();
             
@@ -117,16 +114,12 @@ public:
      * @brief Auto-select the best available direct solver.
      * 
      * Priority:
-     * 1. MKL PARDISO (if available)
-     * 2. SuperLU (if available)
-     * 3. UMFPACK (if available)
-     * 4. Eigen SparseLU (always available)
+     * 1. SuperLU (if available)
+     * 2. UMFPACK (if available)
+     * 3. Eigen SparseLU (always available)
      */
     static std::unique_ptr<LinearSolver> createAuto() {
-#ifdef MPFEM_USE_MKL
-        LOG_DEBUG << "Auto-selecting MKL PARDISO solver";
-        return std::make_unique<PardisoSolver>();
-#elif defined(MPFEM_USE_SUPERLU)
+#ifdef MPFEM_USE_SUPERLU
         LOG_DEBUG << "Auto-selecting SuperLU solver";
         return std::make_unique<SuperLUSolver>();
 #elif defined(MPFEM_USE_UMFPACK)
