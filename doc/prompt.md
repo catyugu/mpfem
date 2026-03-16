@@ -33,10 +33,10 @@
 
 * hpc-fem-playground：在external/目录下，你应该遵循其中解析求解配置的方法。
 * MFEM：一个成熟的有限元库，有内置的网格管理，组装，求解等。供参考，不要引入编译。
-* CPM：用于cmake依赖管理
-* GTest：用于单元测试
+* CPM：用于cmake依赖管理。
+* GTest：用于单元测试。
 * Eigen：可能用于小规模的矩阵求解。
-* MKL PARDISO：用于稀疏矩阵方程的快速求解。
+* MKL PARDISO/OpenBLAS：用于稀疏矩阵方程的快速求解与Eigen的加速。
 * 其他可能有用的依赖用于JSON，XML等配置文件解析、表达式解析等。
 
 ## 要求
