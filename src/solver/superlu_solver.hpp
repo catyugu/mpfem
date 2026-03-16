@@ -5,6 +5,15 @@
 #include "core/logger.hpp"
 
 #ifdef MPFEM_USE_SUPERLU
+#ifdef daxpy_
+    #undef daxpy_
+#endif
+#ifdef dgemm_
+    #undef dgemm_
+#endif
+#ifdef dtrsm_
+    #undef dtrsm_
+#endif
 #include <slu_Cnames.h>
 #include <slu_ddefs.h>
 #include <Eigen/SuperLUSupport>

@@ -17,7 +17,28 @@
 
 ## 工作任务1
 
-* MKL安装在`E:\env\cpp\intel\oneAPI\mkl\latest`下，如果有可能，尝试启用Eigen库的MKL加速支持`EIGEN_USE_MKL_ALL`。
+* 目前CMakeLists.txt冗长地集中在一个文件中，请你将其模块化，例如依赖引入，各个模块的编译和依序链接等。
+* MKL Eigen加速会遇到链接错误，你可能需要添加shim函数欺骗编译器来解决：
+
+```bash
+FAILED: [code=1] tests/mpfem_test_case_xml_reader.exe
+C:\Windows\system32\cmd.exe /C "cd . && E:\env\cpp\msys2\clang64\bin\c++.exe -O3 -DNDEBUG  tests/CMakeFiles/mpfem_test_case_xml_reader.dir/test_case_xml_reader.cpp.obj -o tests\mpfem_test_case_xml_reader.exe -Wl,--out-implib,tests\libmpfem_test_case_xml_reader.dll.a -Wl,--major-image-version,0,--minor-image-version,0  libmpfem_io.a  libmpfem_mesh.a  lib/libgtest_main.a  _deps/tinyxml2-build/libtinyxml2.a  libmpfem_core.a  E:/env/cpp/msys2/clang64/lib/libomp.dll.a  E:/env/cpp/intel/oneAPI/2025.3/lib/mkl_intel_ilp64_dll.lib  E:/env/cpp/intel/oneAPI/2025.3/lib/mkl_intel_thread_dll.lib  E:/env/cpp/intel/oneAPI/2025.3/lib/mkl_core_dll.lib  E:/env/cpp/intel/oneAPI/2025.3/lib/libiomp5md.lib  E:/env/cpp/msys2/clang64/lib/libsuperlu.dll.a  lib/libgtest.a  -lkernel32 -luser32 -lgdi32 -lwinspool -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32 && cd ."
+ld.lld: error: undefined symbol: __security_cookie
+>>> referenced by mkl_intel_ilp64_dll.lib(mkl_libc.obj):(mkl_serv_fopen)
+>>> referenced by mkl_intel_ilp64_dll.lib(mkl_libc.obj):(mkl_serv_fopen)
+>>> referenced by mkl_intel_ilp64_dll.lib(mkl_libc.obj):(mkl_serv_printf_s)
+>>> referenced 21 more times
+
+ld.lld: error: undefined symbol: __security_check_cookie
+>>> referenced by mkl_intel_ilp64_dll.lib(mkl_libc.obj):(mkl_serv_fopen)
+>>> referenced by mkl_intel_ilp64_dll.lib(mkl_libc.obj):(mkl_serv_printf_s)
+>>> referenced by mkl_intel_ilp64_dll.lib(mkl_libc.obj):(mkl_serv_fprintf_s)
+>>> referenced 9 more times
+c++: error: linker command failed with exit code 1 (use -v to see invocation)
+[5/19] Linking CXX static library libmpfem_fe.a
+ninja: build stopped: subcommand failed.
+```
+
 * 正确地添加SuiteSparse的求解器。注意线性求解器配置不应该有fallback逻辑，如果不支持则在运行时直接抛出异常！！
 * Eigen, SuiteSparse，OpenBLAS等已经正确安装，如果还有其他需要，可以通过MSYS2 CLANG64的pacman命令安装依赖。
 * 现在求解器工厂的管理太混乱了，有很多同质接口，字符串名字、枚举类型混用，请采取一个统一的结构化求解器配置入口。
