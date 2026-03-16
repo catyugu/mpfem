@@ -12,8 +12,12 @@ project(mpfem
 option(MPFEM_BUILD_TESTS "Build unit tests" ON)
 option(MPFEM_BUILD_EXAMPLES "Build examples" ON)
 option(MPFEM_USE_OPENMP "Use OpenMP for parallelization" ON)
-option(MPFEM_USE_SUPERLU "Use SuperLU solver" ON )
+option(MPFEM_USE_MKL "Use Intel MKL (PARDISO solver and Eigen acceleration)" OFF)
+option(MPFEM_USE_SUPERLU "Use SuperLU solver" ON)
 option(MPFEM_USE_UMFPACK "Use UMFPACK solver" OFF)
+
+# MKL path (can be overridden by user)
+set(MKL_ROOT "E:/env/cpp/intel/oneAPI/mkl" CACHE PATH "Path to Intel MKL installation")
 
 # =============================================================================
 # C++ Standard
@@ -41,6 +45,30 @@ if(MPFEM_USE_OPENMP)
     find_package(OpenMP REQUIRED)
 endif()
 
+# MKL (optional - for PARDISO solver and Eigen acceleration)
+if(MPFEM_USE_MKL)
+    # Find MKL
+    find_path(MKL_INCLUDE_DIR NAMES mkl.h 
+        PATHS "${MKL_ROOT}/include" 
+        NO_DEFAULT_PATH)
+    find_library(MKL_CORE_LIBRARY NAMES mkl_core 
+        PATHS "${MKL_ROOT}/lib/intel64" 
+        NO_DEFAULT_PATH)
+    find_library(MKL_INTEL_LP64_LIBRARY NAMES mkl_intel_lp64 
+        PATHS "${MKL_ROOT}/lib/intel64" 
+        NO_DEFAULT_PATH)
+    find_library(MKL_SEQUENTIAL_LIBRARY NAMES mkl_sequential 
+        PATHS "${MKL_ROOT}/lib/intel64" 
+        NO_DEFAULT_PATH)
+    
+    if(NOT MKL_INCLUDE_DIR OR NOT MKL_CORE_LIBRARY OR NOT MKL_INTEL_LP64_LIBRARY OR NOT MKL_SEQUENTIAL_LIBRARY)
+        message(FATAL_ERROR "MKL not found. Please check MKL_ROOT path: ${MKL_ROOT}")
+    endif()
+    
+    message(STATUS "Found MKL include: ${MKL_INCLUDE_DIR}")
+    message(STATUS "Found MKL libraries in: ${MKL_ROOT}/lib/intel64")
+endif()
+
 # SuperLU (optional)
 if(MPFEM_USE_SUPERLU)
     find_path(SUPERLU_INCLUDE_DIR NAMES superlu/slu_Cnames.h slu_Cnames.h)
@@ -52,9 +80,39 @@ if(MPFEM_USE_SUPERLU)
     message(STATUS "SuperLU include: ${SUPERLU_INCLUDE_DIR}")
 endif()
 
-# UMFPACK (optional)
+# UMFPACK (optional - part of SuiteSparse)
 if(MPFEM_USE_UMFPACK)
-    find_package(SuiteSparse COMPONENTS UMFPACK REQUIRED)
+    find_package(SuiteSparse QUIET)
+    if(NOT SuiteSparse_FOUND)
+        # Try manual search
+        find_path(UMFPACK_INCLUDE_DIR NAMES umfpack.h 
+            PATHS "C:/msys64/clang64/include/suitesparse"
+            NO_DEFAULT_PATH)
+        find_library(UMFPACK_LIBRARY NAMES umfpack 
+            PATHS "C:/msys64/clang64/lib"
+            NO_DEFAULT_PATH)
+        find_library(AMD_LIBRARY NAMES amd 
+            PATHS "C:/msys64/clang64/lib"
+            NO_DEFAULT_PATH)
+        find_library(CHOLMOD_LIBRARY NAMES cholmod 
+            PATHS "C:/msys64/clang64/lib"
+            NO_DEFAULT_PATH)
+        find_library(COLAMD_LIBRARY NAMES colamd 
+            PATHS "C:/msys64/clang64/lib"
+            NO_DEFAULT_PATH)
+        find_library(SUITESPARSE_CONFIG_LIBRARY NAMES suitesparseconfig 
+            PATHS "C:/msys64/clang64/lib"
+            NO_DEFAULT_PATH)
+        
+        if(NOT UMFPACK_LIBRARY)
+            message(FATAL_ERROR "UMFPACK not found. Install via: pacman -S mingw-w64-clang-x86_64-suitesparse")
+        endif()
+        
+        message(STATUS "Found UMFPACK: ${UMFPACK_LIBRARY}")
+        set(UMFPACK_LIBRARIES ${UMFPACK_LIBRARY} ${AMD_LIBRARY} ${CHOLMOD_LIBRARY} ${COLAMD_LIBRARY} ${SUITESPARSE_CONFIG_LIBRARY})
+    else()
+        set(UMFPACK_LIBRARIES SuiteSparse::UMFPACK)
+    endif()
 endif()
 
 # tinyxml2 (required for XML parsing)
@@ -273,9 +331,19 @@ mpfem_set_default_compiler_options(mpfem_physics)
 # Compile definitions
 # =============================================================================
 
+if(MPFEM_USE_MKL)
+    target_compile_definitions(mpfem_core PUBLIC MPFEM_USE_MKL)
+    # Enable Eigen MKL acceleration
+    target_compile_definitions(mpfem_core PUBLIC EIGEN_USE_MKL_ALL)
+    target_include_directories(mpfem_core PUBLIC ${MKL_INCLUDE_DIR})
+    target_link_libraries(mpfem_core PUBLIC 
+        ${MKL_INTEL_LP64_LIBRARY}
+        ${MKL_SEQUENTIAL_LIBRARY}
+        ${MKL_CORE_LIBRARY})
+endif()
+
 if(MPFEM_USE_SUPERLU)
     target_compile_definitions(mpfem_core PUBLIC MPFEM_USE_SUPERLU)
-    # Include superlu subdirectory for Eigen's SuperLUSupport
     target_include_directories(mpfem_core PUBLIC ${SUPERLU_INCLUDE_DIR})
     target_include_directories(mpfem_core PUBLIC ${SUPERLU_INCLUDE_DIR}/superlu)
     target_link_libraries(mpfem_core PUBLIC ${SUPERLU_LIBRARY})
@@ -283,7 +351,8 @@ endif()
 
 if(MPFEM_USE_UMFPACK)
     target_compile_definitions(mpfem_core PUBLIC MPFEM_USE_UMFPACK)
-    target_link_libraries(mpfem_core PUBLIC SuiteSparse::UMFPACK)
+    target_include_directories(mpfem_core PUBLIC ${UMFPACK_INCLUDE_DIR})
+    target_link_libraries(mpfem_core PUBLIC ${UMFPACK_LIBRARIES})
 endif()
 
 # =============================================================================

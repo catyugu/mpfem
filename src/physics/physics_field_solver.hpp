@@ -46,7 +46,7 @@ public:
 protected:
     // 配置参数
     int order_ = 1;
-    std::string solverType_ = "sparse_lu";
+    std::string solverType_ = "eigen.sparse_lu";
     int maxIter_ = 1000;
     Real tol_ = 1e-10;
     int iter_ = 0;

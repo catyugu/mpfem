@@ -5,7 +5,6 @@
 #include "core/types.hpp"
 #include <memory>
 #include <string>
-#include <stdexcept>
 
 namespace mpfem {
 
@@ -77,63 +76,6 @@ protected:
     int iterations_ = 0;
     Real residual_ = 0.0;
 };
-
-/**
- * @brief Solver type enumeration.
- */
-enum class SolverType {
-    // Direct solvers
-    EigenSparseLU,       ///< Eigen SparseLU (LU factorization)
-    SuperLU,        ///< SuperLU direct solver
-    
-    // Iterative solvers
-    EigenCG,             ///< Conjugate Gradient (symmetric positive definite)
-    EigenCGWithIC,       ///< CG with Incomplete Cholesky preconditioner
-    EigenBiCGSTAB,       ///< BiCGSTAB (non-symmetric)
-    EigenBiCGSTABWithILUT, ///< BiCGSTAB with ILUT preconditioner
-    
-    // Auto selection
-    Auto            ///< Let solver factory choose
-};
-
-/**
- * @brief Convert solver type to string.
- */
-inline std::string solverTypeToString(SolverType type) {
-    switch (type) {
-        case SolverType::EigenSparseLU:   return "sparse_lu";
-        case SolverType::SuperLU:    return "superlu";
-        case SolverType::EigenCG:         return "cg";
-        case SolverType::EigenCGWithIC:   return "cg_ic";
-        case SolverType::EigenBiCGSTAB:   return "bicgstab";
-        case SolverType::EigenBiCGSTABWithILUT: return "bicgstab_ilut";
-        default: return "unknown";
-    }
-}
-
-/**
- * @brief Convert string to solver type.
- * @throws std::runtime_error if requested solver is not compiled in
- */
-inline SolverType stringToSolverType(const std::string& str) {
-    if (str == "eigen_sparse_lu") return SolverType::EigenSparseLU;
-    if (str == "eigen_cg") return SolverType::EigenCG;
-    if (str == "eigen_cg_ic") return SolverType::EigenCGWithIC;
-    if (str == "eigen_bicgstab") return SolverType::EigenBiCGSTAB;
-    if (str == "eigen_bicgstab_ilut") return SolverType::EigenBiCGSTABWithILUT;
-    if (str == "superlu") {
-#ifndef MPFEM_USE_SUPERLU
-        throw std::runtime_error("SuperLU solver requested but not available. "
-                                  "Rebuild with -DMPFEM_USE_SUPERLU=ON");
-#endif
-        return SolverType::SuperLU;
-    }
-    if (str == "eigen_cg") return SolverType::EigenCG;
-    if (str == "eigen_cg_ic") return SolverType::EigenCGWithIC;
-    if (str == "eigen_bicgstab") return SolverType::EigenBiCGSTAB;
-    if (str == "eigen_bicgstab_ilut") return SolverType::EigenBiCGSTABWithILUT;
-    return SolverType::Auto;  // Default to auto selection 
-}
 
 }  // namespace mpfem
 
