@@ -2,7 +2,6 @@
 #define MPFEM_FE_SPACE_HPP
 
 #include "mesh/mesh.hpp"
-#include "mesh/mesh_topology.hpp"
 #include "fe_collection.hpp"
 #include "core/types.hpp"
 #include "core/exception.hpp"
@@ -75,6 +74,21 @@ public:
     /// Get the mesh
     const Mesh* mesh() const { return mesh_; }
     
+    /// Check if a boundary element is an external boundary (not internal interface)
+    /// Returns true if the boundary element is on an external boundary,
+    /// false if it is an internal interface (shared by two volume elements)
+    bool isExternalBoundary(Index bdrElemIdx) const {
+        if (!mesh_) return true;
+        return mesh_->isExternalBoundary(bdrElemIdx);
+    }
+    
+    /// Check if a boundary ID (attribute) is an external boundary
+    /// Efficient: same boundary ID means same external/internal status
+    bool isExternalBoundaryId(Index bdrId) const {
+        if (!mesh_) return true;
+        return mesh_->isExternalBoundaryId(bdrId);
+    }
+    
     /// Get the FE collection
     const FECollection* fec() const { 
         return fec_ ? fec_.get() : fecRef_; 
@@ -107,13 +121,6 @@ public:
     
     /// Get local to global dof mapping for a boundary element
     void getBdrElementDofs(Index bdrIdx, std::vector<Index>& dofs) const;
-    
-    /// Get local to global dof mapping (return vector)
-    std::vector<Index> elementDofs(Index elemIdx) const {
-        std::vector<Index> dofs;
-        getElementDofs(elemIdx, dofs);
-        return dofs;
-    }
     
     /// Get number of dofs for an element
     int numElementDofs(Index elemIdx) const;
@@ -193,7 +200,7 @@ private:
     std::unique_ptr<FECollection> fec_;   ///< Owned FE collection
     const FECollection* fecRef_ = nullptr; ///< Non-owning reference
     int vdim_ = 1;
-    Ordering ordering_ = Ordering::byVDim;
+    Ordering ordering_ = Ordering::byNodes;  // Default: byNodes (more common convention)
     
     Index numDofs_ = 0;
     Index numTrueDofs_ = 0;

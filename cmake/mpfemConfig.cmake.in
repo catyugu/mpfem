@@ -5,12 +5,13 @@ include(CMakeFindDependencyMacro)
 # Find required dependencies
 find_dependency(Eigen3 3.4 REQUIRED)
 
-if(@MPFEM_USE_OPENMP@)
-    find_dependency(OpenMP REQUIRED)
+# Optional dependencies
+if(@MPFEM_OPENBLAS_FOUND@)
+    find_dependency(OpenBLAS REQUIRED)
 endif()
 
-if(@MPFEM_USE_MKL@)
-    find_dependency(MKL COMPONENTS PARDISO REQUIRED)
+if(@MPFEM_OPENMP_FOUND@)
+    find_dependency(OpenMP REQUIRED)
 endif()
 
 # Include targets

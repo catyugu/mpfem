@@ -1,12 +1,14 @@
 #include "electrostatics_solver.hpp"
 #include "assembly/integrators.hpp"
+#include "assembly/dirichlet_bc.hpp"
 #include "solver/solver_factory.hpp"
+#include "fe/element_transform.hpp"
+#include "fe/grid_function.hpp"
 #include "core/logger.hpp"
 
 namespace mpfem {
 
-bool ElectrostaticsSolver::initialize(const Mesh& mesh, 
-                                       const PWConstCoefficient& conductivity) {
+bool ElectrostaticsSolver::initialize(const Mesh& mesh) {
     mesh_ = &mesh;
     
     fec_ = std::make_unique<FECollection>(order_, FECollection::Type::H1);
@@ -14,20 +16,24 @@ bool ElectrostaticsSolver::initialize(const Mesh& mesh,
     V_ = std::make_unique<GridFunction>(fes_.get());
     V_->setZero();
     
-    sigmaInternal_ = conductivity;
-    sigma_ = &sigmaInternal_;
-    
     matAsm_ = std::make_unique<BilinearFormAssembler>(fes_.get());
     vecAsm_ = std::make_unique<LinearFormAssembler>(fes_.get());
     matAsm_->computeSparsityPattern();
     
-    solver_ = SolverFactory::create(solverType_, maxIter_, tol_);
+    createSolver();
     
     LOG_INFO << "ElectrostaticsSolver: " << fes_->numDofs() << " DOFs";
     return true;
 }
 
 void ElectrostaticsSolver::assemble() {
+    ScopedTimer timer("Electrostatics assemble");
+    
+    if (!sigma_) {
+        LOG_ERROR << "ElectrostaticsSolver: conductivity not set";
+        return;
+    }
+    
     matAsm_->clear();
     vecAsm_->clear();
     matAsm_->clearIntegrators();
@@ -38,29 +44,10 @@ void ElectrostaticsSolver::assemble() {
     matAsm_->assemble();
     vecAsm_->assemble();
     
-    applyBCs();
+    // 应用边界条件
+    applyDirichletBC(matAsm_->matrix(), vecAsm_->vector(), V_->values(),
+                     *fes_, *mesh_, voltageBCs_);
     matAsm_->finalize();
-}
-
-void ElectrostaticsSolver::applyBCs() {
-    std::map<Index, Real> dofVals;
-    
-    for (const auto& [bid, val] : bcValues_) {
-        for (Index b = 0; b < mesh_->numBdrElements(); ++b) {
-            if (mesh_->bdrElement(b).attribute() == bid) {
-                std::vector<Index> dofs;
-                fes_->getBdrElementDofs(b, dofs);
-                for (Index d : dofs) {
-                    if (d != InvalidIndex && dofVals.find(d) == dofVals.end()) {
-                        dofVals[d] = val;
-                    }
-                }
-            }
-        }
-    }
-    
-    matAsm_->matrix().eliminateRows(dofVals, vecAsm_->vector());
-    for (const auto& [d, v] : dofVals) V_->values()(d) = v;
 }
 
 bool ElectrostaticsSolver::solve() {
@@ -72,24 +59,6 @@ bool ElectrostaticsSolver::solve() {
         LOG_INFO << "Electrostatics converged: iter=" << iter_ << " res=" << res_;
     }
     return ok;
-}
-
-void ElectrostaticsSolver::computeJouleHeat(std::vector<Real>& Q) const {
-    if (!V_ || !mesh_ || !sigma_) return;
-    
-    Q.resize(mesh_->numElements(), 0.0);
-    ElementTransform trans;
-    trans.setMesh(mesh_);
-    
-    for (Index e = 0; e < mesh_->numElements(); ++e) {
-        trans.setElement(e);
-        Real xi[3] = {0, 0, 0};
-        trans.setIntegrationPoint(xi);
-        
-        Vector3 g = V_->gradient(e, xi, trans);
-        Real sig = sigma_->eval(trans);
-        Q[e] = sig * g.squaredNorm();
-    }
 }
 
 } // namespace mpfem

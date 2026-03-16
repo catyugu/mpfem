@@ -127,6 +127,16 @@ void Mesh::clear() {
     elements_.clear();
     bdrElements_.clear();
     dim_ = 3;
+    topologyBuilt_ = false;
+    faceInfoList_.clear();
+    faceKeyToIndex_.clear();
+    elementToFace_.clear();
+    boundaryFaceIndices_.clear();
+    interiorFaceIndices_.clear();
+    bdrElementToFace_.clear();
+    cornerVertexMapBuilt_ = false;
+    cornerVertexIndices_.clear();
+    cornerVertexMap_.clear();
 }
 
 std::pair<Vector3, Vector3> Mesh::getBoundingBox() const {
@@ -144,6 +154,229 @@ std::pair<Vector3, Vector3> Mesh::getBoundingBox() const {
     }
     
     return {minCoord, maxCoord};
+}
+
+// =============================================================================
+// Corner vertices (topological vertices)
+// =============================================================================
+
+Index Mesh::numCornerVertices() const {
+    buildCornerVertexMap();
+    return static_cast<Index>(cornerVertexIndices_.size());
+}
+
+const std::vector<Index>& Mesh::cornerVertexIndices() const {
+    buildCornerVertexMap();
+    return cornerVertexIndices_;
+}
+
+Index Mesh::vertexToCornerIndex(Index vertexIdx) const {
+    buildCornerVertexMap();
+    if (vertexIdx >= static_cast<Index>(cornerVertexMap_.size())) {
+        return InvalidIndex;
+    }
+    return cornerVertexMap_[vertexIdx];
+}
+
+void Mesh::buildCornerVertexMap() const {
+    if (cornerVertexMapBuilt_) return;
+    
+    // Collect all corner vertices from all volume elements
+    std::set<Index> cornerSet;
+    for (const auto& e : elements_) {
+        int nc = e.numCorners();
+        for (int i = 0; i < nc; ++i) {
+            cornerSet.insert(e.vertex(i));
+        }
+    }
+    
+    // Build sorted list of corner vertex indices
+    cornerVertexIndices_.clear();
+    cornerVertexIndices_.reserve(cornerSet.size());
+    for (Index v : cornerSet) {
+        cornerVertexIndices_.push_back(v);
+    }
+    std::sort(cornerVertexIndices_.begin(), cornerVertexIndices_.end());
+    
+    // Build reverse mapping: full vertex index -> corner vertex index (or InvalidIndex)
+    cornerVertexMap_.clear();
+    cornerVertexMap_.resize(numVertices(), InvalidIndex);
+    for (Index i = 0; i < static_cast<Index>(cornerVertexIndices_.size()); ++i) {
+        cornerVertexMap_[cornerVertexIndices_[i]] = i;
+    }
+    
+    cornerVertexMapBuilt_ = true;
+    
+    LOG_DEBUG << "Corner vertex map built: " << cornerVertexIndices_.size() 
+              << " corner vertices out of " << numVertices() << " total vertices";
+}
+
+// =============================================================================
+// Topology building
+// =============================================================================
+
+void Mesh::buildTopology() {
+    if (topologyBuilt_) return;
+    
+    LOG_DEBUG << "Building mesh topology...";
+    
+    // Clear previous data
+    faceInfoList_.clear();
+    faceKeyToIndex_.clear();
+    elementToFace_.clear();
+    boundaryFaceIndices_.clear();
+    interiorFaceIndices_.clear();
+    bdrElementToFace_.clear();
+    
+    // Build face -> element mapping
+    buildFaceToElementMap();
+    
+    // Build element -> face mapping
+    buildElementToFaceMap();
+    
+    // Identify boundary faces
+    identifyBoundaryFaces();
+    
+    // Build boundary element mapping
+    buildBoundaryElementMapping();
+    
+    topologyBuilt_ = true;
+    
+    LOG_DEBUG << "Topology built: " << boundaryFaceIndices_.size() << " boundary faces, "
+              << interiorFaceIndices_.size() << " interior faces, "
+              << bdrElementToFace_.size() << " boundary elements mapped";
+}
+
+void Mesh::buildFaceToElementMap() {
+    // Temporary map for building
+    std::unordered_map<FaceKey, FaceInfo, FaceKeyHash> faceMap;
+    
+    // Process each element
+    for (Index elemIdx = 0; elemIdx < numElements(); ++elemIdx) {
+        const Element& elem = element(elemIdx);
+        
+        // Get all faces of this element
+        for (int f = 0; f < elem.numFaces(); ++f) {
+            auto faceVerts = elem.faceVertices(f);
+            
+            // Create a sorted key for the face
+            FaceKey key;
+            key.reserve(faceVerts.size());
+            for (Index v : faceVerts) {
+                key.push_back(v);
+            }
+            std::sort(key.begin(), key.end());
+            
+            // Check if face already exists
+            auto it = faceMap.find(key);
+            if (it == faceMap.end()) {
+                // New face
+                FaceInfo info;
+                info.elem1 = elemIdx;
+                info.elem2 = InvalidIndex;
+                info.localFace1 = f;
+                info.localFace2 = -1;
+                info.isBoundary = true;
+                info.vertices = faceVerts;
+                
+                faceMap[key] = std::move(info);
+            } else {
+                // Face already exists - this is an interior face
+                it->second.elem2 = elemIdx;
+                it->second.localFace2 = f;
+                it->second.isBoundary = false;
+            }
+        }
+    }
+    
+    // Transfer to vector for O(1) access
+    faceInfoList_.reserve(faceMap.size());
+    Index faceIdx = 0;
+    for (auto& [key, info] : faceMap) {
+        faceInfoList_.push_back(std::move(info));
+        faceKeyToIndex_[key] = faceIdx++;
+    }
+}
+
+void Mesh::buildElementToFaceMap() {
+    elementToFace_.clear();
+    elementToFace_.resize(numElements());
+    
+    // Build element to face mapping using the face index
+    for (Index faceIdx = 0; faceIdx < static_cast<Index>(faceInfoList_.size()); ++faceIdx) {
+        const auto& info = faceInfoList_[faceIdx];
+        
+        // Add face to element 1
+        if (info.elem1 != InvalidIndex && info.elem1 < static_cast<Index>(elementToFace_.size())) {
+            elementToFace_[info.elem1].push_back({info.localFace1, faceIdx});
+        }
+        
+        // Add face to element 2 (if exists)
+        if (info.elem2 != InvalidIndex && info.elem2 < static_cast<Index>(elementToFace_.size())) {
+            elementToFace_[info.elem2].push_back({info.localFace2, faceIdx});
+        }
+    }
+}
+
+void Mesh::identifyBoundaryFaces() {
+    boundaryFaceIndices_.clear();
+    interiorFaceIndices_.clear();
+    
+    for (Index faceIdx = 0; faceIdx < static_cast<Index>(faceInfoList_.size()); ++faceIdx) {
+        if (faceInfoList_[faceIdx].isBoundary) {
+            boundaryFaceIndices_.push_back(faceIdx);
+        } else {
+            interiorFaceIndices_.push_back(faceIdx);
+        }
+    }
+}
+
+void Mesh::buildBoundaryElementMapping() {
+    // Match boundary elements to topology faces
+    // A boundary element should match a boundary face by its CORNER vertices only
+    // (not including edge midpoints for quadratic elements)
+    
+    Index externalCount = 0;
+    Index internalCount = 0;
+    bdrIdExternalCache_.clear();
+    
+    for (Index bdrIdx = 0; bdrIdx < numBdrElements(); ++bdrIdx) {
+        const Element& bdrElem = bdrElement(bdrIdx);
+        Index bdrId = bdrElem.attribute();
+        
+        // Get sorted vertex key for boundary element - ONLY CORNER NODES
+        FaceKey key;
+        int numCorners = bdrElem.numCorners();
+        key.reserve(numCorners);
+        for (int i = 0; i < numCorners; ++i) {
+            key.push_back(bdrElem.vertex(i));
+        }
+        std::sort(key.begin(), key.end());
+        
+        // Find matching face
+        auto it = faceKeyToIndex_.find(key);
+        if (it != faceKeyToIndex_.end()) {
+            Index faceIdx = it->second;
+            bdrElementToFace_[bdrIdx] = faceIdx;
+            
+            bool isExternal = faceInfoList_[faceIdx].isBoundary;
+            
+            // Count external vs internal boundaries
+            if (isExternal) {
+                externalCount++;
+            } else {
+                internalCount++;
+            }
+            
+            // Cache boundary ID -> isExternal (first encounter sets the value)
+            if (bdrIdExternalCache_.find(bdrId) == bdrIdExternalCache_.end()) {
+                bdrIdExternalCache_[bdrId] = isExternal;
+            }
+        }
+    }
+    
+    LOG_INFO << "Boundary mapping: " << externalCount << " external, " 
+             << internalCount << " internal (will skip in BC)";
 }
 
 }  // namespace mpfem

@@ -77,56 +77,6 @@ protected:
     Real residual_ = 0.0;
 };
 
-/**
- * @brief Solver type enumeration.
- */
-enum class SolverType {
-    // Direct solvers
-    SparseLU,       ///< Eigen SparseLU (LU factorization)
-    SparseQR,       ///< Eigen SparseQR (QR factorization)
-    Pardiso,        ///< Intel MKL PARDISO
-    
-    // Iterative solvers
-    CG,             ///< Conjugate Gradient (symmetric positive definite)
-    CGWithIC,       ///< CG with Incomplete Cholesky preconditioner
-    BiCGSTAB,       ///< BiCGSTAB (non-symmetric)
-    BiCGSTABWithILUT, ///< BiCGSTAB with ILUT preconditioner
-    
-    // Auto selection
-    Auto            ///< Let solver factory choose
-};
-
-/**
- * @brief Convert solver type to string.
- */
-inline std::string solverTypeToString(SolverType type) {
-    switch (type) {
-        case SolverType::SparseLU:   return "sparse_lu";
-        case SolverType::SparseQR:   return "sparse_qr";
-        case SolverType::Pardiso:    return "pardiso";
-        case SolverType::CG:         return "cg";
-        case SolverType::CGWithIC:   return "cg_ic";
-        case SolverType::BiCGSTAB:   return "bicgstab";
-        case SolverType::BiCGSTABWithILUT: return "bicgstab_ilut";
-        case SolverType::Auto:       return "auto";
-        default: return "unknown";
-    }
-}
-
-/**
- * @brief Convert string to solver type.
- */
-inline SolverType stringToSolverType(const std::string& str) {
-    if (str == "sparse_lu" || str == "superlu") return SolverType::SparseLU;
-    if (str == "sparse_qr") return SolverType::SparseQR;
-    if (str == "pardiso") return SolverType::Pardiso;
-    if (str == "cg") return SolverType::CG;
-    if (str == "cg_ic") return SolverType::CGWithIC;
-    if (str == "bicgstab") return SolverType::BiCGSTAB;
-    if (str == "bicgstab_ilut") return SolverType::BiCGSTABWithILUT;
-    return SolverType::Auto;
-}
-
 }  // namespace mpfem
 
 #endif  // MPFEM_LINEAR_SOLVER_HPP

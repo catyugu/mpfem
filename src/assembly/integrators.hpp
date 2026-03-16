@@ -3,14 +3,18 @@
 
 #include "integrator.hpp"
 #include "fe/facet_element_transform.hpp"
+#include "fe/grid_function.hpp"
 
 namespace mpfem {
 
+// =============================================================================
+// 域积分器（双线性型）- 标量场
+// =============================================================================
+
 /// 扩散积分器: ∫ σ ∇φᵢ · ∇φⱼ dΩ
-class DiffusionIntegrator : public BilinearFormIntegrator {
+class DiffusionIntegrator : public DomainBilinearIntegrator {
 public:
-    DiffusionIntegrator() = default;
-    explicit DiffusionIntegrator(const Coefficient* q) : BilinearFormIntegrator(q) {}
+    using DomainBilinearIntegrator::DomainBilinearIntegrator;
     
     void assembleElementMatrix(const ReferenceElement& ref,
                                ElementTransform& trans,
@@ -18,65 +22,117 @@ public:
 };
 
 /// 质量积分器: ∫ ρ φᵢ φⱼ dΩ
-class MassIntegrator : public BilinearFormIntegrator {
+class MassIntegrator : public DomainBilinearIntegrator {
 public:
-    MassIntegrator() = default;
-    explicit MassIntegrator(const Coefficient* q) : BilinearFormIntegrator(q) {}
+    using DomainBilinearIntegrator::DomainBilinearIntegrator;
     
     void assembleElementMatrix(const ReferenceElement& ref,
                                ElementTransform& trans,
                                Matrix& elmat) const override;
 };
 
+// =============================================================================
+// 域积分器（线性型）- 标量场
+// =============================================================================
+
 /// 域载荷积分器: ∫ f φᵢ dΩ
-class DomainLFIntegrator : public LinearFormIntegrator {
+class DomainLFIntegrator : public DomainLinearIntegrator {
 public:
-    DomainLFIntegrator() = default;
-    explicit DomainLFIntegrator(const Coefficient* f) : LinearFormIntegrator(f) {}
+    using DomainLinearIntegrator::DomainLinearIntegrator;
     
     void assembleElementVector(const ReferenceElement& ref,
                                ElementTransform& trans,
                                Vector& elvec) const override;
 };
 
+// =============================================================================
+// 边界积分器（线性型）- 标量场
+// =============================================================================
+
 /// 边界载荷积分器: ∫ g φᵢ dΓ
-class BoundaryLFIntegrator : public LinearFormIntegrator {
+class BoundaryLFIntegrator : public FaceLinearIntegrator {
 public:
-    BoundaryLFIntegrator() = default;
-    explicit BoundaryLFIntegrator(const Coefficient* g) : LinearFormIntegrator(g) {}
-    
-    void assembleElementVector(const ReferenceElement&, ElementTransform&, Vector& elvec) const override {
-        elvec.setZero(0);
-    }
+    using FaceLinearIntegrator::FaceLinearIntegrator;
     
     void assembleFaceVector(const ReferenceElement& ref,
                             FacetElementTransform& trans,
                             Vector& elvec) const override;
 };
 
-/// 对流边界积分器 (Robin BC): ∫ h φᵢ φⱼ dΓ
-class ConvectionBoundaryIntegrator : public BilinearFormIntegrator {
+// =============================================================================
+// 边界积分器（双线性型）- 标量场
+// =============================================================================
+
+/// 对流边界质量积分器 (Robin BC矩阵部分): ∫ h φᵢ φⱼ dΓ
+class ConvectionMassIntegrator : public FaceBilinearIntegrator {
 public:
-    ConvectionBoundaryIntegrator() = default;
-    ConvectionBoundaryIntegrator(const Coefficient* h, const Coefficient* Tinf = nullptr)
-        : BilinearFormIntegrator(h), Tinf_(Tinf) {}
-    
-    void setAmbientTemperature(const Coefficient* Tinf) { Tinf_ = Tinf; }
-    
-    void assembleElementMatrix(const ReferenceElement&, ElementTransform&, Matrix& elmat) const override {
-        elmat.setZero(0, 0);
-    }
+    using FaceBilinearIntegrator::FaceBilinearIntegrator;
     
     void assembleFaceMatrix(const ReferenceElement& ref,
                             FacetElementTransform& trans,
                             Matrix& elmat) const override;
+};
+
+/// 对流边界载荷积分器 (Robin BC向量部分): ∫ h Tinf φᵢ dΓ
+/// 注意：系数生命周期由调用者管理
+class ConvectionLFIntegrator : public FaceLinearIntegrator {
+public:
+    ConvectionLFIntegrator() = default;
+    
+    /// 构造函数：传入对流系数和环境温度系数（非拥有）
+    ConvectionLFIntegrator(const Coefficient* h, const Coefficient* Tinf)
+        : FaceLinearIntegrator(h), Tinf_(Tinf) {}
+    
+    void setAmbientTemperature(const Coefficient* Tinf) { Tinf_ = Tinf; }
     
     void assembleFaceVector(const ReferenceElement& ref,
                             FacetElementTransform& trans,
-                            Vector& elvec) const;
+                            Vector& elvec) const override;
     
 private:
-    const Coefficient* Tinf_ = nullptr;
+    const Coefficient* Tinf_ = nullptr;  ///< 环境温度系数（非拥有）
+};
+
+// =============================================================================
+// 弹性力学积分器 - 向量场专用
+// =============================================================================
+
+/// 弹性积分器: ∫ (λ div(u) div(v) + 2μ ε(u):ε(v)) dΩ
+/// 输出 elmat 为 (nd*vdim) x (nd*vdim) 矩阵
+class ElasticityIntegrator : public VectorDomainBilinearIntegrator {
+public:
+    ElasticityIntegrator(const Coefficient* E, const Coefficient* nu)
+        : E_(E), nu_(nu) {}
+    
+    void assembleElementMatrix(const ReferenceElement& ref,
+                               ElementTransform& trans,
+                               Matrix& elmat,
+                               int vdim) const override;
+    
+private:
+    const Coefficient* E_ = nullptr;
+    const Coefficient* nu_ = nullptr;
+};
+
+/// 热膨胀载荷积分器: ∫ (3K α_T (T - T_ref) div(v)) dΩ
+/// 输出 elvec 为 (nd*vdim) 维向量
+class ThermalLoadIntegrator : public VectorDomainLinearIntegrator {
+public:
+    ThermalLoadIntegrator(const Coefficient* E, const Coefficient* nu,
+                          const Coefficient* alphaT, const GridFunction* T, Real Tref)
+        : E_(E), nu_(nu), alphaT_(alphaT), T_(T), Tref_(Tref) {}
+    
+    void assembleElementVector(const ReferenceElement& ref,
+                               ElementTransform& trans,
+                               Vector& elvec,
+                               int vdim) const override;
+    
+private:
+    const Coefficient* E_ = nullptr;
+    const Coefficient* nu_ = nullptr;
+    const Coefficient* alphaT_ = nullptr;
+    const GridFunction* T_ = nullptr;
+    Real Tref_;
 };
 
 }  // namespace mpfem

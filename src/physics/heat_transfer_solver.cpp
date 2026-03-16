@@ -1,12 +1,12 @@
 #include "heat_transfer_solver.hpp"
 #include "assembly/integrators.hpp"
+#include "assembly/dirichlet_bc.hpp"
 #include "solver/solver_factory.hpp"
 #include "core/logger.hpp"
 
 namespace mpfem {
 
-bool HeatTransferSolver::initialize(const Mesh& mesh, 
-                                     const PWConstCoefficient& conductivity) {
+bool HeatTransferSolver::initialize(const Mesh& mesh) {
     mesh_ = &mesh;
     
     fec_ = std::make_unique<FECollection>(order_, FECollection::Type::H1);
@@ -14,67 +14,74 @@ bool HeatTransferSolver::initialize(const Mesh& mesh,
     T_ = std::make_unique<GridFunction>(fes_.get());
     T_->values().setConstant(293.15);
     
-    kInternal_ = conductivity;
-    k_ = &kInternal_;
-    
     matAsm_ = std::make_unique<BilinearFormAssembler>(fes_.get());
     vecAsm_ = std::make_unique<LinearFormAssembler>(fes_.get());
     matAsm_->computeSparsityPattern();
     
-    solver_ = SolverFactory::create(solverType_, maxIter_, tol_);
+    createSolver();
     
     LOG_INFO << "HeatTransferSolver: " << fes_->numDofs() << " DOFs";
     return true;
 }
 
 void HeatTransferSolver::assemble() {
+    ScopedTimer timer("HeatTransfer assemble");
+    
+    if (!k_) {
+        LOG_ERROR << "HeatTransferSolver: conductivity not set";
+        return;
+    }
+    
     matAsm_->clear();
     vecAsm_->clear();
     matAsm_->clearIntegrators();
     vecAsm_->clearIntegrators();
     
+    // 清除之前持有的边界条件系数
+    ownedConvH_.clear();
+    ownedConvTinf_.clear();
+    
+    // 扩散积分器
     auto diff = std::make_unique<DiffusionIntegrator>(k_);
     matAsm_->addDomainIntegrator(std::move(diff));
     
+    // 对流边界条件
     for (const auto& [bid, bc] : convBCs_) {
-        auto conv = std::make_unique<ConvectionBoundaryIntegrator>(new ConstantCoefficient(bc.h));
-        matAsm_->addBoundaryIntegrator(std::move(conv), bid);
+        // 创建并持有系数（避免悬空指针）
+        auto hCoef = std::make_unique<ConstantCoefficient>(bc.h);
+        auto tinfCoef = std::make_unique<ConstantCoefficient>(bc.Tinf);
         
-        auto rhsInt = std::make_unique<BoundaryLFIntegrator>(new ConstantCoefficient(bc.h * bc.Tinf));
-        vecAsm_->addBoundaryIntegrator(std::move(rhsInt), bid);
+        const Coefficient* hPtr = hCoef.get();
+        const Coefficient* tinfPtr = tinfCoef.get();
+        
+        ownedConvH_.push_back(std::move(hCoef));
+        ownedConvTinf_.push_back(std::move(tinfCoef));
+        
+        // 对流边界条件: h(T - Tinf) = 0
+        // 弱形式: ∫ h T φ dΓ - ∫ h Tinf φ dΓ = 0
+        // 矩阵部分: ∫ h φ_i φ_j dΓ
+        auto convMat = std::make_unique<ConvectionMassIntegrator>(hPtr);
+        matAsm_->addBoundaryIntegrator(std::move(convMat), bid);
+        
+        // 向量部分: ∫ h Tinf φ_i dΓ
+        auto convVec = std::make_unique<ConvectionLFIntegrator>(hPtr, tinfPtr);
+        vecAsm_->addBoundaryIntegrator(std::move(convVec), bid);
     }
     
     matAsm_->assemble();
     
+    // 热源
     if (heatSource_) {
         auto src = std::make_unique<DomainLFIntegrator>(heatSource_);
         vecAsm_->addDomainIntegrator(std::move(src));
     }
     
     vecAsm_->assemble();
-    applyBCs();
+    
+    // 应用温度边界条件
+    applyDirichletBC(matAsm_->matrix(), vecAsm_->vector(), T_->values(),
+                     *fes_, *mesh_, temperatureBCs_);
     matAsm_->finalize();
-}
-
-void HeatTransferSolver::applyBCs() {
-    std::map<Index, Real> dofVals;
-    
-    for (const auto& [bid, val] : bcValues_) {
-        for (Index b = 0; b < mesh_->numBdrElements(); ++b) {
-            if (mesh_->bdrElement(b).attribute() == bid) {
-                std::vector<Index> dofs;
-                fes_->getBdrElementDofs(b, dofs);
-                for (Index d : dofs) {
-                    if (d != InvalidIndex && dofVals.find(d) == dofVals.end()) {
-                        dofVals[d] = val;
-                    }
-                }
-            }
-        }
-    }
-    
-    matAsm_->matrix().eliminateRows(dofVals, vecAsm_->vector());
-    for (const auto& [d, v] : dofVals) T_->values()(d) = v;
 }
 
 bool HeatTransferSolver::solve() {

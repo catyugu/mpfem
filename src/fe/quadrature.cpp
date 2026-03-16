@@ -169,26 +169,38 @@ QuadratureRule getTetrahedron(int order) {
         rule.points().push_back(IntegrationPoint(b, c, b, w1));
         rule.points().push_back(IntegrationPoint(b, b, c, w1));
     } else if (order == 4) {
-        // Order 4, 11 points
-        // Simplified version - see Zhang et al. for exact coefficients
-        const Real w1 = 0.013155555555555;
-        const Real w2 = 0.076100000000000;
-        const Real a1 = 0.399403576166799;
-        const Real b1 = 0.100526765225204;
-        const Real a2 = 0.010986637008558;
-        const Real b2 = 0.746193817171257;
+        // Order 4, 11 points - degree 4 (with negative weight)
+        // Reference: MFEM intrules.cpp, same as Keast (1986)
         
-        rule.points().push_back(IntegrationPoint(a1, a1, a1, w1));
-        rule.points().push_back(IntegrationPoint(b1, a1, a1, w1));
-        rule.points().push_back(IntegrationPoint(a1, b1, a1, w1));
-        rule.points().push_back(IntegrationPoint(a1, a1, b1, w1));
-        rule.points().push_back(IntegrationPoint(a2, a2, a2, w2));
-        rule.points().push_back(IntegrationPoint(b2, a2, a2, w2));
-        rule.points().push_back(IntegrationPoint(a2, b2, a2, w2));
-        rule.points().push_back(IntegrationPoint(a2, a2, b2, w2));
-        // Additional points...
+        // Group 1: AddTetPoints4(0, 1/14, 343/45000)
+        // Permutations of (a, a, a, b) where a = 1/14, b = 11/14
+        const Real a1 = 1.0 / 14.0;                    // ≈ 0.0714285714285714
+        const Real b1 = 11.0 / 14.0;                   // ≈ 0.7857142857142857
+        const Real w1 = 343.0 / 45000.0;               // ≈ 0.0076222222222222
+        rule.points().push_back(IntegrationPoint(a1, a1, a1, w1));  // (a,a,a)
+        rule.points().push_back(IntegrationPoint(a1, a1, b1, w1));  // (a,a,b)
+        rule.points().push_back(IntegrationPoint(a1, b1, a1, w1));  // (a,b,a)
+        rule.points().push_back(IntegrationPoint(b1, a1, a1, w1));  // (b,a,a)
+        
+        // Group 2: AddTetMidPoint(4, -74/5625) - center point with negative weight
+        const Real w2 = -74.0 / 5625.0;                // ≈ -0.0131555555555556
+        rule.points().push_back(IntegrationPoint(0.25, 0.25, 0.25, w2));
+        
+        // Group 3: AddTetPoints6(5, a, 28/1125)
+        // Permutations of (a, a, b, b) where a = 0.100596423833200795, b = 0.399403576166799205
+        const Real a3 = 0.100596423833200795;
+        const Real b3 = 0.5 - a3;                      // ≈ 0.399403576166799205
+        const Real w3 = 28.0 / 1125.0;                 // ≈ 0.0248888888888889
+        // Permutations of (a, a, b): (a,a,b), (a,b,a), (b,a,a)
+        rule.points().push_back(IntegrationPoint(a3, a3, b3, w3));
+        rule.points().push_back(IntegrationPoint(a3, b3, a3, w3));
+        rule.points().push_back(IntegrationPoint(b3, a3, a3, w3));
+        // Permutations of (b, b, a): (b,b,a), (b,a,b), (a,b,b)
+        rule.points().push_back(IntegrationPoint(b3, b3, a3, w3));
+        rule.points().push_back(IntegrationPoint(b3, a3, b3, w3));
+        rule.points().push_back(IntegrationPoint(a3, b3, b3, w3));
     } else {
-        throw std::runtime_error("Quadrature order >4 not implemented for tetrahedra");
+        throw std::runtime_error("Quadrature order >6 not implemented for tetrahedra");
     }
     
     return rule;

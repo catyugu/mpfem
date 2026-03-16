@@ -14,10 +14,17 @@ BilinearFormAssembler::BilinearFormAssembler(const FESpace* fes) : fes_(fes) {
         mat_.resize(fes_->numDofs(), fes_->numDofs());
     }
 #ifdef _OPENMP
-    buffers_.resize(omp_get_max_threads());
+    int nthreads = omp_get_max_threads();
+    buffers_.resize(nthreads);
 #else
     buffers_.resize(1);
 #endif
+    if (fes_) {
+        const Mesh* mesh = fes_->mesh();
+        if (mesh) {
+            triplets_.reserve(mesh->numElements() * MAX_DOFS * MAX_DOFS / 2);
+        }
+    }
 }
 
 void BilinearFormAssembler::computeSparsityPattern() {
@@ -42,98 +49,193 @@ void BilinearFormAssembler::computeSparsityPattern() {
                 rowCols[i].insert(j);
     }
     
-    std::vector<SparseMatrix::Triplet> triplets;
-    triplets.reserve(ndofs * 27);
+    triplets_.clear();
+    triplets_.reserve(ndofs * 27);
     for (Index i = 0; i < ndofs; ++i) {
         for (auto j : rowCols[i]) {
-            triplets.emplace_back(i, j, 0.0);  // 先填0，后续累加
+            triplets_.emplace_back(i, j, 0.0);
         }
     }
-    mat_.setFromTriplets(std::move(triplets));
+    mat_.setFromTriplets(std::move(triplets_));
+}
+
+void BilinearFormAssembler::expandScalarToVector(const Matrix& scalarMat, 
+                                                   Matrix& vectorMat, 
+                                                   int nd, int vdim) {
+    vectorMat.setZero(nd * vdim, nd * vdim);
+    for (int c = 0; c < vdim; ++c) {
+        vectorMat.block(c * nd, c * nd, nd, nd) = scalarMat;
+    }
 }
 
 void BilinearFormAssembler::assemble() {
-    if (!fes_ || domainIntegs_.empty()) return;
+    if (!fes_) return;
     const Mesh* mesh = fes_->mesh();
     if (!mesh) return;
     
-    mat_.setZero();  // 保留稀疏结构
+    mat_.setZero();
     
-    std::vector<SparseMatrix::Triplet> triplets;
-    triplets.reserve(mesh->numElements() * MAX_DOFS * MAX_DOFS);
+    const Index numElements = mesh->numElements();
+    const int vdim = fes_->vdim();
     
+    triplets_.clear();
+    triplets_.reserve(numElements * MAX_DOFS * MAX_DOFS * vdim * vdim / 2);
+    
+#ifdef _OPENMP
+    #pragma omp parallel
+    {
+        int tid = omp_get_thread_num();
+        ThreadBuffer& buf = buffers_[tid];
+        
+        std::vector<SparseMatrix::Triplet> localTriplets;
+        localTriplets.reserve(numElements * MAX_DOFS * MAX_DOFS * vdim * vdim / buffers_.size() / 2);
+        
+        ElementTransform trans;
+        trans.setMesh(mesh);
+        
+        #pragma omp for schedule(dynamic, 64)
+        for (Index e = 0; e < numElements; ++e) {
+            const ReferenceElement* ref = fes_->elementRefElement(e);
+            if (!ref) continue;
+            int nd = ref->numDofs();
+            
+            trans.setElement(e);
+            
+            std::vector<Index> dofs;
+            fes_->getElementDofs(e, dofs);
+            
+            int totalDofs = nd * vdim;
+            buf.elmatVector.setZero();
+            
+            for (const auto& integ : domainIntegs_) {
+                Matrix temp;
+                integ->assembleElementMatrix(*ref, trans, temp);
+                
+                // 标量积分器输出：扩展到向量场对角块
+                for (int c = 0; c < vdim; ++c) {
+                    buf.elmatVector.block(c * nd, c * nd, nd, nd) += temp;
+                }
+            }
+            
+            // 向量场积分器
+            for (const auto& integ : vectorDomainIntegs_) {
+                Matrix temp;
+                integ->assembleElementMatrix(*ref, trans, temp, vdim);
+                buf.elmatVector.topLeftCorner(totalDofs, totalDofs) += temp;
+            }
+            
+            for (int i = 0; i < totalDofs; ++i) {
+                if (dofs[i] == InvalidIndex) continue;
+                for (int j = 0; j < totalDofs; ++j) {
+                    if (dofs[j] == InvalidIndex) continue;
+                    Real v = buf.elmatVector(i, j);
+                    if (std::abs(v) > 1e-30)
+                        localTriplets.emplace_back(dofs[i], dofs[j], v);
+                }
+            }
+        }
+        
+        #pragma omp critical
+        {
+            triplets_.insert(triplets_.end(), localTriplets.begin(), localTriplets.end());
+        }
+    }
+#else
     ElementTransform trans;
     trans.setMesh(mesh);
+    ThreadBuffer& buf = buffers_[0];
     
-    for (Index e = 0; e < mesh->numElements(); ++e) {
+    for (Index e = 0; e < numElements; ++e) {
         const ReferenceElement* ref = fes_->elementRefElement(e);
         if (!ref) continue;
         int nd = ref->numDofs();
         
         trans.setElement(e);
         
-        ThreadBuffer& buf = buffers_[0];
-        buf.elmat.setZero();
+        std::vector<Index> dofs;
+        fes_->getElementDofs(e, dofs);
+        
+        int totalDofs = nd * vdim;
+        buf.elmatVector.setZero();
         
         for (const auto& integ : domainIntegs_) {
             Matrix temp;
             integ->assembleElementMatrix(*ref, trans, temp);
-            buf.elmat.topLeftCorner(nd, nd) += temp;
+            
+            for (int c = 0; c < vdim; ++c) {
+                buf.elmatVector.block(c * nd, c * nd, nd, nd) += temp;
+            }
         }
         
-        std::vector<Index> dofs;
-        fes_->getElementDofs(e, dofs);
+        // 向量场积分器
+        for (const auto& integ : vectorDomainIntegs_) {
+            Matrix temp;
+            integ->assembleElementMatrix(*ref, trans, temp, vdim);
+            buf.elmatVector.topLeftCorner(totalDofs, totalDofs) += temp;
+        }
         
-        for (int i = 0; i < nd; ++i) {
+        for (int i = 0; i < totalDofs; ++i) {
             if (dofs[i] == InvalidIndex) continue;
-            for (int j = 0; j < nd; ++j) {
+            for (int j = 0; j < totalDofs; ++j) {
                 if (dofs[j] == InvalidIndex) continue;
-                Real v = buf.elmat(i, j);
+                Real v = buf.elmatVector(i, j);
                 if (std::abs(v) > 1e-30)
-                    triplets.emplace_back(dofs[i], dofs[j], v);
+                    triplets_.emplace_back(dofs[i], dofs[j], v);
             }
         }
     }
+#endif
     
     // 边界积分
     if (!bdrIntegs_.empty()) {
         FacetElementTransform btrans;
         btrans.setMesh(mesh);
+        ThreadBuffer& buf = buffers_[0];
         
         for (Index b = 0; b < mesh->numBdrElements(); ++b) {
+            int attr = mesh->bdrElement(b).attribute();
+            
+            if (!fes_->isExternalBoundaryId(attr)) continue;
+            
             const ReferenceElement* ref = fes_->bdrElementRefElement(b);
             if (!ref) continue;
             int nd = ref->numDofs();
             
             btrans.setBoundaryElement(b);
-            int attr = mesh->bdrElement(b).attribute();
             
-            ThreadBuffer& buf = buffers_[0];
-            buf.elmat.setZero();
+            std::vector<Index> dofs;
+            fes_->getBdrElementDofs(b, dofs);
+            
+            int totalDofs = nd * vdim;
+            buf.elmatVector.setZero();
             
             for (size_t k = 0; k < bdrIntegs_.size(); ++k) {
                 if (bdrIds_[k] >= 0 && bdrIds_[k] != attr) continue;
                 Matrix temp;
                 bdrIntegs_[k]->assembleFaceMatrix(*ref, btrans, temp);
-                buf.elmat.topLeftCorner(nd, nd) += temp;
+                
+                if (temp.rows() == nd && temp.cols() == nd) {
+                    for (int c = 0; c < vdim; ++c) {
+                        buf.elmatVector.block(c * nd, c * nd, nd, nd) += temp;
+                    }
+                } else if (temp.rows() == totalDofs && temp.cols() == totalDofs) {
+                    buf.elmatVector.topLeftCorner(totalDofs, totalDofs) += temp;
+                }
             }
             
-            std::vector<Index> dofs;
-            fes_->getBdrElementDofs(b, dofs);
-            
-            for (int i = 0; i < nd; ++i) {
+            for (int i = 0; i < totalDofs; ++i) {
                 if (dofs[i] == InvalidIndex) continue;
-                for (int j = 0; j < nd; ++j) {
+                for (int j = 0; j < totalDofs; ++j) {
                     if (dofs[j] == InvalidIndex) continue;
-                    Real v = buf.elmat(i, j);
+                    Real v = buf.elmatVector(i, j);
                     if (std::abs(v) > 1e-30)
-                        triplets.emplace_back(dofs[i], dofs[j], v);
+                        triplets_.emplace_back(dofs[i], dofs[j], v);
                 }
             }
         }
     }
     
-    mat_.setFromTriplets(std::move(triplets));
+    mat_.setFromTriplets(std::move(triplets_));
 }
 
 // =============================================================================
@@ -145,10 +247,24 @@ LinearFormAssembler::LinearFormAssembler(const FESpace* fes) : fes_(fes) {
         vec_.setZero(fes_->numDofs());
     }
 #ifdef _OPENMP
-    buffers_.resize(omp_get_max_threads());
+    int nthreads = omp_get_max_threads();
+    buffers_.resize(nthreads);
+    threadVectors_.resize(nthreads);
+    for (auto& v : threadVectors_) {
+        v.setZero(fes_->numDofs());
+    }
 #else
     buffers_.resize(1);
 #endif
+}
+
+void LinearFormAssembler::expandScalarToVector(const Vector& scalarVec,
+                                                Vector& vectorVec,
+                                                int nd, int vdim) {
+    vectorVec.setZero(nd * vdim);
+    for (int c = 0; c < vdim; ++c) {
+        vectorVec.segment(c * nd, nd) = scalarVec;
+    }
 }
 
 void LinearFormAssembler::assemble() {
@@ -158,66 +274,149 @@ void LinearFormAssembler::assemble() {
     const Mesh* mesh = fes_->mesh();
     if (!mesh) return;
     
-    ElementTransform trans;
-    trans.setMesh(mesh);
+    const int vdim = fes_->vdim();
     
-    // 域积分
-    if (!domainIntegs_.empty()) {
-        for (Index e = 0; e < mesh->numElements(); ++e) {
+#ifdef _OPENMP
+    for (auto& v : threadVectors_) {
+        v.setZero();
+    }
+#endif
+    
+    if (!domainIntegs_.empty() || !vectorDomainIntegs_.empty()) {
+        const Index numElements = mesh->numElements();
+        
+#ifdef _OPENMP
+        #pragma omp parallel
+        {
+            int tid = omp_get_thread_num();
+            ThreadBuffer& buf = buffers_[tid];
+            Vector& localVec = threadVectors_[tid];
+            
+            ElementTransform trans;
+            trans.setMesh(mesh);
+            
+            #pragma omp for schedule(dynamic, 64)
+            for (Index e = 0; e < numElements; ++e) {
+                const ReferenceElement* ref = fes_->elementRefElement(e);
+                if (!ref) continue;
+                int nd = ref->numDofs();
+                
+                trans.setElement(e);
+                
+                std::vector<Index> dofs;
+                fes_->getElementDofs(e, dofs);
+                
+                int totalDofs = nd * vdim;
+                buf.elvecVector.setZero();
+                
+                for (const auto& integ : domainIntegs_) {
+                    Vector temp;
+                    integ->assembleElementVector(*ref, trans, temp);
+                    
+                    for (int c = 0; c < vdim; ++c) {
+                        buf.elvecVector.segment(c * nd, nd) += temp;
+                    }
+                }
+                
+                // 向量场积分器
+                for (const auto& integ : vectorDomainIntegs_) {
+                    Vector temp;
+                    integ->assembleElementVector(*ref, trans, temp, vdim);
+                    buf.elvecVector.head(totalDofs) += temp;
+                }
+                
+                for (int i = 0; i < totalDofs; ++i) {
+                    if (dofs[i] != InvalidIndex)
+                        localVec(dofs[i]) += buf.elvecVector(i);
+                }
+            }
+        }
+        
+        for (const auto& lv : threadVectors_) {
+            vec_ += lv;
+        }
+#else
+        ElementTransform trans;
+        trans.setMesh(mesh);
+        ThreadBuffer& buf = buffers_[0];
+        
+        for (Index e = 0; e < numElements; ++e) {
             const ReferenceElement* ref = fes_->elementRefElement(e);
             if (!ref) continue;
             int nd = ref->numDofs();
             
             trans.setElement(e);
             
-            ThreadBuffer& buf = buffers_[0];
-            buf.elvec.setZero();
-            
-            for (const auto& integ : domainIntegs_) {
-                Vector temp(nd);
-                temp.setZero();
-                integ->assembleElementVector(*ref, trans, temp);
-                buf.elvec.head(nd) += temp;
-            }
-            
             std::vector<Index> dofs;
             fes_->getElementDofs(e, dofs);
-            for (int i = 0; i < nd; ++i) {
+            
+            int totalDofs = nd * vdim;
+            buf.elvecVector.setZero();
+            
+            for (const auto& integ : domainIntegs_) {
+                Vector temp;
+                integ->assembleElementVector(*ref, trans, temp);
+                
+                for (int c = 0; c < vdim; ++c) {
+                    buf.elvecVector.segment(c * nd, nd) += temp;
+                }
+            }
+            
+            // 向量场积分器
+            for (const auto& integ : vectorDomainIntegs_) {
+                Vector temp;
+                integ->assembleElementVector(*ref, trans, temp, vdim);
+                buf.elvecVector.head(totalDofs) += temp;
+            }
+            
+            for (int i = 0; i < totalDofs; ++i) {
                 if (dofs[i] != InvalidIndex)
-                    vec_(dofs[i]) += buf.elvec(i);
+                    vec_(dofs[i]) += buf.elvecVector(i);
             }
         }
+#endif
     }
     
     // 边界积分
     if (!bdrIntegs_.empty()) {
         FacetElementTransform btrans;
         btrans.setMesh(mesh);
+        ThreadBuffer& buf = buffers_[0];
         
         for (Index b = 0; b < mesh->numBdrElements(); ++b) {
+            int attr = mesh->bdrElement(b).attribute();
+            
+            if (!fes_->isExternalBoundaryId(attr)) continue;
+            
             const ReferenceElement* ref = fes_->bdrElementRefElement(b);
             if (!ref) continue;
             int nd = ref->numDofs();
             
             btrans.setBoundaryElement(b);
-            int attr = mesh->bdrElement(b).attribute();
-            
-            ThreadBuffer& buf = buffers_[0];
-            buf.elvec.setZero();
-            
-            for (size_t k = 0; k < bdrIntegs_.size(); ++k) {
-                if (bdrIds_[k] >= 0 && bdrIds_[k] != attr) continue;
-                Vector temp(nd);
-                temp.setZero();
-                bdrIntegs_[k]->assembleFaceVector(*ref, btrans, temp);
-                buf.elvec.head(nd) += temp;
-            }
             
             std::vector<Index> dofs;
             fes_->getBdrElementDofs(b, dofs);
-            for (int i = 0; i < nd; ++i) {
+            
+            int totalDofs = nd * vdim;
+            buf.elvecVector.setZero();
+            
+            for (size_t k = 0; k < bdrIntegs_.size(); ++k) {
+                if (bdrIds_[k] >= 0 && bdrIds_[k] != attr) continue;
+                Vector temp;
+                bdrIntegs_[k]->assembleFaceVector(*ref, btrans, temp);
+                
+                if (temp.size() == nd) {
+                    for (int c = 0; c < vdim; ++c) {
+                        buf.elvecVector.segment(c * nd, nd) += temp;
+                    }
+                } else if (temp.size() == totalDofs) {
+                    buf.elvecVector.head(totalDofs) += temp;
+                }
+            }
+            
+            for (int i = 0; i < totalDofs; ++i) {
                 if (dofs[i] != InvalidIndex)
-                    vec_(dofs[i]) += buf.elvec(i);
+                    vec_(dofs[i]) += buf.elvecVector(i);
             }
         }
     }

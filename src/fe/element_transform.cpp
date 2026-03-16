@@ -1,5 +1,6 @@
 #include "fe/element_transform.hpp"
 #include "core/exception.hpp"
+#include "core/kernels.hpp"
 #include <cmath>
 #include <iostream>
 
@@ -93,22 +94,37 @@ void ElementTransform::computeJacobianAtIP() {
         }
     }
     
-    // Compute weight
+    // Compute weight and inverse using optimized kernels
     if (dim_ == spaceDim_) {
-        detJ_ = jacobian_.determinant();
-        weight_ = std::abs(detJ_);
+        // 方阵情况：使用优化的行列式和逆矩阵计算
+        if (dim_ == 2) {
+            detJ_ = kernels::det2(jacobian_.data());
+            weight_ = std::abs(detJ_);
+            if (std::abs(detJ_) > 1e-15) {
+                kernels::inverse2(jacobian_.data(), invJacobian_.data());
+                adjJacobian_ = invJacobian_ * detJ_;
+            }
+        } else if (dim_ == 3) {
+            detJ_ = kernels::det3(jacobian_.data());
+            weight_ = std::abs(detJ_);
+            if (std::abs(detJ_) > 1e-15) {
+                kernels::inverse3(jacobian_.data(), invJacobian_.data());
+                adjJacobian_ = invJacobian_ * detJ_;
+            }
+        } else {
+            // 1D 或其他情况：使用 Eigen
+            detJ_ = jacobian_.determinant();
+            weight_ = std::abs(detJ_);
+            if (std::abs(detJ_) > 1e-15) {
+                invJacobian_ = jacobian_.inverse();
+                adjJacobian_ = invJacobian_ * detJ_;
+            }
+        }
     } else {
+        // 非方阵情况（边界单元）：使用 Eigen
         Matrix JtJ = jacobian_.transpose() * jacobian_;
         weight_ = std::sqrt(std::abs(JtJ.determinant()));
         detJ_ = weight_;
-    }
-    
-    // Compute inverse Jacobian
-    if (dim_ == spaceDim_ && std::abs(detJ_) > 1e-15) {
-        invJacobian_ = jacobian_.inverse();
-        adjJacobian_ = invJacobian_ * detJ_;
-    } else if (dim_ < spaceDim_) {
-        Matrix JtJ = jacobian_.transpose() * jacobian_;
         invJacobian_ = JtJ.ldlt().solve(jacobian_.transpose());
         adjJacobian_ = jacobian_;
     }

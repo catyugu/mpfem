@@ -2,6 +2,10 @@
 
 namespace mpfem {
 
+// =============================================================================
+// 标量场积分器
+// =============================================================================
+
 void DiffusionIntegrator::assembleElementMatrix(const ReferenceElement& ref,
                                                  ElementTransform& trans,
                                                  Matrix& elmat) const {
@@ -51,6 +55,7 @@ void MassIntegrator::assembleElementMatrix(const ReferenceElement& ref,
         
         const Real* phi = ref.shapeValuesAtQuad(q);
         Eigen::Map<const Eigen::VectorXd> phiMap(phi, nd);
+        
         elmat.noalias() += w * coef * (phiMap * phiMap.transpose());
     }
 }
@@ -73,6 +78,7 @@ void DomainLFIntegrator::assembleElementVector(const ReferenceElement& ref,
         
         const Real* phi = ref.shapeValuesAtQuad(q);
         Eigen::Map<const Eigen::VectorXd> phiMap(phi, nd);
+        
         elvec.noalias() += w * f * phiMap;
     }
 }
@@ -95,13 +101,14 @@ void BoundaryLFIntegrator::assembleFaceVector(const ReferenceElement& ref,
         
         const Real* phi = ref.shapeValuesAtQuad(q);
         Eigen::Map<const Eigen::VectorXd> phiMap(phi, nd);
+        
         elvec.noalias() += w * g * phiMap;
     }
 }
 
-void ConvectionBoundaryIntegrator::assembleFaceMatrix(const ReferenceElement& ref,
-                                                       FacetElementTransform& trans,
-                                                       Matrix& elmat) const {
+void ConvectionMassIntegrator::assembleFaceMatrix(const ReferenceElement& ref,
+                                                   FacetElementTransform& trans,
+                                                   Matrix& elmat) const {
     const int nd = ref.numDofs();
     const int nq = ref.numQuadraturePoints();
     
@@ -117,13 +124,14 @@ void ConvectionBoundaryIntegrator::assembleFaceMatrix(const ReferenceElement& re
         
         const Real* phi = ref.shapeValuesAtQuad(q);
         Eigen::Map<const Eigen::VectorXd> phiMap(phi, nd);
+        
         elmat.noalias() += w * h * (phiMap * phiMap.transpose());
     }
 }
 
-void ConvectionBoundaryIntegrator::assembleFaceVector(const ReferenceElement& ref,
-                                                       FacetElementTransform& trans,
-                                                       Vector& elvec) const {
+void ConvectionLFIntegrator::assembleFaceVector(const ReferenceElement& ref,
+                                                 FacetElementTransform& trans,
+                                                 Vector& elvec) const {
     const int nd = ref.numDofs();
     const int nq = ref.numQuadraturePoints();
     
@@ -142,7 +150,139 @@ void ConvectionBoundaryIntegrator::assembleFaceVector(const ReferenceElement& re
         
         const Real* phi = ref.shapeValuesAtQuad(q);
         Eigen::Map<const Eigen::VectorXd> phiMap(phi, nd);
+        
         elvec.noalias() += w * h * Tinf * phiMap;
+    }
+}
+
+// =============================================================================
+// 向量场积分器（弹性力学）
+// =============================================================================
+
+void ElasticityIntegrator::assembleElementMatrix(const ReferenceElement& ref,
+                                                  ElementTransform& trans,
+                                                  Matrix& elmat,
+                                                  int vdim) const {
+    const int nd = ref.numDofs();
+    const int nq = ref.numQuadraturePoints();
+    
+    elmat.setZero(nd * vdim, nd * vdim);
+    
+    // 获取材料属性
+    Real E = E_ ? E_->eval(trans) : 1.0;
+    Real nu = nu_ ? nu_->eval(trans) : 0.3;
+    
+    // Lame参数
+    Real lambda = E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu));
+    Real mu = E / (2.0 * (1.0 + nu));
+    
+    // 预计算本构矩阵 C (各向同性) - 固定大小
+    Eigen::Matrix<Real, 6, 6> C;
+    C.setZero();
+    C(0, 0) = C(1, 1) = C(2, 2) = lambda + 2.0 * mu;
+    C(0, 1) = C(0, 2) = C(1, 0) = C(1, 2) = C(2, 0) = C(2, 1) = lambda;
+    C(3, 3) = C(4, 4) = C(5, 5) = mu;
+    
+    // 预分配 B 矩阵
+    Eigen::MatrixXd B(6, nd * vdim);
+    Eigen::MatrixXd CB(6, nd * vdim);
+    
+    for (int q = 0; q < nq; ++q) {
+        const IntegrationPoint& ip = ref.integrationPoint(q);
+        Real xi[3] = {ip.xi, ip.eta, ip.zeta};
+        trans.setIntegrationPoint(xi);
+        
+        const Real w = ip.weight * trans.weight();
+        const Vector3* refGrads = ref.shapeGradientsAtQuad(q);
+        
+        // B矩阵: 应变-位移关系矩阵 (6 x nd*3)
+        B.setZero();
+        
+        for (int a = 0; a < nd; ++a) {
+            Vector3 physGrad;
+            trans.transformGradient(refGrads[a].data(), physGrad.data());
+            
+            int col = a * vdim;
+            B(0, col + 0) = physGrad[0];
+            B(1, col + 1) = physGrad[1];
+            B(2, col + 2) = physGrad[2];
+            B(3, col + 1) = physGrad[2];
+            B(3, col + 2) = physGrad[1];
+            B(4, col + 0) = physGrad[2];
+            B(4, col + 2) = physGrad[0];
+            B(5, col + 0) = physGrad[1];
+            B(5, col + 1) = physGrad[0];
+        }
+        
+        // 刚度矩阵: K = B^T * C * B
+        CB.noalias() = C * B;
+        elmat.noalias() += w * (B.transpose() * CB);
+    }
+}
+
+void ThermalLoadIntegrator::assembleElementVector(const ReferenceElement& ref,
+                                                   ElementTransform& trans,
+                                                   Vector& elvec,
+                                                   int vdim) const {
+    const int nd = ref.numDofs();
+    const int nq = ref.numQuadraturePoints();
+    
+    elvec.setZero(nd * vdim);
+    
+    if (!T_ || !alphaT_) return;
+    
+    // 预分配 B 矩阵
+    Eigen::MatrixXd B(6, nd * vdim);
+    
+    for (int q = 0; q < nq; ++q) {
+        const IntegrationPoint& ip = ref.integrationPoint(q);
+        Real xi[3] = {ip.xi, ip.eta, ip.zeta};
+        trans.setIntegrationPoint(xi);
+        
+        const Real w = ip.weight * trans.weight();
+        
+        // 获取材料属性
+        Real E = E_ ? E_->eval(trans) : 1.0;
+        Real nu = nu_ ? nu_->eval(trans) : 0.3;
+        Real alpha = alphaT_->eval(trans);
+        
+        // 获取温度
+        Real T_val = T_->eval(trans.elementIndex(), xi);
+        Real dT = T_val - Tref_;
+        
+        // Lame参数
+        Real lambda = E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu));
+        Real mu = E / (2.0 * (1.0 + nu));
+        
+        // 热应力: sigma_th = (3*lambda + 2*mu) * alpha * dT * I
+        Real diag = (3.0 * lambda + 2.0 * mu) * alpha * dT;
+        
+        const Vector3* refGrads = ref.shapeGradientsAtQuad(q);
+        
+        // B矩阵
+        B.setZero();
+        
+        for (int a = 0; a < nd; ++a) {
+            Vector3 physGrad;
+            trans.transformGradient(refGrads[a].data(), physGrad.data());
+            
+            int col = a * vdim;
+            B(0, col + 0) = physGrad[0];
+            B(1, col + 1) = physGrad[1];
+            B(2, col + 2) = physGrad[2];
+            B(3, col + 1) = physGrad[2];
+            B(3, col + 2) = physGrad[1];
+            B(4, col + 0) = physGrad[2];
+            B(4, col + 2) = physGrad[0];
+            B(5, col + 0) = physGrad[1];
+            B(5, col + 1) = physGrad[0];
+        }
+        
+        // 热载荷向量: f = B^T * sigma_th (负号因为热膨胀产生初始应变)
+        // 手动计算避免临时向量
+        for (int i = 0; i < nd * vdim; ++i) {
+            elvec(i) -= w * (B(0, i) + B(1, i) + B(2, i)) * diag;
+        }
     }
 }
 

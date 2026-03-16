@@ -149,7 +149,7 @@ void CaseXmlReader::readFromFile(const std::string& filePath, CaseDefinition& ca
         // Solver configuration
         if (const tinyxml2::XMLElement* solverElement = physicsElement->FirstChildElement("solver")) {
             if (const char* typeAttr = solverElement->Attribute("type")) {
-                physics.solver.type = typeAttr;
+                physics.solver.type = solverTypeFromName(typeAttr);
             }
             if (const char* maxIterAttr = solverElement->Attribute("max_iter")) {
                 physics.solver.maxIterations = std::atoi(maxIterAttr);

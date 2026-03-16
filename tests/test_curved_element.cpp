@@ -298,7 +298,7 @@ TEST_F(CurvedTriangleTransformTest, GeometryOrder) {
     EXPECT_EQ(transform_->geometricOrder(), 2);
     EXPECT_EQ(transform_->geometry(), Geometry::Triangle);
     EXPECT_EQ(transform_->dim(), 2);
-    EXPECT_EQ(transform_->numVertices(), 6);  // 3 corners + 3 midpoints
+    EXPECT_EQ(transform_->numNodes(), 6);  // 3 corners + 3 midpoints
 }
 
 TEST_F(CurvedTriangleTransformTest, TransformCorners) {
@@ -371,7 +371,7 @@ TEST_F(CurvedTetrahedronTransformTest, GeometryOrder) {
     EXPECT_EQ(transform_->geometricOrder(), 2);
     EXPECT_EQ(transform_->geometry(), Geometry::Tetrahedron);
     EXPECT_EQ(transform_->dim(), 3);
-    EXPECT_EQ(transform_->numVertices(), 10);  // 4 corners + 6 midpoints
+    EXPECT_EQ(transform_->numNodes(), 10);  // 4 corners + 6 midpoints
 }
 
 TEST_F(CurvedTetrahedronTransformTest, TransformCorners) {
@@ -422,7 +422,7 @@ TEST_F(CurvedSquareTransformTest, GeometryOrder) {
     EXPECT_EQ(transform_->geometricOrder(), 2);
     EXPECT_EQ(transform_->geometry(), Geometry::Square);
     EXPECT_EQ(transform_->dim(), 2);
-    EXPECT_EQ(transform_->numVertices(), 9);  // 4 corners + 4 edges + 1 center
+    EXPECT_EQ(transform_->numNodes(), 9);  // 4 corners + 4 edges + 1 center
 }
 
 TEST_F(CurvedSquareTransformTest, TransformCorners) {
@@ -470,7 +470,7 @@ TEST_F(CurvedHexahedronTransformTest, GeometryOrder) {
     EXPECT_EQ(transform_->geometricOrder(), 2);
     EXPECT_EQ(transform_->geometry(), Geometry::Cube);
     EXPECT_EQ(transform_->dim(), 3);
-    EXPECT_EQ(transform_->numVertices(), 27);  // 8 + 12 + 6 + 1
+    EXPECT_EQ(transform_->numNodes(), 27);  // 8 + 12 + 6 + 1
 }
 
 TEST_F(CurvedHexahedronTransformTest, TransformCorners) {

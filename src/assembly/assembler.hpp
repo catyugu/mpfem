@@ -15,17 +15,23 @@
 namespace mpfem {
 
 // =============================================================================
-// 线程本地缓冲区（零分配）
+// 编译期常量
 // =============================================================================
 
 constexpr int MAX_DOFS = 27;      // 二阶六面体
 constexpr int MAX_DIM = 3;
 
+// =============================================================================
+// 线程本地缓冲区（零分配）
+// =============================================================================
+
 struct alignas(64) ThreadBuffer {
-    Eigen::Matrix<Real, MAX_DOFS, MAX_DOFS, Eigen::RowMajor> elmat;
-    Eigen::Matrix<Real, MAX_DOFS, 1> elvec;
-    Eigen::Matrix<Real, MAX_DOFS, MAX_DIM, Eigen::RowMajor> grads;
-    std::array<Index, MAX_DOFS> dofs;
+    Eigen::Matrix<Real, MAX_DOFS, MAX_DOFS, Eigen::RowMajor> elmatScalar;
+    Eigen::Matrix<Real, MAX_DOFS * 3, MAX_DOFS * 3, Eigen::RowMajor> elmatVector;
+    Eigen::Matrix<Real, MAX_DOFS, 1> elvecScalar;
+    Eigen::Matrix<Real, MAX_DOFS * 3, 1> elvecVector;
+    std::array<Index, MAX_DOFS * 3> dofs;
+    int numDofs = 0;
 };
 
 // =============================================================================
@@ -36,16 +42,19 @@ class BilinearFormAssembler {
 public:
     explicit BilinearFormAssembler(const FESpace* fes);
     
-    void addDomainIntegrator(std::unique_ptr<BilinearFormIntegrator> integ) {
+    void addDomainIntegrator(std::unique_ptr<DomainBilinearIntegrator> integ) {
         domainIntegs_.push_back(std::move(integ));
     }
-    void addBoundaryIntegrator(std::unique_ptr<BilinearFormIntegrator> integ, int bid = -1) {
+    void addDomainIntegrator(std::unique_ptr<VectorDomainBilinearIntegrator> integ) {
+        vectorDomainIntegs_.push_back(std::move(integ));
+    }
+    void addBoundaryIntegrator(std::unique_ptr<FaceBilinearIntegrator> integ, int bid = -1) {
         bdrIntegs_.push_back(std::move(integ));
         bdrIds_.push_back(bid);
     }
     
-    void clearIntegrators() { domainIntegs_.clear(); bdrIntegs_.clear(); bdrIds_.clear(); }
-    void clear() { mat_.clear(); }
+    void clearIntegrators() { domainIntegs_.clear(); vectorDomainIntegs_.clear(); bdrIntegs_.clear(); bdrIds_.clear(); }
+    void clear() { mat_.setZero(); }
     
     void computeSparsityPattern();
     void assemble();
@@ -55,12 +64,17 @@ public:
     Index rows() const { return mat_.rows(); }
     
 private:
+    /// 扩展标量矩阵到向量场对角块
+    void expandScalarToVector(const Matrix& scalarMat, Matrix& vectorMat, int nd, int vdim);
+    
     const FESpace* fes_;
-    std::vector<std::unique_ptr<BilinearFormIntegrator>> domainIntegs_;
-    std::vector<std::unique_ptr<BilinearFormIntegrator>> bdrIntegs_;
+    std::vector<std::unique_ptr<DomainBilinearIntegrator>> domainIntegs_;
+    std::vector<std::unique_ptr<VectorDomainBilinearIntegrator>> vectorDomainIntegs_;
+    std::vector<std::unique_ptr<FaceBilinearIntegrator>> bdrIntegs_;
     std::vector<int> bdrIds_;
     SparseMatrix mat_;
     std::vector<ThreadBuffer> buffers_;
+    std::vector<SparseMatrix::Triplet> triplets_;
 };
 
 // =============================================================================
@@ -71,15 +85,18 @@ class LinearFormAssembler {
 public:
     explicit LinearFormAssembler(const FESpace* fes);
     
-    void addDomainIntegrator(std::unique_ptr<LinearFormIntegrator> integ) {
+    void addDomainIntegrator(std::unique_ptr<DomainLinearIntegrator> integ) {
         domainIntegs_.push_back(std::move(integ));
     }
-    void addBoundaryIntegrator(std::unique_ptr<LinearFormIntegrator> integ, int bid = -1) {
+    void addDomainIntegrator(std::unique_ptr<VectorDomainLinearIntegrator> integ) {
+        vectorDomainIntegs_.push_back(std::move(integ));
+    }
+    void addBoundaryIntegrator(std::unique_ptr<FaceLinearIntegrator> integ, int bid = -1) {
         bdrIntegs_.push_back(std::move(integ));
         bdrIds_.push_back(bid);
     }
     
-    void clearIntegrators() { domainIntegs_.clear(); bdrIntegs_.clear(); bdrIds_.clear(); }
+    void clearIntegrators() { domainIntegs_.clear(); vectorDomainIntegs_.clear(); bdrIntegs_.clear(); bdrIds_.clear(); }
     void clear() { vec_.setZero(); }
     
     void assemble();
@@ -87,12 +104,17 @@ public:
     Vector& vector() { return vec_; }
     
 private:
+    /// 扩展标量向量到向量场
+    void expandScalarToVector(const Vector& scalarVec, Vector& vectorVec, int nd, int vdim);
+    
     const FESpace* fes_;
-    std::vector<std::unique_ptr<LinearFormIntegrator>> domainIntegs_;
-    std::vector<std::unique_ptr<LinearFormIntegrator>> bdrIntegs_;
+    std::vector<std::unique_ptr<DomainLinearIntegrator>> domainIntegs_;
+    std::vector<std::unique_ptr<VectorDomainLinearIntegrator>> vectorDomainIntegs_;
+    std::vector<std::unique_ptr<FaceLinearIntegrator>> bdrIntegs_;
     std::vector<int> bdrIds_;
     Vector vec_;
     std::vector<ThreadBuffer> buffers_;
+    std::vector<Vector> threadVectors_;
 };
 
 }  // namespace mpfem

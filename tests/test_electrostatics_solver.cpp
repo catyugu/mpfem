@@ -43,8 +43,9 @@ TEST_F(BusbarElectrostaticsTest, SolverConvergence) {
     EXPECT_LT(residual, 1e-6);
     
     // Verify potential range
-    Real minV = solver->minValue();
-    Real maxV = solver->maxValue();
+    const auto& V = solver->field().values();
+    Real minV = V.minCoeff();
+    Real maxV = V.maxCoeff();
     
     LOG_INFO << "Potential range: [" << minV << ", " << maxV << "]";
     

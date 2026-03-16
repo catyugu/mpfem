@@ -1,15 +1,8 @@
 #include "fe/facet_element_transform.hpp"
-#include "mesh/mesh_topology.hpp"
+#include "mesh/mesh.hpp"
 #include <cmath>
 
 namespace mpfem {
-
-FacetElementTransform::FacetElementTransform(const Mesh* mesh, 
-                                             const MeshTopology* topo, 
-                                             Index bdrElemIdx)
-    : ElementTransform(mesh, bdrElemIdx, BOUNDARY), topo_(topo) {
-    computeAdjacentElementInfo();
-}
 
 void FacetElementTransform::setMesh(const Mesh* mesh) {
     ElementTransform::setMesh(mesh);
@@ -23,21 +16,20 @@ void FacetElementTransform::setElement(Index bdrElemIdx) {
     computeAdjacentElementInfo();
 }
 
-void FacetElementTransform::setTopology(const MeshTopology* topo) {
-    topo_ = topo;
-    computeAdjacentElementInfo();
+bool FacetElementTransform::hasTopology() const {
+    return mesh_ && mesh_->hasTopology();
 }
 
 void FacetElementTransform::computeAdjacentElementInfo() {
     adjElemIdx_ = InvalidIndex;
     localFaceIdx_ = -1;
     
-    if (!mesh_ || !topo_) return;
+    if (!mesh_ || !mesh_->hasTopology()) return;
     
-    Index faceIdx = topo_->getBoundaryFaceIndex(elemIdx_);
+    Index faceIdx = mesh_->getBoundaryFaceIndex(elemIdx_);
     if (faceIdx == InvalidIndex) return;
     
-    const auto& faceInfo = topo_->getFaceInfo(faceIdx);
+    const auto& faceInfo = mesh_->getFaceInfo(faceIdx);
     adjElemIdx_ = faceInfo.elem1;
     localFaceIdx_ = faceInfo.localFace1;
 }

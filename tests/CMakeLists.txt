@@ -127,20 +127,6 @@ target_link_libraries(mpfem_test_grid_function
 add_test(NAME GridFunction COMMAND mpfem_test_grid_function)
 
 # =============================================================================
-# FE Values Tests
-# =============================================================================
-add_executable(mpfem_test_fe_values
-    test_fe_values.cpp
-)
-
-target_link_libraries(mpfem_test_fe_values
-    PRIVATE mpfem::fe
-    PRIVATE GTest::gtest_main
-)
-
-add_test(NAME FEValues COMMAND mpfem_test_fe_values)
-
-# =============================================================================
 # Curved Element Tests (Second-order geometry)
 # =============================================================================
 add_executable(mpfem_test_curved_element

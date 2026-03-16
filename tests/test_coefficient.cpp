@@ -46,8 +46,8 @@ TEST_F(CoefficientTest, PWConstCoefficient_Basic) {
 
 // FunctionCoefficient tests
 TEST_F(CoefficientTest, FunctionCoefficient_Basic) {
-    FunctionCoefficient coef([](Real x, Real y, Real z) {
-        return x + 2.0 * y;
+    FunctionCoefficient coef([](Real x, Real y, Real z, Real t) {
+        return x + 2.0 * y + t;
     });
     
     // Simple test - just verify construction

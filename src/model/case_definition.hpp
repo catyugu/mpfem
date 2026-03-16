@@ -2,6 +2,7 @@
 #define MPFEM_CASE_DEFINITION_HPP
 
 #include "model/field_kind.hpp"
+#include "solver/solver_config.hpp"
 #include "core/exception.hpp"
 #include <string>
 #include <vector>
@@ -49,23 +50,12 @@ struct SourceDefinition {
 };
 
 /**
- * @brief Linear solver configuration.
- */
-struct SolverConfig {
-    std::string type = "sparse_lu";  // "sparse_lu", "pardiso", "cg", etc.
-    int maxIterations = 1000;
-    double relativeTolerance = 1e-10;
-    double absoluteTolerance = 1e-14;
-    int printLevel = 0;
-};
-
-/**
  * @brief Physics block extracted from case XML.
  */
 struct PhysicsDefinition {
     std::string kind;
     int order = 1;  // Polynomial order for this physics field
-    SolverConfig solver;
+    SolverConfig solver;  // Use SolverConfig from solver/solver_config.hpp
     std::vector<BoundaryCondition> boundaries;
     std::vector<SourceDefinition> sources;
 };
@@ -181,7 +171,7 @@ struct FieldSource {
  */
 struct FieldConfig {
     int order = 1;
-    SolverConfig solver;
+    SolverConfig solver;  // Use SolverConfig from solver/solver_config.hpp
 };
 
 /**

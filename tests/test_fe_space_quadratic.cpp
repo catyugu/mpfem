@@ -119,11 +119,13 @@ TEST_F(QuadraticFESpaceTest, ElementDofs) {
     FESpace fes(&mesh_, fec_.get());
     
     // Get DOFs for first element
-    auto dofs0 = fes.elementDofs(0);
+    std::vector<Index> dofs0;
+    fes.getElementDofs(0, dofs0);
     EXPECT_EQ(dofs0.size(), 6);  // 6 DOFs per quadratic triangle
     
     // Get DOFs for second element
-    auto dofs1 = fes.elementDofs(1);
+    std::vector<Index> dofs1;
+    fes.getElementDofs(1, dofs1);
     EXPECT_EQ(dofs1.size(), 6);
 }
 
@@ -131,8 +133,9 @@ TEST_F(QuadraticFESpaceTest, EdgeDofSharing) {
     FESpace fes(&mesh_, fec_.get());
     
     // Elements share edge 1-2 (which has edge midpoint at vertex 5)
-    auto dofs0 = fes.elementDofs(0);
-    auto dofs1 = fes.elementDofs(1);
+    std::vector<Index> dofs0, dofs1;
+    fes.getElementDofs(0, dofs0);
+    fes.getElementDofs(1, dofs1);
     
     // Edge DOFs on shared edge should be the same
     // For triangle0: edge DOFs are at indices 3,4,5 (E01, E12, E20)
@@ -161,7 +164,8 @@ TEST_F(QuadraticFESpaceTest, VectorFESpace) {
     // Total DOFs should be doubled
     EXPECT_EQ(fes.numDofs(), 18);  // 9 * 2
     
-    auto dofs = fes.elementDofs(0);
+    std::vector<Index> dofs;
+    fes.getElementDofs(0, dofs);
     EXPECT_EQ(dofs.size(), 12);  // 6 * 2
 }
 
@@ -534,7 +538,8 @@ TEST_F(COMSOLMeshTest, FESpaceConsistency) {
         const auto& elem = mesh.element(e);
         if (elem.order() != 2) continue;
         
-        auto dofs = fes.elementDofs(e);
+        std::vector<Index> dofs;
+        fes.getElementDofs(e, dofs);
         auto vertices = elem.vertices();
         
         ASSERT_EQ(dofs.size(), vertices.size());

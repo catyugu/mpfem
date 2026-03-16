@@ -1,163 +1,133 @@
 #ifndef MPFEM_SOLVER_FACTORY_HPP
 #define MPFEM_SOLVER_FACTORY_HPP
 
+#include "solver_config.hpp"
 #include "linear_solver.hpp"
 #include "eigen_solver.hpp"
-#include "pardiso_solver.hpp"
+#include "superlu_solver.hpp"
+#include "umfpack_solver.hpp"
 #include "core/logger.hpp"
 #include <memory>
-#include <string>
 
 namespace mpfem {
+
+// =============================================================================
+// Solver Factory
+// =============================================================================
 
 /**
  * @brief Factory for creating linear solvers.
  * 
- * Creates solver instances based on type string or enum.
- * Supports runtime selection and configuration.
+ * Design principles:
+ * - No fallback logic - if solver is not available, throw exception
+ * - Single entry point: create(const SolverConfig&)
+ * - Configuration must specify an explicit solver type
  */
 class SolverFactory {
 public:
     /**
-     * @brief Create a solver by type enum.
+     * @brief Create a solver from configuration.
+     * @param config Solver configuration with explicit type
+     * @throws std::runtime_error if solver is not available
+     */
+    static std::unique_ptr<LinearSolver> create(const SolverConfig& config) {
+        const SolverType type = config.type;
+        
+        // Check availability
+        const auto& meta = getSolverMeta(type);
+        if (!meta.isAvailable) {
+            throw std::runtime_error(
+                "Solver '" + std::string(meta.name) + "' is not available. "
+                "Available solvers: " + joinSolverNames());
+        }
+        
+        LOG_DEBUG << "Creating solver: " << meta.name;
+        
+        // Create solver instance
+        auto solver = createByType(type);
+        
+        // Apply configuration
+        solver->setMaxIterations(config.maxIterations);
+        solver->setTolerance(config.relativeTolerance);
+        solver->setPrintLevel(config.printLevel);
+        
+        return solver;
+    }
+    
+    /**
+     * @brief Create a solver by type.
+     * @throws std::runtime_error if solver is not available
      */
     static std::unique_ptr<LinearSolver> create(SolverType type) {
+        const auto& meta = getSolverMeta(type);
+        if (!meta.isAvailable) {
+            throw std::runtime_error(
+                "Solver '" + std::string(meta.name) + "' is not available. "
+                "Available solvers: " + joinSolverNames());
+        }
+        return createByType(type);
+    }
+    
+    /**
+     * @brief Create a solver by name.
+     * @throws std::runtime_error if solver is not available
+     */
+    static std::unique_ptr<LinearSolver> create(std::string_view name) {
+        return create(solverTypeFromName(name));
+    }
+    
+    /**
+     * @brief Get list of all available solver names.
+     */
+    static std::vector<std::string> availableSolvers() {
+        return availableSolverNames();
+    }
+    
+    /**
+     * @brief Check if a solver is available.
+     */
+    static bool isAvailable(SolverType type) {
+        return isSolverAvailable(type);
+    }
+    
+    static bool isAvailable(std::string_view name) {
+        return isSolverAvailable(name);
+    }
+
+private:
+    static std::unique_ptr<LinearSolver> createByType(SolverType type) {
         switch (type) {
-            case SolverType::SparseLU:
+            // Eigen solvers (always available)
+            case SolverType::Eigen_SparseLU:
                 return std::make_unique<EigenSparseLUSolver>();
-                
-            case SolverType::SparseQR:
-                return std::make_unique<EigenSparseQRSolver>();
-                
-            case SolverType::Pardiso:
-                return std::make_unique<PardisoSolver>();
-                
-            case SolverType::CG:
+            case SolverType::Eigen_CG:
                 return std::make_unique<EigenCGSolver>();
-                
-            case SolverType::CGWithIC:
+            case SolverType::Eigen_CGIC:
                 return std::make_unique<EigenCGICSolver>();
-                
-            case SolverType::BiCGSTAB:
+            case SolverType::Eigen_BiCGSTAB:
                 return std::make_unique<EigenBiCGSTABSolver>();
-                
-            case SolverType::BiCGSTABWithILUT:
+            case SolverType::Eigen_BiCGSTABILUT:
                 return std::make_unique<EigenBiCGSTABILUTSolver>();
-                
-            case SolverType::Auto:
-                return createAuto();
-                
+            
+            // External solvers
+            case SolverType::SuperLU_LU:
+                return std::make_unique<SuperLUSolver>();
+            case SolverType::Umfpack_LU:
+                return std::make_unique<UmfpackSolver>();
+            
             default:
-                LOG_ERROR << "Unknown solver type, using SparseLU";
-                return std::make_unique<EigenSparseLUSolver>();
+                throw std::runtime_error("Unsupported solver type");
         }
     }
     
-    /**
-     * @brief Create a solver by type string.
-     * @param type Solver type string (e.g., "sparse_lu", "cg", "pardiso")
-     */
-    static std::unique_ptr<LinearSolver> create(const std::string& type) {
-        return create(stringToSolverType(type));
-    }
-    
-    /**
-     * @brief Create a solver with configuration.
-     */
-    static std::unique_ptr<LinearSolver> create(
-        SolverType type,
-        int maxIterations,
-        Real tolerance,
-        int printLevel = 0)
-    {
-        auto solver = create(type);
-        solver->setMaxIterations(maxIterations);
-        solver->setTolerance(tolerance);
-        solver->setPrintLevel(printLevel);
-        return solver;
-    }
-    
-    /**
-     * @brief Create a solver with configuration from string.
-     */
-    static std::unique_ptr<LinearSolver> create(
-        const std::string& type,
-        int maxIterations,
-        Real tolerance,
-        int printLevel = 0)
-    {
-        return create(stringToSolverType(type), maxIterations, tolerance, printLevel);
-    }
-    
-    /**
-     * @brief Get the best default solver for the system.
-     * 
-     * Priority:
-     * 1. MKL PARDISO (if available)
-     * 2. Eigen SparseLU
-     */
-    static std::unique_ptr<LinearSolver> createAuto() {
-#ifdef MPFEM_USE_MKL
-        LOG_DEBUG << "Auto-selecting PARDISO solver";
-        return std::make_unique<PardisoSolver>();
-#else
-        LOG_DEBUG << "Auto-selecting Eigen SparseLU solver";
-        return std::make_unique<EigenSparseLUSolver>();
-#endif
-    }
-    
-    /**
-     * @brief Get a solver suitable for symmetric positive definite matrices.
-     */
-    static std::unique_ptr<LinearSolver> createForSPD(
-        int maxIterations = 1000,
-        Real tolerance = 1e-10,
-        int printLevel = 0)
-    {
-        // For SPD matrices, CG with IC is usually best
-        auto solver = std::make_unique<EigenCGICSolver>();
-        solver->setMaxIterations(maxIterations);
-        solver->setTolerance(tolerance);
-        solver->setPrintLevel(printLevel);
-        return solver;
-    }
-    
-    /**
-     * @brief Get a solver suitable for general non-symmetric matrices.
-     */
-    static std::unique_ptr<LinearSolver> createForGeneral(
-        int maxIterations = 1000,
-        Real tolerance = 1e-10,
-        int printLevel = 0)
-    {
-        // For general matrices, use direct solver or BiCGSTAB
-#ifdef MPFEM_USE_MKL
-        auto solver = std::make_unique<PardisoSolver>();
-#else
-        auto solver = std::make_unique<EigenSparseLUSolver>();
-#endif
-        solver->setMaxIterations(maxIterations);
-        solver->setTolerance(tolerance);
-        solver->setPrintLevel(printLevel);
-        return solver;
-    }
-    
-    /**
-     * @brief List available solvers.
-     */
-    static std::vector<std::string> availableSolvers() {
-        std::vector<std::string> solvers = {
-            "sparse_lu", "sparse_qr",
-            "cg", "cg_ic",
-            "bicgstab", "bicgstab_ilut",
-            "auto"
-        };
-        
-#ifdef MPFEM_USE_MKL
-        solvers.push_back("pardiso");
-#endif
-        
-        return solvers;
+    static std::string joinSolverNames() {
+        auto names = availableSolverNames();
+        std::string result;
+        for (size_t i = 0; i < names.size(); ++i) {
+            if (i > 0) result += ", ";
+            result += names[i];
+        }
+        return result;
     }
 };
 

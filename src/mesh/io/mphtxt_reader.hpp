@@ -109,13 +109,26 @@ private:
             bool isBoundary = isBoundaryElement(geom, data.sdim);
             int order = block.order;
             
-            // Tetrahedron2 node reordering: COMSOL to mpfem
-            // COMSOL edge midpoints: E01, E02, E12, E03, E13, E23 (nodes 4-9)
-            // mpfem edge midpoints:  E01, E12, E20, E03, E13, E23 (nodes 4-9)
-            // Note: E02 = E20 (same edge, vertices 0-2)
-            // Mapping: swap nodes 5 and 6
+            // Node reordering for second-order elements: COMSOL to mpfem
+            // 
+            // COMSOL edge ordering (from edge_table):
+            // - Triangle: edges are (1,2), (2,0), (0,1) -> E12, E20, E01
+            // - Tetrahedron: edges are (0,1), (1,2), (2,0), (0,3), (1,3), (2,3)
+            //                -> E01, E12, E20, E03, E13, E23
+            //
+            // mpfem shape function expects:
+            // - Triangle: V0 V1 V2 E01 E12 E20 (edge midpoints for edges 0-1, 1-2, 2-0)
+            // - Tetrahedron: V0 V1 V2 V3 E01 E12 E20 E03 E13 E23
+            //
+            // Triangle2 reordering: {V0,V1,V2, E12,E20,E01} -> {V0,V1,V2, E01,E12,E20}
+            //                       Mapping: swap nodes 3 and 5
+            // Tetrahedron2 reordering: {V0,V1,V2,V3, E01,E12,E20,E03,E13,E23} 
+            //                          -> {V0,V1,V2,V3, E01,E12,E20,E03,E13,E23}
+            //                          Note: E02 and E20 are same edge, swap nodes 5 and 6
+            static const Index tri2Reorder[] = {0, 1, 2, 3, 5, 4};
             static const Index tet2Reorder[] = {0, 1, 2, 3, 4, 6, 5, 7, 8, 9};
-            bool needReorder = (geom == Geometry::Tetrahedron && order == 2);
+            bool needReorderTri = (geom == Geometry::Triangle && order == 2);
+            bool needReorderTet = (geom == Geometry::Tetrahedron && order == 2);
             
             if (isBoundary) {
                 mesh.reserveBdrElements(mesh.numBdrElements() + 
@@ -127,7 +140,15 @@ private:
                         attr = block.geomIndices[i] + 1;
                     }
                     const auto& elemConn = block.elements[i];
-                    if (needReorder && elemConn.size() == 10) {
+                    
+                    // Apply reordering for second-order elements
+                    if (needReorderTri && elemConn.size() == 6) {
+                        std::vector<Index> reordered(6);
+                        for (int j = 0; j < 6; ++j) {
+                            reordered[j] = elemConn[tri2Reorder[j]];
+                        }
+                        mesh.addBdrElement(geom, reordered, attr, order);
+                    } else if (needReorderTet && elemConn.size() == 10) {
                         std::vector<Index> reordered(10);
                         for (int j = 0; j < 10; ++j) {
                             reordered[j] = elemConn[tet2Reorder[j]];
@@ -148,7 +169,15 @@ private:
                         attr = block.geomIndices[i];
                     }
                     const auto& elemConn = block.elements[i];
-                    if (needReorder && elemConn.size() == 10) {
+                    
+                    // Apply reordering for second-order elements
+                    if (needReorderTri && elemConn.size() == 6) {
+                        std::vector<Index> reordered(6);
+                        for (int j = 0; j < 6; ++j) {
+                            reordered[j] = elemConn[tri2Reorder[j]];
+                        }
+                        mesh.addElement(geom, reordered, attr, order);
+                    } else if (needReorderTet && elemConn.size() == 10) {
                         std::vector<Index> reordered(10);
                         for (int j = 0; j < 10; ++j) {
                             reordered[j] = elemConn[tet2Reorder[j]];
@@ -166,6 +195,8 @@ private:
                  << numVolumeElems << " volume elements, "
                     << numBdrElems << " boundary elements";
         
+        mesh.buildTopology();
+
         return mesh;
     }
 

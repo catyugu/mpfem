@@ -49,11 +49,6 @@ public:
         return it != elements_.end() ? it->second.get() : nullptr;
     }
     
-    /// Get reference element (alternative name for MFEM compatibility)
-    const ReferenceElement* FiniteElementForGeometry(Geometry geom) const {
-        return get(geom);
-    }
-    
     /// Get number of dofs for a geometry type
     int numDofs(Geometry geom) const {
         auto* elem = get(geom);

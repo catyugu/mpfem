@@ -27,7 +27,8 @@ public:
     }
     
     bool solve(const SparseMatrix& A, Vector& x, const Vector& b) override {
-
+        ScopedTimer timer("Linear solve (SparseLU)");
+        
         // Analyze + factorize + solve in one call if not already done
         solver_.compute(A.eigen());
         
@@ -59,45 +60,6 @@ public:
     
 private:
     Eigen::SparseLU<Eigen::SparseMatrix<Real>> solver_;
-};
-
-/**
- * @brief Eigen SparseQR direct solver.
- * 
- * Sparse QR factorization, works for rectangular matrices.
- * More numerically stable but slower than LU.
- */
-class EigenSparseQRSolver : public LinearSolver {
-public:
-    std::string name() const override { return "Eigen::SparseQR"; }
-    
-    bool solve(const SparseMatrix& A, Vector& x, const Vector& b) override {
-        solver_.compute(A.eigen());
-        
-        if (solver_.info() != Eigen::Success) {
-            if (printLevel_ > 0) {
-                std::cerr << "[EigenSparseQR] Factorization failed" << std::endl;
-            }
-            return false;
-        }
-        
-        x = solver_.solve(b);
-        
-        if (solver_.info() != Eigen::Success) {
-            if (printLevel_ > 0) {
-                std::cerr << "[EigenSparseQR] Solve failed" << std::endl;
-            }
-            return false;
-        }
-        
-        iterations_ = 1;
-        residual_ = (A.eigen() * x - b).norm() / b.norm();
-        
-        return true;
-    }
-    
-private:
-    Eigen::SparseQR<Eigen::SparseMatrix<Real>, Eigen::COLAMDOrdering<int>> solver_;
 };
 
 /**

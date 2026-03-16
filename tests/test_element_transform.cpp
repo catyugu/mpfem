@@ -59,10 +59,10 @@ Mesh createSingleHexMesh() {
     mesh.addVertex(0.0, 1.0, 1.0);  // 7: (0,1,1)
     
     // Hexahedron (cube) - tensor product ordering to match shape functions
-    // Tensor product order: (0,0,0), (1,0,0), (0,1,0), (1,1,0), (0,0,1), (1,0,1), (0,1,1), (1,1,1)
-    // Physical coords:      (0,0,0), (1,0,0), (0,1,0), (1,1,0), (0,0,1), (1,0,1), (0,1,1), (1,1,1)
-    // Vertex indices:       0,       1,       3,       2,       4,       5,       7,       6
-    mesh.addElement(Geometry::Cube, {0, 1, 3, 2, 4, 5, 7, 6});
+    // Reference cube node order: (-1,-1,-1), (1,-1,-1), (1,1,-1), (-1,1,-1), (-1,-1,1), (1,-1,1), (1,1,1), (-1,1,1)
+    // Physical coords:           (0,0,0),    (1,0,0),   (1,1,0),  (0,1,0),   (0,0,1),   (1,0,1),  (1,1,1), (0,1,1)
+    // Vertex indices:            0,          1,         2,        3,         4,        5,        6,       7
+    mesh.addElement(Geometry::Cube, {0, 1, 2, 3, 4, 5, 6, 7});
     
     return mesh;
 }
@@ -78,10 +78,10 @@ Mesh createSingleSquareBdrMesh() {
     mesh.addVertex(0.0, 1.0, 0.0);  // 3: (0,1)
     
     // Square boundary - tensor product ordering to match shape functions
-    // Tensor product order: (0,0), (1,0), (0,1), (1,1)
-    // Physical coords:      (0,0), (1,0), (0,1), (1,1)
-    // Vertex indices:       0,     1,     3,     2
-    mesh.addBdrElement(Geometry::Square, {0, 1, 3, 2});
+    // Reference square node order: (-1,-1), (1,-1), (1,1), (-1,1)
+    // Physical coords:             (0,0),   (1,0),  (1,1), (0,1)
+    // Vertex indices:              0,       1,      2,     3
+    mesh.addBdrElement(Geometry::Square, {0, 1, 2, 3});
     
     return mesh;
 }
@@ -104,7 +104,7 @@ protected:
 TEST_F(TetrahedronTransformTest, GeometryInfo) {
     EXPECT_EQ(transform_->geometry(), Geometry::Tetrahedron);
     EXPECT_EQ(transform_->dim(), 3);
-    EXPECT_EQ(transform_->numVertices(), 4);
+    EXPECT_EQ(transform_->numNodes(), 4);
 }
 
 TEST_F(TetrahedronTransformTest, TransformReferenceToPhysical) {
@@ -203,7 +203,7 @@ protected:
 TEST_F(HexahedronTransformTest, GeometryInfo) {
     EXPECT_EQ(transform_->geometry(), Geometry::Cube);
     EXPECT_EQ(transform_->dim(), 3);
-    EXPECT_EQ(transform_->numVertices(), 8);
+    EXPECT_EQ(transform_->numNodes(), 8);
 }
 
 TEST_F(HexahedronTransformTest, TransformCorners) {
@@ -262,7 +262,7 @@ protected:
 TEST_F(TriangleFacetTransformTest, GeometryInfo) {
     EXPECT_EQ(transform_->geometry(), Geometry::Triangle);
     EXPECT_EQ(transform_->dim(), 2);
-    EXPECT_EQ(transform_->numVertices(), 3);
+    EXPECT_EQ(transform_->numNodes(), 3);
 }
 
 TEST_F(TriangleFacetTransformTest, TransformVertices) {
@@ -321,7 +321,7 @@ protected:
 TEST_F(SquareFacetTransformTest, GeometryInfo) {
     EXPECT_EQ(transform_->geometry(), Geometry::Square);
     EXPECT_EQ(transform_->dim(), 2);
-    EXPECT_EQ(transform_->numVertices(), 4);
+    EXPECT_EQ(transform_->numNodes(), 4);
 }
 
 TEST_F(SquareFacetTransformTest, TransformCorners) {
