@@ -1,0 +1,79 @@
+#ifndef MPFEM_PHYSICS_PROBLEM_BUILDER_HPP
+#define MPFEM_PHYSICS_PROBLEM_BUILDER_HPP
+
+#include "electrostatics_solver.hpp"
+#include "heat_transfer_solver.hpp"
+#include "structural_solver.hpp"
+#include "coupling_manager.hpp"
+#include "model/case_definition.hpp"
+#include "model/material_database.hpp"
+#include "io/case_xml_reader.hpp"
+#include "io/material_xml_reader.hpp"
+#include "mesh/mesh.hpp"
+#include "mesh/io/mphtxt_reader.hpp"
+#include "core/logger.hpp"
+#include <memory>
+#include <map>
+#include <string>
+
+namespace mpfem {
+
+/**
+ * @brief 物理问题设置结果
+ * 
+ * 所有权策略：
+ * - 求解器和系数由本结构持有所有权
+ * - CouplingManager 持有耦合专用系数的所有权
+ */
+struct PhysicsProblemSetup {
+    std::string caseName;
+    std::unique_ptr<Mesh> mesh;
+    MaterialDatabase materials;
+    CaseDefinition caseDef;
+    std::map<int, std::string> domainMaterial;
+    
+    // 求解器（拥有所有权）
+    std::unique_ptr<ElectrostaticsSolver> electrostatics;
+    std::unique_ptr<HeatTransferSolver> heatTransfer;
+    std::unique_ptr<StructuralSolver> structural;
+    std::unique_ptr<CouplingManager> couplingManager;
+    
+    // 材料系数（拥有所有权，求解器持有非拥有引用）
+    std::unique_ptr<PWConstCoefficient> conductivity;
+    std::unique_ptr<PWConstCoefficient> thermalConductivity;
+    std::unique_ptr<PWConstCoefficient> youngModulus;
+    std::unique_ptr<PWConstCoefficient> poissonRatio;
+    std::unique_ptr<PWConstCoefficient> thermalExpansion;
+    
+    bool hasElectrostatics() const { return electrostatics != nullptr; }
+    bool hasHeatTransfer() const { return heatTransfer != nullptr; }
+    bool hasStructural() const { return structural != nullptr; }
+    bool hasJouleHeating() const { return hasElectrostatics() && hasHeatTransfer(); }
+    bool hasThermalExpansion() const { return hasHeatTransfer() && hasStructural(); }
+};
+
+class PhysicsProblemBuilder {
+public:
+    static PhysicsProblemSetup build(const std::string& caseDir);
+    
+private:
+    static void buildSolvers(PhysicsProblemSetup& setup);
+    static void buildElectrostatics(PhysicsProblemSetup& setup,
+                                     const PhysicsDefinition& physics,
+                                     int maxDomainId);
+    static void buildHeatTransfer(PhysicsProblemSetup& setup,
+                                   const PhysicsDefinition& physics,
+                                   int maxDomainId);
+    static void buildStructural(PhysicsProblemSetup& setup,
+                                 const PhysicsDefinition& physics,
+                                 int maxDomainId);
+    static void setupCoupling(PhysicsProblemSetup& setup);
+    static Real parseValue(const std::map<std::string, std::string>& params, 
+                           const std::string& key,
+                           const CaseDefinition& caseDef,
+                           Real defaultVal = 0.0);
+};
+
+}  // namespace mpfem
+
+#endif  // MPFEM_PHYSICS_PROBLEM_BUILDER_HPP

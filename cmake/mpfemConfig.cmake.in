@@ -1,0 +1,20 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+# Find required dependencies
+find_dependency(Eigen3 3.4 REQUIRED)
+
+# Optional dependencies
+if(@MPFEM_OPENBLAS_FOUND@)
+    find_dependency(OpenBLAS REQUIRED)
+endif()
+
+if(@MPFEM_OPENMP_FOUND@)
+    find_dependency(OpenMP REQUIRED)
+endif()
+
+# Include targets
+include("${CMAKE_CURRENT_LIST_DIR}/mpfemTargets.cmake")
+
+check_required_components(mpfem)
