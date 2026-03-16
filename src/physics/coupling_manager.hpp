@@ -6,6 +6,7 @@
 #include "physics/structural_solver.hpp"
 #include "assembly/integrators.hpp"
 #include "fe/coefficient.hpp"
+#include "model/field_kind.hpp"
 #include "core/logger.hpp"
 #include <memory>
 #include <set>
@@ -13,8 +14,6 @@
 #include <string>
 
 namespace mpfem {
-
-enum class IterationMethod { Picard, Anderson };
 
 struct CouplingResult {
     bool converged = false;
@@ -60,21 +59,9 @@ public:
     /// 获取系数
     const Coefficient* getCoefficient(const std::string& name) const;
     
-    /// 创建并持有系数（返回指针供外部使用，不指定名称）
-    template<typename T, typename... Args,
-             typename = std::enable_if_t<!std::is_same_v<std::decay_t<std::tuple_element_t<0, std::tuple<Args...>>>, std::string>>>
-    T* createCoefficient(Args&&... args) {
-        static_assert(std::is_base_of_v<Coefficient, T>, "T must derive from Coefficient");
-        std::string name = typeid(T).name();
-        auto coef = std::make_unique<T>(std::forward<Args>(args)...);
-        T* ptr = coef.get();
-        ownedCoefficients_[name] = std::move(coef);
-        return ptr;
-    }
-    
-    /// 创建并持有系数（返回指针供外部使用，指定名称）
+    /// 创建并持有系数（返回指针供外部使用）
     template<typename T, typename... Args>
-    T* createCoefficientNamed(const std::string& name, Args&&... args) {
+    T* createCoefficient(const std::string& name, Args&&... args) {
         static_assert(std::is_base_of_v<Coefficient, T>, "T must derive from Coefficient");
         auto coef = std::make_unique<T>(std::forward<Args>(args)...);
         T* ptr = coef.get();
@@ -88,6 +75,7 @@ public:
     
     void setTolerance(Real tol) { tol_ = tol; }
     void setMaxIterations(int n) { maxIter_ = n; }
+    void setCouplingMethod(CouplingMethod method) { method_ = method; }
     
     // =========================================================================
     // 求解接口
@@ -114,6 +102,7 @@ private:
     Vector prevT_;
     int maxIter_ = 20;
     Real tol_ = 1e-6;
+    CouplingMethod method_ = CouplingMethod::Picard;
 };
 
 }  // namespace mpfem

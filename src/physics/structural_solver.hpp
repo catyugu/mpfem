@@ -51,12 +51,6 @@ public:
         poissonRatio_.setAll(nu);
     }
     
-    /// 设置材料系数（兼容旧接口）
-    void setMaterial(const Coefficient* E, const Coefficient* nu) {
-        setYoungModulus(E);
-        setPoissonRatio(nu);
-    }
-    
     /// 获取杨氏模量系数
     const DomainMappedCoefficient& youngModulus() const { return youngModulus_; }
     

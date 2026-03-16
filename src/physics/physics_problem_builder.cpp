@@ -88,7 +88,7 @@ namespace mpfem
                 if (cp.kind == "joule_heating")
                 {
                     // 创建焦耳热系数
-                    auto *jouleHeat = setup.couplingManager->createCoefficientNamed<JouleHeatCoefficient>("joule_heat");
+                    auto *jouleHeat = setup.couplingManager->createCoefficient<JouleHeatCoefficient>("joule_heat");
                     std::set<int> domains(cp.domainIds.begin(), cp.domainIds.end());
                     jouleHeat->setDomains(domains);
                     LOG_INFO << "Joule heating domains: " << cp.domainIds.size() << " domains";
@@ -96,7 +96,7 @@ namespace mpfem
                 else if (cp.kind == "thermal_expansion")
                 {
                     // 创建热膨胀系数
-                    auto *thermalExp = setup.couplingManager->createCoefficientNamed<ThermalExpansionCoefficient>("thermal_expansion");
+                    auto *thermalExp = setup.couplingManager->createCoefficient<ThermalExpansionCoefficient>("thermal_expansion");
                     thermalExp->setReferenceTemperature(293.15);
 
                     for (int domId : cp.domainIds)
@@ -274,7 +274,7 @@ namespace mpfem
             return;
 
         // 创建温度依赖电导率系数
-        auto *tempDepSigma = setup.couplingManager->createCoefficientNamed<TemperatureDependentConductivity>("temp_dep_sigma");
+        auto *tempDepSigma = setup.couplingManager->createCoefficient<TemperatureDependentConductivity>("temp_dep_sigma");
 
         for (const auto &[domId, matTag] : setup.domainMaterial)
         {
