@@ -17,29 +17,7 @@
 
 ## 工作任务1
 
-* 焦耳热加了单独的系数src/coupling/joule_heating.hpp，而热膨胀则没有，缺乏一致性。请删除它。
-* CouplingManager里应该是持有一系列Coefficient，以字符串为索引，并全权负责它们的生命周期。重构后所有所有z的引用就应该基于字符串。
-* CouplingManager应该管理所有场的解，耦合系数类中应该持有非拥有的GridFunction引用，而GridFunction在求解单场完成后自动更新，应该不需要手动更新才对。从而存在耦合的系数也不再需要单独特殊处理，而是在创建的时候就天然持有引用并且自动根据当前场值计算。这样就可以移除CouplingManager中大部分接口。
-* 这些东西影响代码通用性，因此都应该消失：
-```cpp
-    // 耦合模块（拥有所有权）
-    std::unique_ptr<JouleHeatingCoupling> jouleHeating_;
-    std::unique_ptr<TemperatureDependentConductivity> tempDepSigma_;
-    std::unique_ptr<PWConstCoefficient> thermalAlphaCoef_;
-    
-    // 外部材料参数（非拥有）
-    const Coefficient* structE_ = nullptr;
-    const Coefficient* structNu_ = nullptr;
-    
-    // 配置参数
-    std::set<int> tempDepDomains_;
-    std::set<int> jouleHeatDomains_;
-    std::map<int, Real> thermalAlpha_;
-    Real thermalTref_ = 293.15;
-    bool hasTempDepSigma_ = false;
-```
-
+* CouplingManager里应该是持有一系列Coefficient，以字符串为索引，并全权负责它们的生命周期。重构后所有值的引用就应该基于字符串。
 * 很多场景下，如我们案例中的材料、耦合源的Coefficient值、边界值等是和域/边界编号有关的，并不是一个物理场只有一个，我认为每一个Coefficient应该对应一组域/边界选择，而不是一个求解器只持有一个或者两个特定的Coefficient。
-* 移除通用组合系数 ProductCoefficient、DomainRestrictedCoefficient 等。
 * 例如，setConductivity, conductivity等接口应该要指定域选择。如果不指定则默认为全部施加，如果同一个域多次被施加，则新的覆盖旧的。
 * 边界条件也应该指定边界选择。并且边界条件的数值也应该是Coefficient而不是直接的数字。换言之，求解器及其接口的任何内容总是不应该有直接的数字。

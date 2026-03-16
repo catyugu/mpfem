@@ -81,16 +81,6 @@ private:
     Func func_;
 };
 
-/// 网格函数系数（从解场获取值）
-class GridFunctionCoefficient : public Coefficient {
-public:
-    explicit GridFunctionCoefficient(const GridFunction* gf = nullptr) : gf_(gf) {}
-    Real eval(ElementTransform& trans, Real = 0.0) const override;
-    void setField(const GridFunction* gf) { gf_ = gf; }
-private:
-    const GridFunction* gf_;
-};
-
 /// 域映射系数：不同域使用不同的系数
 class DomainMappedCoefficient : public Coefficient {
 public:

@@ -26,17 +26,6 @@ Real FunctionCoefficient::eval(ElementTransform& trans, Real t) const {
 }
 
 // =============================================================================
-// GridFunctionCoefficient
-// =============================================================================
-
-Real GridFunctionCoefficient::eval(ElementTransform& trans, Real) const {
-    if (!gf_) return 0.0;
-    const auto& ip = trans.integrationPoint();
-    Real xi[3] = {ip.xi, ip.eta, ip.zeta};
-    return gf_->eval(trans.elementIndex(), xi);
-}
-
-// =============================================================================
 // DomainMappedCoefficient
 // =============================================================================
 
