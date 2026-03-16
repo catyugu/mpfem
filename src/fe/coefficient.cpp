@@ -37,31 +37,13 @@ Real GridFunctionCoefficient::eval(ElementTransform& trans, Real) const {
 }
 
 // =============================================================================
-// ProductCoefficient
+// DomainMappedCoefficient
 // =============================================================================
 
-Real ProductCoefficient::eval(ElementTransform& trans, Real t) const {
-    return a_->eval(trans, t) * b_->eval(trans, t);
-}
-
-// =============================================================================
-// ScaledCoefficient
-// =============================================================================
-
-Real ScaledCoefficient::eval(ElementTransform& trans, Real t) const {
-    return scale_ * q_->eval(trans, t);
-}
-
-// =============================================================================
-// DomainRestrictedCoefficient
-// =============================================================================
-
-Real DomainRestrictedCoefficient::eval(ElementTransform& trans, Real t) const {
+Real DomainMappedCoefficient::eval(ElementTransform& trans, Real t) const {
     int attr = static_cast<int>(trans.attribute());
-    if (domains_.empty() || domains_.count(attr) > 0) {
-        return q_->eval(trans, t);
-    }
-    return 0.0;
+    const Coefficient* coef = get(attr);
+    return coef ? coef->eval(trans, t) : 0.0;
 }
 
 // =============================================================================

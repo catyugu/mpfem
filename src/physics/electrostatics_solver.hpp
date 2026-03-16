@@ -2,8 +2,10 @@
 #define MPFEM_ELECTROSTATICS_SOLVER_HPP
 
 #include "physics_field_solver.hpp"
+#include "fe/coefficient.hpp"
 #include <map>
 #include <vector>
+#include <set>
 
 namespace mpfem {
 
@@ -14,8 +16,8 @@ namespace mpfem {
  * 
  * 设计原则：
  * - 单场求解器不包含耦合逻辑
- * - 电导率系数由外部设置，求解器持有非拥有引用
- * - 边界条件接口具有物理意义
+ * - 电导率系数支持域选择，每个域可以使用不同的系数
+ * - 边界条件使用 Coefficient 而非直接数值
  */
 class ElectrostaticsSolver : public PhysicsFieldSolver {
 public:
@@ -25,41 +27,33 @@ public:
     FieldKind fieldKind() const override { return FieldKind::ElectricPotential; }
     std::string fieldName() const override { return "ElectricPotential"; }
     
-    /// 初始化求解器（不设置材料系数，需单独调用 setConductivity）
-    /// @param mesh 网格
+    /// 初始化求解器
     bool initialize(const Mesh& mesh);
     
     // =========================================================================
-    // 边界条件接口（物理语义）
+    // 材料系数接口（支持域选择）
     // =========================================================================
     
-    /// 添加电压边界条件
-    /// @param boundaryId 边界ID
-    /// @param voltage 电压值 (V)
-    void addVoltageBC(int boundaryId, Real voltage) {
-        voltageBCs_[boundaryId] = voltage;
+    /// 设置指定域的电导率系数（非拥有指针，覆盖已存在的）
+    void setConductivity(const std::set<int>& domains, const Coefficient* sigma);
+    
+    /// 设置所有域的电导率系数（非拥有指针）
+    void setConductivity(const Coefficient* sigma) {
+        conductivity_.setAll(sigma);
     }
     
-    /// 批量设置电压边界条件
-    void setVoltageBCs(const std::vector<std::pair<int, Real>>& bcs) {
-        for (const auto& [id, val] : bcs) {
-            voltageBCs_[id] = val;
-        }
-    }
+    /// 获取电导率系数
+    const DomainMappedCoefficient& conductivity() const { return conductivity_; }
+    
+    // =========================================================================
+    // 边界条件接口（使用 Coefficient）
+    // =========================================================================
+    
+    /// 添加电压边界条件（批量设置，使用 Coefficient）
+    void addVoltageBC(const std::set<int>& boundaryIds, const Coefficient* voltage);
     
     /// 清除边界条件
     void clearBoundaryConditions() { voltageBCs_.clear(); }
-    
-    // =========================================================================
-    // 材料系数接口
-    // =========================================================================
-    
-    /// 设置电导率系数（非拥有指针，生命周期由调用者管理）
-    /// @param sigma 电导率系数
-    void setConductivity(const Coefficient* sigma) { sigma_ = sigma; }
-    
-    /// 获取电导率系数
-    const Coefficient* conductivity() const { return sigma_; }
     
     // =========================================================================
     // 求解接口
@@ -70,11 +64,11 @@ public:
     
     const GridFunction& field() const override { return *V_; }
     GridFunction& field() override { return *V_; }
-    
+
 private:
     std::unique_ptr<GridFunction> V_;
-    const Coefficient* sigma_ = nullptr;      ///< 电导率系数（非拥有）
-    std::map<int, Real> voltageBCs_;          ///< 边界ID -> 电压值
+    DomainMappedCoefficient conductivity_;
+    std::map<int, const Coefficient*> voltageBCs_;
 };
 
 } // namespace mpfem

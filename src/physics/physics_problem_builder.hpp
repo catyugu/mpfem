@@ -22,8 +22,9 @@ namespace mpfem {
  * @brief 物理问题设置结果
  * 
  * 所有权策略：
- * - 求解器和系数由本结构持有所有权
+ * - 求解器由本结构持有所有权
  * - CouplingManager 持有耦合专用系数的所有权
+ * - 求解器内部持有域映射系数
  */
 struct PhysicsProblemSetup {
     std::string caseName;
@@ -38,12 +39,9 @@ struct PhysicsProblemSetup {
     std::unique_ptr<StructuralSolver> structural;
     std::unique_ptr<CouplingManager> couplingManager;
     
-    // 材料系数（拥有所有权，求解器持有非拥有引用）
-    std::unique_ptr<PWConstCoefficient> conductivity;
-    std::unique_ptr<PWConstCoefficient> thermalConductivity;
-    std::unique_ptr<PWConstCoefficient> youngModulus;
-    std::unique_ptr<PWConstCoefficient> poissonRatio;
-    std::unique_ptr<PWConstCoefficient> thermalExpansion;
+    // 边界条件系数（拥有所有权）
+    std::map<std::string, std::unique_ptr<Coefficient>> bcCoefficients;
+    std::map<std::string, std::unique_ptr<VectorCoefficient>> bcVectorCoefficients;
     
     bool hasElectrostatics() const { return electrostatics != nullptr; }
     bool hasHeatTransfer() const { return heatTransfer != nullptr; }

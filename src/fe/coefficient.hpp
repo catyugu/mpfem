@@ -91,41 +91,45 @@ private:
     const GridFunction* gf_;
 };
 
-// =============================================================================
-// 组合系数
-// =============================================================================
-
-/// 乘积系数: a * b
-class ProductCoefficient : public Coefficient {
+/// 域映射系数：不同域使用不同的系数
+class DomainMappedCoefficient : public Coefficient {
 public:
-    ProductCoefficient(const Coefficient* a, const Coefficient* b) : a_(a), b_(b) {}
-    Real eval(ElementTransform& trans, Real t = 0.0) const override;
-private:
-    const Coefficient* a_;
-    const Coefficient* b_;
-};
-
-/// 缩放系数: scale * q
-class ScaledCoefficient : public Coefficient {
-public:
-    ScaledCoefficient(const Coefficient* q, Real scale) : q_(q), scale_(scale) {}
-    Real eval(ElementTransform& trans, Real t = 0.0) const override;
-private:
-    const Coefficient* q_;
-    Real scale_;
-};
-
-/// 域限制系数：仅在指定域上有效
-class DomainRestrictedCoefficient : public Coefficient {
-public:
-    DomainRestrictedCoefficient(const Coefficient* q, const std::set<int>& domains)
-        : q_(q), domains_(domains) {}
+    DomainMappedCoefficient() = default;
     
+    /// 设置指定域的系数（覆盖已存在的）
+    void set(int domainId, const Coefficient* coef) {
+        coefs_[domainId] = coef;
+    }
+    
+    /// 批量设置多个域使用同一个系数
+    void set(const std::set<int>& domainIds, const Coefficient* coef) {
+        for (int id : domainIds) {
+            coefs_[id] = coef;
+        }
+    }
+    
+    /// 设置所有域使用同一个系数（清空映射，设置默认系数）
+    void setAll(const Coefficient* coef) {
+        defaultCoef_ = coef;
+        coefs_.clear();
+    }
+    
+    /// 获取指定域的系数（如果没有则返回默认系数）
+    const Coefficient* get(int domainId) const {
+        auto it = coefs_.find(domainId);
+        if (it != coefs_.end()) return it->second;
+        return defaultCoef_;
+    }
+    
+    /// 评估系数值（实现在 cpp 文件中）
     Real eval(ElementTransform& trans, Real t = 0.0) const override;
     
+    /// 检查是否有任何系数设置
+    bool empty() const { return coefs_.empty() && defaultCoef_ == nullptr; }
+    
 private:
-    const Coefficient* q_;
-    std::set<int> domains_;
+    std::map<int, const Coefficient*> coefs_;
+    const Coefficient* defaultCoef_ = nullptr;
 };
 
 // =============================================================================

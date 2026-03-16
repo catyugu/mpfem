@@ -17,111 +17,29 @@
 
 ## 工作任务1
 
-* 焦耳热添加了单独的系数src/coupling/joule_heating.hpp，而热膨胀则没有，缺乏一致性。要么两个都单独配置，要么两个都不要。
-* 很多场景下，如我们案例中的材料Coefficient值、边界值等是和域/边界编号有关的，并不是一个物理场只有一个，我认为你应该修改所有物理场的接口，每一个材料值应该应该对应一组域/边界选择，而不是一个求解器只持有一个或者两个特定的Coefficient；此外，应该强调，物理场持有的应该是Coefficient的基类，而非什么派生类。
+* 焦耳热加了单独的系数src/coupling/joule_heating.hpp，而热膨胀则没有，缺乏一致性。请删除它。
+* CouplingManager里应该是持有一系列Coefficient，以字符串为索引，并全权负责它们的生命周期。重构后所有所有z的引用就应该基于字符串。
+* CouplingManager应该管理所有场的解，耦合系数类中应该持有非拥有的GridFunction引用，而GridFunction在求解单场完成后自动更新，应该不需要手动更新才对。从而存在耦合的系数也不再需要单独特殊处理，而是在创建的时候就天然持有引用并且自动根据当前场值计算。这样就可以移除CouplingManager中大部分接口。
+* 这些东西影响代码通用性，因此都应该消失：
+```cpp
+    // 耦合模块（拥有所有权）
+    std::unique_ptr<JouleHeatingCoupling> jouleHeating_;
+    std::unique_ptr<TemperatureDependentConductivity> tempDepSigma_;
+    std::unique_ptr<PWConstCoefficient> thermalAlphaCoef_;
+    
+    // 外部材料参数（非拥有）
+    const Coefficient* structE_ = nullptr;
+    const Coefficient* structNu_ = nullptr;
+    
+    // 配置参数
+    std::set<int> tempDepDomains_;
+    std::set<int> jouleHeatDomains_;
+    std::map<int, Real> thermalAlpha_;
+    Real thermalTref_ = 293.15;
+    bool hasTempDepSigma_ = false;
+```
+
+* 很多场景下，如我们案例中的材料、耦合源的Coefficient值、边界值等是和域/边界编号有关的，并不是一个物理场只有一个，我认为每一个Coefficient应该对应一组域/边界选择，而不是一个求解器只持有一个或者两个特定的Coefficient。
+* 移除通用组合系数 ProductCoefficient、DomainRestrictedCoefficient 等。
 * 例如，setConductivity, conductivity等接口应该要指定域选择。如果不指定则默认为全部施加，如果同一个域多次被施加，则新的覆盖旧的。
-* 边界条件也应该指定边界选择。
-* 并且边界条件的数值也应该是Coefficient而不是直接的数字。换言之，求解器及其接口的任何内容总是不应该有直接的数字。
-
-## 工作任务2
-
-* 考虑以后扩展到求解瞬态问题，以及更多参数耦合问题的需求，对代码做必要的重构和抽象。在开启任务二之前停止一下，我们需要好好讨论架构。
-* 请构建一个热-电-力耦合+非线性+瞬态的算例来验证计算的正确性和架构的良好性。
-
-## 工作任务3
-
-* 调查精度问题和比较显著的性能问题，进一步优化代码。
-* 当前运行结果
-
-```text
-$ ./build/examples/busbar_example.exe 
-[INFO] [0ms] === Busbar Electro-Thermal Example ===
-[INFO] [2ms] Case directory: cases/busbar
-[INFO] [3ms] Reading case from cases/busbar/case.xml
-[INFO] [4ms] Loaded case definition: busbar with 3 physics fields
-[INFO] [5ms] Reading mesh from cases/busbar/mesh.mphtxt
-[INFO] [6ms] Reading mesh from cases/busbar/mesh.mphtxt
-[INFO] [61ms] Mesh loaded: 7340 vertices, 31021 volume elements, 9138 boundary elements
-[INFO] [132ms] Boundary mapping: 8378 external, 760 internal (will skip in BC)
-[INFO] [134ms] Mesh loaded: 7340 vertices, 31021 elements
-[INFO] [134ms] Reading materials from cases/busbar/material.xml
-[INFO] [135ms] Loaded 2 materials from cases/busbar/material.xml
-[INFO] [136ms] Building electrostatics solver, order = 1
-[INFO] [137ms] Domain 1 (mat1): sigma = 5.998e+07
-[INFO] [138ms] Domain 2 (mat2): sigma = 740700
-[INFO] [139ms] Domain 3 (mat2): sigma = 740700
-[INFO] [139ms] Domain 4 (mat2): sigma = 740700
-[INFO] [139ms] Domain 5 (mat2): sigma = 740700
-[INFO] [140ms] Domain 6 (mat2): sigma = 740700
-[INFO] [140ms] Domain 7 (mat2): sigma = 740700
-[INFO] [164ms] ElectrostaticsSolver: 7340 DOFs
-[INFO] [165ms] Building heat transfer solver, order = 1
-[INFO] [184ms] HeatTransferSolver: 7340 DOFs
-[INFO] [185ms] Building structural solver, order = 1
-[INFO] [186ms] Domain 1 (mat1): E = 110, nu = 0.35, alpha_T = 1.7e-05
-[INFO] [187ms] Domain 2 (mat2): E = 105, nu = 0.33, alpha_T = 7.06e-06
-[INFO] [188ms] Domain 3 (mat2): E = 105, nu = 0.33, alpha_T = 7.06e-06
-[INFO] [189ms] Domain 4 (mat2): E = 105, nu = 0.33, alpha_T = 7.06e-06
-[INFO] [191ms] Domain 5 (mat2): E = 105, nu = 0.33, alpha_T = 7.06e-06
-[INFO] [191ms] Domain 6 (mat2): E = 105, nu = 0.33, alpha_T = 7.06e-06
-[INFO] [192ms] Domain 7 (mat2): E = 105, nu = 0.33, alpha_T = 7.06e-06
-[INFO] [321ms] StructuralSolver: 22020 DOFs
-[INFO] [321ms] Joule heating domains: 7 domains
-[INFO] [321ms] Thermal expansion coupling enabled
-[INFO] [321ms] Domain 1 (mat1): temp-dep sigma, rho0 = 1.72e-08, alpha = 0.0039
-[INFO] [322ms] Running coupled electro-thermal solve...
-[INFO] [341ms] Electrostatics assemble completed in 0.018s
-[INFO] [386ms] [SuperLU] Solve successful, solution norm: 0.623237
-[INFO] [388ms] Linear solve (SuperLU) completed in 0.046s
-[INFO] [389ms] Electrostatics converged: iter=1 res=0
-[INFO] [453ms] HeatTransfer assemble completed in 0.063s
-[INFO] [505ms] [SuperLU] Solve successful, solution norm: 27772.3
-[INFO] [507ms] Linear solve (SuperLU) completed in 0.053s
-[INFO] [508ms] HeatTransfer converged: iter=1 res=0
-[INFO] [508ms] Coupling iteration 1, residual = 1
-[INFO] [525ms] Electrostatics assemble completed in 0.016s
-[INFO] [578ms] [SuperLU] Solve successful, solution norm: 0.626625
-[INFO] [580ms] Linear solve (SuperLU) completed in 0.054s
-[INFO] [582ms] Electrostatics converged: iter=1 res=0
-[INFO] [645ms] HeatTransfer assemble completed in 0.062s
-[INFO] [695ms] [SuperLU] Solve successful, solution norm: 27746.8
-[INFO] [697ms] Linear solve (SuperLU) completed in 0.051s
-[INFO] [699ms] HeatTransfer converged: iter=1 res=0
-[INFO] [700ms] Coupling iteration 2, residual = 0.000920725
-[INFO] [780ms] Structural assemble completed in 0.079s
-[INFO] [1.25s] [SuperLU] Solve successful, solution norm: 0.00237386
-[INFO] [1.26s] Linear solve (SuperLU) completed in 0.476s
-[INFO] [1.26s] StructuralSolver: displacement norm = 0.00237386
-[INFO] [1.26s] Coupling solve completed in 0.936s
-[INFO] [1.26s] Coupling converged in 2 iterations
-[INFO] [1.26s] Potential range: [0, 0.02] V
-[INFO] [1.26s] Temperature range: [323.421, 331.43] K
-[INFO] [1.26s] Temperature range: [50.2706, 58.2795] C
-[INFO] [1.26s] Max displacement magnitude: 5.28686e-05 m
-[INFO] [1.33s] Exported VTU results to results/busbar_results.vtu
-[INFO] [1.33s] Results exported to: results/busbar_results.vtu
-[INFO] [1.38s] Exported results to results/mpfem_result.txt
-[INFO] [1.38s] COMSOL format results exported to: results/mpfem_result.txt
-[INFO] [1.38s] === Example completed successfully! ===
-```
-
-* 求解正确性也可疑，在相同的设置下我们的精度应该达到这个级别：
-
-```text
-python3 scripts/compare_comsol_results.py cases/busbar/result.txt res
-ults/busbar/mpfem_result.txt
-field   L2      Linf    max_relative    L2_relative
-V       2.148742e-09    5.572466e-08    5.224217e-06    2.965192e-07
-T       2.364130e-06    7.245394e-05    2.217743e-07    7.310244e-09
-disp    9.269475e-09    3.351310e-08    9.775915e-03    3.403081e-04
-```
-
-当前的误差是：
-
-```text
-python .\scripts\compare_comsol_results.py ./results/mpfem_result.txt ./cases/busbar/result.txt
-field   L2      Linf    max_relative    L2_relative
-V       6.631425e-07    1.193437e-06    1.502601e-04    9.066653e-05
-T       2.772982e-03    4.183303e-03    1.262226e-05    8.562125e-06
-disp    2.466711e-09    4.695249e-09    1.109621e-04    8.902466e-05
-```
+* 边界条件也应该指定边界选择。并且边界条件的数值也应该是Coefficient而不是直接的数字。换言之，求解器及其接口的任何内容总是不应该有直接的数字。
