@@ -74,6 +74,7 @@ public:
     bool solve(const SparseMatrix& A, Vector& x, const Vector& b) override {
         solver_.setMaxIterations(maxIterations_);
         solver_.setTolerance(tolerance_);
+        solver_.compute(A.eigen());
         
         x = solver_.solveWithGuess(b, x);
         

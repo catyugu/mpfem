@@ -28,12 +28,27 @@ bool StructuralSolver::initialize(const Mesh& mesh) {
     return true;
 }
 
+void StructuralSolver::setYoungModulus(const std::set<int>& domains, const Coefficient* E) {
+    youngModulus_.set(domains, E);
+}
+
+void StructuralSolver::setPoissonRatio(const std::set<int>& domains, const Coefficient* nu) {
+    poissonRatio_.set(domains, nu);
+}
+
+void StructuralSolver::addFixedDisplacementBC(const std::set<int>& boundaryIds, 
+                                               const VectorCoefficient* displacement) {
+    for (int bid : boundaryIds) {
+        displacementBCs_[bid] = displacement;
+    }
+}
+
 void StructuralSolver::assemble() {
     ScopedTimer timer("Structural assemble");
     
     if (!fes_) return;
     
-    if (!E_ || !nu_) {
+    if (youngModulus_.empty() || poissonRatio_.empty()) {
         LOG_ERROR << "StructuralSolver: material not set";
         return;
     }
@@ -44,7 +59,7 @@ void StructuralSolver::assemble() {
     vecAsm_->clearIntegrators();
     
     // 添加弹性积分器（向量场）
-    auto elasticity = std::make_unique<ElasticityIntegrator>(E_, nu_);
+    auto elasticity = std::make_unique<ElasticityIntegrator>(&youngModulus_, &poissonRatio_);
     matAsm_->addDomainIntegrator(std::move(elasticity));
     matAsm_->assemble();
     
@@ -59,12 +74,6 @@ void StructuralSolver::assemble() {
     // 应用位移边界条件
     applyDirichletBC(matAsm_->matrix(), vecAsm_->vector(), u_->values(),
                      *fes_, *mesh_, displacementBCs_, 3);
-    
-    // 应用分量边界条件
-    if (!componentBCs_.empty()) {
-        applyDirichletBCComponent(matAsm_->matrix(), vecAsm_->vector(), u_->values(),
-                                  *fes_, *mesh_, componentBCs_, 3);
-    }
     
     matAsm_->finalize();
 }

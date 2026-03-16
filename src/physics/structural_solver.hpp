@@ -2,8 +2,10 @@
 #define MPFEM_STRUCTURAL_SOLVER_HPP
 
 #include "physics_field_solver.hpp"
+#include "fe/coefficient.hpp"
 #include "assembly/integrator.hpp"
 #include <vector>
+#include <set>
 
 namespace mpfem {
 
@@ -15,8 +17,8 @@ namespace mpfem {
  * 
  * 设计原则：
  * - 单场求解器不包含耦合逻辑
- * - 材料系数由外部设置，求解器持有非拥有引用
- * - 边界条件接口具有物理意义
+ * - 材料系数支持域选择
+ * - 边界条件使用 Coefficient
  */
 class StructuralSolver : public PhysicsFieldSolver {
 public:
@@ -26,66 +28,53 @@ public:
     FieldKind fieldKind() const override { return FieldKind::Displacement; }
     std::string fieldName() const override { return "Displacement"; }
     
-    /// 初始化求解器（不设置材料系数，需单独调用 setMaterial）
-    /// @param mesh 网格
+    /// 初始化求解器
     bool initialize(const Mesh& mesh);
     
     // =========================================================================
-    // 边界条件接口（物理语义）
+    // 材料系数接口（支持域选择）
     // =========================================================================
     
-    /// 添加固定位移边界条件
-    /// @param boundaryId 边界ID
-    /// @param displacement 位移向量 (m)
-    void addFixedDisplacementBC(int boundaryId, const Vector3& displacement) {
-        displacementBCs_[boundaryId] = displacement;
+    /// 设置指定域的杨氏模量系数
+    void setYoungModulus(const std::set<int>& domains, const Coefficient* E);
+    
+    /// 设置所有域的杨氏模量系数
+    void setYoungModulus(const Coefficient* E) {
+        youngModulus_.setAll(E);
     }
     
-    /// 批量设置固定位移边界条件
-    void setFixedDisplacementBCs(const std::vector<std::pair<int, Vector3>>& bcs) {
-        for (const auto& [id, val] : bcs) {
-            displacementBCs_[id] = val;
-        }
+    /// 设置指定域的泊松比系数
+    void setPoissonRatio(const std::set<int>& domains, const Coefficient* nu);
+    
+    /// 设置所有域的泊松比系数
+    void setPoissonRatio(const Coefficient* nu) {
+        poissonRatio_.setAll(nu);
     }
     
-    /// 添加固定分量边界条件
-    /// @param boundaryId 边界ID
-    /// @param component 分量索引 (0=x, 1=y, 2=z)
-    /// @param value 位移值 (m)
-    void addFixedComponentBC(int boundaryId, int component, Real value) {
-        componentBCs_[boundaryId * 3 + component] = value;
-    }
+    /// 获取杨氏模量系数
+    const DomainMappedCoefficient& youngModulus() const { return youngModulus_; }
+    
+    /// 获取泊松比系数
+    const DomainMappedCoefficient& poissonRatio() const { return poissonRatio_; }
+    
+    // =========================================================================
+    // 边界条件接口（使用 Coefficient）
+    // =========================================================================
+    
+    /// 添加固定位移边界条件（批量设置）
+    void addFixedDisplacementBC(const std::set<int>& boundaryIds, 
+                                 const VectorCoefficient* displacement);
     
     /// 清除边界条件
     void clearBoundaryConditions() { 
         displacementBCs_.clear(); 
-        componentBCs_.clear();
     }
-    
-    // =========================================================================
-    // 材料系数接口
-    // =========================================================================
-    
-    /// 设置材料系数（非拥有指针，生命周期由调用者管理）
-    /// @param E 杨氏模量系数
-    /// @param nu 泊松比系数
-    void setMaterial(const Coefficient* E, const Coefficient* nu) {
-        E_ = E;
-        nu_ = nu;
-    }
-    
-    /// 设置杨氏模量系数（非拥有指针）
-    void setYoungModulus(const Coefficient* E) { E_ = E; }
-    
-    /// 设置泊松比系数（非拥有指针）
-    void setPoissonRatio(const Coefficient* nu) { nu_ = nu; }
     
     // =========================================================================
     // 耦合载荷接口
     // =========================================================================
     
     /// 添加线性积分器（用于耦合载荷，如热膨胀）
-    /// 注意：积分器由求解器持有所有权
     void addLinearIntegrator(std::unique_ptr<VectorDomainLinearIntegrator> integrator) {
         linearIntegrators_.push_back(std::move(integrator));
     }
@@ -108,7 +97,7 @@ public:
     
     /// 获取应变场
     const GridFunction& strain() const { return *strain_; }
-    
+
 private:
     void computeStressStrain();
     
@@ -116,13 +105,12 @@ private:
     std::unique_ptr<GridFunction> stress_;   ///< 应力场 (6分量)
     std::unique_ptr<GridFunction> strain_;   ///< 应变场 (6分量)
     
-    const Coefficient* E_ = nullptr;         ///< 杨氏模量（非拥有）
-    const Coefficient* nu_ = nullptr;        ///< 泊松比（非拥有）
+    DomainMappedCoefficient youngModulus_;
+    DomainMappedCoefficient poissonRatio_;
     
     std::vector<std::unique_ptr<VectorDomainLinearIntegrator>> linearIntegrators_;
     
-    std::map<int, Vector3> displacementBCs_; ///< 边界ID -> 位移向量
-    std::map<int, Real> componentBCs_;       ///< boundaryId*3+component -> value
+    std::map<int, const VectorCoefficient*> displacementBCs_;
 };
 
 }  // namespace mpfem

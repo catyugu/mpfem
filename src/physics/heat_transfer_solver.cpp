@@ -24,10 +24,32 @@ bool HeatTransferSolver::initialize(const Mesh& mesh) {
     return true;
 }
 
+void HeatTransferSolver::setConductivity(const std::set<int>& domains, const Coefficient* k) {
+    conductivity_.set(domains, k);
+}
+
+void HeatTransferSolver::setHeatSource(const std::set<int>& domains, const Coefficient* Q) {
+    heatSource_.set(domains, Q);
+}
+
+void HeatTransferSolver::addTemperatureBC(const std::set<int>& boundaryIds, const Coefficient* temperature) {
+    for (int bid : boundaryIds) {
+        temperatureBCs_[bid] = temperature;
+    }
+}
+
+void HeatTransferSolver::addConvectionBC(const std::set<int>& boundaryIds, 
+                                          const Coefficient* h, 
+                                          const Coefficient* Tinf) {
+    for (int bid : boundaryIds) {
+        convBCs_[bid] = {h, Tinf};
+    }
+}
+
 void HeatTransferSolver::assemble() {
     ScopedTimer timer("HeatTransfer assemble");
     
-    if (!k_) {
+    if (conductivity_.empty()) {
         LOG_ERROR << "HeatTransferSolver: conductivity not set";
         return;
     }
@@ -37,42 +59,28 @@ void HeatTransferSolver::assemble() {
     matAsm_->clearIntegrators();
     vecAsm_->clearIntegrators();
     
-    // 清除之前持有的边界条件系数
-    ownedConvH_.clear();
-    ownedConvTinf_.clear();
-    
     // 扩散积分器
-    auto diff = std::make_unique<DiffusionIntegrator>(k_);
+    auto diff = std::make_unique<DiffusionIntegrator>(&conductivity_);
     matAsm_->addDomainIntegrator(std::move(diff));
     
     // 对流边界条件
     for (const auto& [bid, bc] : convBCs_) {
-        // 创建并持有系数（避免悬空指针）
-        auto hCoef = std::make_unique<ConstantCoefficient>(bc.h);
-        auto tinfCoef = std::make_unique<ConstantCoefficient>(bc.Tinf);
-        
-        const Coefficient* hPtr = hCoef.get();
-        const Coefficient* tinfPtr = tinfCoef.get();
-        
-        ownedConvH_.push_back(std::move(hCoef));
-        ownedConvTinf_.push_back(std::move(tinfCoef));
-        
         // 对流边界条件: h(T - Tinf) = 0
         // 弱形式: ∫ h T φ dΓ - ∫ h Tinf φ dΓ = 0
         // 矩阵部分: ∫ h φ_i φ_j dΓ
-        auto convMat = std::make_unique<ConvectionMassIntegrator>(hPtr);
+        auto convMat = std::make_unique<ConvectionMassIntegrator>(bc.h);
         matAsm_->addBoundaryIntegrator(std::move(convMat), bid);
         
         // 向量部分: ∫ h Tinf φ_i dΓ
-        auto convVec = std::make_unique<ConvectionLFIntegrator>(hPtr, tinfPtr);
+        auto convVec = std::make_unique<ConvectionLFIntegrator>(bc.h, bc.Tinf);
         vecAsm_->addBoundaryIntegrator(std::move(convVec), bid);
     }
     
     matAsm_->assemble();
     
     // 热源
-    if (heatSource_) {
-        auto src = std::make_unique<DomainLFIntegrator>(heatSource_);
+    if (!heatSource_.empty()) {
+        auto src = std::make_unique<DomainLFIntegrator>(&heatSource_);
         vecAsm_->addDomainIntegrator(std::move(src));
     }
     
