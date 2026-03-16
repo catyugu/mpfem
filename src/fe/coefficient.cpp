@@ -9,7 +9,7 @@ namespace mpfem {
 // PWConstCoefficient
 // =============================================================================
 
-Real PWConstCoefficient::eval(ElementTransform& trans) const {
+Real PWConstCoefficient::eval(ElementTransform& trans, Real) const {
     int attr = static_cast<int>(trans.attribute());
     if (attr < 1 || attr > static_cast<int>(values_.size())) return 0.0;
     return values_[attr - 1];
@@ -19,17 +19,17 @@ Real PWConstCoefficient::eval(ElementTransform& trans) const {
 // FunctionCoefficient
 // =============================================================================
 
-Real FunctionCoefficient::eval(ElementTransform& trans) const {
+Real FunctionCoefficient::eval(ElementTransform& trans, Real t) const {
     Real xi[3];
     trans.transform(&trans.integrationPoint().xi, xi);
-    return func_(xi[0], xi[1], xi[2]);
+    return func_(xi[0], xi[1], xi[2], t);
 }
 
 // =============================================================================
 // GridFunctionCoefficient
 // =============================================================================
 
-Real GridFunctionCoefficient::eval(ElementTransform& trans) const {
+Real GridFunctionCoefficient::eval(ElementTransform& trans, Real) const {
     if (!gf_) return 0.0;
     const auto& ip = trans.integrationPoint();
     Real xi[3] = {ip.xi, ip.eta, ip.zeta};
@@ -40,26 +40,26 @@ Real GridFunctionCoefficient::eval(ElementTransform& trans) const {
 // ProductCoefficient
 // =============================================================================
 
-Real ProductCoefficient::eval(ElementTransform& trans) const {
-    return a_->eval(trans) * b_->eval(trans);
+Real ProductCoefficient::eval(ElementTransform& trans, Real t) const {
+    return a_->eval(trans, t) * b_->eval(trans, t);
 }
 
 // =============================================================================
 // ScaledCoefficient
 // =============================================================================
 
-Real ScaledCoefficient::eval(ElementTransform& trans) const {
-    return scale_ * q_->eval(trans);
+Real ScaledCoefficient::eval(ElementTransform& trans, Real t) const {
+    return scale_ * q_->eval(trans, t);
 }
 
 // =============================================================================
 // DomainRestrictedCoefficient
 // =============================================================================
 
-Real DomainRestrictedCoefficient::eval(ElementTransform& trans) const {
+Real DomainRestrictedCoefficient::eval(ElementTransform& trans, Real t) const {
     int attr = static_cast<int>(trans.attribute());
     if (domains_.empty() || domains_.count(attr) > 0) {
-        return q_->eval(trans);
+        return q_->eval(trans, t);
     }
     return 0.0;
 }
@@ -68,7 +68,7 @@ Real DomainRestrictedCoefficient::eval(ElementTransform& trans) const {
 // TemperatureDependentConductivity
 // =============================================================================
 
-Real TemperatureDependentConductivity::eval(ElementTransform& trans) const {
+Real TemperatureDependentConductivity::eval(ElementTransform& trans, Real) const {
     int attr = static_cast<int>(trans.attribute());
     if (attr < 1 || attr > static_cast<int>(rho0_.size())) return 1.0;
     
@@ -106,7 +106,7 @@ Real TemperatureDependentConductivity::eval(ElementTransform& trans) const {
 // JouleHeatCoefficient
 // =============================================================================
 
-Real JouleHeatCoefficient::eval(ElementTransform& trans) const {
+Real JouleHeatCoefficient::eval(ElementTransform& trans, Real t) const {
     if (!V_ || !sigma_) return 0.0;
     
     // 检查域限制
@@ -115,10 +115,34 @@ Real JouleHeatCoefficient::eval(ElementTransform& trans) const {
         if (domains_.find(attr) == domains_.end()) return 0.0;
     }
     
-    // 先评估电导率，再计算梯度（梯度计算会改变trans状态）
-    Real sigma_val = sigma_->eval(trans);
+    // 先评估电导率，再计算梯度
+    Real sigma_val = sigma_->eval(trans, t);
     Vector3 g = V_->gradient(trans.elementIndex(), &trans.integrationPoint().xi, trans);
     return sigma_val * g.squaredNorm();
+}
+
+// =============================================================================
+// ThermalExpansionCoefficient
+// =============================================================================
+
+Real ThermalExpansionCoefficient::eval(ElementTransform& trans, Real) const {
+    int attr = static_cast<int>(trans.attribute());
+    if (attr < 1 || attr > static_cast<int>(alpha_T_.size())) return 0.0;
+    
+    Real alpha_T = alpha_T_[attr - 1];
+    if (alpha_T == 0.0) return 0.0;
+    
+    // 获取温度
+    Real T = T_ref_;
+    if (T_) {
+        const auto& ip = trans.integrationPoint();
+        Real xi[3] = {ip.xi, ip.eta, ip.zeta};
+        T = T_->eval(trans.elementIndex(), xi);
+    }
+    
+    // 计算热膨胀应变
+    Real delta_T = T - T_ref_;
+    return alpha_T * delta_T;
 }
 
 }  // namespace mpfem
