@@ -24,7 +24,7 @@
   </materials>
 
   <physics kind="electrostatics" order="2">
-    <solver type="superlu.lu" max_iter="1000" tolerance="1e-10" print_level="0"/>
+    <solver type="eigen.cg_ic" max_iter="1000" tolerance="1e-10" print_level="0"/>
     <!-- Split voltage boundaries to test new structure -->
     <boundary kind="voltage" ids="43">
       <param name="value" value="Vtot"/>
@@ -39,21 +39,8 @@
   </physics>
 
   <physics kind="heat_transfer" order="2">
-    <solver type="superlu.lu" max_iter="1000" tolerance="1e-10" print_level="0"/>
-    <!-- Split convection into multiple groups to test new structure -->
-    <boundary kind="convection" ids="1-7">
-      <param name="h" value="htc"/>
-      <param name="T_inf" value="293.15[K]"/>
-    </boundary>
-    <boundary kind="convection" ids="9-14">
-      <param name="h" value="htc"/>
-      <param name="T_inf" value="293.15[K]"/>
-    </boundary>
-    <boundary kind="convection" ids="16-28">
-      <param name="h" value="htc"/>
-      <param name="T_inf" value="293.15[K]"/>
-    </boundary>
-    <boundary kind="convection" ids="29-42">
+    <solver type="eigen.cg_ic" max_iter="1000" tolerance="1e-10" print_level="0"/>
+    <boundary kind="convection" ids="1-7, 9-14, 16-28, 29-42">
       <param name="h" value="htc"/>
       <param name="T_inf" value="293.15[K]"/>
     </boundary>
@@ -62,8 +49,7 @@
   </physics>
 
   <physics kind="solid_mechanics" order="2">
-    <solver type="superlu.lu" max_iter="1000" tolerance="1e-10" print_level="0"/>
-    <!-- Split fixed constraints to test new structure -->
+    <solver type="eigen.cg" max_iter="1000" tolerance="1e-10" print_level="0"/>
     <boundary kind="fixed_constraint" ids="8" />
     <boundary kind="fixed_constraint" ids="15" />
     <boundary kind="fixed_constraint" ids="43" />
