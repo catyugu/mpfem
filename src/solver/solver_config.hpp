@@ -3,7 +3,6 @@
 
 #include "core/types.hpp"
 #include <string_view>
-#include <memory>
 #include <stdexcept>
 #include <vector>
 #include <string>
@@ -16,41 +15,37 @@ namespace mpfem {
 
 enum class SolverType {
     // Eigen solvers (always available)
-    Eigen_SparseLU,       ///< eigen.sparse_lu - Direct LU factorization
-    Eigen_CG,             ///< eigen.cg - Conjugate Gradient (SPD only)
-    Eigen_CGIC,           ///< eigen.cg_ic - CG with Incomplete Cholesky (SPD only)
-    Eigen_BiCGSTAB,       ///< eigen.bicgstab - BiCGSTAB for non-symmetric
-    Eigen_BiCGSTABILUT,   ///< eigen.bicgstab_ilut - BiCGSTAB with ILUT
+    Eigen_SparseLU,       ///< Direct LU factorization
+    Eigen_CG,             ///< Conjugate Gradient (SPD only)
+    Eigen_CGIC,           ///< CG with Incomplete Cholesky (SPD only)
+    Eigen_BiCGSTAB,       ///< BiCGSTAB for non-symmetric
+    Eigen_BiCGSTABILUT,   ///< BiCGSTAB with ILUT
     
     // External direct solvers (conditionally available)
-    SuperLU_LU,           ///< superlu.lu - SuperLU direct solver
-    Umfpack_LU,           ///< umfpack.lu - SuiteSparse UMFPACK
-    
-    // Special types
-    Auto                  ///< Auto-select best available solver
+    SuperLU_LU,           ///< SuperLU direct solver
+    Umfpack_LU,           ///< SuiteSparse UMFPACK
+    Cholmod_LLT,          ///< SuiteSparse CHOLMOD (SPD only)
 };
 
 // =============================================================================
-// Solver Metadata (compile-time constants with availability)
+// Solver Metadata
 // =============================================================================
 
 struct SolverMeta {
     SolverType type;
-    std::string_view name;    // Format: "package.algorithm"
-    bool isIterative;         // true = iterative, false = direct
-    bool requiresSPD;         // true = requires symmetric positive definite matrix
-    bool isAvailable;         // compile-time availability check
-    
-    constexpr bool available() const { return isAvailable; }
+    std::string_view name;
+    std::string_view description;
+    bool isIterative;
+    bool requiresSPD;
+    bool isAvailable;
 };
 
 // =============================================================================
-// Solver Registry (Single unified table)
+// Solver Registry
 // =============================================================================
 
 namespace detail {
 
-// Compile-time availability checks
 inline constexpr bool isSuperLUAvailable() {
 #ifdef MPFEM_USE_SUPERLU
     return true;
@@ -67,18 +62,26 @@ inline constexpr bool isUmfpackAvailable() {
 #endif
 }
 
-// Unified solver registry - single source of truth
+inline constexpr bool isCholmodAvailable() {
+#ifdef MPFEM_USE_CHOLMOD
+    return true;
+#else
+    return false;
+#endif
+}
+
 inline constexpr SolverMeta solverRegistry[] = {
     // Eigen solvers (always available)
-    {SolverType::Eigen_SparseLU,     "eigen.sparse_lu",      false, false, true},
-    {SolverType::Eigen_CG,           "eigen.cg",             true,  true,  true},
-    {SolverType::Eigen_CGIC,         "eigen.cg_ic",          true,  true,  true},
-    {SolverType::Eigen_BiCGSTAB,     "eigen.bicgstab",       true,  false, true},
-    {SolverType::Eigen_BiCGSTABILUT, "eigen.bicgstab_ilut",  true,  false, true},
+    {SolverType::Eigen_SparseLU,     "eigen.sparse_lu",     "Eigen SparseLU direct solver",      false, false, true},
+    {SolverType::Eigen_CG,           "eigen.cg",            "Eigen Conjugate Gradient",          true,  true,  true},
+    {SolverType::Eigen_CGIC,         "eigen.cg_ic",         "Eigen CG with IC preconditioner",   true,  true,  true},
+    {SolverType::Eigen_BiCGSTAB,     "eigen.bicgstab",      "Eigen BiCGSTAB",                    true,  false, true},
+    {SolverType::Eigen_BiCGSTABILUT, "eigen.bicgstab_ilut", "Eigen BiCGSTAB with ILUT",          true,  false, true},
     
     // External solvers
-    {SolverType::SuperLU_LU,  "superlu.lu",    false, false, isSuperLUAvailable()},
-    {SolverType::Umfpack_LU,  "umfpack.lu",    false, false, isUmfpackAvailable()},
+    {SolverType::SuperLU_LU,   "superlu.lu",   "SuperLU direct solver",        false, false, isSuperLUAvailable()},
+    {SolverType::Umfpack_LU,   "umfpack.lu",   "UMFPACK direct solver",        false, false, isUmfpackAvailable()},
+    {SolverType::Cholmod_LLT,  "cholmod.llt",  "CHOLMOD Cholesky (SPD only)",  false, true,  isCholmodAvailable()},
 };
 
 inline constexpr size_t solverRegistrySize = sizeof(solverRegistry) / sizeof(SolverMeta);
@@ -89,10 +92,6 @@ inline constexpr size_t solverRegistrySize = sizeof(solverRegistry) / sizeof(Sol
 // Utility Functions
 // =============================================================================
 
-/**
- * @brief Get solver metadata by type.
- * @throws std::runtime_error if solver type not found
- */
 inline const SolverMeta& getSolverMeta(SolverType type) {
     for (size_t i = 0; i < detail::solverRegistrySize; ++i) {
         if (detail::solverRegistry[i].type == type) {
@@ -102,10 +101,6 @@ inline const SolverMeta& getSolverMeta(SolverType type) {
     throw std::runtime_error("Unknown solver type");
 }
 
-/**
- * @brief Get solver metadata by name.
- * @throws std::runtime_error if solver name not found
- */
 inline const SolverMeta& getSolverMeta(std::string_view name) {
     for (size_t i = 0; i < detail::solverRegistrySize; ++i) {
         if (detail::solverRegistry[i].name == name) {
@@ -115,31 +110,18 @@ inline const SolverMeta& getSolverMeta(std::string_view name) {
     throw std::runtime_error("Unknown solver name: " + std::string(name));
 }
 
-/**
- * @brief Convert solver type to name string.
- */
 inline std::string_view solverTypeName(SolverType type) {
     return getSolverMeta(type).name;
 }
 
-/**
- * @brief Convert name string to solver type.
- * @throws std::runtime_error if solver not found
- */
 inline SolverType solverTypeFromName(std::string_view name) {
     return getSolverMeta(name).type;
 }
 
-/**
- * @brief Check if a solver type is available.
- */
 inline bool isSolverAvailable(SolverType type) {
     return getSolverMeta(type).isAvailable;
 }
 
-/**
- * @brief Check if a solver is available by name.
- */
 inline bool isSolverAvailable(std::string_view name) {
     for (size_t i = 0; i < detail::solverRegistrySize; ++i) {
         if (detail::solverRegistry[i].name == name) {
@@ -149,12 +131,8 @@ inline bool isSolverAvailable(std::string_view name) {
     return false;
 }
 
-/**
- * @brief Get list of available solver names.
- */
 inline std::vector<std::string> availableSolverNames() {
     std::vector<std::string> result;
-    result.reserve(detail::solverRegistrySize);
     for (size_t i = 0; i < detail::solverRegistrySize; ++i) {
         if (detail::solverRegistry[i].isAvailable) {
             result.emplace_back(detail::solverRegistry[i].name);
@@ -163,9 +141,6 @@ inline std::vector<std::string> availableSolverNames() {
     return result;
 }
 
-/**
- * @brief Get list of available direct solver names.
- */
 inline std::vector<std::string> availableDirectSolverNames() {
     std::vector<std::string> result;
     for (size_t i = 0; i < detail::solverRegistrySize; ++i) {
@@ -176,32 +151,23 @@ inline std::vector<std::string> availableDirectSolverNames() {
     return result;
 }
 
-/**
- * @brief Get list of available iterative solver names.
- */
-inline std::vector<std::string> availableIterativeSolverNames() {
-    std::vector<std::string> result;
-    for (size_t i = 0; i < detail::solverRegistrySize; ++i) {
-        if (detail::solverRegistry[i].isAvailable && detail::solverRegistry[i].isIterative) {
-            result.emplace_back(detail::solverRegistry[i].name);
-        }
-    }
-    return result;
-}
-
 // =============================================================================
-// Solver Configuration Structure
+// Solver Configuration
 // =============================================================================
 
-/**
- * @brief Linear solver configuration.
- */
 struct SolverConfig {
-    SolverType type = SolverType::Auto;  // Use enum, not string
+    SolverType type = SolverType::Eigen_SparseLU;  // Default to Eigen SparseLU (always available)
     int maxIterations = 1000;
     Real relativeTolerance = 1e-10;
     Real absoluteTolerance = 1e-14;
     int printLevel = 0;
+    
+    // Convenience constructors
+    static SolverConfig eigenSparseLU() { return {SolverType::Eigen_SparseLU}; }
+    static SolverConfig superLU() { return {SolverType::SuperLU_LU}; }
+    static SolverConfig umfpack() { return {SolverType::Umfpack_LU}; }
+    static SolverConfig cholmod() { return {SolverType::Cholmod_LLT}; }
+    static SolverConfig eigenCG() { return {SolverType::Eigen_CG}; }
 };
 
 }  // namespace mpfem

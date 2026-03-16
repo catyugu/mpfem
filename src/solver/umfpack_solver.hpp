@@ -5,7 +5,8 @@
 #include "core/logger.hpp"
 
 #ifdef MPFEM_USE_UMFPACK
-#include <umfpack.h>
+// Include UMFPACK before Eigen to avoid BLAS conflicts
+#include <suitesparse/umfpack.h>
 #include <Eigen/Sparse>
 #endif
 

@@ -18,29 +18,27 @@ namespace mpfem {
 /**
  * @brief Factory for creating linear solvers.
  * 
- * Single entry point: create(const SolverConfig&)
- * No fallback logic - throws exception if solver is not available.
+ * Design principles:
+ * - No fallback logic - if solver is not available, throw exception
+ * - Single entry point: create(const SolverConfig&)
+ * - Configuration must specify an explicit solver type
  */
 class SolverFactory {
 public:
     /**
      * @brief Create a solver from configuration.
-     * @param config Solver configuration
+     * @param config Solver configuration with explicit type
      * @throws std::runtime_error if solver is not available
      */
     static std::unique_ptr<LinearSolver> create(const SolverConfig& config) {
-        SolverType type = config.type;
-        
-        // Handle Auto type
-        if (type == SolverType::Auto) {
-            type = selectBestDirectSolver();
-        }
+        const SolverType type = config.type;
         
         // Check availability
         const auto& meta = getSolverMeta(type);
         if (!meta.isAvailable) {
-            throw std::runtime_error("Solver '" + std::string(meta.name) + 
-                "' is not available. Please rebuild with the required dependency.");
+            throw std::runtime_error(
+                "Solver '" + std::string(meta.name) + "' is not available. "
+                "Available solvers: " + joinSolverNames());
         }
         
         LOG_DEBUG << "Creating solver: " << meta.name;
@@ -57,16 +55,46 @@ public:
     }
     
     /**
-     * @brief Get list of all available solvers.
+     * @brief Create a solver by type.
+     * @throws std::runtime_error if solver is not available
+     */
+    static std::unique_ptr<LinearSolver> create(SolverType type) {
+        const auto& meta = getSolverMeta(type);
+        if (!meta.isAvailable) {
+            throw std::runtime_error(
+                "Solver '" + std::string(meta.name) + "' is not available. "
+                "Available solvers: " + joinSolverNames());
+        }
+        return createByType(type);
+    }
+    
+    /**
+     * @brief Create a solver by name.
+     * @throws std::runtime_error if solver is not available
+     */
+    static std::unique_ptr<LinearSolver> create(std::string_view name) {
+        return create(solverTypeFromName(name));
+    }
+    
+    /**
+     * @brief Get list of all available solver names.
      */
     static std::vector<std::string> availableSolvers() {
         return availableSolverNames();
     }
+    
+    /**
+     * @brief Check if a solver is available.
+     */
+    static bool isAvailable(SolverType type) {
+        return isSolverAvailable(type);
+    }
+    
+    static bool isAvailable(std::string_view name) {
+        return isSolverAvailable(name);
+    }
 
 private:
-    /**
-     * @brief Create solver by type (no configuration applied).
-     */
     static std::unique_ptr<LinearSolver> createByType(SolverType type) {
         switch (type) {
             // Eigen solvers (always available)
@@ -81,32 +109,25 @@ private:
             case SolverType::Eigen_BiCGSTABILUT:
                 return std::make_unique<EigenBiCGSTABILUTSolver>();
             
-            // External solvers (conditionally available)
+            // External solvers
             case SolverType::SuperLU_LU:
                 return std::make_unique<SuperLUSolver>();
             case SolverType::Umfpack_LU:
                 return std::make_unique<UmfpackSolver>();
             
             default:
-                throw std::runtime_error("Unknown solver type");
+                throw std::runtime_error("Unsupported solver type");
         }
     }
     
-    /**
-     * @brief Select best available direct solver for Auto type.
-     * Priority: SuperLU > UMFPACK > Eigen SparseLU
-     */
-    static SolverType selectBestDirectSolver() {
-#ifdef MPFEM_USE_SUPERLU
-        LOG_DEBUG << "Auto-selecting SuperLU solver";
-        return SolverType::SuperLU_LU;
-#elif defined(MPFEM_USE_UMFPACK)
-        LOG_DEBUG << "Auto-selecting UMFPACK solver";
-        return SolverType::Umfpack_LU;
-#else
-        LOG_DEBUG << "Auto-selecting Eigen SparseLU solver";
-        return SolverType::Eigen_SparseLU;
-#endif
+    static std::string joinSolverNames() {
+        auto names = availableSolverNames();
+        std::string result;
+        for (size_t i = 0; i < names.size(); ++i) {
+            if (i > 0) result += ", ";
+            result += names[i];
+        }
+        return result;
     }
 };
 
