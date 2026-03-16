@@ -18,7 +18,7 @@ bool HeatTransferSolver::initialize(const Mesh& mesh) {
     vecAsm_ = std::make_unique<LinearFormAssembler>(fes_.get());
     matAsm_->computeSparsityPattern();
     
-    solver_ = SolverFactory::create(solverType_, maxIter_, tol_);
+    createSolver();
     
     LOG_INFO << "HeatTransferSolver: " << fes_->numDofs() << " DOFs";
     return true;

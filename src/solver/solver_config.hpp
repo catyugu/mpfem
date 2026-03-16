@@ -31,7 +31,7 @@ enum class SolverType {
 };
 
 // =============================================================================
-// Solver Metadata (compile-time constants)
+// Solver Metadata (compile-time constants with availability)
 // =============================================================================
 
 struct SolverMeta {
@@ -39,14 +39,18 @@ struct SolverMeta {
     std::string_view name;    // Format: "package.algorithm"
     bool isIterative;         // true = iterative, false = direct
     bool requiresSPD;         // true = requires symmetric positive definite matrix
+    bool isAvailable;         // compile-time availability check
+    
+    constexpr bool available() const { return isAvailable; }
 };
 
 // =============================================================================
-// Availability Checks
+// Solver Registry (Single unified table)
 // =============================================================================
 
-namespace solver {
+namespace detail {
 
+// Compile-time availability checks
 inline constexpr bool isSuperLUAvailable() {
 #ifdef MPFEM_USE_SUPERLU
     return true;
@@ -63,42 +67,21 @@ inline constexpr bool isUmfpackAvailable() {
 #endif
 }
 
-}  // namespace solver
-
-// =============================================================================
-// Solver Registry (Metadata only)
-// =============================================================================
-
-namespace detail {
-
-// Solver metadata table - compile-time constants only
-inline constexpr SolverMeta solverMetaTable[] = {
+// Unified solver registry - single source of truth
+inline constexpr SolverMeta solverRegistry[] = {
     // Eigen solvers (always available)
-    {SolverType::Eigen_SparseLU,     "eigen.sparse_lu",      false, false},
-    {SolverType::Eigen_CG,           "eigen.cg",             true,  true},
-    {SolverType::Eigen_CGIC,         "eigen.cg_ic",          true,  true},
-    {SolverType::Eigen_BiCGSTAB,     "eigen.bicgstab",       true,  false},
-    {SolverType::Eigen_BiCGSTABILUT, "eigen.bicgstab_ilut",  true,  false},
+    {SolverType::Eigen_SparseLU,     "eigen.sparse_lu",      false, false, true},
+    {SolverType::Eigen_CG,           "eigen.cg",             true,  true,  true},
+    {SolverType::Eigen_CGIC,         "eigen.cg_ic",          true,  true,  true},
+    {SolverType::Eigen_BiCGSTAB,     "eigen.bicgstab",       true,  false, true},
+    {SolverType::Eigen_BiCGSTABILUT, "eigen.bicgstab_ilut",  true,  false, true},
     
     // External solvers
-    {SolverType::SuperLU_LU,  "superlu.lu",    false, false},
-    {SolverType::Umfpack_LU,  "umfpack.lu",    false, false},
+    {SolverType::SuperLU_LU,  "superlu.lu",    false, false, isSuperLUAvailable()},
+    {SolverType::Umfpack_LU,  "umfpack.lu",    false, false, isUmfpackAvailable()},
 };
 
-inline constexpr size_t solverMetaSize = sizeof(solverMetaTable) / sizeof(SolverMeta);
-
-// Availability table
-inline constexpr bool solverAvailability[] = {
-    // Eigen solvers
-    true,   // Eigen_SparseLU
-    true,   // Eigen_CG
-    true,   // Eigen_CGIC
-    true,   // Eigen_BiCGSTAB
-    true,   // Eigen_BiCGSTABILUT
-    // External solvers
-    solver::isSuperLUAvailable(),   // SuperLU_LU
-    solver::isUmfpackAvailable(),   // Umfpack_LU
-};
+inline constexpr size_t solverRegistrySize = sizeof(solverRegistry) / sizeof(SolverMeta);
 
 }  // namespace detail
 
@@ -111,9 +94,9 @@ inline constexpr bool solverAvailability[] = {
  * @throws std::runtime_error if solver type not found
  */
 inline const SolverMeta& getSolverMeta(SolverType type) {
-    for (size_t i = 0; i < detail::solverMetaSize; ++i) {
-        if (detail::solverMetaTable[i].type == type) {
-            return detail::solverMetaTable[i];
+    for (size_t i = 0; i < detail::solverRegistrySize; ++i) {
+        if (detail::solverRegistry[i].type == type) {
+            return detail::solverRegistry[i];
         }
     }
     throw std::runtime_error("Unknown solver type");
@@ -124,9 +107,9 @@ inline const SolverMeta& getSolverMeta(SolverType type) {
  * @throws std::runtime_error if solver name not found
  */
 inline const SolverMeta& getSolverMeta(std::string_view name) {
-    for (size_t i = 0; i < detail::solverMetaSize; ++i) {
-        if (detail::solverMetaTable[i].name == name) {
-            return detail::solverMetaTable[i];
+    for (size_t i = 0; i < detail::solverRegistrySize; ++i) {
+        if (detail::solverRegistry[i].name == name) {
+            return detail::solverRegistry[i];
         }
     }
     throw std::runtime_error("Unknown solver name: " + std::string(name));
@@ -151,21 +134,16 @@ inline SolverType solverTypeFromName(std::string_view name) {
  * @brief Check if a solver type is available.
  */
 inline bool isSolverAvailable(SolverType type) {
-    const auto& meta = getSolverMeta(type);
-    const size_t idx = static_cast<size_t>(&meta - detail::solverMetaTable);
-    if (idx < detail::solverMetaSize) {
-        return detail::solverAvailability[idx];
-    }
-    return false;
+    return getSolverMeta(type).isAvailable;
 }
 
 /**
  * @brief Check if a solver is available by name.
  */
 inline bool isSolverAvailable(std::string_view name) {
-    for (size_t i = 0; i < detail::solverMetaSize; ++i) {
-        if (detail::solverMetaTable[i].name == name) {
-            return detail::solverAvailability[i];
+    for (size_t i = 0; i < detail::solverRegistrySize; ++i) {
+        if (detail::solverRegistry[i].name == name) {
+            return detail::solverRegistry[i].isAvailable;
         }
     }
     return false;
@@ -176,10 +154,10 @@ inline bool isSolverAvailable(std::string_view name) {
  */
 inline std::vector<std::string> availableSolverNames() {
     std::vector<std::string> result;
-    result.reserve(detail::solverMetaSize);
-    for (size_t i = 0; i < detail::solverMetaSize; ++i) {
-        if (detail::solverAvailability[i]) {
-            result.emplace_back(detail::solverMetaTable[i].name);
+    result.reserve(detail::solverRegistrySize);
+    for (size_t i = 0; i < detail::solverRegistrySize; ++i) {
+        if (detail::solverRegistry[i].isAvailable) {
+            result.emplace_back(detail::solverRegistry[i].name);
         }
     }
     return result;
@@ -190,9 +168,9 @@ inline std::vector<std::string> availableSolverNames() {
  */
 inline std::vector<std::string> availableDirectSolverNames() {
     std::vector<std::string> result;
-    for (size_t i = 0; i < detail::solverMetaSize; ++i) {
-        if (detail::solverAvailability[i] && !detail::solverMetaTable[i].isIterative) {
-            result.emplace_back(detail::solverMetaTable[i].name);
+    for (size_t i = 0; i < detail::solverRegistrySize; ++i) {
+        if (detail::solverRegistry[i].isAvailable && !detail::solverRegistry[i].isIterative) {
+            result.emplace_back(detail::solverRegistry[i].name);
         }
     }
     return result;
@@ -203,13 +181,28 @@ inline std::vector<std::string> availableDirectSolverNames() {
  */
 inline std::vector<std::string> availableIterativeSolverNames() {
     std::vector<std::string> result;
-    for (size_t i = 0; i < detail::solverMetaSize; ++i) {
-        if (detail::solverAvailability[i] && detail::solverMetaTable[i].isIterative) {
-            result.emplace_back(detail::solverMetaTable[i].name);
+    for (size_t i = 0; i < detail::solverRegistrySize; ++i) {
+        if (detail::solverRegistry[i].isAvailable && detail::solverRegistry[i].isIterative) {
+            result.emplace_back(detail::solverRegistry[i].name);
         }
     }
     return result;
 }
+
+// =============================================================================
+// Solver Configuration Structure
+// =============================================================================
+
+/**
+ * @brief Linear solver configuration.
+ */
+struct SolverConfig {
+    SolverType type = SolverType::Auto;  // Use enum, not string
+    int maxIterations = 1000;
+    Real relativeTolerance = 1e-10;
+    Real absoluteTolerance = 1e-14;
+    int printLevel = 0;
+};
 
 }  // namespace mpfem
 

@@ -122,7 +122,7 @@ void PhysicsProblemBuilder::buildElectrostatics(
     
     // 创建并初始化求解器
     setup.electrostatics = std::make_unique<ElectrostaticsSolver>(physics.order);
-    setup.electrostatics->setSolver(physics.solver.type, physics.solver.maxIterations, physics.solver.relativeTolerance);
+    setup.electrostatics->setSolverConfig(physics.solver);
     setup.electrostatics->initialize(*setup.mesh);
     setup.electrostatics->setConductivity(conductivity.get());
     
@@ -159,7 +159,7 @@ void PhysicsProblemBuilder::buildHeatTransfer(
     
     // 创建并初始化求解器
     setup.heatTransfer = std::make_unique<HeatTransferSolver>(physics.order);
-    setup.heatTransfer->setSolver(physics.solver.type, physics.solver.maxIterations, physics.solver.relativeTolerance);
+    setup.heatTransfer->setSolverConfig(physics.solver);
     setup.heatTransfer->initialize(*setup.mesh);
     setup.heatTransfer->setConductivity(thermalConductivity.get());
     
@@ -211,7 +211,7 @@ void PhysicsProblemBuilder::buildStructural(
     
     // 创建并初始化求解器
     setup.structural = std::make_unique<StructuralSolver>(physics.order);
-    setup.structural->setSolver(physics.solver.type, physics.solver.maxIterations, physics.solver.relativeTolerance);
+    setup.structural->setSolverConfig(physics.solver);
     setup.structural->initialize(*setup.mesh);
     setup.structural->setMaterial(youngModulus.get(), poissonRatio.get());
     

@@ -14,6 +14,7 @@ option(MPFEM_BUILD_EXAMPLES "Build examples" ON)
 option(MPFEM_USE_OPENMP "Use OpenMP for parallelization" ON)
 option(MPFEM_USE_SUPERLU "Use SuperLU solver" ON)
 option(MPFEM_USE_UMFPACK "Use UMFPACK solver" OFF)
+option(MPFEM_USE_MKL "Use Intel MKL for Eigen acceleration" ON)
 
 # =============================================================================
 # C++ Standard
@@ -35,6 +36,56 @@ include(CPM)
 
 # Eigen3 (required)
 find_package(Eigen3 REQUIRED)
+
+# Intel MKL (optional, for Eigen acceleration)
+if(MPFEM_USE_MKL)
+    set(MKL_ROOT "E:/env/cpp/intel/oneAPI/mkl/latest" CACHE PATH "Intel MKL root directory")
+    
+    # Find MKL headers
+    find_path(MKL_INCLUDE_DIR 
+        NAMES mkl.h 
+        PATHS 
+            "${MKL_ROOT}/include"
+            "C:/Program Files (x86)/Intel/oneAPI/mkl/latest/include"
+        NO_DEFAULT_PATH
+    )
+    
+    # Find MKL libraries
+    find_library(MKL_INTEL_LP64_LIBRARY 
+        NAMES mkl_intel_lp64 
+        PATHS 
+            "${MKL_ROOT}/lib/intel64"
+            "C:/Program Files (x86)/Intel/oneAPI/mkl/latest/lib/intel64"
+        NO_DEFAULT_PATH
+    )
+    
+    find_library(MKL_INTEL_THREAD_LIBRARY 
+        NAMES mkl_intel_thread 
+        PATHS 
+            "${MKL_ROOT}/lib/intel64"
+            "C:/Program Files (x86)/Intel/oneAPI/mkl/latest/lib/intel64"
+        NO_DEFAULT_PATH
+    )
+    
+    find_library(MKL_CORE_LIBRARY 
+        NAMES mkl_core 
+        PATHS 
+            "${MKL_ROOT}/lib/intel64"
+            "C:/Program Files (x86)/Intel/oneAPI/mkl/latest/lib/intel64"
+        NO_DEFAULT_PATH
+    )
+    
+    if(MKL_INCLUDE_DIR AND MKL_INTEL_LP64_LIBRARY AND MKL_INTEL_THREAD_LIBRARY AND MKL_CORE_LIBRARY)
+        message(STATUS "Found MKL include: ${MKL_INCLUDE_DIR}")
+        message(STATUS "Found MKL libraries: ${MKL_INTEL_LP64_LIBRARY}")
+        set(MKL_FOUND TRUE)
+        set(MKL_LIBRARIES ${MKL_INTEL_LP64_LIBRARY} ${MKL_INTEL_THREAD_LIBRARY} ${MKL_CORE_LIBRARY})
+    else()
+        message(STATUS "MKL not found, using Eigen without MKL acceleration")
+        set(MKL_FOUND FALSE)
+        set(MPFEM_USE_MKL OFF CACHE BOOL "MKL not found" FORCE)
+    endif()
+endif()
 
 # OpenMP (optional)
 if(MPFEM_USE_OPENMP)
@@ -189,6 +240,15 @@ target_link_libraries(mpfem_core
 if(MPFEM_USE_OPENMP)
     target_link_libraries(mpfem_core PUBLIC OpenMP::OpenMP_CXX)
 endif()
+
+# MKL support for Eigen
+if(MPFEM_USE_MKL AND MKL_FOUND)
+    target_include_directories(mpfem_core PUBLIC ${MKL_INCLUDE_DIR})
+    target_link_libraries(mpfem_core PUBLIC ${MKL_LIBRARIES})
+    target_compile_definitions(mpfem_core PUBLIC EIGEN_USE_MKL_ALL)
+    message(STATUS "MKL acceleration enabled for Eigen (EIGEN_USE_MKL_ALL)")
+endif()
+
 mpfem_set_default_compiler_options(mpfem_core)
 
 # mpfem_model (header-only)

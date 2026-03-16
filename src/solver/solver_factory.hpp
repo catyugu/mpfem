@@ -8,7 +8,6 @@
 #include "umfpack_solver.hpp"
 #include "core/logger.hpp"
 #include <memory>
-#include <string>
 
 namespace mpfem {
 
@@ -19,35 +18,56 @@ namespace mpfem {
 /**
  * @brief Factory for creating linear solvers.
  * 
- * Creates solver instances based on type string or enum.
+ * Single entry point: create(const SolverConfig&)
  * No fallback logic - throws exception if solver is not available.
- * 
- * Adding a new solver:
- * 1. Create the solver class (e.g., MySolver)
- * 2. Add entry to SolverType enum in solver_config.hpp
- * 3. Add metadata entry to solverMetaTable in solver_config.hpp
- * 4. Add availability entry to solverAvailability in solver_config.hpp
- * 5. Add case in create() method below
  */
 class SolverFactory {
 public:
     /**
-     * @brief Create a solver by type enum.
+     * @brief Create a solver from configuration.
+     * @param config Solver configuration
      * @throws std::runtime_error if solver is not available
      */
-    static std::unique_ptr<LinearSolver> create(SolverType type) {
+    static std::unique_ptr<LinearSolver> create(const SolverConfig& config) {
+        SolverType type = config.type;
+        
+        // Handle Auto type
         if (type == SolverType::Auto) {
-            return createAuto();
+            type = selectBestDirectSolver();
         }
         
-        if (!isSolverAvailable(type)) {
-            const auto& meta = getSolverMeta(type);
+        // Check availability
+        const auto& meta = getSolverMeta(type);
+        if (!meta.isAvailable) {
             throw std::runtime_error("Solver '" + std::string(meta.name) + 
                 "' is not available. Please rebuild with the required dependency.");
         }
         
-        LOG_DEBUG << "Creating solver: " << solverTypeName(type);
+        LOG_DEBUG << "Creating solver: " << meta.name;
         
+        // Create solver instance
+        auto solver = createByType(type);
+        
+        // Apply configuration
+        solver->setMaxIterations(config.maxIterations);
+        solver->setTolerance(config.relativeTolerance);
+        solver->setPrintLevel(config.printLevel);
+        
+        return solver;
+    }
+    
+    /**
+     * @brief Get list of all available solvers.
+     */
+    static std::vector<std::string> availableSolvers() {
+        return availableSolverNames();
+    }
+
+private:
+    /**
+     * @brief Create solver by type (no configuration applied).
+     */
+    static std::unique_ptr<LinearSolver> createByType(SolverType type) {
         switch (type) {
             // Eigen solvers (always available)
             case SolverType::Eigen_SparseLU:
@@ -73,96 +93,20 @@ public:
     }
     
     /**
-     * @brief Create a solver by name string.
-     * @throws std::runtime_error if solver is not found or not available
+     * @brief Select best available direct solver for Auto type.
+     * Priority: SuperLU > UMFPACK > Eigen SparseLU
      */
-    static std::unique_ptr<LinearSolver> create(const std::string& name) {
-        return create(solverTypeFromName(name));
-    }
-    
-    /**
-     * @brief Create a solver with configuration.
-     * @throws std::runtime_error if solver is not available
-     */
-    static std::unique_ptr<LinearSolver> create(
-        SolverType type,
-        int maxIterations,
-        Real tolerance,
-        int printLevel = 0)
-    {
-        auto solver = create(type);
-        solver->setMaxIterations(maxIterations);
-        solver->setTolerance(tolerance);
-        solver->setPrintLevel(printLevel);
-        return solver;
-    }
-    
-    /**
-     * @brief Create a solver with configuration from string.
-     * @throws std::runtime_error if solver is not found or not available
-     */
-    static std::unique_ptr<LinearSolver> create(
-        const std::string& name,
-        int maxIterations,
-        Real tolerance,
-        int printLevel = 0)
-    {
-        return create(solverTypeFromName(name), maxIterations, tolerance, printLevel);
-    }
-    
-    /**
-     * @brief Auto-select the best available direct solver.
-     * 
-     * Priority:
-     * 1. SuperLU (if available)
-     * 2. UMFPACK (if available)
-     * 3. Eigen SparseLU (always available)
-     */
-    static std::unique_ptr<LinearSolver> createAuto() {
+    static SolverType selectBestDirectSolver() {
 #ifdef MPFEM_USE_SUPERLU
         LOG_DEBUG << "Auto-selecting SuperLU solver";
-        return std::make_unique<SuperLUSolver>();
+        return SolverType::SuperLU_LU;
 #elif defined(MPFEM_USE_UMFPACK)
         LOG_DEBUG << "Auto-selecting UMFPACK solver";
-        return std::make_unique<UmfpackSolver>();
+        return SolverType::Umfpack_LU;
 #else
         LOG_DEBUG << "Auto-selecting Eigen SparseLU solver";
-        return std::make_unique<EigenSparseLUSolver>();
+        return SolverType::Eigen_SparseLU;
 #endif
-    }
-    
-    /**
-     * @brief Get a solver suitable for symmetric positive definite matrices.
-     * 
-     * For SPD matrices, CG with Incomplete Cholesky is usually best.
-     */
-    static std::unique_ptr<LinearSolver> createForSPD(
-        int maxIterations = 1000,
-        Real tolerance = 1e-10,
-        int printLevel = 0)
-    {
-        auto solver = std::make_unique<EigenCGICSolver>();
-        solver->setMaxIterations(maxIterations);
-        solver->setTolerance(tolerance);
-        solver->setPrintLevel(printLevel);
-        return solver;
-    }
-    
-    /**
-     * @brief Get a solver suitable for general non-symmetric matrices.
-     * 
-     * Uses auto-selection for direct solvers.
-     */
-    static std::unique_ptr<LinearSolver> createForGeneral(
-        int maxIterations = 1000,
-        Real tolerance = 1e-10,
-        int printLevel = 0)
-    {
-        auto solver = createAuto();
-        solver->setMaxIterations(maxIterations);
-        solver->setTolerance(tolerance);
-        solver->setPrintLevel(printLevel);
-        return solver;
     }
 };
 

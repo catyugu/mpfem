@@ -7,9 +7,9 @@
 #include "fe/coefficient.hpp"
 #include "mesh/mesh.hpp"
 #include "assembly/assembler.hpp"
-#include "solver/linear_solver.hpp"
+#include "solver/solver_config.hpp"
+#include "solver/solver_factory.hpp"
 #include <memory>
-#include <string>
 
 namespace mpfem {
 
@@ -36,19 +36,24 @@ public:
     const Mesh& mesh() const { return *mesh_; }
     
     void setOrder(int o) { order_ = o; }
-    void setSolver(const std::string& type, int maxIter = 1000, Real tol = 1e-10) {
-        solverType_ = type; maxIter_ = maxIter; tol_ = tol;
+    
+    /// 设置求解器配置
+    void setSolverConfig(const SolverConfig& config) { 
+        solverConfig_ = config; 
     }
     
     int iterations() const { return iter_; }
     Real residual() const { return res_; }
     
 protected:
+    /// 创建求解器实例
+    void createSolver() {
+        solver_ = SolverFactory::create(solverConfig_);
+    }
+    
     // 配置参数
     int order_ = 1;
-    std::string solverType_ = "eigen.sparse_lu";
-    int maxIter_ = 1000;
-    Real tol_ = 1e-10;
+    SolverConfig solverConfig_;  // 统一使用SolverConfig
     int iter_ = 0;
     Real res_ = 0.0;
     
