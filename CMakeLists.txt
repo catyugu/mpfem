@@ -12,7 +12,7 @@ project(mpfem
 option(MPFEM_BUILD_TESTS "Build unit tests" ON)
 option(MPFEM_BUILD_EXAMPLES "Build examples" ON)
 option(MPFEM_USE_OPENMP "Use OpenMP for parallelization" ON)
-option(MPFEM_USE_MKL "Use Intel MKL for PARDISO solver" OFF)
+option(MPFEM_USE_SUPERLU "Use SuperLU solver" ON )
 option(MPFEM_USE_UMFPACK "Use UMFPACK solver" OFF)
 
 # =============================================================================
@@ -41,9 +41,15 @@ if(MPFEM_USE_OPENMP)
     find_package(OpenMP REQUIRED)
 endif()
 
-# MKL PARDISO (optional)
-if(MPFEM_USE_MKL)
-    find_package(MKL COMPONENTS PARDISO REQUIRED)
+# SuperLU (optional)
+if(MPFEM_USE_SUPERLU)
+    find_path(SUPERLU_INCLUDE_DIR NAMES superlu/slu_Cnames.h slu_Cnames.h)
+    find_library(SUPERLU_LIBRARY NAMES superlu)
+    if(NOT SUPERLU_LIBRARY OR NOT SUPERLU_INCLUDE_DIR)
+        message(FATAL_ERROR "SuperLU not found. Please install SuperLU or set SUPERLU_INCLUDE_DIR and SUPERLU_LIBRARY")
+    endif()
+    message(STATUS "Found SuperLU: ${SUPERLU_LIBRARY}")
+    message(STATUS "SuperLU include: ${SUPERLU_INCLUDE_DIR}")
 endif()
 
 # UMFPACK (optional)
@@ -266,9 +272,13 @@ mpfem_set_default_compiler_options(mpfem_physics)
 # =============================================================================
 # Compile definitions
 # =============================================================================
-if(MPFEM_USE_MKL)
-    target_compile_definitions(mpfem_core PUBLIC MPFEM_USE_MKL)
-    target_link_libraries(mpfem_core PUBLIC MKL::MKL)
+
+if(MPFEM_USE_SUPERLU)
+    target_compile_definitions(mpfem_core PUBLIC MPFEM_USE_SUPERLU)
+    # Include superlu subdirectory for Eigen's SuperLUSupport
+    target_include_directories(mpfem_core PUBLIC ${SUPERLU_INCLUDE_DIR})
+    target_include_directories(mpfem_core PUBLIC ${SUPERLU_INCLUDE_DIR}/superlu)
+    target_link_libraries(mpfem_core PUBLIC ${SUPERLU_LIBRARY})
 endif()
 
 if(MPFEM_USE_UMFPACK)

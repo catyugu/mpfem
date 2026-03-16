@@ -3,7 +3,7 @@
 
 #include "linear_solver.hpp"
 #include "eigen_solver.hpp"
-#include "pardiso_solver.hpp"
+#include "superlu_solver.hpp"
 #include "core/logger.hpp"
 #include <memory>
 #include <string>
@@ -23,25 +23,19 @@ public:
      */
     static std::unique_ptr<LinearSolver> create(SolverType type) {
         switch (type) {
-            case SolverType::SparseLU:
-                return std::make_unique<EigenSparseLUSolver>();
+            case SolverType::SuperLU:
+                return std::make_unique<SuperLUSolver>();
                 
-            case SolverType::SparseQR:
-                return std::make_unique<EigenSparseQRSolver>();
-                
-            case SolverType::Pardiso:
-                return std::make_unique<PardisoSolver>();
-                
-            case SolverType::CG:
+            case SolverType::EigenCG:
                 return std::make_unique<EigenCGSolver>();
                 
-            case SolverType::CGWithIC:
+            case SolverType::EigenCGWithIC:
                 return std::make_unique<EigenCGICSolver>();
                 
-            case SolverType::BiCGSTAB:
+            case SolverType::EigenBiCGSTAB:
                 return std::make_unique<EigenBiCGSTABSolver>();
                 
-            case SolverType::BiCGSTABWithILUT:
+            case SolverType::EigenBiCGSTABWithILUT:
                 return std::make_unique<EigenBiCGSTABILUTSolver>();
                 
             case SolverType::Auto:
@@ -94,12 +88,13 @@ public:
      * 
      * Priority:
      * 1. MKL PARDISO (if available)
-     * 2. Eigen SparseLU
+     * 2. SuperLU (if available)
+     * 3. Eigen SparseLU
      */
     static std::unique_ptr<LinearSolver> createAuto() {
-#ifdef MPFEM_USE_MKL
-        LOG_DEBUG << "Auto-selecting PARDISO solver";
-        return std::make_unique<PardisoSolver>();
+#ifdef MPFEM_USE_SUPERLU
+        LOG_DEBUG << "Auto-selecting SuperLU solver";
+        return std::make_unique<SuperLUSolver>();
 #else
         LOG_DEBUG << "Auto-selecting Eigen SparseLU solver";
         return std::make_unique<EigenSparseLUSolver>();
@@ -133,6 +128,8 @@ public:
         // For general matrices, use direct solver or BiCGSTAB
 #ifdef MPFEM_USE_MKL
         auto solver = std::make_unique<PardisoSolver>();
+#elif defined(MPFEM_USE_SUPERLU)
+        auto solver = std::make_unique<SuperLUSolver>();
 #else
         auto solver = std::make_unique<EigenSparseLUSolver>();
 #endif
@@ -147,14 +144,15 @@ public:
      */
     static std::vector<std::string> availableSolvers() {
         std::vector<std::string> solvers = {
-            "sparse_lu", "sparse_qr",
-            "cg", "cg_ic",
-            "bicgstab", "bicgstab_ilut",
+            "superlu",
+            "eigen_sparse_lu",
+            "eigen_cg", "eigen_cg_ic",
+            "eigen_bicgstab", "eigen_bicgstab_ilut",
             "auto"
         };
-        
-#ifdef MPFEM_USE_MKL
-        solvers.push_back("pardiso");
+
+#ifdef MPFEM_USE_SUPERLU
+        solvers.push_back("superlu");
 #endif
         
         return solvers;

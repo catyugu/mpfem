@@ -550,11 +550,14 @@ TEST_F(FESpaceLinearTest, ReferenceElementAccess) {
 // =============================================================================
 
 TEST_F(FESpaceVectorTest, OrderingByVDim) {
-    // Default ordering should be byVDim
+    // Default ordering is byNodes (more common convention)
+    EXPECT_EQ(feSpace_->ordering(), FESpace::Ordering::byNodes);
+    
+    // Can change to byVDim
+    feSpace_->setOrdering(FESpace::Ordering::byVDim);
     EXPECT_EQ(feSpace_->ordering(), FESpace::Ordering::byVDim);
-}
-
-TEST_F(FESpaceVectorTest, SetOrdering) {
+    
+    // Can change back to byNodes
     feSpace_->setOrdering(FESpace::Ordering::byNodes);
     EXPECT_EQ(feSpace_->ordering(), FESpace::Ordering::byNodes);
 }

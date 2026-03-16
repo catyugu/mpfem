@@ -5,6 +5,7 @@
 #include "core/types.hpp"
 #include <memory>
 #include <string>
+#include <stdexcept>
 
 namespace mpfem {
 
@@ -82,15 +83,14 @@ protected:
  */
 enum class SolverType {
     // Direct solvers
-    SparseLU,       ///< Eigen SparseLU (LU factorization)
-    SparseQR,       ///< Eigen SparseQR (QR factorization)
-    Pardiso,        ///< Intel MKL PARDISO
+    EigenSparseLU,       ///< Eigen SparseLU (LU factorization)
+    SuperLU,        ///< SuperLU direct solver
     
     // Iterative solvers
-    CG,             ///< Conjugate Gradient (symmetric positive definite)
-    CGWithIC,       ///< CG with Incomplete Cholesky preconditioner
-    BiCGSTAB,       ///< BiCGSTAB (non-symmetric)
-    BiCGSTABWithILUT, ///< BiCGSTAB with ILUT preconditioner
+    EigenCG,             ///< Conjugate Gradient (symmetric positive definite)
+    EigenCGWithIC,       ///< CG with Incomplete Cholesky preconditioner
+    EigenBiCGSTAB,       ///< BiCGSTAB (non-symmetric)
+    EigenBiCGSTABWithILUT, ///< BiCGSTAB with ILUT preconditioner
     
     // Auto selection
     Auto            ///< Let solver factory choose
@@ -101,30 +101,38 @@ enum class SolverType {
  */
 inline std::string solverTypeToString(SolverType type) {
     switch (type) {
-        case SolverType::SparseLU:   return "sparse_lu";
-        case SolverType::SparseQR:   return "sparse_qr";
-        case SolverType::Pardiso:    return "pardiso";
-        case SolverType::CG:         return "cg";
-        case SolverType::CGWithIC:   return "cg_ic";
-        case SolverType::BiCGSTAB:   return "bicgstab";
-        case SolverType::BiCGSTABWithILUT: return "bicgstab_ilut";
-        case SolverType::Auto:       return "auto";
+        case SolverType::EigenSparseLU:   return "sparse_lu";
+        case SolverType::SuperLU:    return "superlu";
+        case SolverType::EigenCG:         return "cg";
+        case SolverType::EigenCGWithIC:   return "cg_ic";
+        case SolverType::EigenBiCGSTAB:   return "bicgstab";
+        case SolverType::EigenBiCGSTABWithILUT: return "bicgstab_ilut";
         default: return "unknown";
     }
 }
 
 /**
  * @brief Convert string to solver type.
+ * @throws std::runtime_error if requested solver is not compiled in
  */
 inline SolverType stringToSolverType(const std::string& str) {
-    if (str == "sparse_lu" || str == "superlu") return SolverType::SparseLU;
-    if (str == "sparse_qr") return SolverType::SparseQR;
-    if (str == "pardiso") return SolverType::Pardiso;
-    if (str == "cg") return SolverType::CG;
-    if (str == "cg_ic") return SolverType::CGWithIC;
-    if (str == "bicgstab") return SolverType::BiCGSTAB;
-    if (str == "bicgstab_ilut") return SolverType::BiCGSTABWithILUT;
-    return SolverType::Auto;
+    if (str == "eigen_sparse_lu") return SolverType::EigenSparseLU;
+    if (str == "eigen_cg") return SolverType::EigenCG;
+    if (str == "eigen_cg_ic") return SolverType::EigenCGWithIC;
+    if (str == "eigen_bicgstab") return SolverType::EigenBiCGSTAB;
+    if (str == "eigen_bicgstab_ilut") return SolverType::EigenBiCGSTABWithILUT;
+    if (str == "superlu") {
+#ifndef MPFEM_USE_SUPERLU
+        throw std::runtime_error("SuperLU solver requested but not available. "
+                                  "Rebuild with -DMPFEM_USE_SUPERLU=ON");
+#endif
+        return SolverType::SuperLU;
+    }
+    if (str == "eigen_cg") return SolverType::EigenCG;
+    if (str == "eigen_cg_ic") return SolverType::EigenCGWithIC;
+    if (str == "eigen_bicgstab") return SolverType::EigenBiCGSTAB;
+    if (str == "eigen_bicgstab_ilut") return SolverType::EigenBiCGSTABWithILUT;
+    return SolverType::Auto;  // Default to auto selection 
 }
 
 }  // namespace mpfem

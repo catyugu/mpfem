@@ -59,10 +59,10 @@ Mesh createSingleHexMesh() {
     mesh.addVertex(0.0, 1.0, 1.0);  // 7: (0,1,1)
     
     // Hexahedron (cube) - tensor product ordering to match shape functions
-    // Tensor product order: (0,0,0), (1,0,0), (0,1,0), (1,1,0), (0,0,1), (1,0,1), (0,1,1), (1,1,1)
-    // Physical coords:      (0,0,0), (1,0,0), (0,1,0), (1,1,0), (0,0,1), (1,0,1), (0,1,1), (1,1,1)
-    // Vertex indices:       0,       1,       3,       2,       4,       5,       7,       6
-    mesh.addElement(Geometry::Cube, {0, 1, 3, 2, 4, 5, 7, 6});
+    // Reference cube node order: (-1,-1,-1), (1,-1,-1), (1,1,-1), (-1,1,-1), (-1,-1,1), (1,-1,1), (1,1,1), (-1,1,1)
+    // Physical coords:           (0,0,0),    (1,0,0),   (1,1,0),  (0,1,0),   (0,0,1),   (1,0,1),  (1,1,1), (0,1,1)
+    // Vertex indices:            0,          1,         2,        3,         4,        5,        6,       7
+    mesh.addElement(Geometry::Cube, {0, 1, 2, 3, 4, 5, 6, 7});
     
     return mesh;
 }
@@ -78,10 +78,10 @@ Mesh createSingleSquareBdrMesh() {
     mesh.addVertex(0.0, 1.0, 0.0);  // 3: (0,1)
     
     // Square boundary - tensor product ordering to match shape functions
-    // Tensor product order: (0,0), (1,0), (0,1), (1,1)
-    // Physical coords:      (0,0), (1,0), (0,1), (1,1)
-    // Vertex indices:       0,     1,     3,     2
-    mesh.addBdrElement(Geometry::Square, {0, 1, 3, 2});
+    // Reference square node order: (-1,-1), (1,-1), (1,1), (-1,1)
+    // Physical coords:             (0,0),   (1,0),  (1,1), (0,1)
+    // Vertex indices:              0,       1,      2,     3
+    mesh.addBdrElement(Geometry::Square, {0, 1, 2, 3});
     
     return mesh;
 }
