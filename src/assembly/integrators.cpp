@@ -229,7 +229,7 @@ void ThermalLoadIntegrator::assembleElementVector(const ReferenceElement& ref,
     
     elvec.setZero(nd * vdim);
     
-    if (!T_ || !alphaT_) return;
+    if (!alphaT_) return;
     
     // 预分配 B 矩阵
     Eigen::MatrixXd B(6, nd * vdim);
@@ -244,18 +244,20 @@ void ThermalLoadIntegrator::assembleElementVector(const ReferenceElement& ref,
         // 获取材料属性
         Real E = E_ ? E_->eval(trans) : 1.0;
         Real nu = nu_ ? nu_->eval(trans) : 0.3;
-        Real alpha = alphaT_->eval(trans);
         
-        // 获取温度
-        Real T_val = T_->eval(trans.elementIndex(), xi);
-        Real dT = T_val - Tref_;
+        // 获取热膨胀应变: alphaT_->eval(trans) 返回 alpha_T * (T - Tref)
+        // 对于 ThermalExpansionCoefficient，这已经包含了温度差
+        Real thermalStrain = alphaT_->eval(trans);
+        
+        if (std::abs(thermalStrain) < 1e-20) continue;
         
         // Lame参数
         Real lambda = E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu));
         Real mu = E / (2.0 * (1.0 + nu));
         
-        // 热应力: sigma_th = (3*lambda + 2*mu) * alpha * dT * I
-        Real diag = (3.0 * lambda + 2.0 * mu) * alpha * dT;
+        // 热应力: sigma_th = (3*lambda + 2*mu) * thermalStrain * I
+        // 其中 thermalStrain = alpha_T * (T - Tref)
+        Real diag = (3.0 * lambda + 2.0 * mu) * thermalStrain;
         
         const Vector3* refGrads = ref.shapeGradientsAtQuad(q);
         

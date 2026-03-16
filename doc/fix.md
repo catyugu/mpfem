@@ -17,66 +17,12 @@
 
 ## 工作任务1
 
-* 二阶问题求解的性能较低，需要：1、优化问题构建的时间（现在需要约两秒）；2、引入比eigen更高性能的迭代求解器。
+* 位移计算不准，请修复。
 
 ```text
-$ ./build/examples/busbar_example.exe ./cases/busbar_order2/
-[INFO] [0ms] === Busbar Electro-Thermal Example ===
-[INFO] [1ms] Case directory: ./cases/busbar_order2/
-[INFO] [2ms] Reading case from ./cases/busbar_order2//case.xml
-[INFO] [3ms] Loaded case definition: busbar with 3 physics fields
-[INFO] [3ms] Reading mesh from ./cases/busbar_order2//mesh.mphtxt
-[INFO] [4ms] Reading mesh from ./cases/busbar_order2//mesh.mphtxt
-[INFO] [163ms] Mesh loaded: 49889 vertices, 31021 volume elements, 9138 boundary elements
-[INFO] [231ms] Boundary mapping: 8378 external, 760 internal (will skip in BC)
-[INFO] [232ms] Mesh loaded: 49889 vertices, 31021 elements
-[INFO] [233ms] Reading materials from ./cases/busbar_order2//material.xml
-[INFO] [234ms] Loaded 2 materials from ./cases/busbar_order2//material.xml
-[INFO] [234ms] Building electrostatics solver, order = 2
-[INFO] [444ms] ElectrostaticsSolver: 49889 DOFs
-[INFO] [445ms] Domain 1 (mat1): sigma = 5.998e+07
-[INFO] [446ms] Domain 2 (mat2): sigma = 740700
-[INFO] [447ms] Domain 3 (mat2): sigma = 740700
-[INFO] [448ms] Domain 4 (mat2): sigma = 740700
-[INFO] [449ms] Domain 5 (mat2): sigma = 740700
-[INFO] [449ms] Domain 6 (mat2): sigma = 740700
-[INFO] [449ms] Domain 7 (mat2): sigma = 740700
-[INFO] [450ms] Building heat transfer solver, order = 2
-[INFO] [658ms] HeatTransferSolver: 49889 DOFs
-[INFO] [658ms] Building structural solver, order = 2
-[INFO] [2.09s] StructuralSolver: 149667 DOFs
-[INFO] [2.09s] Domain 1 (mat1): E = 110, nu = 0.35
-[INFO] [2.09s] Domain 2 (mat2): E = 105, nu = 0.33
-[INFO] [2.09s] Domain 3 (mat2): E = 105, nu = 0.33
-[INFO] [2.09s] Domain 4 (mat2): E = 105, nu = 0.33
-[INFO] [2.09s] Domain 5 (mat2): E = 105, nu = 0.33
-[INFO] [2.09s] Domain 6 (mat2): E = 105, nu = 0.33
-[INFO] [2.09s] Domain 7 (mat2): E = 105, nu = 0.33
-[INFO] [2.09s] Joule heating domains: 7 domains
-[INFO] [2.09s] Thermal expansion coupling enabled
-[INFO] [2.09s] Domain 1 (mat1): temp-dep sigma, rho0 = 1.72e-08, alpha = 0.0039
-[INFO] [2.09s] Running coupled electro-thermal solve...
-[INFO] [2.17s] Electrostatics assemble completed in 0.081s
-[INFO] [3.02s] Electrostatics converged: iter=250 res=8.77735e-11
-[INFO] [3.20s] HeatTransfer assemble completed in 0.172s
-[INFO] [4.13s] HeatTransfer converged: iter=264 res=7.78181e-11
-[INFO] [4.13s] Coupling iteration 1, residual = 1
-[INFO] [4.21s] Electrostatics assemble completed in 0.080s
-[INFO] [5.07s] Electrostatics converged: iter=235 res=9.8381e-11
-[INFO] [5.23s] HeatTransfer assemble completed in 0.160s
-[INFO] [6.08s] HeatTransfer converged: iter=245 res=9.40435e-11
-[INFO] [6.08s] Coupling iteration 2, residual = 0.000817744
-[INFO] [6.51s] Structural assemble completed in 0.435s
-[INFO] [15.88s] Coupling solve completed in 13.785s
-[INFO] [15.88s] Coupling converged in 2 iterations
-[INFO] [15.88s] Potential range: [-1.45745e-13, 0.02] V
-[INFO] [15.88s] Temperature range: [322.183, 330.037] K
-[INFO] [15.88s] Temperature range: [49.033, 56.8875] C
-[INFO] [15.88s] Max displacement magnitude: 0.00145326 m
-[INFO] [15.88s] High-order mesh detected: 49889 vertices, 7340 corner vertices
-[INFO] [16.07s] Exported VTU results to results/busbar_results.vtu
-[INFO] [16.07s] Results exported to: results/busbar_results.vtu
-[INFO] [16.12s] Exported results to results/mpfem_result.txt
-[INFO] [16.12s] COMSOL format results exported to: results/mpfem_result.txt
-[INFO] [16.12s] === Example completed successfully! ===
+python .\scripts\compare_comsol_results.py ./results/mpfem_result.txt ./cases/busbar/result.txt
+field   L2      Linf    max_relative    L2_relative
+V       6.631425e-07    1.193437e-06    1.502601e-04    9.066653e-05
+T       2.772983e-03    4.183304e-03    1.262226e-05    8.562125e-06
+disp    8.160472e-04    1.554752e-03    9.743822e-01    9.671592e-01
 ```

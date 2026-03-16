@@ -109,9 +109,10 @@ CouplingResult CouplingManager::solve() {
             thermalExp->setTemperatureField(&htSolver_->field());
             
             // 添加热膨胀载荷积分器
+            // ThermalExpansionCoefficient::eval() 返回 alpha_T * (T - Tref)
             auto thermalLoad = std::make_unique<ThermalLoadIntegrator>(
                 &stSolver_->youngModulus(), &stSolver_->poissonRatio(), 
-                thermalExp, &htSolver_->field(), 293.15);
+                thermalExp);
             stSolver_->addLinearIntegrator(std::move(thermalLoad));
             
             // 组装并求解

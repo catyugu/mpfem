@@ -110,16 +110,19 @@ int main(int argc, char* argv[]) {
         if (setup.hasStructural()) {
             const GridFunction& u = setup.structural->field();
             
-            // 位移幅值（在角点上计算）
+            // 对于高阶网格，先投影到角点
+            Eigen::VectorXd cornerU = u.projectToCorners(*setup.mesh);
+            
+            // 计算位移幅值（在角点上）
             Index numExport = numCorners;
             FieldResult fDisp;
             fDisp.name = "disp";
             fDisp.unit = "m";
             fDisp.nodalValues.resize(numExport);
             for (Index i = 0; i < numExport; ++i) {
-                Real dx = u.values()(i * 3);
-                Real dy = u.values()(i * 3 + 1);
-                Real dz = u.values()(i * 3 + 2);
+                Real dx = cornerU(i * 3);
+                Real dy = cornerU(i * 3 + 1);
+                Real dz = cornerU(i * 3 + 2);
                 fDisp.nodalValues[i] = std::sqrt(dx*dx + dy*dy + dz*dz);
             }
             fields.push_back(fDisp);
