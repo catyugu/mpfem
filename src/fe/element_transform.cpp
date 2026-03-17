@@ -53,11 +53,13 @@ void ElementTransform::computeGeometryInfo() {
     dim_ = geom::dim(geometry_);
     geomOrder_ = elem->order();
     
-    // Get node coordinates
-    nodeIndices_ = elem->vertices();
-    nodes_.resize(nodeIndices_.size());
-    for (size_t i = 0; i < nodeIndices_.size(); ++i) {
-        nodes_[i] = mesh_->vertex(nodeIndices_[i]).toVector();
+    // Get node coordinates - copy to fixed-size buffer
+    const auto& vertexIndices = elem->vertices();
+    numNodes_ = static_cast<int>(vertexIndices.size());
+    
+    for (int i = 0; i < numNodes_; ++i) {
+        nodeIndicesBuf_[i] = vertexIndices[i];
+        nodesBuf_[i] = mesh_->vertex(vertexIndices[i]).toVector();
     }
     
     // Pre-allocate matrices
@@ -67,13 +69,6 @@ void ElementTransform::computeGeometryInfo() {
     
     // Create shape function
     shapeFunc_ = ShapeFunction::create(geometry_, geomOrder_);
-    
-    // Pre-allocate shape function buffers
-    if (shapeFunc_) {
-        const int numDofs = shapeFunc_->numDofs();
-        shapeValuesBuf_.resize(numDofs);
-        shapeGradsBuf_.resize(numDofs);
-    }
 }
 
 void ElementTransform::computeJacobianAtIP() {
@@ -84,11 +79,11 @@ void ElementTransform::computeJacobianAtIP() {
     
     // Compute Jacobian: J = sum_i (x_i * grad_phi_i^T)
     jacobian_.setZero(spaceDim_, dim_);
-    for (size_t i = 0; i < shapeGradsBuf_.size(); ++i) {
+    for (int i = 0; i < numNodes_; ++i) {
         const auto& grad = shapeGradsBuf_[i];
         for (int d = 0; d < spaceDim_; ++d) {
             for (int k = 0; k < dim_; ++k) {
-                jacobian_(d, k) += nodes_[i][d] * grad[k];
+                jacobian_(d, k) += nodesBuf_[i][d] * grad[k];
             }
         }
     }
@@ -136,8 +131,8 @@ void ElementTransform::transform(const Real* xi, Real* x) {
     
     for (int d = 0; d < spaceDim_; ++d) {
         x[d] = 0.0;
-        for (size_t i = 0; i < shapeValuesBuf_.size(); ++i) {
-            x[d] += shapeValuesBuf_[i] * nodes_[i][d];
+        for (int i = 0; i < numNodes_; ++i) {
+            x[d] += shapeValuesBuf_[i] * nodesBuf_[i][d];
         }
     }
 }

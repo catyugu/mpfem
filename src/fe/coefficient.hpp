@@ -5,6 +5,7 @@
 #include <functional>
 #include <vector>
 #include <set>
+#include <map>
 
 namespace mpfem {
 
@@ -22,6 +23,10 @@ class GridFunction;
  * - 使用 ElementTransform 获取几何和域信息
  * - 支持时间参数 t 用于瞬态问题
  * - 纯虚接口，派生类必须实现 eval
+ * 
+ * 所有权策略：
+ * - Coefficient 实例由调用者（如 PhysicsProblemSetup）管理
+ * - DomainMappedCoefficient 只持有非拥有引用
  */
 class Coefficient {
 public:
@@ -81,34 +86,29 @@ private:
     Func func_;
 };
 
-/// 域映射系数：不同域使用不同的系数
+/// 域映射系数：不同域使用不同的系数（非持有引用）
+/// 
+/// 所有权策略：所有系数由外部管理（如 PhysicsProblemSetup::coefficients_）
 class DomainMappedCoefficient : public Coefficient {
 public:
     DomainMappedCoefficient() = default;
     
-    /// 设置指定域的系数（非拥有指针，覆盖已存在的）
+    /// 设置指定域的系数（非持有指针）
     void set(int domainId, const Coefficient* coef) {
         coefs_[domainId] = coef;
     }
     
-    /// 设置指定域的系数（转移所有权）
-    void own(int domainId, std::unique_ptr<Coefficient> coef) {
-        ownedCoefs_[domainId] = std::move(coef);
-        coefs_[domainId] = ownedCoefs_[domainId].get();
-    }
-    
-    /// 批量设置多个域使用同一个系数（非拥有指针）
+    /// 批量设置多个域使用同一个系数（非持有指针）
     void set(const std::set<int>& domainIds, const Coefficient* coef) {
         for (int id : domainIds) {
             coefs_[id] = coef;
         }
     }
     
-    /// 设置所有域使用同一个系数（非拥有指针，清空映射，设置默认系数）
+    /// 设置所有域使用同一个系数（非持有指针，清空映射，设置默认系数）
     void setAll(const Coefficient* coef) {
         defaultCoef_ = coef;
         coefs_.clear();
-        ownedCoefs_.clear();
     }
     
     /// 获取指定域的系数（如果没有则返回默认系数）
@@ -127,7 +127,6 @@ public:
 private:
     std::map<int, const Coefficient*> coefs_;
     const Coefficient* defaultCoef_ = nullptr;
-    std::map<int, std::unique_ptr<Coefficient>> ownedCoefs_;  ///< Owned coefficients
 };
 
 // =============================================================================
