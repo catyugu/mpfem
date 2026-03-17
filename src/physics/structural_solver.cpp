@@ -20,7 +20,6 @@ bool StructuralSolver::initialize(const Mesh& mesh) {
     
     matAsm_ = std::make_unique<BilinearFormAssembler>(fes_.get());
     vecAsm_ = std::make_unique<LinearFormAssembler>(fes_.get());
-    matAsm_->computeSparsityPattern();
     
     createSolver();
     
@@ -84,8 +83,6 @@ bool StructuralSolver::solve() {
     bool success = solver_->solve(matAsm_->matrix(), u_->values(), vecAsm_->vector());
     
     if (success) {
-        iter_ = solver_->iterations();
-        res_ = solver_->residual();
         LOG_INFO << "StructuralSolver: displacement norm = " << u_->values().norm();
     }
     

@@ -16,8 +16,8 @@ namespace mpfem {
 enum class SolverType {
     // Eigen solvers (always available)
     Eigen_SparseLU,       ///< Direct LU factorization
-    Eigen_CGIC,           ///< CG with Incomplete Cholesky (SPD only)
-    Eigen_BiCGSTABILUT,   ///< BiCGSTAB with ILUT
+    Eigen_DGMRES_ILU,     ///< DGMRES with ILU preconditioner
+    Eigen_MINRES,         ///< MINRES for symmetric indefinite systems
 
     // External direct solvers (conditionally available)
     SuperLU_LU,           ///< SuperLU direct solver
@@ -70,9 +70,9 @@ inline constexpr bool isCholmodAvailable() {
 
 inline constexpr SolverMeta solverRegistry[] = {
     // Eigen solvers (always available)
-    {SolverType::Eigen_SparseLU,     "eigen.sparse_lu",     "Eigen SparseLU direct solver",      false, false, true},
-    {SolverType::Eigen_CGIC,         "eigen.cg_ic",         "Eigen CG with IC preconditioner",   true,  true,  true},
-    {SolverType::Eigen_BiCGSTABILUT, "eigen.bicgstab_ilut", "Eigen BiCGSTAB with ILUT",          true,  false, true},
+    {SolverType::Eigen_SparseLU,     "eigen.sparse_lu",     "Eigen SparseLU direct solver",         false, false, true},
+    {SolverType::Eigen_DGMRES_ILU,   "eigen.dgmres_ilu",    "Eigen DGMRES with ILU preconditioner", true,  false, true},
+    {SolverType::Eigen_MINRES,       "eigen.minres",        "Eigen MINRES (symmetric systems)",     true,  false, true},
 
     // External solvers
     {SolverType::SuperLU_LU,   "superlu.lu",   "SuperLU direct solver",        false, false, isSuperLUAvailable()},
@@ -137,16 +137,6 @@ inline std::vector<std::string> availableSolverNames() {
     return result;
 }
 
-inline std::vector<std::string> availableDirectSolverNames() {
-    std::vector<std::string> result;
-    for (size_t i = 0; i < detail::solverRegistrySize; ++i) {
-        if (detail::solverRegistry[i].isAvailable && !detail::solverRegistry[i].isIterative) {
-            result.emplace_back(detail::solverRegistry[i].name);
-        }
-    }
-    return result;
-}
-
 // =============================================================================
 // Solver Configuration
 // =============================================================================
@@ -154,16 +144,20 @@ inline std::vector<std::string> availableDirectSolverNames() {
 struct SolverConfig {
     SolverType type = SolverType::Eigen_SparseLU;  // Default to Eigen SparseLU (always available)
     int maxIterations = 1000;
+    int restart = 30;              // GMRES restart parameter
     Real relativeTolerance = 1e-10;
     Real absoluteTolerance = 1e-14;
+    Real dropTolerance = 1e-4;     // ILU drop tolerance
+    int fillFactor = 10;           // ILU fill factor
     int printLevel = 0;
     
     // Convenience constructors
     static SolverConfig eigenSparseLU() { return {SolverType::Eigen_SparseLU}; }
+    static SolverConfig eigenDGMRES() { return {SolverType::Eigen_DGMRES_ILU}; }
+    static SolverConfig eigenMINRES() { return {SolverType::Eigen_MINRES}; }
     static SolverConfig superLU() { return {SolverType::SuperLU_LU}; }
     static SolverConfig umfpack() { return {SolverType::Umfpack_LU}; }
     static SolverConfig cholmod() { return {SolverType::Cholmod_LLT}; }
-    static SolverConfig eigenCGIC() { return {SolverType::Eigen_CGIC}; }
 };
 
 }  // namespace mpfem

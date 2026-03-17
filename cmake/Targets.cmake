@@ -71,8 +71,7 @@ mpfem_add_library(mpfem_core
 
 # OpenBLAS support for Eigen
 if(MPFEM_OPENBLAS_FOUND)
-    target_include_directories(mpfem_core PUBLIC ${OpenBLAS_INCLUDE_DIRS})
-    target_link_libraries(mpfem_core PUBLIC ${OpenBLAS_LIBRARIES})
+    target_link_libraries(mpfem_core PUBLIC OpenBLAS::OpenBLAS)
     target_compile_definitions(mpfem_core PUBLIC EIGEN_USE_BLAS)
     message(STATUS "OpenBLAS acceleration enabled for Eigen (EIGEN_USE_BLAS)")
 endif()
@@ -85,15 +84,16 @@ endif()
 # SuperLU support
 if(MPFEM_SUPERLU_FOUND)
     target_compile_definitions(mpfem_core PUBLIC MPFEM_USE_SUPERLU)
-    target_include_directories(mpfem_core PUBLIC ${SUPERLU_INCLUDE_DIR} ${SUPERLU_INCLUDE_DIR}/superlu)
-    target_link_libraries(mpfem_core PUBLIC ${SUPERLU_LIBRARY})
+    target_link_libraries(mpfem_core PUBLIC SuperLU::SuperLU)
+    # Eigen's SuperLUSupport needs to find SuperLU headers directly
+    # (it uses #include <slu_Cnames.h>, not #include <superlu/slu_Cnames.h>)
+    target_include_directories(mpfem_core PUBLIC ${SuperLU_INCLUDE_DIR})
 endif()
 
 # SuiteSparse support
 if(MPFEM_UMFPACK_FOUND)
     target_compile_definitions(mpfem_core PUBLIC MPFEM_USE_UMFPACK)
-    target_include_directories(mpfem_core PUBLIC ${UMFPACK_INCLUDE_DIR})
-    target_link_libraries(mpfem_core PUBLIC ${UMFPACK_LIBRARIES})
+    target_link_libraries(mpfem_core PUBLIC SuiteSparse::UMFPACK)
 endif()
 
 if(MPFEM_CHOLMOD_FOUND)

@@ -184,11 +184,10 @@ void ElasticityIntegrator::assembleElementMatrix(const ReferenceElement& ref,
     C(0, 1) = C(0, 2) = C(1, 0) = C(1, 2) = C(2, 0) = C(2, 1) = lambda;
     C(3, 3) = C(4, 4) = C(5, 5) = mu;
     
-    // 使用固定大小栈数组 (MAX_DOFS = 27, vdim <= 3, so 6 x 81 max)
+    // 使用固定大小栈数组
     // B 矩阵: 6 x (nd * vdim), CB 矩阵: 6 x (nd * vdim)
-    constexpr int MAX_COLS = 27 * 3;  // 81
-    Eigen::Matrix<Real, 6, MAX_COLS> B_full;
-    Eigen::Matrix<Real, 6, MAX_COLS> CB_full;
+    Eigen::Matrix<Real, MaxStrainComponents, MaxVectorDofsPerElement> B_full;
+    Eigen::Matrix<Real, MaxStrainComponents, MaxVectorDofsPerElement> CB_full;
     
     // 使用 Map 来创建正确大小的视图
     auto B = B_full.leftCols(totalDofs);
@@ -239,9 +238,8 @@ void ThermalLoadIntegrator::assembleElementVector(const ReferenceElement& ref,
     
     if (!alphaT_) return;
     
-    // 使用固定大小栈数组 (MAX_DOFS = 27, vdim <= 3, so 6 x 81 max)
-    constexpr int MAX_COLS = 27 * 3;
-    Eigen::Matrix<Real, 6, MAX_COLS> B_full;
+    // 使用固定大小栈数组
+    Eigen::Matrix<Real, MaxStrainComponents, MaxVectorDofsPerElement> B_full;
     auto B = B_full.leftCols(totalDofs);
     
     for (int q = 0; q < nq; ++q) {

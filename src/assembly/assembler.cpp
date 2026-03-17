@@ -23,55 +23,9 @@ BilinearFormAssembler::BilinearFormAssembler(const FESpace* fes) : fes_(fes) {
     if (fes_) {
         const Mesh* mesh = fes_->mesh();
         if (mesh) {
-            triplets_.reserve(mesh->numElements() * MAX_DOFS * MAX_DOFS / 2);
+            triplets_.reserve(mesh->numElements() * MaxDofsPerElement * MaxDofsPerElement / 2);
         }
     }
-}
-
-void BilinearFormAssembler::computeSparsityPattern() {
-    if (!fes_) return;
-    const Mesh* mesh = fes_->mesh();
-    if (!mesh) return;
-    
-    // Step 1: Collect all (row, col) pairs
-    std::vector<std::pair<Index, Index>> pairs;
-    pairs.reserve(mesh->numElements() * MAX_DOFS * MAX_DOFS);
-    
-    // Use thread buffer's pre-allocated dofs vector
-    auto& dofs = buffers_[0].dofs;
-    
-    for (Index e = 0; e < mesh->numElements(); ++e) {
-        fes_->getElementDofs(e, dofs);
-        for (auto i : dofs) {
-            if (i == InvalidIndex) continue;
-            for (auto j : dofs) {
-                if (j == InvalidIndex) continue;
-                pairs.emplace_back(i, j);
-            }
-        }
-    }
-    for (Index b = 0; b < mesh->numBdrElements(); ++b) {
-        fes_->getBdrElementDofs(b, dofs);
-        for (auto i : dofs) {
-            if (i == InvalidIndex) continue;
-            for (auto j : dofs) {
-                if (j == InvalidIndex) continue;
-                pairs.emplace_back(i, j);
-            }
-        }
-    }
-    
-    // Step 2: Sort and deduplicate
-    std::sort(pairs.begin(), pairs.end());
-    pairs.erase(std::unique(pairs.begin(), pairs.end()), pairs.end());
-    
-    // Step 3: Convert to triplets
-    triplets_.clear();
-    triplets_.reserve(pairs.size());
-    for (const auto& [i, j] : pairs) {
-        triplets_.emplace_back(i, j, 0.0);
-    }
-    mat_.setFromTriplets(std::move(triplets_));
 }
 
 void BilinearFormAssembler::assemble() {
@@ -85,7 +39,10 @@ void BilinearFormAssembler::assemble() {
     const int vdim = fes_->vdim();
     
     triplets_.clear();
-    triplets_.reserve(numElements * MAX_DOFS * MAX_DOFS * vdim * vdim / 2);
+    // 预估 triplet 数量：单元数 × 每单元DOF数² × 向量维度² / 2
+    // 对于二阶六面体：27 × 27 × 9 ≈ 6561，除以 2 是因为对称性近似
+    const size_t estimatedTriplets = static_cast<size_t>(numElements) * MaxDofsPerElement * MaxDofsPerElement * vdim * vdim / 2;
+    triplets_.reserve(estimatedTriplets);
     
 #ifdef _OPENMP
     #pragma omp parallel
@@ -94,7 +51,7 @@ void BilinearFormAssembler::assemble() {
         ThreadBuffer& buf = buffers_[tid];
         
         std::vector<SparseMatrix::Triplet> localTriplets;
-        localTriplets.reserve(numElements * MAX_DOFS * MAX_DOFS * vdim * vdim / buffers_.size() / 2);
+        localTriplets.reserve(estimatedTriplets / omp_get_num_threads());
         
         ElementTransform trans;
         trans.setMesh(mesh);
@@ -140,6 +97,7 @@ void BilinearFormAssembler::assemble() {
                 buf.elmatVector.topLeftCorner(totalDofs, totalDofs) += temp;
             }
             
+            // 直接写入 triplets
             for (int i = 0; i < totalDofs; ++i) {
                 if (dofs[i] == InvalidIndex) continue;
                 for (int j = 0; j < totalDofs; ++j) {
@@ -213,6 +171,7 @@ void BilinearFormAssembler::assemble() {
         }
     }
     
+    // 高效构建稀疏矩阵：Eigen 内部会排序和求和
     mat_.setFromTriplets(std::move(triplets_));
 }
 

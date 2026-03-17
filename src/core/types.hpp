@@ -50,14 +50,44 @@ using Triplet = Eigen::Triplet<Real>;
 // Geometry related types
 // =============================================================================
 
-/// Maximum number of nodes per element (for fixed-size arrays)
-inline constexpr LocalIndex MaxNodesPerElement = 27;  // 3x3x3 for hex27
-
-/// Maximum number of vertices per element
-inline constexpr LocalIndex MaxVerticesPerElement = 8;  // hex8
-
 /// Maximum spatial dimension
 inline constexpr LocalIndex MaxDim = 3;
+
+/// Maximum vector field dimension (for displacement, velocity, etc.)
+inline constexpr LocalIndex MaxVectorDim = 3;
+
+// =============================================================================
+// Element-related constants (for fixed-size stack arrays)
+// =============================================================================
+
+/// Maximum number of nodes per volume element (for fixed-size arrays)
+/// hex27: 3x3x3 = 27 nodes for second-order hexahedron
+inline constexpr LocalIndex MaxNodesPerElement = 27;
+
+/// Maximum number of nodes per boundary element
+/// quad9: 3x3 = 9 nodes for second-order quadrilateral
+inline constexpr LocalIndex MaxNodesPerBdrElement = 9;
+
+/// Maximum number of vertices per element (first-order)
+inline constexpr LocalIndex MaxVerticesPerElement = 8;  // hex8
+
+/// Maximum DOFs per volume element (scalar field)
+inline constexpr LocalIndex MaxDofsPerElement = MaxNodesPerElement;
+
+/// Maximum DOFs per boundary element (scalar field)
+inline constexpr LocalIndex MaxDofsPerBdrElement = MaxNodesPerBdrElement;
+
+/// Maximum DOFs per volume element (vector field, e.g., displacement)
+inline constexpr LocalIndex MaxVectorDofsPerElement = MaxDofsPerElement * MaxVectorDim;
+
+/// Maximum DOFs per boundary element (vector field)
+inline constexpr LocalIndex MaxVectorDofsPerBdrElement = MaxDofsPerBdrElement * MaxVectorDim;
+
+/// Maximum quadrature points per element
+inline constexpr LocalIndex MaxQuadraturePoints = 27;
+
+/// Maximum strain/stress components (3D: 6 independent components)
+inline constexpr LocalIndex MaxStrainComponents = 6;
 
 /// Coordinate array type
 using CoordArray = std::array<Real, MaxDim>;

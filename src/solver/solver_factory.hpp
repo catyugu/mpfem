@@ -51,6 +51,9 @@ public:
         solver->setTolerance(config.relativeTolerance);
         solver->setPrintLevel(config.printLevel);
         
+        // Apply solver-specific configuration
+        applySolverConfig(solver.get(), config);
+        
         return solver;
     }
     
@@ -100,10 +103,10 @@ private:
             // Eigen solvers (always available)
             case SolverType::Eigen_SparseLU:
                 return std::make_unique<EigenSparseLUSolver>();
-            case SolverType::Eigen_CGIC:
-                return std::make_unique<EigenCGICSolver>();
-            case SolverType::Eigen_BiCGSTABILUT:
-                return std::make_unique<EigenBiCGSTABILUTSolver>();
+            case SolverType::Eigen_DGMRES_ILU:
+                return std::make_unique<EigenDGMRESILUSolver>();
+            case SolverType::Eigen_MINRES:
+                return std::make_unique<EigenMINRESSolver>();
 
             // External solvers
             case SolverType::SuperLU_LU:
@@ -113,6 +116,14 @@ private:
 
             default:
                 throw std::runtime_error("Unsupported solver type");
+        }
+    }
+    
+    static void applySolverConfig(LinearSolver* solver, const SolverConfig& config) {
+        // Apply DGMRES-specific configuration
+        if (auto* dgmres = dynamic_cast<EigenDGMRESILUSolver*>(solver)) {
+            dgmres->setDropTolerance(config.dropTolerance);
+            dgmres->setFillFactor(config.fillFactor);
         }
     }
     

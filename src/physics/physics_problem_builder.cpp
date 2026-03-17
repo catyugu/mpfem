@@ -263,7 +263,8 @@ namespace mpfem
                 }
             }
             
-            setup.couplingManager->setTemperatureDependentConductivity(tempDepSigma.get());
+            // 直接设置到电场求解器（系数绑定温度场引用，自动获取最新值）
+            setup.electrostatics->setConductivity(tempDepSigma.get());
             setup.coefficients["tempDepSigma"] = std::move(tempDepSigma);
         }
         
@@ -279,7 +280,8 @@ namespace mpfem
                     setup.electrostatics->conductivity(),
                     std::move(domains));
                 
-                setup.couplingManager->setJouleHeatCoefficient(jouleHeat.get());
+                // 直接设置到热传导求解器（系数绑定电势场引用，自动获取最新值）
+                setup.heatTransfer->setHeatSource(jouleHeat.get());
                 setup.coefficients["jouleHeat"] = std::move(jouleHeat);
                 LOG_INFO << "Joule heating domains: " << cp.domainIds.size() << " domains";
             }
@@ -298,7 +300,13 @@ namespace mpfem
                     }
                 }
                 
-                setup.couplingManager->setThermalExpansionCoefficient(thermalExp.get());
+                // 直接将热膨胀积分器添加到结构求解器（系数绑定温度场引用，自动获取最新值）
+                auto thermalLoad = std::make_unique<ThermalLoadIntegrator>(
+                    &setup.structural->youngModulus(), 
+                    &setup.structural->poissonRatio(), 
+                    thermalExp.get());
+                setup.structural->addLinearIntegrator(std::move(thermalLoad));
+                
                 setup.coefficients["thermalExp"] = std::move(thermalExp);
                 LOG_INFO << "Thermal expansion coupling enabled";
             }
