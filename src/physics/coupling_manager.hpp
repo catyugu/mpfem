@@ -75,7 +75,6 @@ public:
     
     void setTolerance(Real tol) { tol_ = tol; }
     void setMaxIterations(int n) { maxIter_ = n; }
-    void setCouplingMethod(CouplingMethod method) { method_ = method; }
     
     // =========================================================================
     // 求解接口
@@ -102,7 +101,6 @@ private:
     Vector prevT_;
     int maxIter_ = 20;
     Real tol_ = 1e-6;
-    CouplingMethod method_ = CouplingMethod::Picard;
 };
 
 }  // namespace mpfem

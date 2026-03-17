@@ -64,7 +64,6 @@ struct PhysicsDefinition {
  * @brief Coupling iteration configuration.
  */
 struct CouplingConfig {
-    CouplingMethod method = CouplingMethod::Picard;
     int maxIterations = 15;
     double tolerance = 1e-6;
 };

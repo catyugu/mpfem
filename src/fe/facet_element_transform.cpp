@@ -34,10 +34,6 @@ void FacetElementTransform::computeAdjacentElementInfo() {
     localFaceIdx_ = faceInfo.localFace1;
 }
 
-Index FacetElementTransform::boundaryAttribute() const {
-    return attribute();
-}
-
 bool FacetElementTransform::getAdjacentElementTransform(ElementTransform& trans) const {
     if (adjElemIdx_ == InvalidIndex) return false;
     trans.setMesh(mesh_);

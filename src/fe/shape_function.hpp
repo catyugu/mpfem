@@ -180,7 +180,6 @@ namespace mpfem
 
     private:
         int order_;
-        H1SegmentShape segment1d_;
     };
 
     /**
@@ -223,7 +222,6 @@ namespace mpfem
 
     private:
         int order_;
-        H1SegmentShape segment1d_;
     };
 
 } // namespace mpfem

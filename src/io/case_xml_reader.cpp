@@ -242,9 +242,6 @@ void CaseXmlReader::readFromFile(const std::string& filePath, CaseDefinition& ca
 
     // Coupling configuration
     if (const tinyxml2::XMLElement* couplingConfigElement = caseElement->FirstChildElement("coupling")) {
-        if (const char* methodAttr = couplingConfigElement->Attribute("method")) {
-            caseDefinition.couplingConfig.method = stringToCouplingMethod(methodAttr);
-        }
         if (const char* maxIterAttr = couplingConfigElement->Attribute("max_iter")) {
             caseDefinition.couplingConfig.maxIterations = std::atoi(maxIterAttr);
         }

@@ -107,7 +107,6 @@ TEST_F(CaseXmlReaderTest, ReadBusbarCase) {
     EXPECT_GE(caseDef.coupledPhysicsDefinitions.size(), 2);
 
     // Verify coupling config
-    EXPECT_EQ(caseDef.couplingConfig.method, CouplingMethod::Picard);
     EXPECT_GT(caseDef.couplingConfig.maxIterations, 0);
 }
 

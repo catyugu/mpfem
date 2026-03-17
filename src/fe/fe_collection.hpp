@@ -60,17 +60,6 @@ public:
         return elements_.find(geom) != elements_.end();
     }
     
-    /// Get continuity type (for H1 elements)
-    static int getContType(Type t) {
-        switch (t) {
-            case Type::H1: return 1;  // Continuous
-            case Type::L2: return 0;  // Discontinuous
-            case Type::ND: return 2;  // H(curl)
-            case Type::RT: return 3;  // H(div)
-            default: return -1;
-        }
-    }
-    
     // -------------------------------------------------------------------------
     // Factory methods
     // -------------------------------------------------------------------------

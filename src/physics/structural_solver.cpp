@@ -92,8 +92,4 @@ bool StructuralSolver::solve() {
     return success;
 }
 
-void StructuralSolver::computeStressStrain() {
-    // TODO: 实现应力/应变后处理
-}
-
 }  // namespace mpfem

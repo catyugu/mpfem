@@ -22,7 +22,6 @@ public:
     void setElement(Index bdrElemIdx) override;
     void setBoundaryElement(Index bdrElemIdx) { setElement(bdrElemIdx); }
     
-    Index boundaryAttribute() const;
     Vector3 normal() const;
     
     bool hasTopology() const;
