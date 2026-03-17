@@ -7,20 +7,9 @@
 #include "core/exception.hpp"
 #include <vector>
 #include <memory>
-#include <unordered_map>
 #include <algorithm>
 
 namespace mpfem {
-
-// Custom hash function for std::pair
-struct PairHash {
-    std::size_t operator()(const std::pair<Index, Index>& p) const {
-        // Combine hashes using a common technique
-        std::size_t h1 = std::hash<Index>()(p.first);
-        std::size_t h2 = std::hash<Index>()(p.second);
-        return h1 ^ (h2 + 0x9e3779b9 + (h1 << 6) + (h1 >> 2));
-    }
-};
 
 /**
  * @brief Finite element space managing degrees of freedom on a mesh.
@@ -55,12 +44,6 @@ public:
     /// Default constructor
     FESpace() = default;
     
-    /// Construct from mesh and FE collection (does not take ownership)
-    FESpace(const Mesh* mesh, const FECollection* fec, int vdim = 1)
-        : mesh_(mesh), fecRef_(fec), vdim_(vdim) {
-        buildDofTable();
-    }
-    
     /// Construct and take ownership of fec
     FESpace(const Mesh* mesh, std::unique_ptr<FECollection> fec, int vdim = 1)
         : mesh_(mesh), fec_(std::move(fec)), vdim_(vdim) {
@@ -91,7 +74,7 @@ public:
     
     /// Get the FE collection
     const FECollection* fec() const { 
-        return fec_ ? fec_.get() : fecRef_; 
+        return fec_.get(); 
     }
     
     /// Get polynomial order
@@ -112,9 +95,6 @@ public:
     
     /// Get total number of degrees of freedom
     Index numDofs() const { return numDofs_; }
-    
-    /// Get number of true (unconstrained) dofs
-    Index numTrueDofs() const { return numTrueDofs_; }
     
     /// Get local to global dof mapping for an element
     void getElementDofs(Index elemIdx, std::vector<Index>& dofs) const;
@@ -185,34 +165,18 @@ public:
 private:
     void buildDofTable();
     
-    /// Build edge-to-dof mapping for higher-order elements
-    void buildEdgeDofMap(Index& dofCounter);
-    
-    /// Build face-to-dof mapping for higher-order elements
-    void buildFaceDofMap(Index& dofCounter);
-    
-    /// Get edge key (sorted vertex pair)
-    static std::pair<Index, Index> makeEdgeKey(Index v1, Index v2) {
-        return v1 < v2 ? std::make_pair(v1, v2) : std::make_pair(v2, v1);
-    }
-    
     const Mesh* mesh_ = nullptr;
     std::unique_ptr<FECollection> fec_;   ///< Owned FE collection
-    const FECollection* fecRef_ = nullptr; ///< Non-owning reference
     int vdim_ = 1;
     Ordering ordering_ = Ordering::byNodes;  // Default: byNodes (more common convention)
     
     Index numDofs_ = 0;
-    Index numTrueDofs_ = 0;
     
     // Element to dof mapping: elemDofs_[elemIdx * maxDofsPerElem + localDof]
     std::vector<Index> elemDofs_;
     std::vector<Index> bdrElemDofs_;
     int maxDofsPerElem_ = 0;
     int maxDofsPerBdrElem_ = 0;
-    
-    // Edge to DOF mapping (for higher-order elements)
-    std::unordered_map<std::pair<Index, Index>, Index, PairHash> edgeDofMap_;
 };
 
 // =============================================================================
@@ -303,28 +267,6 @@ inline int FESpace::numBdrElementDofs(Index bdrIdx) const {
     return refElem ? refElem->numDofs() * vdim_ : 0;
 }
 
-inline void FESpace::buildEdgeDofMap(Index& dofCounter) {
-    // Build edge-to-dof mapping by processing all domain elements
-    // Domain elements are the highest dimension elements in the mesh
-    // (e.g., Triangle/Square in 2D, Tetrahedron/Cube in 3D)
-    // Boundary elements should NOT create new edge DOFs
-    edgeDofMap_.clear();
-    
-    for (Index elemIdx = 0; elemIdx < mesh_->numElements(); ++elemIdx) {
-        const Element& elem = mesh_->element(elemIdx);
-        
-        // Process each edge of the element
-        for (int e = 0; e < elem.numEdges(); ++e) {
-            auto [v1, v2] = elem.edgeVertices(e);
-            auto key = makeEdgeKey(v1, v2);
-            
-            if (edgeDofMap_.find(key) == edgeDofMap_.end()) {
-                edgeDofMap_[key] = dofCounter++;
-            }
-        }
-    }
-}
-
 inline void FESpace::buildDofTable() {
     const FECollection* f = fec();
     if (!mesh_ || !f) return;
@@ -401,16 +343,8 @@ inline void FESpace::buildDofTable() {
         }
     }
     
-    // Clear edge DOF map (no longer needed for COMSOL-style meshes)
-    edgeDofMap_.clear();
-    
-    // Note: For future support of meshes where edge midpoints are NOT mesh vertices,
-    // we would need to create additional DOFs. This is not needed for COMSOL-style
-    // second-order meshes where all nodes are stored as mesh vertices.
-    
     // Multiply by vdim for vector fields
     numDofs_ = numDofs_ * vdim_;
-    numTrueDofs_ = numDofs_;  // No constraints for now
 }
 
 }  // namespace mpfem

@@ -11,8 +11,9 @@ namespace mpfem {
 bool ElectrostaticsSolver::initialize(const Mesh& mesh) {
     mesh_ = &mesh;
     
-    fec_ = std::make_unique<FECollection>(order_, FECollection::Type::H1);
-    fes_ = std::make_unique<FESpace>(&mesh, fec_.get());
+    // 创建有限元空间（FESpace 拥有 FECollection）
+    auto fec = std::make_unique<FECollection>(order_, FECollection::Type::H1);
+    fes_ = std::make_unique<FESpace>(&mesh, std::move(fec));
     V_ = std::make_unique<GridFunction>(fes_.get());
     V_->setZero();
     

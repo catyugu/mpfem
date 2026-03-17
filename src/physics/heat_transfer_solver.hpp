@@ -38,7 +38,7 @@ public:
     /// 设置指定域的热导率系数
     void setConductivity(const std::set<int>& domains, const Coefficient* k);
     
-    /// 设置所有域的热导率系数
+    /// 设置所有域的热导率系数（用于耦合）
     void setConductivity(const Coefficient* k) {
         conductivity_.setAll(k);
     }
@@ -49,7 +49,7 @@ public:
     /// 设置指定域的热源系数
     void setHeatSource(const std::set<int>& domains, const Coefficient* Q);
     
-    /// 设置所有域的热源系数
+    /// 设置所有域的热源系数（用于耦合系数）
     void setHeatSource(const Coefficient* Q) {
         heatSource_.setAll(Q);
     }

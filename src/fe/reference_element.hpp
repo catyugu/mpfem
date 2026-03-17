@@ -106,17 +106,6 @@ public:
         return geom::faceGeometry(geometry_, faceIdx);
     }
     
-    /// Get face reference element (for boundary integration)
-    const ReferenceElement* faceElement(int faceIdx) const {
-        if (faceIdx < 0 || faceIdx >= static_cast<int>(faceElements_.size())) {
-            MPFEM_THROW(RangeException, 
-                "ReferenceElement::faceElement: invalid face index " + 
-                std::to_string(faceIdx) + ", num faces = " + 
-                std::to_string(faceElements_.size()));
-        }
-        return faceElements_[faceIdx].get();
-    }
-    
     /// Get local vertex indices for a face
     std::vector<int> faceVertices(int faceIdx) const;
     
@@ -142,7 +131,6 @@ private:
     int numDofs_ = 0;  // Cached number of DOFs
     std::unique_ptr<ShapeFunction> shapeFunc_;
     QuadratureRule quadrature_;
-    std::vector<std::unique_ptr<ReferenceElement>> faceElements_;
     
     // Precomputed shape function values at all quadrature points
     // Layout: [numQuadPoints * numDofs] - shapeValues_[q * numDofs + i]
@@ -196,15 +184,6 @@ inline void ReferenceElement::initialize() {
     
     // Precompute shape function values at all quadrature points
     precomputeShapeValues();
-    
-    // Create face elements for volume elements
-    if (dim() == 3) {
-        faceElements_.reserve(numFaces());
-        for (int f = 0; f < numFaces(); ++f) {
-            faceElements_.push_back(
-                std::make_unique<ReferenceElement>(faceGeometry(f), order_));
-        }
-    }
 }
 
 inline void ReferenceElement::precomputeShapeValues() {

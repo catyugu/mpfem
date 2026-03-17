@@ -25,12 +25,10 @@ protected:
         mesh_.addVertex(0.0, 0.0, 1.0);
         mesh_.addElement(Geometry::Tetrahedron, {0, 1, 2, 3}, 1, 1);
         
-        fec_ = std::make_unique<FECollection>(1);
-        fes_ = std::make_unique<FESpace>(&mesh_, fec_.get());
+        fes_ = std::make_unique<FESpace>(&mesh_, std::make_unique<FECollection>(1));
     }
     
     Mesh mesh_;
-    std::unique_ptr<FECollection> fec_;
     std::unique_ptr<FESpace> fes_;
     ConstantCoefficient k1_{1.0};
     ConstantCoefficient k2_{2.0};

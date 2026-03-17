@@ -49,7 +49,7 @@
   </physics>
 
   <physics kind="solid_mechanics" order="2">
-    <solver type="eigen.cg" max_iter="1000" tolerance="1e-10" print_level="0"/>
+    <solver type="umfpack.lu" max_iter="1000" tolerance="1e-10" print_level="0"/>
     <boundary kind="fixed_constraint" ids="8" />
     <boundary kind="fixed_constraint" ids="15" />
     <boundary kind="fixed_constraint" ids="43" />
@@ -59,5 +59,5 @@
   <coupledPhysics name="joule_heat" kind="joule_heating" physics="electrostatics,heat_transfer" domains="1-7" />
   <coupledPhysics name="thermal_expansion" kind="thermal_expansion" physics="heat_transfer,solid_mechanics" domains="1-7" />
 
-  <coupling method="picard" max_iter="20" tolerance="1e-2"/>
+  <coupling method="picard" max_iter="20" tolerance="1e-4"/>
 </case>

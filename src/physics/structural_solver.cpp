@@ -11,9 +11,9 @@ namespace mpfem {
 bool StructuralSolver::initialize(const Mesh& mesh) {
     mesh_ = &mesh;
     
-    // 创建向量H1单元 (vdim=3)
-    fec_ = std::make_unique<FECollection>(order_, FECollection::Type::H1);
-    fes_ = std::make_unique<FESpace>(&mesh, fec_.get(), 3);  // 3D位移
+    // 创建向量H1单元 (vdim=3)，FESpace 拥有 FECollection
+    auto fec = std::make_unique<FECollection>(order_, FECollection::Type::H1);
+    fes_ = std::make_unique<FESpace>(&mesh, std::move(fec), 3);  // 3D位移
     
     u_ = std::make_unique<GridFunction>(fes_.get());
     u_->setZero();
@@ -90,10 +90,6 @@ bool StructuralSolver::solve() {
     }
     
     return success;
-}
-
-void StructuralSolver::computeStressStrain() {
-    // TODO: 实现应力/应变后处理
 }
 
 }  // namespace mpfem

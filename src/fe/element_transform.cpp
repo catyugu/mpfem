@@ -53,28 +53,22 @@ void ElementTransform::computeGeometryInfo() {
     dim_ = geom::dim(geometry_);
     geomOrder_ = elem->order();
     
-    // Get node coordinates
-    nodeIndices_ = elem->vertices();
-    nodes_.resize(nodeIndices_.size());
-    for (size_t i = 0; i < nodeIndices_.size(); ++i) {
-        nodes_[i] = mesh_->vertex(nodeIndices_[i]).toVector();
+    // Get node coordinates - copy to fixed-size buffer
+    const auto& vertexIndices = elem->vertices();
+    numNodes_ = static_cast<int>(vertexIndices.size());
+    
+    for (int i = 0; i < numNodes_; ++i) {
+        nodeIndicesBuf_[i] = vertexIndices[i];
+        nodesBuf_[i] = mesh_->vertex(vertexIndices[i]).toVector();
     }
     
     // Pre-allocate matrices
     jacobian_.setZero(spaceDim_, dim_);
     invJacobian_.setZero(dim_, spaceDim_);
     invJacobianT_.setZero(spaceDim_, dim_);
-    adjJacobian_.setZero(spaceDim_, dim_);
     
     // Create shape function
     shapeFunc_ = ShapeFunction::create(geometry_, geomOrder_);
-    
-    // Pre-allocate shape function buffers
-    if (shapeFunc_) {
-        const int numDofs = shapeFunc_->numDofs();
-        shapeValuesBuf_.resize(numDofs);
-        shapeGradsBuf_.resize(numDofs);
-    }
 }
 
 void ElementTransform::computeJacobianAtIP() {
@@ -85,11 +79,11 @@ void ElementTransform::computeJacobianAtIP() {
     
     // Compute Jacobian: J = sum_i (x_i * grad_phi_i^T)
     jacobian_.setZero(spaceDim_, dim_);
-    for (size_t i = 0; i < shapeGradsBuf_.size(); ++i) {
+    for (int i = 0; i < numNodes_; ++i) {
         const auto& grad = shapeGradsBuf_[i];
         for (int d = 0; d < spaceDim_; ++d) {
             for (int k = 0; k < dim_; ++k) {
-                jacobian_(d, k) += nodes_[i][d] * grad[k];
+                jacobian_(d, k) += nodesBuf_[i][d] * grad[k];
             }
         }
     }
@@ -102,14 +96,12 @@ void ElementTransform::computeJacobianAtIP() {
             weight_ = std::abs(detJ_);
             if (std::abs(detJ_) > 1e-15) {
                 kernels::inverse2(jacobian_.data(), invJacobian_.data());
-                adjJacobian_ = invJacobian_ * detJ_;
             }
         } else if (dim_ == 3) {
             detJ_ = kernels::det3(jacobian_.data());
             weight_ = std::abs(detJ_);
             if (std::abs(detJ_) > 1e-15) {
                 kernels::inverse3(jacobian_.data(), invJacobian_.data());
-                adjJacobian_ = invJacobian_ * detJ_;
             }
         } else {
             // 1D 或其他情况：使用 Eigen
@@ -117,7 +109,6 @@ void ElementTransform::computeJacobianAtIP() {
             weight_ = std::abs(detJ_);
             if (std::abs(detJ_) > 1e-15) {
                 invJacobian_ = jacobian_.inverse();
-                adjJacobian_ = invJacobian_ * detJ_;
             }
         }
     } else {
@@ -126,24 +117,22 @@ void ElementTransform::computeJacobianAtIP() {
         weight_ = std::sqrt(std::abs(JtJ.determinant()));
         detJ_ = weight_;
         invJacobian_ = JtJ.ldlt().solve(jacobian_.transpose());
-        adjJacobian_ = jacobian_;
     }
     
     // Compute transpose
     invJacobianT_ = invJacobian_.transpose();
 }
 
-void ElementTransform::transform(const Real* xi, Real* x) const {
+void ElementTransform::transform(const Real* xi, Real* x) {
     if (!shapeFunc_) return;
     
-    // Evaluate shape values
-    std::vector<Real> vals(shapeValuesBuf_.size());
-    shapeFunc_->evalValues(xi, vals.data());
+    // Reuse pre-allocated buffer instead of creating temporary vector
+    shapeFunc_->evalValues(xi, shapeValuesBuf_.data());
     
     for (int d = 0; d < spaceDim_; ++d) {
         x[d] = 0.0;
-        for (size_t i = 0; i < vals.size(); ++i) {
-            x[d] += vals[i] * nodes_[i][d];
+        for (int i = 0; i < numNodes_; ++i) {
+            x[d] += shapeValuesBuf_[i] * nodesBuf_[i][d];
         }
     }
 }

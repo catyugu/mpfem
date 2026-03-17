@@ -9,9 +9,6 @@
 #include "model/field_kind.hpp"
 #include "core/logger.hpp"
 #include <memory>
-#include <set>
-#include <map>
-#include <string>
 
 namespace mpfem {
 
@@ -27,7 +24,7 @@ struct CouplingResult {
  * 设计原则：
  * - 耦合逻辑集中在此，不在单场求解器中
  * - 求解器引用为非拥有指针，生命周期由外部管理
- * - 系数以字符串为索引统一管理，支持域选择
+ * - 系数由调用者持有，注入场引用后自动获取最新值
  */
 class CouplingManager {
 public:
@@ -41,32 +38,23 @@ public:
     void setHeatTransferSolver(HeatTransferSolver* s) { htSolver_ = s; }
     void setStructuralSolver(StructuralSolver* s) { stSolver_ = s; }
     
-    /// 获取场的解（非拥有指针）
-    const GridFunction* getField(const std::string& name) const;
-    
     // =========================================================================
-    // 系数管理（以字符串为索引，支持域选择）
+    // 耦合系数设置（非拥有指针，由调用者持有）
     // =========================================================================
     
-    /// 设置系数（指定域）
-    void setCoefficient(const std::string& name, 
-                        const std::set<int>& domains,
-                        const Coefficient* coef);
+    /// 设置温度依赖电导率（非拥有，系数持有温度场引用）
+    void setTemperatureDependentConductivity(TemperatureDependentConductivity* coef) {
+        tempDepSigma_ = coef;
+    }
     
-    /// 设置系数（所有域）
-    void setCoefficient(const std::string& name, const Coefficient* coef);
+    /// 设置焦耳热系数（非拥有，系数持有电势场和电导率引用）
+    void setJouleHeatCoefficient(JouleHeatCoefficient* coef) {
+        jouleHeat_ = coef;
+    }
     
-    /// 获取系数
-    const Coefficient* getCoefficient(const std::string& name) const;
-    
-    /// 创建并持有系数（返回指针供外部使用）
-    template<typename T, typename... Args>
-    T* createCoefficient(const std::string& name, Args&&... args) {
-        static_assert(std::is_base_of_v<Coefficient, T>, "T must derive from Coefficient");
-        auto coef = std::make_unique<T>(std::forward<Args>(args)...);
-        T* ptr = coef.get();
-        ownedCoefficients_[name] = std::move(coef);
-        return ptr;
+    /// 设置热膨胀系数（非拥有，系数持有温度场引用）
+    void setThermalExpansionCoefficient(ThermalExpansionCoefficient* coef) {
+        thermalExp_ = coef;
     }
     
     // =========================================================================
@@ -75,7 +63,6 @@ public:
     
     void setTolerance(Real tol) { tol_ = tol; }
     void setMaxIterations(int n) { maxIter_ = n; }
-    void setCouplingMethod(CouplingMethod method) { method_ = method; }
     
     // =========================================================================
     // 求解接口
@@ -92,17 +79,15 @@ private:
     HeatTransferSolver* htSolver_ = nullptr;
     StructuralSolver* stSolver_ = nullptr;
     
-    // 拥有的系数（以字符串为索引）
-    std::map<std::string, std::unique_ptr<Coefficient>> ownedCoefficients_;
-    
-    // 非拥有的系数引用（域映射）
-    std::map<std::string, DomainMappedCoefficient> coefficients_;
+    // 耦合系数引用（非拥有，由调用者持有）
+    TemperatureDependentConductivity* tempDepSigma_ = nullptr;
+    JouleHeatCoefficient* jouleHeat_ = nullptr;
+    ThermalExpansionCoefficient* thermalExp_ = nullptr;
     
     // 迭代状态
     Vector prevT_;
     int maxIter_ = 20;
     Real tol_ = 1e-6;
-    CouplingMethod method_ = CouplingMethod::Picard;
 };
 
 }  // namespace mpfem

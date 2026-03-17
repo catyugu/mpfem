@@ -91,19 +91,9 @@ public:
     
     const GridFunction& field() const override { return *u_; }
     GridFunction& field() override { return *u_; }
-    
-    /// 获取应力场
-    const GridFunction& stress() const { return *stress_; }
-    
-    /// 获取应变场
-    const GridFunction& strain() const { return *strain_; }
 
 private:
-    void computeStressStrain();
-    
     std::unique_ptr<GridFunction> u_;        ///< 位移场
-    std::unique_ptr<GridFunction> stress_;   ///< 应力场 (6分量)
-    std::unique_ptr<GridFunction> strain_;   ///< 应变场 (6分量)
     
     DomainMappedCoefficient youngModulus_;
     DomainMappedCoefficient poissonRatio_;

@@ -59,7 +59,6 @@ protected:
     
     // 共同成员变量
     const Mesh* mesh_ = nullptr;
-    std::unique_ptr<FECollection> fec_;
     std::unique_ptr<FESpace> fes_;
     std::unique_ptr<BilinearFormAssembler> matAsm_;
     std::unique_ptr<LinearFormAssembler> vecAsm_;

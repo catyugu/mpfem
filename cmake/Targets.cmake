@@ -118,7 +118,6 @@ mpfem_add_library(mpfem_model
 mpfem_add_library(mpfem_mesh
     SOURCES
         src/mesh/mesh.cpp
-        src/mesh/io/mphtxt_reader.cpp
     PUBLIC_LINK
         Eigen3::Eigen
         mpfem_core
@@ -134,6 +133,7 @@ mpfem_add_library(mpfem_io
         src/io/case_xml_reader.cpp
         src/io/material_xml_reader.cpp
         src/io/result_exporter.cpp
+        src/io/mphtxt_reader.cpp
     PUBLIC_LINK
         Eigen3::Eigen
         mpfem_core

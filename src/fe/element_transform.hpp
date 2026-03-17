@@ -8,6 +8,7 @@
 #include "core/types.hpp"
 #include <Eigen/Dense>
 #include <memory>
+#include <array>
 
 namespace mpfem {
 
@@ -19,10 +20,16 @@ namespace mpfem {
  * eagerly when setElement() or setIntegrationPoint() is called.
  * 
  * Thread safety: Each thread should have its own transform instance.
+ * 
+ * Memory optimization: Uses fixed-size stack arrays (MAX_NODES=27) to avoid
+ * heap allocation during element iteration. Supports up to order-2 elements.
  */
 
 class ElementTransform {
 public:
+    /// Maximum nodes per element (order-2 hexahedron = 27 nodes)
+    static constexpr int MAX_NODES = 27;
+    
     enum ElementType { VOLUME = 1, BOUNDARY = 2 };
     
     // -------------------------------------------------------------------------
@@ -65,9 +72,9 @@ public:
     // Transformation
     // -------------------------------------------------------------------------
     
-    virtual void transform(const Real* xi, Real* x) const;
-    void transform(const Real* xi, Vector3& x) const;
-    void transform(const IntegrationPoint& ip, Vector3& x) const;
+    virtual void transform(const Real* xi, Real* x);
+    void transform(const Real* xi, Vector3& x);
+    void transform(const IntegrationPoint& ip, Vector3& x);
     
     // -------------------------------------------------------------------------
     // Jacobian and related quantities (computed in setIntegrationPoint)
@@ -78,7 +85,6 @@ public:
     const Matrix& invJacobianT() const { return invJacobianT_; }
     Real detJ() const { return detJ_; }
     virtual Real weight() const { return weight_; }
-    const Matrix& adjJacobian() const { return adjJacobian_; }
     
     // -------------------------------------------------------------------------
     // Gradient transformation
@@ -88,11 +94,16 @@ public:
     void transformGradient(const Vector3& refGrad, Vector3& physGrad) const;
     
     // -------------------------------------------------------------------------
-    // Element nodes
+    // Element nodes (fixed-size for performance)
     // -------------------------------------------------------------------------
     
-    const std::vector<Vector3>& nodes() const { return nodes_; }
-    int numNodes() const { return static_cast<int>(nodes_.size()); }
+    /// Get node coordinates (span view)
+    std::span<const Vector3> nodes() const { 
+        return std::span<const Vector3>(nodesBuf_.data(), numNodes_); 
+    }
+    
+    /// Get number of nodes
+    int numNodes() const { return numNodes_; }
     
     const IntegrationPoint& integrationPoint() const { return ip_; }
     
@@ -111,10 +122,15 @@ protected:
     int dim_ = 0;
     int spaceDim_ = 0;
     int geomOrder_ = 1;
+    int numNodes_ = 0;
     
     std::unique_ptr<ShapeFunction> shapeFunc_;
-    std::vector<Vector3> nodes_;
-    std::vector<Index> nodeIndices_;
+    
+    // Fixed-size buffers (no heap allocation)
+    std::array<Vector3, MAX_NODES> nodesBuf_;
+    std::array<Index, MAX_NODES> nodeIndicesBuf_;
+    std::array<Real, MAX_NODES> shapeValuesBuf_;
+    std::array<Vector3, MAX_NODES> shapeGradsBuf_;
     
     IntegrationPoint ip_;
     
@@ -122,13 +138,8 @@ protected:
     Matrix jacobian_;       // spaceDim x dim
     Matrix invJacobian_;    // dim x spaceDim
     Matrix invJacobianT_;   // spaceDim x dim
-    Matrix adjJacobian_;    // spaceDim x dim
     Real detJ_ = 0.0;
     Real weight_ = 0.0;
-    
-    // Pre-allocated buffers for shape function evaluation
-    std::vector<Real> shapeValuesBuf_;
-    std::vector<Vector3> shapeGradsBuf_;
 };
 
 // =============================================================================
@@ -152,13 +163,13 @@ inline void ElementTransform::setIntegrationPoint(const Real* xi) {
     computeJacobianAtIP();
 }
 
-inline void ElementTransform::transform(const Real* xi, Vector3& x) const {
+inline void ElementTransform::transform(const Real* xi, Vector3& x) {
     Real coords[3];
     transform(xi, coords);
     x = Vector3(coords[0], coords[1], coords[2]);
 }
 
-inline void ElementTransform::transform(const IntegrationPoint& ip, Vector3& x) const {
+inline void ElementTransform::transform(const IntegrationPoint& ip, Vector3& x) {
     transform(&ip.xi, x);
 }
 

@@ -30,8 +30,11 @@ struct alignas(64) ThreadBuffer {
     Eigen::Matrix<Real, MAX_DOFS * 3, MAX_DOFS * 3, Eigen::RowMajor> elmatVector;
     Eigen::Matrix<Real, MAX_DOFS, 1> elvecScalar;
     Eigen::Matrix<Real, MAX_DOFS * 3, 1> elvecVector;
-    std::array<Index, MAX_DOFS * 3> dofs;
-    int numDofs = 0;
+    std::vector<Index> dofs;  // Pre-allocated DOF buffer
+    
+    ThreadBuffer() {
+        dofs.reserve(MAX_DOFS * 3);  // Pre-allocate once
+    }
 };
 
 // =============================================================================
@@ -64,9 +67,6 @@ public:
     Index rows() const { return mat_.rows(); }
     
 private:
-    /// 扩展标量矩阵到向量场对角块
-    void expandScalarToVector(const Matrix& scalarMat, Matrix& vectorMat, int nd, int vdim);
-    
     const FESpace* fes_;
     std::vector<std::unique_ptr<DomainBilinearIntegrator>> domainIntegs_;
     std::vector<std::unique_ptr<VectorDomainBilinearIntegrator>> vectorDomainIntegs_;
@@ -104,9 +104,6 @@ public:
     Vector& vector() { return vec_; }
     
 private:
-    /// 扩展标量向量到向量场
-    void expandScalarToVector(const Vector& scalarVec, Vector& vectorVec, int nd, int vdim);
-    
     const FESpace* fes_;
     std::vector<std::unique_ptr<DomainLinearIntegrator>> domainIntegs_;
     std::vector<std::unique_ptr<VectorDomainLinearIntegrator>> vectorDomainIntegs_;

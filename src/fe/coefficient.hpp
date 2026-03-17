@@ -5,6 +5,7 @@
 #include <functional>
 #include <vector>
 #include <set>
+#include <map>
 
 namespace mpfem {
 
@@ -22,6 +23,10 @@ class GridFunction;
  * - 使用 ElementTransform 获取几何和域信息
  * - 支持时间参数 t 用于瞬态问题
  * - 纯虚接口，派生类必须实现 eval
+ * 
+ * 所有权策略：
+ * - Coefficient 实例由调用者（如 PhysicsProblemSetup）管理
+ * - DomainMappedCoefficient 只持有非拥有引用
  */
 class Coefficient {
 public:
@@ -81,24 +86,26 @@ private:
     Func func_;
 };
 
-/// 域映射系数：不同域使用不同的系数
+/// 域映射系数：不同域使用不同的系数（非持有引用）
+/// 
+/// 所有权策略：所有系数由外部管理（如 PhysicsProblemSetup::coefficients_）
 class DomainMappedCoefficient : public Coefficient {
 public:
     DomainMappedCoefficient() = default;
     
-    /// 设置指定域的系数（覆盖已存在的）
+    /// 设置指定域的系数（非持有指针）
     void set(int domainId, const Coefficient* coef) {
         coefs_[domainId] = coef;
     }
     
-    /// 批量设置多个域使用同一个系数
+    /// 批量设置多个域使用同一个系数（非持有指针）
     void set(const std::set<int>& domainIds, const Coefficient* coef) {
         for (int id : domainIds) {
             coefs_[id] = coef;
         }
     }
     
-    /// 设置所有域使用同一个系数（清空映射，设置默认系数）
+    /// 设置所有域使用同一个系数（非持有指针，清空映射，设置默认系数）
     void setAll(const Coefficient* coef) {
         defaultCoef_ = coef;
         coefs_.clear();
@@ -128,10 +135,14 @@ private:
 
 /**
  * @brief 温度依赖电导率：sigma = 1 / (rho0 * (1 + alpha * (T - Tref)))
+ * 
+ * 在构造时注入温度场引用，数据源唯一，无需手动更新。
  */
 class TemperatureDependentConductivity : public Coefficient {
 public:
-    TemperatureDependentConductivity() = default;
+    /// 构造时注入温度场引用
+    TemperatureDependentConductivity(const GridFunction& T)
+        : T_(&T) {}
     
     /// 设置温度依赖材料参数
     void setMaterial(int domainId, Real rho0, Real alpha, Real tref) {
@@ -147,9 +158,6 @@ public:
         sigma0_[domainId - 1] = sigma;
         rho0_[domainId - 1] = 0.0;
     }
-    
-    /// 设置温度场
-    void setTemperatureField(const GridFunction* T) { T_ = T; }
     
     Real eval(ElementTransform& trans, Real t = 0.0) const override;
     
@@ -176,12 +184,15 @@ private:
 
 /**
  * @brief 焦耳热系数: Q = sigma * |grad V|^2
+ * 
+ * 在构造时注入电势场和电导率引用，数据源唯一，无需手动更新。
  */
 class JouleHeatCoefficient : public Coefficient {
 public:
-    void setPotential(const GridFunction* V) { V_ = V; }
-    void setConductivity(const Coefficient* sigma) { sigma_ = sigma; }
-    void setDomains(const std::set<int>& domains) { domains_ = domains; }
+    /// 构造时注入电势场和电导率引用
+    JouleHeatCoefficient(const GridFunction& V, const Coefficient& sigma,
+                         std::set<int> domains = {})
+        : V_(&V), sigma_(&sigma), domains_(std::move(domains)) {}
     
     Real eval(ElementTransform& trans, Real t = 0.0) const override;
     
@@ -197,13 +208,15 @@ private:
 
 /**
  * @brief 热膨胀应变系数: epsilon_th = alpha_T * (T - T_ref)
+ * 
+ * 在构造时注入温度场引用，数据源唯一，无需手动更新。
  */
 class ThermalExpansionCoefficient : public Coefficient {
 public:
-    ThermalExpansionCoefficient() = default;
     
-    /// 设置温度场
-    void setTemperatureField(const GridFunction* T) { T_ = T; }
+    /// 构造时注入温度场引用
+    explicit ThermalExpansionCoefficient(const GridFunction& T, Real T_ref = 293.15)
+        : T_ref_(T_ref), T_(&T) {}
     
     /// 设置参考温度（默认293.15K = 20C）
     void setReferenceTemperature(Real T_ref) { T_ref_ = T_ref; }

@@ -1,5 +1,5 @@
 #include "mesh/mesh.hpp"
-#include "mesh/io/mphtxt_reader.hpp"
+#include "io/mphtxt_reader.hpp"
 #include "fe/fe_collection.hpp"
 #include "fe/fe_space.hpp"
 #include "physics/physics_problem_builder.hpp"
@@ -82,7 +82,8 @@ int main(int argc, char* argv[]) {
                      << numCorners << " corner vertices";
         }
         
-        std::vector<FieldResult> fields;
+        std::vector<FieldResult> scalarFields;
+        std::map<std::string, std::vector<Vector3>> vectorFields;
         
         if (setup.hasElectrostatics()) {
             const GridFunction& V = setup.electrostatics->field();
@@ -92,7 +93,7 @@ int main(int argc, char* argv[]) {
             // 对于高阶网格，投影到角点
             Eigen::VectorXd cornerV = V.projectToCorners(*setup.mesh);
             f.nodalValues.assign(cornerV.data(), cornerV.data() + cornerV.size());
-            fields.push_back(f);
+            scalarFields.push_back(f);
         }
         
         if (setup.hasHeatTransfer()) {
@@ -103,46 +104,55 @@ int main(int argc, char* argv[]) {
             // 对于高阶网格，投影到角点
             Eigen::VectorXd cornerT = T.projectToCorners(*setup.mesh);
             f.nodalValues.assign(cornerT.data(), cornerT.data() + cornerT.size());
-            fields.push_back(f);
+            scalarFields.push_back(f);
         }
         
-        // 添加位移场
+        // 添加位移场（导出为向量场）
         if (setup.hasStructural()) {
             const GridFunction& u = setup.structural->field();
             
             // 对于高阶网格，先投影到角点
             Eigen::VectorXd cornerU = u.projectToCorners(*setup.mesh);
             
-            // 计算位移幅值（在角点上）
+            // 导出位移向量场
             Index numExport = numCorners;
-            FieldResult fDisp;
-            fDisp.name = "disp";
-            fDisp.unit = "m";
-            fDisp.nodalValues.resize(numExport);
+            std::vector<Vector3> dispVec(numExport);
+            for (Index i = 0; i < numExport; ++i) {
+                dispVec[i].x() = cornerU(i * 3);
+                dispVec[i].y() = cornerU(i * 3 + 1);
+                dispVec[i].z() = cornerU(i * 3 + 2);
+            }
+            vectorFields["displacement"] = dispVec;
+            
+            // 同时导出位移幅值方便调试
+            FieldResult fDispMag;
+            fDispMag.name = "disp_magnitude";
+            fDispMag.unit = "m";
+            fDispMag.nodalValues.resize(numExport);
             for (Index i = 0; i < numExport; ++i) {
                 Real dx = cornerU(i * 3);
                 Real dy = cornerU(i * 3 + 1);
                 Real dz = cornerU(i * 3 + 2);
-                fDisp.nodalValues[i] = std::sqrt(dx*dx + dy*dy + dz*dz);
+                fDispMag.nodalValues[i] = std::sqrt(dx*dx + dy*dy + dz*dz);
             }
-            fields.push_back(fDisp);
+            scalarFields.push_back(fDispMag);
         } else {
             // 位移场占位符（如果求解器未启用）
             FieldResult f;
-            f.name = "disp";
+            f.name = "disp_magnitude";
             f.unit = "m";
             f.nodalValues.resize(numCorners, 0.0);
-            fields.push_back(f);
+            scalarFields.push_back(f);
         }
         
-        ResultExporter::exportVtu(outputPath, *setup.mesh, fields);
-        LOG_INFO << "Results exported to: " << outputPath;
+        ResultExporter::exportVtuWithVectors(outputPath, *setup.mesh, scalarFields, vectorFields);
+        LOG_INFO << "Exported VTU results to: " << outputPath;
         
         // 导出COMSOL格式结果文件用于比较
         std::string comsolOutput = "results/mpfem_result.txt";
-        ResultExporter::exportComsolText(comsolOutput, *setup.mesh, fields,
+        ResultExporter::exportComsolText(comsolOutput, *setup.mesh, scalarFields,
             "Electric potential, Temperature, Displacement magnitude");
-        LOG_INFO << "COMSOL format results exported to: " << comsolOutput;
+        LOG_INFO << "Exported results to: " << comsolOutput;
         
         LOG_INFO << "=== Example completed successfully! ===";
         return 0;

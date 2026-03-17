@@ -76,23 +76,6 @@ inline CouplingKind stringToCouplingKind(const std::string& str) {
     return CouplingKind::Unknown;
 }
 
-/**
- * @brief Enumeration of coupling iteration methods.
- */
-enum class CouplingMethod {
-    Picard
-};
-
-/**
- * @brief Convert string to CouplingMethod.
- */
-inline CouplingMethod stringToCouplingMethod(const std::string& str) {
-    if (str == "picard") {
-        return CouplingMethod::Picard;
-    }
-    return CouplingMethod::Picard;  // Default
-}
-
 }  // namespace mpfem
 
 #endif  // MPFEM_FIELD_KIND_HPP

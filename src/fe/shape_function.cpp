@@ -179,7 +179,7 @@ std::vector<std::vector<Real>> H1TriangleShape::dofCoords() const
 // H1SquareShape
 // =============================================================================
 
-H1SquareShape::H1SquareShape(int order) : order_(order), segment1d_(order)
+H1SquareShape::H1SquareShape(int order) : order_(order)
 {
     if (order < 1 || order > 2)
     {
@@ -421,7 +421,7 @@ std::vector<std::vector<Real>> H1TetrahedronShape::dofCoords() const
 // H1CubeShape
 // =============================================================================
 
-H1CubeShape::H1CubeShape(int order) : order_(order), segment1d_(order)
+H1CubeShape::H1CubeShape(int order) : order_(order)
 {
     if (order < 1 || order > 2)
     {
