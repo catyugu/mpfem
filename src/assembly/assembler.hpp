@@ -30,8 +30,11 @@ struct alignas(64) ThreadBuffer {
     Eigen::Matrix<Real, MAX_DOFS * 3, MAX_DOFS * 3, Eigen::RowMajor> elmatVector;
     Eigen::Matrix<Real, MAX_DOFS, 1> elvecScalar;
     Eigen::Matrix<Real, MAX_DOFS * 3, 1> elvecVector;
-    std::array<Index, MAX_DOFS * 3> dofs;
-    int numDofs = 0;
+    std::vector<Index> dofs;  // Pre-allocated DOF buffer
+    
+    ThreadBuffer() {
+        dofs.reserve(MAX_DOFS * 3);  // Pre-allocate once
+    }
 };
 
 // =============================================================================

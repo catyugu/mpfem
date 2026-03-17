@@ -64,7 +64,6 @@ void ElementTransform::computeGeometryInfo() {
     jacobian_.setZero(spaceDim_, dim_);
     invJacobian_.setZero(dim_, spaceDim_);
     invJacobianT_.setZero(spaceDim_, dim_);
-    adjJacobian_.setZero(spaceDim_, dim_);
     
     // Create shape function
     shapeFunc_ = ShapeFunction::create(geometry_, geomOrder_);
@@ -102,14 +101,12 @@ void ElementTransform::computeJacobianAtIP() {
             weight_ = std::abs(detJ_);
             if (std::abs(detJ_) > 1e-15) {
                 kernels::inverse2(jacobian_.data(), invJacobian_.data());
-                adjJacobian_ = invJacobian_ * detJ_;
             }
         } else if (dim_ == 3) {
             detJ_ = kernels::det3(jacobian_.data());
             weight_ = std::abs(detJ_);
             if (std::abs(detJ_) > 1e-15) {
                 kernels::inverse3(jacobian_.data(), invJacobian_.data());
-                adjJacobian_ = invJacobian_ * detJ_;
             }
         } else {
             // 1D 或其他情况：使用 Eigen
@@ -117,7 +114,6 @@ void ElementTransform::computeJacobianAtIP() {
             weight_ = std::abs(detJ_);
             if (std::abs(detJ_) > 1e-15) {
                 invJacobian_ = jacobian_.inverse();
-                adjJacobian_ = invJacobian_ * detJ_;
             }
         }
     } else {
@@ -126,7 +122,6 @@ void ElementTransform::computeJacobianAtIP() {
         weight_ = std::sqrt(std::abs(JtJ.determinant()));
         detJ_ = weight_;
         invJacobian_ = JtJ.ldlt().solve(jacobian_.transpose());
-        adjJacobian_ = jacobian_;
     }
     
     // Compute transpose

@@ -37,7 +37,7 @@ public:
     /// 设置指定域的电导率系数（非拥有指针，覆盖已存在的）
     void setConductivity(const std::set<int>& domains, const Coefficient* sigma);
     
-    /// 设置所有域的电导率系数（非拥有指针）
+    /// 设置所有域的电导率系数（非拥有指针，用于耦合系数）
     void setConductivity(const Coefficient* sigma) {
         conductivity_.setAll(sigma);
     }

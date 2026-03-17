@@ -78,7 +78,6 @@ public:
     const Matrix& invJacobianT() const { return invJacobianT_; }
     Real detJ() const { return detJ_; }
     virtual Real weight() const { return weight_; }
-    const Matrix& adjJacobian() const { return adjJacobian_; }
     
     // -------------------------------------------------------------------------
     // Gradient transformation
@@ -122,7 +121,6 @@ protected:
     Matrix jacobian_;       // spaceDim x dim
     Matrix invJacobian_;    // dim x spaceDim
     Matrix invJacobianT_;   // spaceDim x dim
-    Matrix adjJacobian_;    // spaceDim x dim
     Real detJ_ = 0.0;
     Real weight_ = 0.0;
     

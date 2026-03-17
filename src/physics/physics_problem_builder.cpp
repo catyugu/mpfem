@@ -80,7 +80,7 @@ namespace mpfem
             setup.couplingManager->setTolerance(caseDef.couplingConfig.tolerance);
             setup.couplingManager->setMaxIterations(caseDef.couplingConfig.maxIterations);
 
-            // 设置耦合系数（持有场引用）
+            // 设置耦合系数
             setupCoupling(setup);
         }
     }
@@ -105,8 +105,8 @@ namespace mpfem
             {
                 // 为每个域创建单独的常量系数
                 std::string key = "conductivity_" + std::to_string(domId);
-                setup.bcCoefficients[key] = std::make_unique<ConstantCoefficient>(mat->electricConductivity);
-                setup.electrostatics->setConductivity({domId}, setup.bcCoefficients[key].get());
+                setup.coefficients[key] = std::make_unique<ConstantCoefficient>(mat->electricConductivity);
+                setup.electrostatics->setConductivity({domId}, setup.coefficients[key].get());
                 LOG_DEBUG << "Domain " << domId << " (" << matTag
                          << "): sigma = " << mat->electricConductivity;
             }
@@ -119,9 +119,9 @@ namespace mpfem
             {
                 Real value = parseValue(bc.params, "value", setup.caseDef);
                 std::string key = "voltage_bc_" + std::to_string(*bc.ids.begin());
-                setup.bcCoefficients[key] = std::make_unique<ConstantCoefficient>(value);
+                setup.coefficients[key] = std::make_unique<ConstantCoefficient>(value);
                 std::set<int> ids(bc.ids.begin(), bc.ids.end());
-                setup.electrostatics->addVoltageBC(ids, setup.bcCoefficients[key].get());
+                setup.electrostatics->addVoltageBC(ids, setup.coefficients[key].get());
             }
         }
     }
@@ -145,8 +145,8 @@ namespace mpfem
             if (mat)
             {
                 std::string key = "thermal_conductivity_" + std::to_string(domId);
-                setup.bcCoefficients[key] = std::make_unique<ConstantCoefficient>(mat->thermalConductivity);
-                setup.heatTransfer->setConductivity({domId}, setup.bcCoefficients[key].get());
+                setup.coefficients[key] = std::make_unique<ConstantCoefficient>(mat->thermalConductivity);
+                setup.heatTransfer->setConductivity({domId}, setup.coefficients[key].get());
             }
         }
 
@@ -157,9 +157,9 @@ namespace mpfem
             {
                 Real value = parseValue(bc.params, "value", setup.caseDef);
                 std::string key = "temp_bc_" + std::to_string(*bc.ids.begin());
-                setup.bcCoefficients[key] = std::make_unique<ConstantCoefficient>(value);
+                setup.coefficients[key] = std::make_unique<ConstantCoefficient>(value);
                 std::set<int> ids(bc.ids.begin(), bc.ids.end());
-                setup.heatTransfer->addTemperatureBC(ids, setup.bcCoefficients[key].get());
+                setup.heatTransfer->addTemperatureBC(ids, setup.coefficients[key].get());
             }
             else if (bc.kind == "convection")
             {
@@ -168,13 +168,13 @@ namespace mpfem
 
                 std::string hKey = "conv_h_" + std::to_string(*bc.ids.begin());
                 std::string tinfKey = "conv_tinf_" + std::to_string(*bc.ids.begin());
-                setup.bcCoefficients[hKey] = std::make_unique<ConstantCoefficient>(h);
-                setup.bcCoefficients[tinfKey] = std::make_unique<ConstantCoefficient>(Tinf);
+                setup.coefficients[hKey] = std::make_unique<ConstantCoefficient>(h);
+                setup.coefficients[tinfKey] = std::make_unique<ConstantCoefficient>(Tinf);
 
                 std::set<int> ids(bc.ids.begin(), bc.ids.end());
                 setup.heatTransfer->addConvectionBC(ids,
-                                                    setup.bcCoefficients[hKey].get(),
-                                                    setup.bcCoefficients[tinfKey].get());
+                                                    setup.coefficients[hKey].get(),
+                                                    setup.coefficients[tinfKey].get());
             }
         }
     }
@@ -199,11 +199,11 @@ namespace mpfem
             {
                 std::string eKey = "young_" + std::to_string(domId);
                 std::string nuKey = "poisson_" + std::to_string(domId);
-                setup.bcCoefficients[eKey] = std::make_unique<ConstantCoefficient>(mat->youngModulus);
-                setup.bcCoefficients[nuKey] = std::make_unique<ConstantCoefficient>(mat->poissonRatio);
+                setup.coefficients[eKey] = std::make_unique<ConstantCoefficient>(mat->youngModulus);
+                setup.coefficients[nuKey] = std::make_unique<ConstantCoefficient>(mat->poissonRatio);
 
-                setup.structural->setYoungModulus({domId}, setup.bcCoefficients[eKey].get());
-                setup.structural->setPoissonRatio({domId}, setup.bcCoefficients[nuKey].get());
+                setup.structural->setYoungModulus({domId}, setup.coefficients[eKey].get());
+                setup.structural->setPoissonRatio({domId}, setup.coefficients[nuKey].get());
 
                 LOG_DEBUG << "Domain " << domId << " (" << matTag
                          << "): E = " << mat->youngModulus
@@ -217,9 +217,9 @@ namespace mpfem
             if (bc.kind == "fixed_constraint")
             {
                 std::string key = "fixed_disp_" + std::to_string(*bc.ids.begin());
-                setup.bcVectorCoefficients[key] = std::make_unique<ConstantVectorCoefficient>(0.0, 0.0, 0.0);
+                setup.vectorCoefficients[key] = std::make_unique<ConstantVectorCoefficient>(0.0, 0.0, 0.0);
                 std::set<int> ids(bc.ids.begin(), bc.ids.end());
-                setup.structural->addFixedDisplacementBC(ids, setup.bcVectorCoefficients[key].get());
+                setup.structural->addFixedDisplacementBC(ids, setup.vectorCoefficients[key].get());
             }
         }
     }
@@ -243,8 +243,8 @@ namespace mpfem
 
         if (hasTempDepSigma)
         {
-            // 创建系数，注入温度场引用
-            setup.tempDepSigma = std::make_unique<TemperatureDependentConductivity>(
+            // 创建系数，注入温度场引用，统一存储在 coefficients 中
+            auto tempDepSigma = std::make_unique<TemperatureDependentConductivity>(
                 setup.heatTransfer->field());
             
             for (const auto &[domId, matTag] : setup.domainMaterial)
@@ -254,16 +254,17 @@ namespace mpfem
                 {
                     if (mat->rho0 > 0.0)
                     {
-                        setup.tempDepSigma->setMaterial(domId, mat->rho0, mat->alpha, mat->tref);
+                        tempDepSigma->setMaterial(domId, mat->rho0, mat->alpha, mat->tref);
                     }
                     else
                     {
-                        setup.tempDepSigma->setConstantConductivity(domId, mat->electricConductivity);
+                        tempDepSigma->setConstantConductivity(domId, mat->electricConductivity);
                     }
                 }
             }
             
-            setup.couplingManager->setTemperatureDependentConductivity(setup.tempDepSigma.get());
+            setup.couplingManager->setTemperatureDependentConductivity(tempDepSigma.get());
+            setup.coefficients["tempDepSigma"] = std::move(tempDepSigma);
         }
         
         // 2. 焦耳热耦合
@@ -271,20 +272,21 @@ namespace mpfem
         {
             if (cp.kind == "joule_heating")
             {
-                // 创建系数，注入电势场和电导率引用
+                // 创建系数，注入电势场和电导率引用，统一存储在 coefficients 中
                 std::set<int> domains(cp.domainIds.begin(), cp.domainIds.end());
-                setup.jouleHeat = std::make_unique<JouleHeatCoefficient>(
+                auto jouleHeat = std::make_unique<JouleHeatCoefficient>(
                     setup.electrostatics->field(),
                     setup.electrostatics->conductivity(),
                     std::move(domains));
                 
-                setup.couplingManager->setJouleHeatCoefficient(setup.jouleHeat.get());
+                setup.couplingManager->setJouleHeatCoefficient(jouleHeat.get());
+                setup.coefficients["jouleHeat"] = std::move(jouleHeat);
                 LOG_INFO << "Joule heating domains: " << cp.domainIds.size() << " domains";
             }
             else if (cp.kind == "thermal_expansion")
             {
-                // 创建系数，注入温度场引用
-                setup.thermalExp = std::make_unique<ThermalExpansionCoefficient>(
+                // 创建系数，注入温度场引用，统一存储在 coefficients 中
+                auto thermalExp = std::make_unique<ThermalExpansionCoefficient>(
                     setup.heatTransfer->field(), 293.15);
                 
                 for (int domId : cp.domainIds)
@@ -292,11 +294,12 @@ namespace mpfem
                     const MaterialPropertyModel *mat = materials.getMaterial(setup.domainMaterial[domId]);
                     if (mat && mat->thermalExpansion > 0.0)
                     {
-                        setup.thermalExp->setAlphaT(domId, mat->thermalExpansion);
+                        thermalExp->setAlphaT(domId, mat->thermalExpansion);
                     }
                 }
                 
-                setup.couplingManager->setThermalExpansionCoefficient(setup.thermalExp.get());
+                setup.couplingManager->setThermalExpansionCoefficient(thermalExp.get());
+                setup.coefficients["thermalExp"] = std::move(thermalExp);
                 LOG_INFO << "Thermal expansion coupling enabled";
             }
         }

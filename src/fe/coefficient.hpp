@@ -86,22 +86,29 @@ class DomainMappedCoefficient : public Coefficient {
 public:
     DomainMappedCoefficient() = default;
     
-    /// 设置指定域的系数（覆盖已存在的）
+    /// 设置指定域的系数（非拥有指针，覆盖已存在的）
     void set(int domainId, const Coefficient* coef) {
         coefs_[domainId] = coef;
     }
     
-    /// 批量设置多个域使用同一个系数
+    /// 设置指定域的系数（转移所有权）
+    void own(int domainId, std::unique_ptr<Coefficient> coef) {
+        ownedCoefs_[domainId] = std::move(coef);
+        coefs_[domainId] = ownedCoefs_[domainId].get();
+    }
+    
+    /// 批量设置多个域使用同一个系数（非拥有指针）
     void set(const std::set<int>& domainIds, const Coefficient* coef) {
         for (int id : domainIds) {
             coefs_[id] = coef;
         }
     }
     
-    /// 设置所有域使用同一个系数（清空映射，设置默认系数）
+    /// 设置所有域使用同一个系数（非拥有指针，清空映射，设置默认系数）
     void setAll(const Coefficient* coef) {
         defaultCoef_ = coef;
         coefs_.clear();
+        ownedCoefs_.clear();
     }
     
     /// 获取指定域的系数（如果没有则返回默认系数）
@@ -120,6 +127,7 @@ public:
 private:
     std::map<int, const Coefficient*> coefs_;
     const Coefficient* defaultCoef_ = nullptr;
+    std::map<int, std::unique_ptr<Coefficient>> ownedCoefs_;  ///< Owned coefficients
 };
 
 // =============================================================================
