@@ -73,35 +73,6 @@ inline void applyDirichletBC(SparseMatrix& mat, Vector& rhs, Vector& sol,
     for (const auto& [d, v] : dofVals) sol(d) = v;
 }
 
-/// 应用 Dirichlet 边界条件到系统矩阵和右端向量（标量场，使用 Real 值）
-/// 
-/// @deprecated 请使用 Coefficient 版本
-inline void applyDirichletBC(SparseMatrix& mat, Vector& rhs, Vector& sol,
-                             const FESpace& fes, const Mesh& mesh,
-                             const std::map<int, Real>& bcValues) {
-    std::map<Index, Real> dofVals;
-    
-    // 收集所有边界 DOF 及其值
-    for (const auto& [bid, val] : bcValues) {
-        if (!fes.isExternalBoundaryId(bid)) continue;
-        
-        for (Index b = 0; b < mesh.numBdrElements(); ++b) {
-            if (mesh.bdrElement(b).attribute() == bid) {
-                std::vector<Index> dofs;
-                fes.getBdrElementDofs(b, dofs);
-                for (Index d : dofs) {
-                    if (d != InvalidIndex && dofVals.find(d) == dofVals.end()) {
-                        dofVals[d] = val;
-                    }
-                }
-            }
-        }
-    }
-    
-    mat.eliminateRows(dofVals, rhs);
-    for (const auto& [d, v] : dofVals) sol(d) = v;
-}
-
 /// 应用 Dirichlet 边界条件到系统矩阵和右端向量（向量场，使用 VectorCoefficient）
 inline void applyDirichletBC(SparseMatrix& mat, Vector& rhs, Vector& sol,
                              const FESpace& fes, const Mesh& mesh,
