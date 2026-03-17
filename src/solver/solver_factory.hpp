@@ -100,21 +100,17 @@ private:
             // Eigen solvers (always available)
             case SolverType::Eigen_SparseLU:
                 return std::make_unique<EigenSparseLUSolver>();
-            case SolverType::Eigen_CG:
-                return std::make_unique<EigenCGSolver>();
             case SolverType::Eigen_CGIC:
                 return std::make_unique<EigenCGICSolver>();
-            case SolverType::Eigen_BiCGSTAB:
-                return std::make_unique<EigenBiCGSTABSolver>();
             case SolverType::Eigen_BiCGSTABILUT:
                 return std::make_unique<EigenBiCGSTABILUTSolver>();
-            
+
             // External solvers
             case SolverType::SuperLU_LU:
                 return std::make_unique<SuperLUSolver>();
             case SolverType::Umfpack_LU:
                 return std::make_unique<UmfpackSolver>();
-            
+
             default:
                 throw std::runtime_error("Unsupported solver type");
         }

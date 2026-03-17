@@ -63,44 +63,18 @@ private:
 };
 
 /**
- * @brief Eigen Conjugate Gradient iterative solver.
+ * @brief Eigen CG with Incomplete Cholesky preconditioner.
  * 
  * For symmetric positive definite matrices.
- */
-class EigenCGSolver : public LinearSolver {
-public:
-    std::string name() const override { return "Eigen::CG"; }
-    
-    bool solve(const SparseMatrix& A, Vector& x, const Vector& b) override {
-        solver_.setMaxIterations(maxIterations_);
-        solver_.setTolerance(tolerance_);
-        solver_.compute(A.eigen());
-        
-        x = solver_.solveWithGuess(b, x);
-        
-        iterations_ = solver_.iterations();
-        residual_ = solver_.error();
-        
-        if (printLevel_ > 0) {
-            LOG_INFO << "[EigenCG] Iterations: " << iterations_ 
-                      << ", Error: " << residual_;
-        }
-        
-        return solver_.info() == Eigen::Success;
-    }
-    
-private:
-    Eigen::ConjugateGradient<Eigen::SparseMatrix<Real>> solver_;
-};
-
-/**
- * @brief Eigen CG with Incomplete Cholesky preconditioner.
+ * Uses Incomplete Cholesky factorization as preconditioner for better convergence.
  */
 class EigenCGICSolver : public LinearSolver {
 public:
     std::string name() const override { return "Eigen::CG+IC"; }
     
     bool solve(const SparseMatrix& A, Vector& x, const Vector& b) override {
+        ScopedTimer timer("Linear solve (CG+IC)");
+        
         solver_.setMaxIterations(maxIterations_);
         solver_.setTolerance(tolerance_);
         solver_.compute(A.eigen());
@@ -124,44 +98,18 @@ private:
 };
 
 /**
- * @brief Eigen BiCGSTAB iterative solver.
+ * @brief Eigen BiCGSTAB with ILUT preconditioner.
  * 
  * For non-symmetric matrices.
- */
-class EigenBiCGSTABSolver : public LinearSolver {
-public:
-    std::string name() const override { return "Eigen::BiCGSTAB"; }
-    
-    bool solve(const SparseMatrix& A, Vector& x, const Vector& b) override {
-        solver_.setMaxIterations(maxIterations_);
-        solver_.setTolerance(tolerance_);
-        solver_.compute(A.eigen());
-        
-        x = solver_.solveWithGuess(b, x);
-        
-        iterations_ = solver_.iterations();
-        residual_ = solver_.error();
-        
-        if (printLevel_ > 0) {
-            LOG_INFO << "[EigenBiCGSTAB] Iterations: " << iterations_ 
-                     << ", Error: " << residual_;
-        }
-        
-        return solver_.info() == Eigen::Success;
-    }
-    
-private:
-    Eigen::BiCGSTAB<Eigen::SparseMatrix<Real>> solver_;
-};
-
-/**
- * @brief Eigen BiCGSTAB with ILUT preconditioner.
+ * Uses Incomplete LU factorization with Threshold as preconditioner.
  */
 class EigenBiCGSTABILUTSolver : public LinearSolver {
 public:
     std::string name() const override { return "Eigen::BiCGSTAB+ILUT"; }
     
     bool solve(const SparseMatrix& A, Vector& x, const Vector& b) override {
+        ScopedTimer timer("Linear solve (BiCGSTAB+ILUT)");
+        
         solver_.setMaxIterations(maxIterations_);
         solver_.setTolerance(tolerance_);
         solver_.compute(A.eigen());

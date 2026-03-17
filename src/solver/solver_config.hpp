@@ -16,11 +16,9 @@ namespace mpfem {
 enum class SolverType {
     // Eigen solvers (always available)
     Eigen_SparseLU,       ///< Direct LU factorization
-    Eigen_CG,             ///< Conjugate Gradient (SPD only)
     Eigen_CGIC,           ///< CG with Incomplete Cholesky (SPD only)
-    Eigen_BiCGSTAB,       ///< BiCGSTAB for non-symmetric
     Eigen_BiCGSTABILUT,   ///< BiCGSTAB with ILUT
-    
+
     // External direct solvers (conditionally available)
     SuperLU_LU,           ///< SuperLU direct solver
     Umfpack_LU,           ///< SuiteSparse UMFPACK
@@ -73,11 +71,9 @@ inline constexpr bool isCholmodAvailable() {
 inline constexpr SolverMeta solverRegistry[] = {
     // Eigen solvers (always available)
     {SolverType::Eigen_SparseLU,     "eigen.sparse_lu",     "Eigen SparseLU direct solver",      false, false, true},
-    {SolverType::Eigen_CG,           "eigen.cg",            "Eigen Conjugate Gradient",          true,  true,  true},
     {SolverType::Eigen_CGIC,         "eigen.cg_ic",         "Eigen CG with IC preconditioner",   true,  true,  true},
-    {SolverType::Eigen_BiCGSTAB,     "eigen.bicgstab",      "Eigen BiCGSTAB",                    true,  false, true},
     {SolverType::Eigen_BiCGSTABILUT, "eigen.bicgstab_ilut", "Eigen BiCGSTAB with ILUT",          true,  false, true},
-    
+
     // External solvers
     {SolverType::SuperLU_LU,   "superlu.lu",   "SuperLU direct solver",        false, false, isSuperLUAvailable()},
     {SolverType::Umfpack_LU,   "umfpack.lu",   "UMFPACK direct solver",        false, false, isUmfpackAvailable()},
@@ -167,7 +163,7 @@ struct SolverConfig {
     static SolverConfig superLU() { return {SolverType::SuperLU_LU}; }
     static SolverConfig umfpack() { return {SolverType::Umfpack_LU}; }
     static SolverConfig cholmod() { return {SolverType::Cholmod_LLT}; }
-    static SolverConfig eigenCG() { return {SolverType::Eigen_CG}; }
+    static SolverConfig eigenCGIC() { return {SolverType::Eigen_CGIC}; }
 };
 
 }  // namespace mpfem

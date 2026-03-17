@@ -6,6 +6,7 @@
 #include <sstream>
 #include <iomanip>
 #include <ctime>
+#include <unordered_map>
 
 namespace mpfem {
 
@@ -111,13 +112,34 @@ void ResultExporter::exportVtuWithVectors(const std::string& filename,
 
     file << std::scientific << std::setprecision(10);
 
+    // Determine if we need to export only corner vertices (for high-order meshes)
+    Index numExportPoints = mesh.numVertices();
+    bool useCornerVertices = false;
+    const std::vector<Index>* cornerIndices = nullptr;
+    
+    // Check if scalar fields are smaller than total vertices
+    if (!scalarFields.empty() && scalarFields[0].nodalValues.size() < static_cast<size_t>(numExportPoints)) {
+        numExportPoints = static_cast<Index>(scalarFields[0].nodalValues.size());
+        useCornerVertices = true;
+        cornerIndices = &mesh.cornerVertexIndices();
+    }
+    // Check if vector fields are smaller than total vertices
+    if (!vectorFields.empty()) {
+        const auto& firstVec = vectorFields.begin()->second;
+        if (firstVec.size() < static_cast<size_t>(numExportPoints)) {
+            numExportPoints = static_cast<Index>(firstVec.size());
+            useCornerVertices = true;
+            cornerIndices = &mesh.cornerVertexIndices();
+        }
+    }
+
     // XML header
     file << "<?xml version=\"1.0\"?>\n";
     file << "<VTKFile type=\"UnstructuredGrid\" version=\"0.1\" byte_order=\"LittleEndian\">\n";
     file << "<UnstructuredGrid>\n";
 
     // Piece
-    file << "<Piece NumberOfPoints=\"" << mesh.numVertices() 
+    file << "<Piece NumberOfPoints=\"" << numExportPoints 
          << "\" NumberOfCells=\"" << mesh.numElements() << "\">\n";
 
     // Point data
@@ -148,28 +170,54 @@ void ResultExporter::exportVtuWithVectors(const std::string& filename,
 
     file << "</PointData>\n";
 
-    // Points (coordinates)
+    // Points (coordinates) - export only the vertices we need
     file << "<Points>\n";
     file << "<DataArray type=\"Float64\" NumberOfComponents=\"3\" format=\"ascii\">\n";
-    for (Index i = 0; i < mesh.numVertices(); ++i) {
-        const Vertex& v = mesh.vertex(i);
-        file << v.x() << " " << v.y() << " " << v.z() << "\n";
+    if (useCornerVertices && cornerIndices) {
+        // Export only corner vertices
+        for (Index i = 0; i < numExportPoints; ++i) {
+            const Vertex& v = mesh.vertex((*cornerIndices)[i]);
+            file << v.x() << " " << v.y() << " " << v.z() << "\n";
+        }
+    } else {
+        // Export all vertices
+        for (Index i = 0; i < mesh.numVertices(); ++i) {
+            const Vertex& v = mesh.vertex(i);
+            file << v.x() << " " << v.y() << " " << v.z() << "\n";
+        }
     }
     file << "</DataArray>\n";
     file << "</Points>\n";
 
-    // Cells
+    // Cells - need to remap vertex indices for corner-only export
     file << "<Cells>\n";
 
     // Connectivity
     file << "<DataArray type=\"Int64\" Name=\"connectivity\" format=\"ascii\">\n";
-    for (Index i = 0; i < mesh.numElements(); ++i) {
-        const Element& elem = mesh.element(i);
-        for (int j = 0; j < elem.numCorners(); ++j) {
-            if (j > 0) file << " ";
-            file << elem.vertex(j);
+    if (useCornerVertices && cornerIndices) {
+        // Build a map from original vertex index to corner index
+        std::unordered_map<Index, Index> vertexToCorner;
+        for (Index i = 0; i < static_cast<Index>(cornerIndices->size()); ++i) {
+            vertexToCorner[(*cornerIndices)[i]] = i;
         }
-        file << "\n";
+        for (Index i = 0; i < mesh.numElements(); ++i) {
+            const Element& elem = mesh.element(i);
+            for (int j = 0; j < elem.numCorners(); ++j) {
+                if (j > 0) file << " ";
+                auto it = vertexToCorner.find(elem.vertex(j));
+                file << ((it != vertexToCorner.end()) ? it->second : 0);
+            }
+            file << "\n";
+        }
+    } else {
+        for (Index i = 0; i < mesh.numElements(); ++i) {
+            const Element& elem = mesh.element(i);
+            for (int j = 0; j < elem.numCorners(); ++j) {
+                if (j > 0) file << " ";
+                file << elem.vertex(j);
+            }
+            file << "\n";
+        }
     }
     file << "</DataArray>\n";
 
