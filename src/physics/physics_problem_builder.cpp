@@ -33,8 +33,6 @@ namespace mpfem
     void PhysicsProblemBuilder::buildSolvers(PhysicsProblemSetup &setup)
     {
         const auto &caseDef = setup.caseDef;
-        const auto &materials = setup.materials;
-
         // 构建域材料映射
         for (const auto &assign : caseDef.materialAssignments)
         {
@@ -61,7 +59,7 @@ namespace mpfem
             }
         }
 
-        // 设置耦合
+        // 设置耦合（在所有求解器初始化后）
         if (setup.hasJouleHeating() || setup.hasThermalExpansion())
         {
             setup.couplingManager = std::make_unique<CouplingManager>();
@@ -82,36 +80,7 @@ namespace mpfem
             setup.couplingManager->setTolerance(caseDef.couplingConfig.tolerance);
             setup.couplingManager->setMaxIterations(caseDef.couplingConfig.maxIterations);
 
-            // 设置焦耳热耦合
-            for (const auto &cp : caseDef.coupledPhysicsDefinitions)
-            {
-                if (cp.kind == "joule_heating")
-                {
-                    // 创建焦耳热系数
-                    auto *jouleHeat = setup.couplingManager->createCoefficient<JouleHeatCoefficient>("joule_heat");
-                    std::set<int> domains(cp.domainIds.begin(), cp.domainIds.end());
-                    jouleHeat->setDomains(domains);
-                    LOG_INFO << "Joule heating domains: " << cp.domainIds.size() << " domains";
-                }
-                else if (cp.kind == "thermal_expansion")
-                {
-                    // 创建热膨胀系数
-                    auto *thermalExp = setup.couplingManager->createCoefficient<ThermalExpansionCoefficient>("thermal_expansion");
-                    thermalExp->setReferenceTemperature(293.15);
-
-                    for (int domId : cp.domainIds)
-                    {
-                        const MaterialPropertyModel *mat = materials.getMaterial(setup.domainMaterial[domId]);
-                        if (mat && mat->thermalExpansion > 0.0)
-                        {
-                            thermalExp->setAlphaT(domId, mat->thermalExpansion);
-                        }
-                    }
-                    LOG_INFO << "Thermal expansion coupling enabled";
-                }
-            }
-
-            // 设置温度依赖电导率
+            // 设置耦合系数（持有场引用）
             setupCoupling(setup);
         }
     }
@@ -258,8 +227,10 @@ namespace mpfem
     void PhysicsProblemBuilder::setupCoupling(PhysicsProblemSetup &setup)
     {
         const auto &materials = setup.materials;
+        const auto &caseDef = setup.caseDef;
+        
+        // 1. 温度依赖电导率
         bool hasTempDepSigma = false;
-
         for (const auto &[domId, matTag] : setup.domainMaterial)
         {
             const MaterialPropertyModel *mat = materials.getMaterial(matTag);
@@ -270,28 +241,63 @@ namespace mpfem
             }
         }
 
-        if (!hasTempDepSigma)
-            return;
-
-        // 创建温度依赖电导率系数
-        auto *tempDepSigma = setup.couplingManager->createCoefficient<TemperatureDependentConductivity>("temp_dep_sigma");
-
-        for (const auto &[domId, matTag] : setup.domainMaterial)
+        if (hasTempDepSigma)
         {
-            const MaterialPropertyModel *mat = materials.getMaterial(matTag);
-            if (mat)
+            // 创建系数，注入温度场引用
+            setup.tempDepSigma = std::make_unique<TemperatureDependentConductivity>(
+                setup.heatTransfer->field());
+            
+            for (const auto &[domId, matTag] : setup.domainMaterial)
             {
-                if (mat->rho0 > 0.0)
+                const MaterialPropertyModel *mat = materials.getMaterial(matTag);
+                if (mat)
                 {
-                    LOG_DEBUG << "Domain " << domId << " (" << matTag
-                             << "): temp-dep sigma, rho0 = " << mat->rho0
-                             << ", alpha = " << mat->alpha;
-                    tempDepSigma->setMaterial(domId, mat->rho0, mat->alpha, mat->tref);
+                    if (mat->rho0 > 0.0)
+                    {
+                        setup.tempDepSigma->setMaterial(domId, mat->rho0, mat->alpha, mat->tref);
+                    }
+                    else
+                    {
+                        setup.tempDepSigma->setConstantConductivity(domId, mat->electricConductivity);
+                    }
                 }
-                else
+            }
+            
+            setup.couplingManager->setTemperatureDependentConductivity(setup.tempDepSigma.get());
+        }
+        
+        // 2. 焦耳热耦合
+        for (const auto &cp : caseDef.coupledPhysicsDefinitions)
+        {
+            if (cp.kind == "joule_heating")
+            {
+                // 创建系数，注入电势场和电导率引用
+                std::set<int> domains(cp.domainIds.begin(), cp.domainIds.end());
+                setup.jouleHeat = std::make_unique<JouleHeatCoefficient>(
+                    setup.electrostatics->field(),
+                    setup.electrostatics->conductivity(),
+                    std::move(domains));
+                
+                setup.couplingManager->setJouleHeatCoefficient(setup.jouleHeat.get());
+                LOG_INFO << "Joule heating domains: " << cp.domainIds.size() << " domains";
+            }
+            else if (cp.kind == "thermal_expansion")
+            {
+                // 创建系数，注入温度场引用
+                setup.thermalExp = std::make_unique<ThermalExpansionCoefficient>(
+                    setup.heatTransfer->field(), 293.15);
+                
+                for (int domId : cp.domainIds)
                 {
-                    tempDepSigma->setConstantConductivity(domId, mat->electricConductivity);
+                    const MaterialPropertyModel *mat = materials.getMaterial(setup.domainMaterial[domId]);
+                    if (mat && mat->thermalExpansion > 0.0)
+                    {
+                        setup.thermalExp->setAlphaT(domId, mat->thermalExpansion);
+                    }
                 }
+                
+                setup.couplingManager->setThermalExpansionCoefficient(setup.thermalExp.get());
+                LOG_INFO << "Thermal expansion coupling enabled";
             }
         }
     }

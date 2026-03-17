@@ -24,7 +24,7 @@ namespace mpfem
      *
      * 所有权策略：
      * - 求解器由本结构持有所有权
-     * - CouplingManager 持有耦合专用系数的所有权
+     * - 耦合系数由本结构持有所有权，注入场引用后自动获取最新值
      * - 求解器内部持有域映射系数
      */
     struct PhysicsProblemSetup
@@ -44,6 +44,11 @@ namespace mpfem
         // 边界条件系数（拥有所有权）
         std::map<std::string, std::unique_ptr<Coefficient>> bcCoefficients;
         std::map<std::string, std::unique_ptr<VectorCoefficient>> bcVectorCoefficients;
+        
+        // 耦合系数（拥有所有权，持有场引用）
+        std::unique_ptr<TemperatureDependentConductivity> tempDepSigma;
+        std::unique_ptr<JouleHeatCoefficient> jouleHeat;
+        std::unique_ptr<ThermalExpansionCoefficient> thermalExp;
 
         bool hasElectrostatics() const { return electrostatics != nullptr; }
         bool hasHeatTransfer() const { return heatTransfer != nullptr; }
