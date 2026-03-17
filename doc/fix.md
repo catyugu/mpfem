@@ -17,38 +17,6 @@
 
 ## 工作任务1
 
-* 目前代码有很多深嵌套，而且存在所有权管理不统一、不清晰的问题。
-* CouplingManager的以下部分是反模式，破坏了系数分配系统的一致性，应该移除：
-
-```cpp
-    // =========================================================================
-    // 耦合系数设置（非拥有指针，由调用者持有）
-    // =========================================================================
-    
-    /// 设置温度依赖电导率（非拥有，系数持有温度场引用）
-    void setTemperatureDependentConductivity(TemperatureDependentConductivity* coef) {
-        tempDepSigma_ = coef;
-    }
-    
-    /// 设置焦耳热系数（非拥有，系数持有电势场和电导率引用）
-    void setJouleHeatCoefficient(JouleHeatCoefficient* coef) {
-        jouleHeat_ = coef;
-    }
-    
-    /// 设置热膨胀系数（非拥有，系数持有温度场引用）
-    void setThermalExpansionCoefficient(ThermalExpansionCoefficient* coef) {
-        thermalExp_ = coef;
-    }
-
-    // =========================================================================
-    // ...
-    // =========================================================================
-    
-    TemperatureDependentConductivity* tempDepSigma_ = nullptr;
-    JouleHeatCoefficient* jouleHeat_ = nullptr;
-    ThermalExpansionCoefficient* thermalExp_ = nullptr;
-```
-
 * 可以引入 C++ 20 的新特性用于有效简化或者抽象代码。
 * 我注意到代码中存在大量的手动循环数据填充、复制等，这导致了不可忽略的性能损失，也反映了架构上的一些潜在问题，请你进一步调查。
 * 尤其可以注意到，二阶问题求解的性能较低，需要：1、优化问题构建的时间（现在需要约两秒）；2、引入更高性能、收敛更快的迭代求解器。

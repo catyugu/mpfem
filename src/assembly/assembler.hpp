@@ -59,7 +59,6 @@ public:
     void clearIntegrators() { domainIntegs_.clear(); vectorDomainIntegs_.clear(); bdrIntegs_.clear(); bdrIds_.clear(); }
     void clear() { mat_.setZero(); }
     
-    void computeSparsityPattern();
     void assemble();
     void finalize() { mat_.makeCompressed(); }
     

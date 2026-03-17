@@ -18,7 +18,6 @@ bool HeatTransferSolver::initialize(const Mesh& mesh) {
     
     matAsm_ = std::make_unique<BilinearFormAssembler>(fes_.get());
     vecAsm_ = std::make_unique<LinearFormAssembler>(fes_.get());
-    matAsm_->computeSparsityPattern();
     
     createSolver();
     
