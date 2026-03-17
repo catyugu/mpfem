@@ -65,9 +65,9 @@ public:
     // Transformation
     // -------------------------------------------------------------------------
     
-    virtual void transform(const Real* xi, Real* x) const;
-    void transform(const Real* xi, Vector3& x) const;
-    void transform(const IntegrationPoint& ip, Vector3& x) const;
+    virtual void transform(const Real* xi, Real* x);
+    void transform(const Real* xi, Vector3& x);
+    void transform(const IntegrationPoint& ip, Vector3& x);
     
     // -------------------------------------------------------------------------
     // Jacobian and related quantities (computed in setIntegrationPoint)
@@ -152,13 +152,13 @@ inline void ElementTransform::setIntegrationPoint(const Real* xi) {
     computeJacobianAtIP();
 }
 
-inline void ElementTransform::transform(const Real* xi, Vector3& x) const {
+inline void ElementTransform::transform(const Real* xi, Vector3& x) {
     Real coords[3];
     transform(xi, coords);
     x = Vector3(coords[0], coords[1], coords[2]);
 }
 
-inline void ElementTransform::transform(const IntegrationPoint& ip, Vector3& x) const {
+inline void ElementTransform::transform(const IntegrationPoint& ip, Vector3& x) {
     transform(&ip.xi, x);
 }
 

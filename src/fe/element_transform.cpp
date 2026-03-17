@@ -133,17 +133,16 @@ void ElementTransform::computeJacobianAtIP() {
     invJacobianT_ = invJacobian_.transpose();
 }
 
-void ElementTransform::transform(const Real* xi, Real* x) const {
+void ElementTransform::transform(const Real* xi, Real* x) {
     if (!shapeFunc_) return;
     
-    // Evaluate shape values
-    std::vector<Real> vals(shapeValuesBuf_.size());
-    shapeFunc_->evalValues(xi, vals.data());
+    // Reuse pre-allocated buffer instead of creating temporary vector
+    shapeFunc_->evalValues(xi, shapeValuesBuf_.data());
     
     for (int d = 0; d < spaceDim_; ++d) {
         x[d] = 0.0;
-        for (size_t i = 0; i < vals.size(); ++i) {
-            x[d] += vals[i] * nodes_[i][d];
+        for (size_t i = 0; i < shapeValuesBuf_.size(); ++i) {
+            x[d] += shapeValuesBuf_[i] * nodes_[i][d];
         }
     }
 }
