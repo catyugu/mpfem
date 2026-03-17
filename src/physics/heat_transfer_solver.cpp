@@ -9,8 +9,10 @@ namespace mpfem {
 bool HeatTransferSolver::initialize(const Mesh& mesh) {
     mesh_ = &mesh;
     
-    fec_ = std::make_unique<FECollection>(order_, FECollection::Type::H1);
-    fes_ = std::make_unique<FESpace>(&mesh, fec_.get());
+    // 创建有限元空间（FESpace 拥有 FECollection）
+    auto fec = std::make_unique<FECollection>(order_, FECollection::Type::H1);
+    fes_ = std::make_unique<FESpace>(&mesh, std::move(fec));
+    
     T_ = std::make_unique<GridFunction>(fes_.get());
     T_->values().setConstant(293.15);
     

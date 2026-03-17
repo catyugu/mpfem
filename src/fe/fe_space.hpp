@@ -55,12 +55,6 @@ public:
     /// Default constructor
     FESpace() = default;
     
-    /// Construct from mesh and FE collection (does not take ownership)
-    FESpace(const Mesh* mesh, const FECollection* fec, int vdim = 1)
-        : mesh_(mesh), fecRef_(fec), vdim_(vdim) {
-        buildDofTable();
-    }
-    
     /// Construct and take ownership of fec
     FESpace(const Mesh* mesh, std::unique_ptr<FECollection> fec, int vdim = 1)
         : mesh_(mesh), fec_(std::move(fec)), vdim_(vdim) {
@@ -91,7 +85,7 @@ public:
     
     /// Get the FE collection
     const FECollection* fec() const { 
-        return fec_ ? fec_.get() : fecRef_; 
+        return fec_.get(); 
     }
     
     /// Get polynomial order
@@ -198,7 +192,6 @@ private:
     
     const Mesh* mesh_ = nullptr;
     std::unique_ptr<FECollection> fec_;   ///< Owned FE collection
-    const FECollection* fecRef_ = nullptr; ///< Non-owning reference
     int vdim_ = 1;
     Ordering ordering_ = Ordering::byNodes;  // Default: byNodes (more common convention)
     

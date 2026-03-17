@@ -111,12 +111,10 @@ class FESpaceLinearTest : public ::testing::Test {
 protected:
     void SetUp() override {
         mesh_ = createTriMesh2D();
-        fec_ = std::make_unique<FECollection>(1);
-        feSpace_ = std::make_unique<FESpace>(&mesh_, fec_.get());
+        feSpace_ = std::make_unique<FESpace>(&mesh_, std::make_unique<FECollection>(1));
     }
     
     Mesh mesh_;
-    std::unique_ptr<FECollection> fec_;
     std::unique_ptr<FESpace> feSpace_;
 };
 
@@ -185,12 +183,10 @@ class FESpaceQuadraticTest : public ::testing::Test {
 protected:
     void SetUp() override {
         mesh_ = createTriMesh2D();
-        fec_ = std::make_unique<FECollection>(2);
-        feSpace_ = std::make_unique<FESpace>(&mesh_, fec_.get());
+        feSpace_ = std::make_unique<FESpace>(&mesh_, std::make_unique<FECollection>(2));
     }
     
     Mesh mesh_;
-    std::unique_ptr<FECollection> fec_;
     std::unique_ptr<FESpace> feSpace_;
 };
 
@@ -263,12 +259,10 @@ class FESpaceTetTest : public ::testing::Test {
 protected:
     void SetUp() override {
         mesh_ = createTetMesh3D();
-        fec_ = std::make_unique<FECollection>(1);
-        feSpace_ = std::make_unique<FESpace>(&mesh_, fec_.get());
+        feSpace_ = std::make_unique<FESpace>(&mesh_, std::make_unique<FECollection>(1));
     }
     
     Mesh mesh_;
-    std::unique_ptr<FECollection> fec_;
     std::unique_ptr<FESpace> feSpace_;
 };
 
@@ -314,12 +308,10 @@ class FESpaceQuadTest : public ::testing::Test {
 protected:
     void SetUp() override {
         mesh_ = createQuadMesh2D();
-        fec_ = std::make_unique<FECollection>(1);
-        feSpace_ = std::make_unique<FESpace>(&mesh_, fec_.get());
+        feSpace_ = std::make_unique<FESpace>(&mesh_, std::make_unique<FECollection>(1));
     }
     
     Mesh mesh_;
-    std::unique_ptr<FECollection> fec_;
     std::unique_ptr<FESpace> feSpace_;
 };
 
@@ -361,12 +353,10 @@ class FESpaceQuadQuadraticTest : public ::testing::Test {
 protected:
     void SetUp() override {
         mesh_ = createQuadMesh2D();
-        fec_ = std::make_unique<FECollection>(2);
-        feSpace_ = std::make_unique<FESpace>(&mesh_, fec_.get());
+        feSpace_ = std::make_unique<FESpace>(&mesh_, std::make_unique<FECollection>(2));
     }
     
     Mesh mesh_;
-    std::unique_ptr<FECollection> fec_;
     std::unique_ptr<FESpace> feSpace_;
 };
 
@@ -408,13 +398,11 @@ class FESpaceVectorTest : public ::testing::Test {
 protected:
     void SetUp() override {
         mesh_ = createTriMesh2D();
-        fec_ = std::make_unique<FECollection>(1);
         // Create a vector field with 2 components
-        feSpace_ = std::make_unique<FESpace>(&mesh_, fec_.get(), 2);
+        feSpace_ = std::make_unique<FESpace>(&mesh_, std::make_unique<FECollection>(1), 2);
     }
     
     Mesh mesh_;
-    std::unique_ptr<FECollection> fec_;
     std::unique_ptr<FESpace> feSpace_;
 };
 
@@ -442,13 +430,11 @@ class FESpace3DVectorTest : public ::testing::Test {
 protected:
     void SetUp() override {
         mesh_ = createTetMesh3D();
-        fec_ = std::make_unique<FECollection>(1);
         // Create a 3D displacement field
-        feSpace_ = std::make_unique<FESpace>(&mesh_, fec_.get(), 3);
+        feSpace_ = std::make_unique<FESpace>(&mesh_, std::make_unique<FECollection>(1), 3);
     }
     
     Mesh mesh_;
-    std::unique_ptr<FECollection> fec_;
     std::unique_ptr<FESpace> feSpace_;
 };
 
@@ -506,12 +492,10 @@ class FESpaceBdrTest : public ::testing::Test {
 protected:
     void SetUp() override {
         mesh_ = createTriMesh2D();
-        fec_ = std::make_unique<FECollection>(1);
-        feSpace_ = std::make_unique<FESpace>(&mesh_, fec_.get());
+        feSpace_ = std::make_unique<FESpace>(&mesh_, std::make_unique<FECollection>(1));
     }
     
     Mesh mesh_;
-    std::unique_ptr<FECollection> fec_;
     std::unique_ptr<FESpace> feSpace_;
 };
 

@@ -35,18 +35,35 @@ inline void applyDirichletBC(SparseMatrix& mat, Vector& rhs, Vector& sol,
                 std::vector<Index> dofs;
                 fes.getBdrElementDofs(b, dofs);
                 
-                // 获取边界单元的几何信息来评估 Coefficient
+                // 获取边界单元的参考单元和DOF坐标
+                const ReferenceElement* refElem = fes.bdrElementRefElement(b);
+                if (!refElem) continue;
+                
+                std::vector<std::vector<Real>> dofCoords = refElem->dofCoords();
+                
+                // 获取边界单元的几何变换
                 FacetElementTransform trans;
                 trans.setMesh(&mesh);
                 trans.setBoundaryElement(b);
                 
-                // 使用边界中心点评估 Coefficient
-                Real value = coef ? coef->eval(trans) : 0.0;
+                int nd = refElem->numDofs();
                 
-                for (Index d : dofs) {
-                    if (d != InvalidIndex && dofVals.find(d) == dofVals.end()) {
-                        dofVals[d] = value;
+                // 对每个DOF在其参考坐标位置评估Coefficient
+                for (int i = 0; i < nd && i < static_cast<int>(dofs.size()); ++i) {
+                    Index d = dofs[i];
+                    if (d == InvalidIndex || dofVals.find(d) != dofVals.end()) continue;
+                    
+                    // 获取该DOF在参考单元中的坐标
+                    Real xi[3] = {0.0, 0.0, 0.0};
+                    const auto& coord = dofCoords[i];
+                    for (size_t c = 0; c < coord.size() && c < 3; ++c) {
+                        xi[c] = coord[c];
                     }
+                    
+                    // 在该DOF的参考坐标位置评估Coefficient
+                    trans.setIntegrationPoint(xi);
+                    Real value = coef ? coef->eval(trans) : 0.0;
+                    dofVals[d] = value;
                 }
             }
         }
@@ -100,17 +117,35 @@ inline void applyDirichletBC(SparseMatrix& mat, Vector& rhs, Vector& sol,
                 std::vector<Index> dofs;
                 fes.getBdrElementDofs(b, dofs);
                 
+                // 获取边界单元的参考单元和DOF坐标
+                const ReferenceElement* refElem = fes.bdrElementRefElement(b);
+                if (!refElem) continue;
+                
+                std::vector<std::vector<Real>> dofCoords = refElem->dofCoords();
+                
                 FacetElementTransform trans;
                 trans.setMesh(&mesh);
                 trans.setBoundaryElement(b);
                 
-                Real disp[3] = {0.0, 0.0, 0.0};
-                if (coef) {
-                    coef->eval(trans, disp);
-                }
+                int nd = refElem->numDofs();
                 
-                const Index nd = dofs.size() / vdim;
-                for (Index i = 0; i < nd; ++i) {
+                // 对每个DOF节点在其参考坐标位置评估VectorCoefficient
+                for (int i = 0; i < nd; ++i) {
+                    // 获取该DOF节点在参考单元中的坐标
+                    Real xi[3] = {0.0, 0.0, 0.0};
+                    const auto& coord = dofCoords[i];
+                    for (size_t c = 0; c < coord.size() && c < 3; ++c) {
+                        xi[c] = coord[c];
+                    }
+                    
+                    // 在该DOF节点的参考坐标位置评估VectorCoefficient
+                    trans.setIntegrationPoint(xi);
+                    Real disp[3] = {0.0, 0.0, 0.0};
+                    if (coef) {
+                        coef->eval(trans, disp);
+                    }
+                    
+                    // 设置该节点的所有分量DOF
                     for (int c = 0; c < vdim; ++c) {
                         Index d = dofs[i * vdim + c];
                         if (d != InvalidIndex && dofVals.find(d) == dofVals.end()) {
@@ -143,8 +178,13 @@ inline void applyDirichletBCComponent(SparseMatrix& mat, Vector& rhs, Vector& so
             if (mesh.bdrElement(b).attribute() == bid) {
                 std::vector<Index> dofs;
                 fes.getBdrElementDofs(b, dofs);
-                const Index nd = dofs.size() / vdim;
-                for (Index i = 0; i < nd; ++i) {
+                
+                const ReferenceElement* refElem = fes.bdrElementRefElement(b);
+                if (!refElem) continue;
+                
+                int nd = refElem->numDofs();
+                
+                for (int i = 0; i < nd; ++i) {
                     Index d = dofs[i * vdim + comp];
                     if (d != InvalidIndex && dofVals.find(d) == dofVals.end()) {
                         dofVals[d] = val;
