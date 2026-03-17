@@ -22,24 +22,17 @@ CouplingResult CouplingManager::solve() {
     if (!esSolver_ || !htSolver_) return result;
     
     for (int i = 0; i < maxIter_; ++i) {
-        // 温度依赖电导率：系数持有温度场引用，自动获取最新值
-        if (tempDepSigma_) {
-            esSolver_->setConductivity(tempDepSigma_);
-        }
-        
         // 求解电场
+        // 温度依赖电导率已在初始化时设置，系数绑定温度场引用自动获取最新值
         esSolver_->assemble();
         esSolver_->solve();
         
-        // 焦耳热：系数持有电势场和电导率引用，自动获取最新值
-        if (jouleHeat_) {
-            htSolver_->setHeatSource(jouleHeat_);
-        }
-        
+        // 求解温度场
+        // 焦耳热系数已在初始化时设置，绑定电势场引用自动获取最新值
         htSolver_->assemble();
         htSolver_->solve();
         
-        // 计算误差
+        // 计算收敛误差
         Real err = computeError();
         result.iterations = i + 1;
         result.residual = err;
@@ -52,14 +45,9 @@ CouplingResult CouplingManager::solve() {
         }
     }
     
-    // 后处理：求解结构场（热膨胀耦合）
-    if (stSolver_ && thermalExp_) {
-        // 热膨胀系数持有温度场引用，自动获取最新值
-        auto thermalLoad = std::make_unique<ThermalLoadIntegrator>(
-            &stSolver_->youngModulus(), &stSolver_->poissonRatio(), 
-            thermalExp_);
-        stSolver_->addLinearIntegrator(std::move(thermalLoad));
-        
+    // 后处理：求解结构场
+    // 热膨胀积分器已在初始化时添加，系数绑定温度场引用自动获取最新值
+    if (stSolver_) {
         stSolver_->assemble();
         stSolver_->solve();
     }

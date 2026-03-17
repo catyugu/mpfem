@@ -5,6 +5,7 @@
 #include "heat_transfer_solver.hpp"
 #include "structural_solver.hpp"
 #include "coupling_manager.hpp"
+#include "assembly/integrators.hpp"
 #include "model/case_definition.hpp"
 #include "model/material_database.hpp"
 #include "io/case_xml_reader.hpp"

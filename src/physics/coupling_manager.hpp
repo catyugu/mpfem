@@ -4,8 +4,6 @@
 #include "physics/electrostatics_solver.hpp"
 #include "physics/heat_transfer_solver.hpp"
 #include "physics/structural_solver.hpp"
-#include "assembly/integrators.hpp"
-#include "fe/coefficient.hpp"
 #include "model/field_kind.hpp"
 #include "core/logger.hpp"
 #include <memory>
@@ -22,9 +20,9 @@ struct CouplingResult {
  * @brief 电-热-结构耦合管理器
  * 
  * 设计原则：
- * - 耦合逻辑集中在此，不在单场求解器中
+ * - 仅负责迭代控制逻辑和收敛判断
  * - 求解器引用为非拥有指针，生命周期由外部管理
- * - 系数由调用者持有，注入场引用后自动获取最新值
+ * - 耦合系数在初始化时通过求解器接口设置，系数绑定场引用后自动获取最新值
  */
 class CouplingManager {
 public:
@@ -38,24 +36,7 @@ public:
     void setHeatTransferSolver(HeatTransferSolver* s) { htSolver_ = s; }
     void setStructuralSolver(StructuralSolver* s) { stSolver_ = s; }
     
-    // =========================================================================
-    // 耦合系数设置（非拥有指针，由调用者持有）
-    // =========================================================================
-    
-    /// 设置温度依赖电导率（非拥有，系数持有温度场引用）
-    void setTemperatureDependentConductivity(TemperatureDependentConductivity* coef) {
-        tempDepSigma_ = coef;
-    }
-    
-    /// 设置焦耳热系数（非拥有，系数持有电势场和电导率引用）
-    void setJouleHeatCoefficient(JouleHeatCoefficient* coef) {
-        jouleHeat_ = coef;
-    }
-    
-    /// 设置热膨胀系数（非拥有，系数持有温度场引用）
-    void setThermalExpansionCoefficient(ThermalExpansionCoefficient* coef) {
-        thermalExp_ = coef;
-    }
+
     
     // =========================================================================
     // 求解参数
@@ -78,11 +59,6 @@ private:
     ElectrostaticsSolver* esSolver_ = nullptr;
     HeatTransferSolver* htSolver_ = nullptr;
     StructuralSolver* stSolver_ = nullptr;
-    
-    // 耦合系数引用（非拥有，由调用者持有）
-    TemperatureDependentConductivity* tempDepSigma_ = nullptr;
-    JouleHeatCoefficient* jouleHeat_ = nullptr;
-    ThermalExpansionCoefficient* thermalExp_ = nullptr;
     
     // 迭代状态
     Vector prevT_;
