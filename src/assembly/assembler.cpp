@@ -1,7 +1,7 @@
 #include "assembler.hpp"
 #include "fe/element_transform.hpp"
 #include "fe/facet_element_transform.hpp"
-#include <unordered_set>
+#include <algorithm>
 
 namespace mpfem {
 
@@ -32,40 +32,43 @@ void BilinearFormAssembler::computeSparsityPattern() {
     const Mesh* mesh = fes_->mesh();
     if (!mesh) return;
     
-    Index ndofs = fes_->numDofs();
-    std::vector<std::unordered_set<Index>> rowCols(ndofs);
+    // Step 1: Collect all (row, col) pairs
+    std::vector<std::pair<Index, Index>> pairs;
+    pairs.reserve(mesh->numElements() * MAX_DOFS * MAX_DOFS);
     
     std::vector<Index> dofs;
     for (Index e = 0; e < mesh->numElements(); ++e) {
         fes_->getElementDofs(e, dofs);
-        for (auto i : dofs) if (i != InvalidIndex)
-            for (auto j : dofs) if (j != InvalidIndex)
-                rowCols[i].insert(j);
+        for (auto i : dofs) {
+            if (i == InvalidIndex) continue;
+            for (auto j : dofs) {
+                if (j == InvalidIndex) continue;
+                pairs.emplace_back(i, j);
+            }
+        }
     }
     for (Index b = 0; b < mesh->numBdrElements(); ++b) {
         fes_->getBdrElementDofs(b, dofs);
-        for (auto i : dofs) if (i != InvalidIndex)
-            for (auto j : dofs) if (j != InvalidIndex)
-                rowCols[i].insert(j);
-    }
-    
-    triplets_.clear();
-    triplets_.reserve(ndofs * 27);
-    for (Index i = 0; i < ndofs; ++i) {
-        for (auto j : rowCols[i]) {
-            triplets_.emplace_back(i, j, 0.0);
+        for (auto i : dofs) {
+            if (i == InvalidIndex) continue;
+            for (auto j : dofs) {
+                if (j == InvalidIndex) continue;
+                pairs.emplace_back(i, j);
+            }
         }
     }
-    mat_.setFromTriplets(std::move(triplets_));
-}
-
-void BilinearFormAssembler::expandScalarToVector(const Matrix& scalarMat, 
-                                                   Matrix& vectorMat, 
-                                                   int nd, int vdim) {
-    vectorMat.setZero(nd * vdim, nd * vdim);
-    for (int c = 0; c < vdim; ++c) {
-        vectorMat.block(c * nd, c * nd, nd, nd) = scalarMat;
+    
+    // Step 2: Sort and deduplicate
+    std::sort(pairs.begin(), pairs.end());
+    pairs.erase(std::unique(pairs.begin(), pairs.end()), pairs.end());
+    
+    // Step 3: Convert to triplets
+    triplets_.clear();
+    triplets_.reserve(pairs.size());
+    for (const auto& [i, j] : pairs) {
+        triplets_.emplace_back(i, j, 0.0);
     }
+    mat_.setFromTriplets(std::move(triplets_));
 }
 
 void BilinearFormAssembler::assemble() {
@@ -256,15 +259,6 @@ LinearFormAssembler::LinearFormAssembler(const FESpace* fes) : fes_(fes) {
 #else
     buffers_.resize(1);
 #endif
-}
-
-void LinearFormAssembler::expandScalarToVector(const Vector& scalarVec,
-                                                Vector& vectorVec,
-                                                int nd, int vdim) {
-    vectorVec.setZero(nd * vdim);
-    for (int c = 0; c < vdim; ++c) {
-        vectorVec.segment(c * nd, nd) = scalarVec;
-    }
 }
 
 void LinearFormAssembler::assemble() {

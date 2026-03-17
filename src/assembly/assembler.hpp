@@ -64,9 +64,6 @@ public:
     Index rows() const { return mat_.rows(); }
     
 private:
-    /// 扩展标量矩阵到向量场对角块
-    void expandScalarToVector(const Matrix& scalarMat, Matrix& vectorMat, int nd, int vdim);
-    
     const FESpace* fes_;
     std::vector<std::unique_ptr<DomainBilinearIntegrator>> domainIntegs_;
     std::vector<std::unique_ptr<VectorDomainBilinearIntegrator>> vectorDomainIntegs_;
@@ -104,9 +101,6 @@ public:
     Vector& vector() { return vec_; }
     
 private:
-    /// 扩展标量向量到向量场
-    void expandScalarToVector(const Vector& scalarVec, Vector& vectorVec, int nd, int vdim);
-    
     const FESpace* fes_;
     std::vector<std::unique_ptr<DomainLinearIntegrator>> domainIntegs_;
     std::vector<std::unique_ptr<VectorDomainLinearIntegrator>> vectorDomainIntegs_;

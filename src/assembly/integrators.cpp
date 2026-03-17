@@ -165,8 +165,9 @@ void ElasticityIntegrator::assembleElementMatrix(const ReferenceElement& ref,
                                                   int vdim) const {
     const int nd = ref.numDofs();
     const int nq = ref.numQuadraturePoints();
+    const int totalDofs = nd * vdim;
     
-    elmat.setZero(nd * vdim, nd * vdim);
+    elmat.setZero(totalDofs, totalDofs);
     
     // 获取材料属性
     Real E = E_ ? E_->eval(trans) : 1.0;
@@ -176,16 +177,22 @@ void ElasticityIntegrator::assembleElementMatrix(const ReferenceElement& ref,
     Real lambda = E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu));
     Real mu = E / (2.0 * (1.0 + nu));
     
-    // 预计算本构矩阵 C (各向同性) - 固定大小
+    // 预计算本构矩阵 C (各向同性) - 使用固定大小矩阵
     Eigen::Matrix<Real, 6, 6> C;
     C.setZero();
     C(0, 0) = C(1, 1) = C(2, 2) = lambda + 2.0 * mu;
     C(0, 1) = C(0, 2) = C(1, 0) = C(1, 2) = C(2, 0) = C(2, 1) = lambda;
     C(3, 3) = C(4, 4) = C(5, 5) = mu;
     
-    // 预分配 B 矩阵
-    Eigen::MatrixXd B(6, nd * vdim);
-    Eigen::MatrixXd CB(6, nd * vdim);
+    // 使用固定大小栈数组 (MAX_DOFS = 27, vdim <= 3, so 6 x 81 max)
+    // B 矩阵: 6 x (nd * vdim), CB 矩阵: 6 x (nd * vdim)
+    constexpr int MAX_COLS = 27 * 3;  // 81
+    Eigen::Matrix<Real, 6, MAX_COLS> B_full;
+    Eigen::Matrix<Real, 6, MAX_COLS> CB_full;
+    
+    // 使用 Map 来创建正确大小的视图
+    auto B = B_full.leftCols(totalDofs);
+    auto CB = CB_full.leftCols(totalDofs);
     
     for (int q = 0; q < nq; ++q) {
         const IntegrationPoint& ip = ref.integrationPoint(q);
@@ -226,13 +233,16 @@ void ThermalLoadIntegrator::assembleElementVector(const ReferenceElement& ref,
                                                    int vdim) const {
     const int nd = ref.numDofs();
     const int nq = ref.numQuadraturePoints();
+    const int totalDofs = nd * vdim;
     
-    elvec.setZero(nd * vdim);
+    elvec.setZero(totalDofs);
     
     if (!alphaT_) return;
     
-    // 预分配 B 矩阵
-    Eigen::MatrixXd B(6, nd * vdim);
+    // 使用固定大小栈数组 (MAX_DOFS = 27, vdim <= 3, so 6 x 81 max)
+    constexpr int MAX_COLS = 27 * 3;
+    Eigen::Matrix<Real, 6, MAX_COLS> B_full;
+    auto B = B_full.leftCols(totalDofs);
     
     for (int q = 0; q < nq; ++q) {
         const IntegrationPoint& ip = ref.integrationPoint(q);
@@ -282,7 +292,7 @@ void ThermalLoadIntegrator::assembleElementVector(const ReferenceElement& ref,
         
         // 热载荷向量: f = B^T * sigma_th (负号因为热膨胀产生初始应变)
         // 手动计算避免临时向量
-        for (int i = 0; i < nd * vdim; ++i) {
+        for (int i = 0; i < totalDofs; ++i) {
             elvec(i) -= w * (B(0, i) + B(1, i) + B(2, i)) * diag;
         }
     }
