@@ -54,25 +54,50 @@ TEST_F(CoefficientTest, FunctionCoefficient_Basic) {
     EXPECT_NE(&coef, nullptr);
 }
 
-// ProductCoefficient tests
-TEST_F(CoefficientTest, ProductCoefficient_Basic) {
-    ConstantCoefficient a(2.0);
-    ConstantCoefficient b(3.0);
-    ProductCoefficient prod(&a, &b);
+// DomainMappedCoefficient tests
+TEST_F(CoefficientTest, DomainMappedCoefficient_SetAll) {
+    DomainMappedCoefficient coef;
+    ConstantCoefficient c(5.0);
     
-    // Product should be 2*3=6
-    ElementTransform trans;
-    EXPECT_DOUBLE_EQ(prod.eval(trans), 6.0);
+    coef.setAll(&c);
+    EXPECT_FALSE(coef.empty());
+    EXPECT_EQ(coef.get(1), &c);
+    EXPECT_EQ(coef.get(99), &c);  // Default for any domain
 }
 
-// ScaledCoefficient tests
-TEST_F(CoefficientTest, ScaledCoefficient_Basic) {
-    ConstantCoefficient base(4.0);
-    ScaledCoefficient scaled(&base, 0.5);
+TEST_F(CoefficientTest, DomainMappedCoefficient_DomainSpecific) {
+    DomainMappedCoefficient coef;
+    ConstantCoefficient c1(10.0);
+    ConstantCoefficient c2(20.0);
     
-    // Scaled should be 4*0.5=2
-    ElementTransform trans;
-    EXPECT_DOUBLE_EQ(scaled.eval(trans), 2.0);
+    coef.set(1, &c1);
+    coef.set(2, &c2);
+    
+    EXPECT_EQ(coef.get(1), &c1);
+    EXPECT_EQ(coef.get(2), &c2);
+    EXPECT_EQ(coef.get(99), nullptr);  // No default set
+}
+
+TEST_F(CoefficientTest, DomainMappedCoefficient_BatchSet) {
+    DomainMappedCoefficient coef;
+    ConstantCoefficient c(15.0);
+    
+    coef.set({1, 2, 3}, &c);
+    
+    EXPECT_EQ(coef.get(1), &c);
+    EXPECT_EQ(coef.get(2), &c);
+    EXPECT_EQ(coef.get(3), &c);
+}
+
+TEST_F(CoefficientTest, DomainMappedCoefficient_Override) {
+    DomainMappedCoefficient coef;
+    ConstantCoefficient c1(10.0);
+    ConstantCoefficient c2(20.0);
+    
+    coef.set(1, &c1);
+    coef.set(1, &c2);  // Override
+    
+    EXPECT_EQ(coef.get(1), &c2);
 }
 
 int main(int argc, char** argv) {

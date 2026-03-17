@@ -3,59 +3,40 @@
 
 namespace mpfem {
 
-void CouplingManager::setTempDepMaterial(int domainId, Real rho0, Real alpha, Real tref) {
-    ensureTempDepSigma();
-    tempDepSigma_->setMaterial(domainId, rho0, alpha, tref);
+const GridFunction* CouplingManager::getField(const std::string& name) const {
+    if (name == "V" || name == "electric_potential") {
+        return esSolver_ ? &esSolver_->field() : nullptr;
+    }
+    else if (name == "T" || name == "temperature") {
+        return htSolver_ ? &htSolver_->field() : nullptr;
+    }
+    else if (name == "u" || name == "displacement") {
+        return stSolver_ ? &stSolver_->field() : nullptr;
+    }
+    return nullptr;
 }
 
-void CouplingManager::setConstantConductivity(int domainId, Real sigma) {
-    ensureTempDepSigma();
-    tempDepSigma_->setConstantConductivity(domainId, sigma);
+void CouplingManager::setCoefficient(const std::string& name, 
+                                      const std::set<int>& domains,
+                                      const Coefficient* coef) {
+    coefficients_[name].set(domains, coef);
 }
 
-void CouplingManager::ensureTempDepSigma() {
-    if (!tempDepSigma_) {
-        tempDepSigma_ = std::make_unique<TemperatureDependentConductivity>();
-    }
+void CouplingManager::setCoefficient(const std::string& name, const Coefficient* coef) {
+    coefficients_[name].setAll(coef);
 }
 
-void CouplingManager::updateJouleHeat() {
-    if (!jouleHeating_) {
-        jouleHeating_ = std::make_unique<JouleHeatingCoupling>();
-        jouleHeating_->setDomains(jouleHeatDomains_);
+const Coefficient* CouplingManager::getCoefficient(const std::string& name) const {
+    auto it = ownedCoefficients_.find(name);
+    if (it != ownedCoefficients_.end()) {
+        return it->second.get();
     }
-    
-    jouleHeating_->setPotentialField(&esSolver_->field());
-    jouleHeating_->setConductivity(esSolver_->conductivity());
-    htSolver_->setHeatSource(jouleHeating_->getHeatSource());
-}
-
-void CouplingManager::solveThermalExpansion() {
-
-    // 获取最大域ID
-    int maxDomainId = 0;
-    for (const auto& [domId, _] : thermalAlpha_) {
-        maxDomainId = std::max(maxDomainId, domId);
-    }
-    
-    // 创建热膨胀系数
-    thermalAlphaCoef_ = std::make_unique<PWConstCoefficient>(maxDomainId);
-    for (const auto& [domId, alpha] : thermalAlpha_) {
-        thermalAlphaCoef_->set(domId, alpha);
-    }
-    
-    // 添加热膨胀载荷积分器到结构求解器
-    auto thermalLoad = std::make_unique<ThermalLoadIntegrator>(
-        structE_, structNu_, thermalAlphaCoef_.get(), 
-        &htSolver_->field(), thermalTref_);
-    stSolver_->addLinearIntegrator(std::move(thermalLoad));
-    
-    // 组装并求解
-    stSolver_->assemble();
-    stSolver_->solve();
+    return nullptr;
 }
 
 Real CouplingManager::computeError() {
+    if (!htSolver_) return 0.0;
+    
     if (prevT_.size() == 0) {
         prevT_ = htSolver_->field().values();
         return 1.0;
@@ -71,11 +52,21 @@ CouplingResult CouplingManager::solve() {
     CouplingResult result;
     if (!esSolver_ || !htSolver_) return result;
     
+    // 检查是否有温度依赖电导率
+    bool hasTempDepSigma = ownedCoefficients_.find("temp_dep_sigma") != ownedCoefficients_.end();
+    
+    // 检查是否有焦耳热系数
+    bool hasJouleHeat = ownedCoefficients_.find("joule_heat") != ownedCoefficients_.end();
+    
     for (int i = 0; i < maxIter_; ++i) {
         // 更新温度依赖电导率
-        if (hasTempDepSigma_ && tempDepSigma_) {
-            tempDepSigma_->setTemperatureField(&htSolver_->field());
-            esSolver_->setConductivity(tempDepSigma_.get());
+        if (hasTempDepSigma) {
+            auto* tempDepSigma = dynamic_cast<TemperatureDependentConductivity*>(
+                ownedCoefficients_["temp_dep_sigma"].get());
+            if (tempDepSigma) {
+                tempDepSigma->setTemperatureField(&htSolver_->field());
+                esSolver_->setConductivity(tempDepSigma);
+            }
         }
         
         // 求解电场
@@ -83,7 +74,16 @@ CouplingResult CouplingManager::solve() {
         esSolver_->solve();
         
         // 更新焦耳热并求解热场
-        updateJouleHeat();
+        if (hasJouleHeat) {
+            auto* jouleHeat = dynamic_cast<JouleHeatCoefficient*>(
+                ownedCoefficients_["joule_heat"].get());
+            if (jouleHeat) {
+                jouleHeat->setPotential(&esSolver_->field());
+                jouleHeat->setConductivity(&esSolver_->conductivity());
+                htSolver_->setHeatSource(jouleHeat);
+            }
+        }
+        
         htSolver_->assemble();
         htSolver_->solve();
         
@@ -101,8 +101,24 @@ CouplingResult CouplingManager::solve() {
     }
     
     // 后处理：求解结构场（如果有热膨胀耦合）
-    if (stSolver_ && !thermalAlpha_.empty()) {
-        solveThermalExpansion();
+    if (stSolver_ && ownedCoefficients_.find("thermal_expansion") != ownedCoefficients_.end()) {
+        auto* thermalExp = dynamic_cast<ThermalExpansionCoefficient*>(
+            ownedCoefficients_["thermal_expansion"].get());
+        
+        if (thermalExp) {
+            thermalExp->setTemperatureField(&htSolver_->field());
+            
+            // 添加热膨胀载荷积分器
+            // ThermalExpansionCoefficient::eval() 返回 alpha_T * (T - Tref)
+            auto thermalLoad = std::make_unique<ThermalLoadIntegrator>(
+                &stSolver_->youngModulus(), &stSolver_->poissonRatio(), 
+                thermalExp);
+            stSolver_->addLinearIntegrator(std::move(thermalLoad));
+            
+            // 组装并求解
+            stSolver_->assemble();
+            stSolver_->solve();
+        }
     }
     
     return result;

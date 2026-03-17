@@ -116,11 +116,13 @@ private:
 
 /// 热膨胀载荷积分器: ∫ (3K α_T (T - T_ref) div(v)) dΩ
 /// 输出 elvec 为 (nd*vdim) 维向量
+/// 注意: alphaT 系数应返回热膨胀应变 alpha_T * (T - Tref)
+///       例如使用 ThermalExpansionCoefficient 类
 class ThermalLoadIntegrator : public VectorDomainLinearIntegrator {
 public:
     ThermalLoadIntegrator(const Coefficient* E, const Coefficient* nu,
-                          const Coefficient* alphaT, const GridFunction* T, Real Tref)
-        : E_(E), nu_(nu), alphaT_(alphaT), T_(T), Tref_(Tref) {}
+                          const Coefficient* alphaT)
+        : E_(E), nu_(nu), alphaT_(alphaT) {}
     
     void assembleElementVector(const ReferenceElement& ref,
                                ElementTransform& trans,
@@ -131,8 +133,6 @@ private:
     const Coefficient* E_ = nullptr;
     const Coefficient* nu_ = nullptr;
     const Coefficient* alphaT_ = nullptr;
-    const GridFunction* T_ = nullptr;
-    Real Tref_;
 };
 
 }  // namespace mpfem
