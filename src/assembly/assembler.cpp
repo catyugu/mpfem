@@ -23,7 +23,7 @@ BilinearFormAssembler::BilinearFormAssembler(const FESpace* fes) : fes_(fes) {
     if (fes_) {
         const Mesh* mesh = fes_->mesh();
         if (mesh) {
-            triplets_.reserve(mesh->numElements() * MAX_DOFS * MAX_DOFS / 2);
+            triplets_.reserve(mesh->numElements() * MaxDofsPerElement * MaxDofsPerElement / 2);
         }
     }
 }
@@ -41,7 +41,7 @@ void BilinearFormAssembler::assemble() {
     triplets_.clear();
     // 预估 triplet 数量：单元数 × 每单元DOF数² × 向量维度² / 2
     // 对于二阶六面体：27 × 27 × 9 ≈ 6561，除以 2 是因为对称性近似
-    const size_t estimatedTriplets = static_cast<size_t>(numElements) * MAX_DOFS * MAX_DOFS * vdim * vdim / 2;
+    const size_t estimatedTriplets = static_cast<size_t>(numElements) * MaxDofsPerElement * MaxDofsPerElement * vdim * vdim / 2;
     triplets_.reserve(estimatedTriplets);
     
 #ifdef _OPENMP

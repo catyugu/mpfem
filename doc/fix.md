@@ -17,73 +17,74 @@
 
 ## 工作任务1
 
+* cmake构建系统的模块化程度不足，很多依赖套叠嵌合在一起，寻找外部依赖的方式又各不相同，看起来非常混乱。这是首要的需要改善的部分。
 * 可以引入 C++ 20 的新特性用于有效简化或者抽象代码。
-* 我注意到代码中存在大量的手动循环数据填充、复制等，这导致了不可忽略的性能损失，也反映了架构上的一些潜在问题，请你进一步调查。
-* 尤其可以注意到，二阶问题求解的性能较低，需要：1、优化问题构建的时间（现在需要约两秒）；2、引入更高性能、收敛更快的迭代求解器。
+* 我注意到代码中存在许多很多深层的循环-条件嵌套，而且有好多超级函数（例如在PhysicsPromblemBuilder中），不适合后续的有效模块化和扩展。思考如何重构
+* 尤其可以注意到，二阶问题求解的性能较低，需要引入更高性能、收敛更快的迭代求解器。
 
 ```
- HUAWEI    mpfem  dev ≡  ~1 |  ~1  1   1.9s⠀   ./build/examples/busbar_example.exe .\cases\busbar_order2                                        
+ HUAWEI    mpfem  dev ≡  ~1 |  ~6  1   16.957s⠀   ./build/examples/busbar_example.exe .\cases\busbar_order2        pwsh   98  01:07:37 
 [INFO] [0ms] === Busbar Electro-Thermal Example ===
 [INFO] [0ms] Case directory: .\cases\busbar_order2
-[INFO] [0ms] Reading case from .\cases\busbar_order2/case.xml
-[INFO] [1ms] Loaded case definition: busbar with 3 physics fields
-[INFO] [1ms] Reading mesh from .\cases\busbar_order2/mesh.mphtxt
-[INFO] [1ms] Reading mesh from .\cases\busbar_order2/mesh.mphtxt
-[INFO] [175ms] Mesh loaded: 49889 vertices, 31021 volume elements, 9138 boundary elements
-[INFO] [253ms] Boundary mapping: 8378 external, 760 internal (will skip in BC)
-[INFO] [256ms] Mesh loaded: 49889 vertices, 31021 elements
-[INFO] [257ms] Reading materials from .\cases\busbar_order2/material.xml
-[INFO] [258ms] Loaded 2 materials from .\cases\busbar_order2/material.xml
-[INFO] [259ms] Building electrostatics solver, order = 2
-[INFO] [420ms] ElectrostaticsSolver: 49889 DOFs
-[INFO] [420ms] Building heat transfer solver, order = 2
-[INFO] [587ms] HeatTransferSolver: 49889 DOFs
-[INFO] [587ms] Building structural solver, order = 2
-[INFO] [1.99s] StructuralSolver: 149667 DOFs
-[INFO] [1.99s] Joule heating domains: 7 domains
-[INFO] [1.99s] Thermal expansion coupling enabled
-[INFO] [1.99s] Running coupled electro-thermal solve...
-[INFO] [2.09s] Electrostatics assemble completed in 0.093s
-[INFO] [3.72s] [UMFPACK] Solve successful, solution norm: 1.61365
-[INFO] [3.72s] Linear solve (UMFPACK) completed in 1.634s
-[INFO] [3.72s] Electrostatics converged: iter=1 res=0
-[INFO] [3.91s] HeatTransfer assemble completed in 0.183s
-[INFO] [5.51s] [UMFPACK] Solve successful, solution norm: 72119.9
-[INFO] [5.51s] Linear solve (UMFPACK) completed in 1.605s
-[INFO] [5.51s] HeatTransfer converged: iter=1 res=0
-[INFO] [5.51s] Coupling iteration 1, residual = 1
-[INFO] [5.61s] Electrostatics assemble completed in 0.093s
-[INFO] [5.68s] [UMFPACK] Solve successful, solution norm: 1.62178
-[INFO] [5.68s] Linear solve (UMFPACK) completed in 0.073s
-[INFO] [5.68s] Electrostatics converged: iter=1 res=0
-[INFO] [5.86s] HeatTransfer assemble completed in 0.181s
-[INFO] [5.92s] [UMFPACK] Solve successful, solution norm: 72061.2
-[INFO] [5.92s] Linear solve (UMFPACK) completed in 0.058s
-[INFO] [5.92s] HeatTransfer converged: iter=1 res=0
-[INFO] [5.93s] Coupling iteration 2, residual = 0.00081761
-[INFO] [6.01s] Electrostatics assemble completed in 0.085s
-[INFO] [6.10s] [UMFPACK] Solve successful, solution norm: 1.62171
-[INFO] [6.10s] Linear solve (UMFPACK) completed in 0.091s
-[INFO] [6.10s] Electrostatics converged: iter=1 res=0
-[INFO] [6.27s] HeatTransfer assemble completed in 0.166s
-[INFO] [6.36s] [UMFPACK] Solve successful, solution norm: 72061.7
-[INFO] [6.36s] Linear solve (UMFPACK) completed in 0.088s
-[INFO] [6.36s] HeatTransfer converged: iter=1 res=0
-[INFO] [6.36s] Coupling iteration 3, residual = 7.07832e-06
-[INFO] [6.87s] Structural assemble completed in 0.503s
-[INFO] [14.99s] [UMFPACK] Solve successful, solution norm: 0.00592757
-[INFO] [14.99s] Linear solve (UMFPACK) completed in 8.127s
-[INFO] [14.99s] StructuralSolver: displacement norm = 0.00592757
-[INFO] [14.99s] Coupling solve completed in 12.998s
-[INFO] [14.99s] Coupling converged in 3 iterations
-[INFO] [14.99s] Potential range: [0, 0.02] V
-[INFO] [14.99s] Temperature range: [322.185, 330.042] K
-[INFO] [14.99s] Temperature range: [49.0351, 56.8922] C
-[INFO] [14.99s] Max displacement magnitude: 5.0786e-05 m
-[INFO] [15.02s] High-order mesh detected: 49889 vertices, 7340 corner vertices
-[INFO] [15.12s] Exported VTU results to results/busbar_results.vtu
-[INFO] [15.12s] Exported VTU results to: results/busbar_results.vtu
-[INFO] [15.18s] Exported results to results/mpfem_result.txt
-[INFO] [15.18s] Exported results to: results/mpfem_result.txt
-[INFO] [15.18s] === Example completed successfully! ===
+[INFO] [1ms] Reading case from .\cases\busbar_order2/case.xml
+[INFO] [2ms] Loaded case definition: busbar with 3 physics fields
+[INFO] [2ms] Reading mesh from .\cases\busbar_order2/mesh.mphtxt
+[INFO] [3ms] Reading mesh from .\cases\busbar_order2/mesh.mphtxt
+[INFO] [198ms] Mesh loaded: 49889 vertices, 31021 volume elements, 9138 boundary elements
+[INFO] [285ms] Boundary mapping: 8378 external, 760 internal (will skip in BC)
+[INFO] [287ms] Mesh loaded: 49889 vertices, 31021 elements
+[INFO] [288ms] Reading materials from .\cases\busbar_order2/material.xml
+[INFO] [288ms] Loaded 2 materials from .\cases\busbar_order2/material.xml
+[INFO] [289ms] Building electrostatics solver, order = 2
+[INFO] [293ms] ElectrostaticsSolver: 49889 DOFs
+[INFO] [294ms] Building heat transfer solver, order = 2
+[INFO] [300ms] HeatTransferSolver: 49889 DOFs
+[INFO] [300ms] Building structural solver, order = 2
+[INFO] [308ms] StructuralSolver: 149667 DOFs
+[INFO] [310ms] Joule heating domains: 7 domains
+[INFO] [310ms] Thermal expansion coupling enabled
+[INFO] [312ms] Running coupled electro-thermal solve...
+[INFO] [406ms] Electrostatics assemble completed in 0.094s
+[INFO] [1.86s] [UMFPACK] Solve successful, solution norm: 1.61365
+[INFO] [1.86s] Linear solve (UMFPACK) completed in 1.457s
+[INFO] [1.86s] Electrostatics solver converged!
+[INFO] [2.06s] HeatTransfer assemble completed in 0.193s
+[INFO] [3.21s] [UMFPACK] Solve successful, solution norm: 72119.9
+[INFO] [3.21s] Linear solve (UMFPACK) completed in 1.151s
+[INFO] [3.21s] HeatTransfer converged!
+[INFO] [3.21s] Coupling iteration 1, residual = 1
+[INFO] [3.31s] Electrostatics assemble completed in 0.095s
+[INFO] [3.42s] [UMFPACK] Solve successful, solution norm: 1.62178
+[INFO] [3.42s] Linear solve (UMFPACK) completed in 0.113s
+[INFO] [3.42s] Electrostatics solver converged!
+[INFO] [3.71s] HeatTransfer assemble completed in 0.290s
+[INFO] [3.81s] [UMFPACK] Solve successful, solution norm: 72061.2
+[INFO] [3.81s] Linear solve (UMFPACK) completed in 0.098s
+[INFO] [3.81s] HeatTransfer converged!
+[INFO] [3.81s] Coupling iteration 2, residual = 0.00081761
+[INFO] [3.93s] Electrostatics assemble completed in 0.113s
+[INFO] [4.00s] [UMFPACK] Solve successful, solution norm: 1.62171
+[INFO] [4.00s] Linear solve (UMFPACK) completed in 0.076s
+[INFO] [4.00s] Electrostatics solver converged!
+[INFO] [4.21s] HeatTransfer assemble completed in 0.202s
+[INFO] [4.29s] [UMFPACK] Solve successful, solution norm: 72061.7
+[INFO] [4.30s] Linear solve (UMFPACK) completed in 0.089s
+[INFO] [4.30s] HeatTransfer converged!
+[INFO] [4.30s] Coupling iteration 3, residual = 7.07832e-06
+[INFO] [4.93s] Structural assemble completed in 0.631s
+[INFO] [13.90s] [UMFPACK] Solve successful, solution norm: 0.00592757
+[INFO] [13.90s] Linear solve (UMFPACK) completed in 8.969s
+[INFO] [13.90s] StructuralSolver: displacement norm = 0.00592757
+[INFO] [13.90s] Coupling solve completed in 13.589s
+[INFO] [13.90s] Coupling converged in 3 iterations
+[INFO] [13.90s] Potential range: [0, 0.02] V
+[INFO] [13.90s] Temperature range: [322.185, 330.042] K
+[INFO] [13.90s] Temperature range: [49.0351, 56.8922] C
+[INFO] [13.90s] Max displacement magnitude: 5.0786e-05 m
+[INFO] [13.91s] High-order mesh detected: 49889 vertices, 7340 corner vertices
+[INFO] [14.00s] Exported VTU results to results/busbar_results.vtu
+[INFO] [14.00s] Exported VTU results to: results/busbar_results.vtu
+[INFO] [14.05s] Exported results to results/mpfem_result.txt
+[INFO] [14.05s] Exported results to: results/mpfem_result.txt
+[INFO] [14.05s] === Example completed successfully! ===
 ```

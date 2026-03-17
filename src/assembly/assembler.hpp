@@ -15,25 +15,18 @@
 namespace mpfem {
 
 // =============================================================================
-// 编译期常量
-// =============================================================================
-
-constexpr int MAX_DOFS = 27;      // 二阶六面体
-constexpr int MAX_DIM = 3;
-
-// =============================================================================
 // 线程本地缓冲区（零分配）
 // =============================================================================
 
 struct alignas(64) ThreadBuffer {
-    Eigen::Matrix<Real, MAX_DOFS, MAX_DOFS, Eigen::RowMajor> elmatScalar;
-    Eigen::Matrix<Real, MAX_DOFS * 3, MAX_DOFS * 3, Eigen::RowMajor> elmatVector;
-    Eigen::Matrix<Real, MAX_DOFS, 1> elvecScalar;
-    Eigen::Matrix<Real, MAX_DOFS * 3, 1> elvecVector;
+    Eigen::Matrix<Real, MaxDofsPerElement, MaxDofsPerElement, Eigen::RowMajor> elmatScalar;
+    Eigen::Matrix<Real, MaxVectorDofsPerElement, MaxVectorDofsPerElement, Eigen::RowMajor> elmatVector;
+    Eigen::Matrix<Real, MaxDofsPerElement, 1> elvecScalar;
+    Eigen::Matrix<Real, MaxVectorDofsPerElement, 1> elvecVector;
     std::vector<Index> dofs;  // Pre-allocated DOF buffer
     
     ThreadBuffer() {
-        dofs.reserve(MAX_DOFS * 3);  // Pre-allocate once
+        dofs.reserve(MaxVectorDofsPerElement);  // Pre-allocate once
     }
 };
 

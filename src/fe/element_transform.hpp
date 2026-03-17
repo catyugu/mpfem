@@ -27,9 +27,6 @@ namespace mpfem {
 
 class ElementTransform {
 public:
-    /// Maximum nodes per element (order-2 hexahedron = 27 nodes)
-    static constexpr int MAX_NODES = 27;
-    
     enum ElementType { VOLUME = 1, BOUNDARY = 2 };
     
     // -------------------------------------------------------------------------
@@ -127,10 +124,10 @@ protected:
     std::unique_ptr<ShapeFunction> shapeFunc_;
     
     // Fixed-size buffers (no heap allocation)
-    std::array<Vector3, MAX_NODES> nodesBuf_;
-    std::array<Index, MAX_NODES> nodeIndicesBuf_;
-    std::array<Real, MAX_NODES> shapeValuesBuf_;
-    std::array<Vector3, MAX_NODES> shapeGradsBuf_;
+    std::array<Vector3, MaxNodesPerElement> nodesBuf_;
+    std::array<Index, MaxNodesPerElement> nodeIndicesBuf_;
+    std::array<Real, MaxNodesPerElement> shapeValuesBuf_;
+    std::array<Vector3, MaxNodesPerElement> shapeGradsBuf_;
     
     IntegrationPoint ip_;
     
