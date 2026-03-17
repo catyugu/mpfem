@@ -5,6 +5,7 @@
 #include "core/logger.hpp"
 #include <Eigen/Sparse>
 #include <Eigen/IterativeLinearSolvers>
+#include <unsupported/Eigen/IterativeSolvers>
 
 namespace mpfem {
 
@@ -29,11 +30,10 @@ public:
     bool solve(const SparseMatrix& A, Vector& x, const Vector& b) override {
         ScopedTimer timer("Linear solve (SparseLU)");
         
-        // Analyze + factorize + solve in one call if not already done
         solver_.compute(A.eigen());
         
         if (solver_.info() != Eigen::Success) {
-            std::cerr << "[EigenSparseLU] Factorization failed" << std::endl;
+            LOG_ERROR << "[EigenSparseLU] Factorization failed";
             x.setZero(b.size());
             return false;
         }
@@ -41,7 +41,7 @@ public:
         x = solver_.solve(b);
         
         if (solver_.info() != Eigen::Success) {
-            std::cerr << "[EigenSparseLU] Solve failed" << std::endl;
+            LOG_ERROR << "[EigenSparseLU] Solve failed";
             x.setZero(b.size());
             return false;
         }
@@ -52,7 +52,7 @@ public:
         residual_ = (A.eigen() * x - b).norm() / b.norm();
         
         if (printLevel_ > 0) {
-            LOG_INFO << "[EigenSparseLU] Solved, residual = " << residual_;
+            LOG_INFO << "[EigenSparseLU] Residual = " << residual_;
         }
         
         return true;
@@ -63,76 +63,112 @@ private:
 };
 
 /**
- * @brief Eigen CG with Incomplete Cholesky preconditioner.
+ * @brief Eigen DGMRES with ILU preconditioner.
  * 
- * For symmetric positive definite matrices.
- * Uses Incomplete Cholesky factorization as preconditioner for better convergence.
+ * Deflated GMRES with Incomplete LU factorization preconditioner.
+ * Suitable for non-symmetric and indefinite systems.
+ * More robust than BiCGSTAB for difficult problems.
  */
-class EigenCGICSolver : public LinearSolver {
+class EigenDGMRESILUSolver : public LinearSolver {
 public:
-    std::string name() const override { return "Eigen::CG+IC"; }
+    std::string name() const override { return "Eigen::DGMRES+ILU"; }
+    
+    void setDropTolerance(Real tol) { dropTol_ = tol; }
+    void setFillFactor(int fill) { fillFactor_ = fill; }
     
     bool solve(const SparseMatrix& A, Vector& x, const Vector& b) override {
-        ScopedTimer timer("Linear solve (CG+IC)");
+        ScopedTimer timer("Linear solve (DGMRES+ILU)");
         
+        // Configure preconditioner
+        solver_.preconditioner().setDroptol(dropTol_);
+        solver_.preconditioner().setFillfactor(fillFactor_);
+        
+        // Configure solver
         solver_.setMaxIterations(maxIterations_);
         solver_.setTolerance(tolerance_);
+        
         solver_.compute(A.eigen());
+        
+        if (solver_.info() != Eigen::Success) {
+            LOG_ERROR << "[EigenDGMRES] Preconditioner setup failed";
+            x.setZero(b.size());
+            return false;
+        }
         
         x = solver_.solveWithGuess(b, x);
         
-        iterations_ = solver_.iterations();
+        iterations_ = static_cast<int>(solver_.iterations());
         residual_ = solver_.error();
         
-        if (printLevel_ > 0) {
-            LOG_INFO << "[EigenCG+IC] Iterations: " << iterations_ 
-                     << ", Error: " << residual_;
+        const bool success = solver_.info() == Eigen::Success;
+        
+        if (printLevel_ > 0 || !success) {
+            LOG_INFO << "[EigenDGMRES] Iterations: " << iterations_ 
+                     << ", Error: " << residual_
+                     << ", Success: " << (success ? "yes" : "no");
         }
         
-        return solver_.info() == Eigen::Success;
+        if (success) {
+            LOG_INFO << "[EigenDGMRES] Solve successful, solution norm: " << x.norm();
+        }
+        
+        return success;
     }
     
 private:
-    Eigen::ConjugateGradient<Eigen::SparseMatrix<Real>, Eigen::Lower, 
-                             Eigen::IncompleteCholesky<Real>> solver_;
+    Eigen::DGMRES<Eigen::SparseMatrix<Real>, Eigen::IncompleteLUT<Real>> solver_;
+    Real dropTol_ = 1e-4;
+    int fillFactor_ = 10;
 };
 
 /**
- * @brief Eigen BiCGSTAB with ILUT preconditioner.
+ * @brief Eigen MINRES solver.
  * 
- * For non-symmetric matrices.
- * Uses Incomplete LU factorization with Threshold as preconditioner.
+ * Minimum Residual method for symmetric indefinite systems.
+ * More robust than CG for non-positive-definite matrices.
+ * Does not require positive definiteness.
  */
-class EigenBiCGSTABILUTSolver : public LinearSolver {
+class EigenMINRESSolver : public LinearSolver {
 public:
-    std::string name() const override { return "Eigen::BiCGSTAB+ILUT"; }
+    std::string name() const override { return "Eigen::MINRES"; }
     
     bool solve(const SparseMatrix& A, Vector& x, const Vector& b) override {
-        ScopedTimer timer("Linear solve (BiCGSTAB+ILUT)");
+        ScopedTimer timer("Linear solve (MINRES)");
         
         solver_.setMaxIterations(maxIterations_);
         solver_.setTolerance(tolerance_);
+        
         solver_.compute(A.eigen());
+        
+        if (solver_.info() != Eigen::Success) {
+            LOG_ERROR << "[EigenMINRES] Setup failed";
+            x.setZero(b.size());
+            return false;
+        }
         
         x = solver_.solveWithGuess(b, x);
         
-        iterations_ = solver_.iterations();
+        iterations_ = static_cast<int>(solver_.iterations());
         residual_ = solver_.error();
         
-        if (printLevel_ > 0) {
-            LOG_INFO << "[EigenBiCGSTAB-ILUT] Iterations: " << iterations_ 
-                     << ", Error: " << residual_;
+        const bool success = solver_.info() == Eigen::Success;
+        
+        if (printLevel_ > 0 || !success) {
+            LOG_INFO << "[EigenMINRES] Iterations: " << iterations_ 
+                     << ", Error: " << residual_
+                     << ", Success: " << (success ? "yes" : "no");
         }
         
-        return solver_.info() == Eigen::Success;
+        if (success) {
+            LOG_INFO << "[EigenMINRES] Solve successful, solution norm: " << x.norm();
+        }
+        
+        return success;
     }
     
 private:
-    Eigen::BiCGSTAB<Eigen::SparseMatrix<Real>, Eigen::IncompleteLUT<Real>> solver_;
+    Eigen::MINRES<Eigen::SparseMatrix<Real>> solver_;
 };
-
-// Note: GMRES is not available in standard Eigen, use BiCGSTAB or DGMRES from unsupported module
-// If you need GMRES, consider using Eigen's unsupported GMRES or an external solver
 
 }  // namespace mpfem
 
