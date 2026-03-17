@@ -98,9 +98,7 @@ bool HeatTransferSolver::solve() {
     if (!solver_) return false;
     bool ok = solver_->solve(matAsm_->matrix(), T_->values(), vecAsm_->vector());
     if (ok) {
-        iter_ = solver_->iterations();
-        res_ = solver_->residual();
-        LOG_INFO << "HeatTransfer converged: iter=" << iter_ << " res=" << res_;
+        LOG_INFO << "HeatTransfer converged!";
     }
     return ok;
 }

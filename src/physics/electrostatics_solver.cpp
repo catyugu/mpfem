@@ -65,9 +65,7 @@ bool ElectrostaticsSolver::solve() {
     if (!solver_) return false;
     bool ok = solver_->solve(matAsm_->matrix(), V_->values(), vecAsm_->vector());
     if (ok) {
-        iter_ = solver_->iterations();
-        res_ = solver_->residual();
-        LOG_INFO << "Electrostatics converged: iter=" << iter_ << " res=" << res_;
+        LOG_INFO << "Electrostatics solver converged!";
     }
     return ok;
 }
