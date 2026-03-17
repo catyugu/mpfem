@@ -1,5 +1,5 @@
 #include "mesh/mesh.hpp"
-#include "mesh/io/mphtxt_reader.hpp"
+#include "io/mphtxt_reader.hpp"
 #include "fe/fe_collection.hpp"
 #include "fe/fe_space.hpp"
 #include "physics/physics_problem_builder.hpp"

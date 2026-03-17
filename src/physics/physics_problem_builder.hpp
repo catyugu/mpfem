@@ -10,7 +10,7 @@
 #include "io/case_xml_reader.hpp"
 #include "io/material_xml_reader.hpp"
 #include "mesh/mesh.hpp"
-#include "mesh/io/mphtxt_reader.hpp"
+#include "io/mphtxt_reader.hpp"
 #include "core/logger.hpp"
 #include <memory>
 #include <map>

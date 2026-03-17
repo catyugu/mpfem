@@ -18,7 +18,7 @@
 #include "mesh/vertex.hpp"
 #include "mesh/element.hpp"
 #include "mesh/mesh.hpp"
-#include "mesh/io/mphtxt_reader.hpp"
+#include "io/mphtxt_reader.hpp"
 
 // Finite Element
 #include "fe/quadrature.hpp"

@@ -3,7 +3,7 @@
 #include <set>
 #include "mesh/mesh.hpp"
 #include "mesh/geometry.hpp"
-#include "mesh/io/mphtxt_reader.hpp"
+#include "io/mphtxt_reader.hpp"
 #include "fe/fe_space.hpp"
 #include "fe/element_transform.hpp"
 #include "fe/fe_collection.hpp"

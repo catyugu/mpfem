@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 #include "mesh/mesh.hpp"
-#include "mesh/io/mphtxt_reader.hpp"
+#include "io/mphtxt_reader.hpp"
 #include "core/logger.hpp"
 
 using namespace mpfem;
