@@ -62,25 +62,8 @@ namespace mpfem
         // 设置耦合（在所有求解器初始化后）
         if (setup.hasJouleHeating() || setup.hasThermalExpansion())
         {
-            setup.couplingManager = std::make_unique<CouplingManager>();
-
-            if (setup.hasElectrostatics())
-            {
-                setup.couplingManager->setElectrostaticsSolver(setup.electrostatics.get());
-            }
-            if (setup.hasHeatTransfer())
-            {
-                setup.couplingManager->setHeatTransferSolver(setup.heatTransfer.get());
-            }
-            if (setup.hasStructural())
-            {
-                setup.couplingManager->setStructuralSolver(setup.structural.get());
-            }
-
-            setup.couplingManager->setTolerance(caseDef.couplingConfig.tolerance);
-            setup.couplingManager->setMaxIterations(caseDef.couplingConfig.maxIterations);
-
-            // 设置耦合系数
+            setup.couplingMaxIter_ = caseDef.couplingConfig.maxIterations;
+            setup.couplingTol_ = caseDef.couplingConfig.tolerance;
             setupCoupling(setup);
         }
     }
@@ -333,6 +316,77 @@ namespace mpfem
                 return defaultVal;
             }
         }
+    }
+
+    // =========================================================================
+    // PhysicsProblemSetup 方法实现
+    // =========================================================================
+
+    CouplingResult PhysicsProblemSetup::solve()
+    {
+        ScopedTimer timer("Coupling solve");
+        CouplingResult result;
+
+        // 单场求解：无耦合
+        if (!isCoupled())
+        {
+            if (hasElectrostatics())
+            {
+                electrostatics->assemble();
+                electrostatics->solve();
+            }
+            return result;
+        }
+
+        // 耦合迭代求解
+        for (int i = 0; i < couplingMaxIter_; ++i)
+        {
+            // 求解电场
+            electrostatics->assemble();
+            electrostatics->solve();
+
+            // 求解温度场
+            heatTransfer->assemble();
+            heatTransfer->solve();
+
+            // 计算收敛误差
+            Real err = computeCouplingError();
+            result.iterations = i + 1;
+            result.residual = err;
+
+            LOG_INFO << "Coupling iteration " << (i + 1) << ", residual = " << err;
+
+            if (err < couplingTol_)
+            {
+                result.converged = true;
+                break;
+            }
+        }
+
+        // 后处理：求解结构场
+        if (hasStructural())
+        {
+            structural->assemble();
+            structural->solve();
+        }
+
+        return result;
+    }
+
+    Real PhysicsProblemSetup::computeCouplingError()
+    {
+        if (!heatTransfer) return 0.0;
+
+        const auto& T = heatTransfer->field().values();
+        if (prevT_.size() == 0)
+        {
+            prevT_ = T;
+            return 1.0;
+        }
+
+        Real diff = (T - prevT_).norm();
+        prevT_ = T;
+        return diff / (T.norm() + 1e-15);
     }
 
 } // namespace mpfem

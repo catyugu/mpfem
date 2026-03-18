@@ -21,7 +21,7 @@
 * 这样，Coefficient在存储、设置和传递时都必须擦除其派生类型，只需要在创建时指定，使用时使用concept限制（例如DiffusionIntegrator只能使用标量或者矩阵型的Coefficient等等）。只需要一个统一的泛型基类就够了，不管是标量，向量还是矩阵，统统可以处理！
 * 请完全用新的设计取代老的设计！在外面的应用层不再区分Coefficient是Scalar还是Vector或是Matrix。
 * 设计架构的时候请考虑未来扩展到瞬态求解时候的需要。
-* 重新考虑架构，似乎CouplingManager是多余的，我们引入Problem的概念，PhysicsProblemBuilder负责构造Problem（稳态/瞬态/特征值），Problem层持有所有原始数据（场值，系数等），下游则是单场的离散和组装逻辑。
+* 重新考虑架构，我们引入Problem的概念，PhysicsProblemBuilder负责构造Problem（稳态/瞬态/特征值），Problem层持有所有原始数据（场值，系数等），下游则是单场的离散和组装逻辑。
 
 ```
  HUAWEI    mpfem  main ≡  2   85ms⠀   .\build-llvm\examples\busbar_example.exe .\cases\busbar_order2\                                       0:59 

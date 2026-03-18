@@ -20,11 +20,11 @@ int main(int argc, char* argv[]) {
     
     try {
         PhysicsProblemSetup setup = PhysicsProblemBuilder::build(caseDir);
-        
-        if (setup.couplingManager) {
+
+        if (setup.isCoupled()) {
             LOG_INFO << "Running coupled electro-thermal solve...";
-            CouplingResult result = setup.couplingManager->solve();
-            
+            CouplingResult result = setup.solve();
+
             if (!result.converged) {
                 LOG_WARN << "Coupling did not converge after " << result.iterations << " iterations";
             } else {

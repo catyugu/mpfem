@@ -217,7 +217,6 @@ mpfem_add_library(mpfem_physics
         src/physics/electrostatics_solver.cpp
         src/physics/heat_transfer_solver.cpp
         src/physics/structural_solver.cpp
-        src/physics/coupling_manager.cpp
         src/physics/physics_problem_builder.cpp
     PUBLIC_LINK
         Eigen3::Eigen

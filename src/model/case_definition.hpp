@@ -143,53 +143,6 @@ struct CaseDefinition {
     }
 };
 
-/**
- * @brief Boundary condition parameters (resolved to numeric values).
- */
-struct BoundaryParams {
-    std::string kind;
-    std::map<std::string, double> values;
-};
-
-/// Boundary conditions organized by boundary id for each physics field
-using BoundaryConditions = std::map<int, BoundaryParams>;
-
-/**
- * @brief Field source definition (resolved).
- */
-struct FieldSource {
-    FieldKind field = FieldKind::Unknown;
-    std::set<int> domainIds;
-    bool coupled = false;
-    CouplingKind couplingKind = CouplingKind::Unknown;
-    double value = 0.0;
-};
-
-/**
- * @brief Field configuration (resolved).
- */
-struct FieldConfig {
-    int order = 1;
-    SolverConfig solver;  // Use SolverConfig from solver/solver_config.hpp
-};
-
-/**
- * @brief Resolved physics problem model.
- */
-struct PhysicsProblemModel {
-    std::string caseName;
-    std::string studyType;
-    std::string meshPath;
-    std::string comsolResultPath;
-    std::map<std::string, double> variables;
-    std::map<int, std::string> domainMaterialTag;
-    std::map<FieldKind, BoundaryConditions> boundaries;  // field -> id -> params
-    std::vector<FieldSource> sources;
-    std::vector<CouplingKind> couplings;
-    std::map<FieldKind, FieldConfig> fieldConfigs;
-    CouplingConfig couplingConfig;
-};
-
 }  // namespace mpfem
 
 #endif  // MPFEM_CASE_DEFINITION_HPP
