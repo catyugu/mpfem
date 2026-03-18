@@ -69,35 +69,44 @@ mpfem_add_library(mpfem_core
         Eigen3::Eigen
 )
 
-# OpenBLAS support for Eigen
-if(MPFEM_OPENBLAS_FOUND)
-    target_link_libraries(mpfem_core PUBLIC OpenBLAS::OpenBLAS)
-    target_compile_definitions(mpfem_core PUBLIC EIGEN_USE_BLAS)
-    message(STATUS "OpenBLAS acceleration enabled for Eigen (EIGEN_USE_BLAS)")
+# --- MKL support (PARDISO solver + optional BLAS acceleration) ---
+if(MPFEM_MKL_FOUND)
+    target_compile_definitions(mpfem_core PUBLIC MPFEM_USE_MKL)
+    target_link_libraries(mpfem_core PUBLIC MKL::MKL)
+    message(STATUS "MKL enabled for PARDISO solver")
 endif()
 
-# OpenMP support
+# --- OpenBLAS support (BLAS acceleration for Eigen) ---
+if(MPFEM_OPENBLAS_FOUND)
+    target_compile_definitions(mpfem_core PUBLIC MPFEM_USE_OPENBLAS)
+    target_compile_definitions(mpfem_core PUBLIC EIGEN_USE_BLAS)
+    if(TARGET OpenBLAS::OpenBLAS)
+        target_link_libraries(mpfem_core PUBLIC OpenBLAS::OpenBLAS)
+    elseif(TARGET PkgConfig::OpenBLAS)
+        target_link_libraries(mpfem_core PUBLIC PkgConfig::OpenBLAS)
+    else()
+        target_include_directories(mpfem_core PUBLIC ${OpenBLAS_INCLUDE_DIRS})
+        target_link_libraries(mpfem_core PUBLIC ${OpenBLAS_LIBRARIES})
+    endif()
+    message(STATUS "OpenBLAS acceleration enabled for Eigen")
+endif()
+
+# --- SuiteSparse support (UMFPACK solver) ---
+if(MPFEM_SUITESPARSE_FOUND)
+    target_compile_definitions(mpfem_core PUBLIC MPFEM_USE_SUITESPARSE)
+    if(TARGET SuiteSparse::UMFPACK)
+        target_link_libraries(mpfem_core PUBLIC SuiteSparse::UMFPACK)
+    elseif(TARGET UMFPACK::UMFPACK)
+        target_link_libraries(mpfem_core PUBLIC UMFPACK::UMFPACK)
+    else()
+        target_link_libraries(mpfem_core PUBLIC ${UMFPACK_LIBRARIES})
+    endif()
+    message(STATUS "SuiteSparse/UMFPACK solver enabled")
+endif()
+
+# --- OpenMP support ---
 if(MPFEM_OPENMP_FOUND)
     target_link_libraries(mpfem_core PUBLIC OpenMP::OpenMP_CXX)
-endif()
-
-# SuperLU support
-if(MPFEM_SUPERLU_FOUND)
-    target_compile_definitions(mpfem_core PUBLIC MPFEM_USE_SUPERLU)
-    target_link_libraries(mpfem_core PUBLIC SuperLU::SuperLU)
-    # Eigen's SuperLUSupport needs to find SuperLU headers directly
-    # (it uses #include <slu_Cnames.h>, not #include <superlu/slu_Cnames.h>)
-    target_include_directories(mpfem_core PUBLIC ${SuperLU_INCLUDE_DIR})
-endif()
-
-# SuiteSparse support
-if(MPFEM_UMFPACK_FOUND)
-    target_compile_definitions(mpfem_core PUBLIC MPFEM_USE_UMFPACK)
-    target_link_libraries(mpfem_core PUBLIC SuiteSparse::UMFPACK)
-endif()
-
-if(MPFEM_CHOLMOD_FOUND)
-    target_compile_definitions(mpfem_core PUBLIC MPFEM_USE_CHOLMOD)
 endif()
 
 # =============================================================================
@@ -161,6 +170,17 @@ mpfem_add_library(mpfem_fe
 )
 
 # =============================================================================
+# Solver library (header-only)
+# =============================================================================
+
+mpfem_add_library(mpfem_solver
+    HEADER_ONLY
+    PUBLIC_LINK
+        Eigen3::Eigen
+        mpfem_core
+)
+
+# =============================================================================
 # Assembly library
 # =============================================================================
 
@@ -174,17 +194,6 @@ mpfem_add_library(mpfem_assembly
         mpfem_mesh
         mpfem_fe
         mpfem_solver
-)
-
-# =============================================================================
-# Solver library (header-only)
-# =============================================================================
-
-mpfem_add_library(mpfem_solver
-    HEADER_ONLY
-    PUBLIC_LINK
-        Eigen3::Eigen
-        mpfem_core
 )
 
 # =============================================================================

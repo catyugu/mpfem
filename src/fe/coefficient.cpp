@@ -4,17 +4,7 @@
 #include <cmath>
 
 namespace mpfem {
-
-// =============================================================================
-// PWConstCoefficient
-// =============================================================================
-
-Real PWConstCoefficient::eval(ElementTransform& trans, Real) const {
-    int attr = static_cast<int>(trans.attribute());
-    if (attr < 1 || attr > static_cast<int>(values_.size())) return 0.0;
-    return values_[attr - 1];
-}
-
+    
 // =============================================================================
 // FunctionCoefficient
 // =============================================================================
@@ -40,21 +30,8 @@ Real DomainMappedCoefficient::eval(ElementTransform& trans, Real t) const {
 // =============================================================================
 
 Real TemperatureDependentConductivity::eval(ElementTransform& trans, Real) const {
-    int attr = static_cast<int>(trans.attribute());
-    if (attr < 1 || attr > static_cast<int>(rho0_.size())) return 1.0;
-    
-    Real rho0 = rho0_[attr - 1];
-    
-    // rho0 <= 0 表示使用常量电导率
-    if (rho0 <= 0.0) {
-        return sigma0_[attr - 1];
-    }
-    
-    Real alpha = alpha_[attr - 1];
-    Real tref = tref_[attr - 1];
-    
     // 获取温度
-    Real temp = tref;
+    Real temp = tref_;
     if (T_) {
         const auto& ip = trans.integrationPoint();
         Real xi[3] = {ip.xi, ip.eta, ip.zeta};
@@ -62,14 +39,14 @@ Real TemperatureDependentConductivity::eval(ElementTransform& trans, Real) const
     }
     
     // 线性电阻率模型: rho = rho0 * (1 + alpha * (T - Tref))
-    Real factor = 1.0 + alpha * (temp - tref);
+    Real factor = 1.0 + alpha_ * (temp - tref_);
     
     // 数值保护：防止负电阻率或零电阻率
     if (factor <= 0.0) {
         factor = 1e-10;
     }
     
-    Real rho = rho0 * factor;
+    Real rho = rho0_ * factor;
     return 1.0 / rho;
 }
 
@@ -79,12 +56,6 @@ Real TemperatureDependentConductivity::eval(ElementTransform& trans, Real) const
 
 Real JouleHeatCoefficient::eval(ElementTransform& trans, Real t) const {
     if (!V_ || !sigma_) return 0.0;
-    
-    // 检查域限制
-    if (!domains_.empty()) {
-        int attr = static_cast<int>(trans.attribute());
-        if (domains_.find(attr) == domains_.end()) return 0.0;
-    }
     
     // 先评估电导率，再计算梯度
     Real sigma_val = sigma_->eval(trans, t);
@@ -97,12 +68,6 @@ Real JouleHeatCoefficient::eval(ElementTransform& trans, Real t) const {
 // =============================================================================
 
 Real ThermalExpansionCoefficient::eval(ElementTransform& trans, Real) const {
-    int attr = static_cast<int>(trans.attribute());
-    if (attr < 1 || attr > static_cast<int>(alpha_T_.size())) return 0.0;
-    
-    Real alpha_T = alpha_T_[attr - 1];
-    if (alpha_T == 0.0) return 0.0;
-    
     // 获取温度
     Real T = T_ref_;
     if (T_) {
@@ -113,7 +78,7 @@ Real ThermalExpansionCoefficient::eval(ElementTransform& trans, Real) const {
     
     // 计算热膨胀应变
     Real delta_T = T - T_ref_;
-    return alpha_T * delta_T;
+    return alpha_T_ * delta_T;
 }
 
 }  // namespace mpfem

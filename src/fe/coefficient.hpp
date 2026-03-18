@@ -56,26 +56,6 @@ private:
     Real value_;
 };
 
-/// 分片常量系数（按域ID索引）
-class PWConstCoefficient : public Coefficient {
-public:
-    explicit PWConstCoefficient(int numDomains = 0) : values_(numDomains, 0.0) {}
-    explicit PWConstCoefficient(const std::vector<Real>& v) : values_(v) {}
-    
-    Real eval(ElementTransform& trans, Real = 0.0) const override;
-    
-    void set(int domainId, Real v) { 
-        if (domainId >= 1 && domainId <= static_cast<int>(values_.size()))
-            values_[domainId - 1] = v; 
-    }
-    Real get(int domainId) const { return values_[domainId - 1]; }
-    void resize(int n, Real v = 0.0) { values_.resize(n, v); }
-    int size() const { return static_cast<int>(values_.size()); }
-    
-private:
-    std::vector<Real> values_;
-};
-
 /// 函数系数
 class FunctionCoefficient : public Coefficient {
 public:
@@ -92,6 +72,22 @@ private:
 class DomainMappedCoefficient : public Coefficient {
 public:
     DomainMappedCoefficient() = default;
+    
+    /// 移动构造函数
+    DomainMappedCoefficient(DomainMappedCoefficient&& other) noexcept
+        : coefs_(std::move(other.coefs_)), defaultCoef_(other.defaultCoef_) {
+        other.defaultCoef_ = nullptr;
+    }
+    
+    /// 移动赋值运算符
+    DomainMappedCoefficient& operator=(DomainMappedCoefficient&& other) noexcept {
+        if (this != &other) {
+            coefs_ = std::move(other.coefs_);
+            defaultCoef_ = other.defaultCoef_;
+            other.defaultCoef_ = nullptr;
+        }
+        return *this;
+    }
     
     /// 设置指定域的系数（非持有指针）
     void set(int domainId, const Coefficient* coef) {
@@ -136,46 +132,23 @@ private:
 /**
  * @brief 温度依赖电导率：sigma = 1 / (rho0 * (1 + alpha * (T - Tref)))
  * 
- * 在构造时注入温度场引用，数据源唯一，无需手动更新。
+ * 单材料参数设计：每个实例仅存储一种材料的参数。
+ * 多域场景通过 DomainMappedCoefficient 组合。
  */
 class TemperatureDependentConductivity : public Coefficient {
 public:
-    /// 构造时注入温度场引用
-    TemperatureDependentConductivity(const GridFunction& T)
-        : T_(&T) {}
-    
-    /// 设置温度依赖材料参数
-    void setMaterial(int domainId, Real rho0, Real alpha, Real tref) {
-        ensureSize(domainId);
-        rho0_[domainId - 1] = rho0;
-        alpha_[domainId - 1] = alpha;
-        tref_[domainId - 1] = tref;
-    }
-    
-    /// 设置常量电导率（非温度依赖）
-    void setConstantConductivity(int domainId, Real sigma) {
-        ensureSize(domainId);
-        sigma0_[domainId - 1] = sigma;
-        rho0_[domainId - 1] = 0.0;
-    }
+    /// 构造时注入温度场引用和材料参数
+    TemperatureDependentConductivity(const GridFunction& T,
+                                      Real rho0, Real alpha, Real tref)
+        : T_(&T), rho0_(rho0), alpha_(alpha), tref_(tref) {}
     
     Real eval(ElementTransform& trans, Real t = 0.0) const override;
     
 private:
-    void ensureSize(int domainId) {
-        if (static_cast<int>(rho0_.size()) < domainId) {
-            rho0_.resize(domainId, 0.0);
-            alpha_.resize(domainId, 0.0);
-            tref_.resize(domainId, 298.0);
-            sigma0_.resize(domainId, 0.0);
-        }
-    }
-    
-    std::vector<Real> rho0_;
-    std::vector<Real> alpha_;
-    std::vector<Real> tref_;
-    std::vector<Real> sigma0_;
-    const GridFunction* T_ = nullptr;
+    const GridFunction* T_;
+    Real rho0_;
+    Real alpha_;
+    Real tref_;
 };
 
 // =============================================================================
@@ -185,21 +158,20 @@ private:
 /**
  * @brief 焦耳热系数: Q = sigma * |grad V|^2
  * 
- * 在构造时注入电势场和电导率引用，数据源唯一，无需手动更新。
+ * 在构造时注入电势场和电导率引用。
+ * 域限制通过 DomainMappedCoefficient 实现。
  */
 class JouleHeatCoefficient : public Coefficient {
 public:
     /// 构造时注入电势场和电导率引用
-    JouleHeatCoefficient(const GridFunction& V, const Coefficient& sigma,
-                         std::set<int> domains = {})
-        : V_(&V), sigma_(&sigma), domains_(std::move(domains)) {}
+    JouleHeatCoefficient(const GridFunction& V, const Coefficient& sigma)
+        : V_(&V), sigma_(&sigma) {}
     
     Real eval(ElementTransform& trans, Real t = 0.0) const override;
     
 private:
-    const GridFunction* V_ = nullptr;
-    const Coefficient* sigma_ = nullptr;
-    std::set<int> domains_;
+    const GridFunction* V_;
+    const Coefficient* sigma_;
 };
 
 // =============================================================================
@@ -209,42 +181,22 @@ private:
 /**
  * @brief 热膨胀应变系数: epsilon_th = alpha_T * (T - T_ref)
  * 
- * 在构造时注入温度场引用，数据源唯一，无需手动更新。
+ * 单材料参数设计：每个实例仅存储一种材料的参数。
+ * 多域场景通过 DomainMappedCoefficient 组合。
  */
 class ThermalExpansionCoefficient : public Coefficient {
 public:
-    
-    /// 构造时注入温度场引用
-    explicit ThermalExpansionCoefficient(const GridFunction& T, Real T_ref = 293.15)
-        : T_ref_(T_ref), T_(&T) {}
-    
-    /// 设置参考温度（默认293.15K = 20C）
-    void setReferenceTemperature(Real T_ref) { T_ref_ = T_ref; }
-    
-    /// 添加域的热膨胀系数
-    void setAlphaT(int domainId, Real alpha_T) {
-        ensureSize(domainId);
-        alpha_T_[domainId - 1] = alpha_T;
-    }
-    
-    /// 获取热膨胀系数
-    Real getAlphaT(int domainId) const {
-        if (domainId < 1 || domainId > static_cast<int>(alpha_T_.size())) return 0.0;
-        return alpha_T_[domainId - 1];
-    }
+    /// 构造时注入温度场引用和材料参数
+    ThermalExpansionCoefficient(const GridFunction& T,
+                                 Real alpha_T, Real T_ref = 293.15)
+        : T_(&T), alpha_T_(alpha_T), T_ref_(T_ref) {}
     
     Real eval(ElementTransform& trans, Real t = 0.0) const override;
     
 private:
-    void ensureSize(int domainId) {
-        if (static_cast<int>(alpha_T_.size()) < domainId) {
-            alpha_T_.resize(domainId, 0.0);
-        }
-    }
-    
-    std::vector<Real> alpha_T_;
-    Real T_ref_ = 293.15;
-    const GridFunction* T_ = nullptr;
+    const GridFunction* T_;
+    Real alpha_T_;
+    Real T_ref_;
 };
 
 // =============================================================================

@@ -34,16 +34,6 @@ TEST_F(CoefficientTest, ConstantCoefficient_SetValue) {
     EXPECT_DOUBLE_EQ(coef.get(), 2.5);
 }
 
-// PWConstCoefficient tests
-TEST_F(CoefficientTest, PWConstCoefficient_Basic) {
-    PWConstCoefficient coef(2);
-    coef.set(1, 10.0);
-    coef.set(2, 20.0);
-    
-    EXPECT_DOUBLE_EQ(coef.get(1), 10.0);
-    EXPECT_DOUBLE_EQ(coef.get(2), 20.0);
-}
-
 // FunctionCoefficient tests
 TEST_F(CoefficientTest, FunctionCoefficient_Basic) {
     FunctionCoefficient coef([](Real x, Real y, Real z, Real t) {

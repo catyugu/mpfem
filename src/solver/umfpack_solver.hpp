@@ -3,216 +3,112 @@
 
 #include "linear_solver.hpp"
 #include "core/logger.hpp"
+#include <vector>
+#include <stdexcept>
 
-#ifdef MPFEM_USE_UMFPACK
-// Include UMFPACK before Eigen to avoid BLAS conflicts
-#include <suitesparse/umfpack.h>
-#include <Eigen/Sparse>
+#ifdef MPFEM_USE_SUITESPARSE
+#include <Eigen/UmfPackSupport>
 #endif
 
 namespace mpfem {
 
-#ifdef MPFEM_USE_UMFPACK
+#ifdef MPFEM_USE_SUITESPARSE
 
 /**
- * @brief UMFPACK direct solver from SuiteSparse.
+ * @brief SuiteSparse UMFPACK direct solver.
  * 
- * Unsymmetric Multifrontal Sparse LU Factorization Package.
- * High-performance direct solver for sparse linear systems.
- * 
- * Only available when MPFEM_USE_UMFPACK is defined.
+ * High-performance direct LU solver from SuiteSparse.
+ * Good alternative when MKL PARDISO is not available.
  */
 class UmfpackSolver : public LinearSolver {
 public:
     UmfpackSolver() = default;
     
-    ~UmfpackSolver() override {
-        if (numeric_) {
-            umfpack_di_free_numeric(&numeric_);
-            numeric_ = nullptr;
-        }
-        if (symbolic_) {
-            umfpack_di_free_symbolic(&symbolic_);
-            symbolic_ = nullptr;
-        }
-    }
-    
     std::string name() const override { return "umfpack.lu"; }
     
+    void setPrintLevel(int level) override {
+        printLevel_ = level;
+    }
+    
     void analyzePattern(const SparseMatrix& A) override {
-        const auto& mat = A.eigen();
-        n_ = static_cast<int>(mat.rows());
+        ScopedTimer timer("UMFPACK symbolic analysis");
         
-        // Convert to CSC format
-        convertToCSC(mat);
+        solver_.analyzePattern(A.eigen());
+        analyzed_ = (solver_.info() == Eigen::Success);
         
-        // Symbolic analysis
-        int status = umfpack_di_symbolic(n_, n_, 
-            ap_.data(), ai_.data(), ax_.data(), 
-            &symbolic_, nullptr, nullptr);
-        
-        if (status != UMFPACK_OK) {
-            LOG_ERROR << "UMFPACK symbolic analysis failed with status: " << status;
-            return;
+        if (!analyzed_) {
+            LOG_ERROR << "UMFPACK symbolic analysis failed";
+        } else if (printLevel_ >= 1) {
+            LOG_INFO << "[UMFPACK] Symbolic analysis completed";
         }
-        
-        analyzed_ = true;
-        LOG_DEBUG << "UMFPACK: Symbolic analysis completed";
     }
     
     void factorize(const SparseMatrix& A) override {
+        ScopedTimer timer("UMFPACK factorization");
+        
         if (!analyzed_) {
             analyzePattern(A);
         }
         
-        const auto& mat = A.eigen();
-        n_ = static_cast<int>(mat.rows());
+        solver_.factorize(A.eigen());
+        factorized_ = (solver_.info() == Eigen::Success);
         
-        // Convert to CSC format
-        convertToCSC(mat);
-        
-        // Free previous numeric factorization
-        if (numeric_) {
-            umfpack_di_free_numeric(&numeric_);
-            numeric_ = nullptr;
+        if (!factorized_) {
+            LOG_ERROR << "UMFPACK factorization failed";
+        } else if (printLevel_ >= 1) {
+            LOG_INFO << "[UMFPACK] Factorization completed";
         }
-        
-        // Numeric factorization
-        int status = umfpack_di_numeric(
-            ap_.data(), ai_.data(), ax_.data(),
-            symbolic_, &numeric_, nullptr, nullptr);
-        
-        if (status != UMFPACK_OK) {
-            LOG_ERROR << "UMFPACK numeric factorization failed with status: " << status;
-            return;
-        }
-        
-        factorized_ = true;
-        LOG_DEBUG << "UMFPACK: Numeric factorization completed";
     }
     
     bool solve(const SparseMatrix& A, Vector& x, const Vector& b) override {
         ScopedTimer timer("Linear solve (UMFPACK)");
         
-        const auto& mat = A.eigen();
-        n_ = static_cast<int>(mat.rows());
+        // UMFPACK requires re-factorization when matrix values change
+        // (same pattern can be reused, but we need numerical factorization each time)
+        solver_.analyzePattern(A.eigen());
+        solver_.factorize(A.eigen());
         
-        // Convert to CSC format
-        convertToCSC(mat);
-        
-        // If not factorized, do full solve
-        if (!factorized_) {
-            // Symbolic analysis
-            if (!symbolic_) {
-                int status = umfpack_di_symbolic(n_, n_, 
-                    ap_.data(), ai_.data(), ax_.data(), 
-                    &symbolic_, nullptr, nullptr);
-                if (status != UMFPACK_OK) {
-                    LOG_ERROR << "UMFPACK symbolic analysis failed";
-                    return false;
-                }
-            }
-            
-            // Numeric factorization
-            if (numeric_) {
-                umfpack_di_free_numeric(&numeric_);
-            }
-            int status = umfpack_di_numeric(
-                ap_.data(), ai_.data(), ax_.data(),
-                symbolic_, &numeric_, nullptr, nullptr);
-            if (status != UMFPACK_OK) {
-                LOG_ERROR << "UMFPACK numeric factorization failed";
-                return false;
-            }
-            factorized_ = true;
-        }
-        
-        // Solve
-        x.resize(n_);
-        int status = umfpack_di_solve(UMFPACK_A,
-            ap_.data(), ai_.data(), ax_.data(),
-            x.data(), const_cast<Real*>(b.data()),
-            numeric_, nullptr, nullptr);
-        
-        if (status != UMFPACK_OK) {
-            LOG_ERROR << "UMFPACK solve failed with status: " << status;
+        if (solver_.info() != Eigen::Success) {
+            LOG_ERROR << "UMFPACK factorization failed";
             return false;
         }
         
+        x = solver_.solve(b);
+        
+        if (solver_.info() != Eigen::Success) {
+            LOG_ERROR << "UMFPACK solve failed";
+            return false;
+        }
+        
+        analyzed_ = true;
+        factorized_ = true;
         iterations_ = 1;
         residual_ = 0.0;
         
         LOG_INFO << "[UMFPACK] Solve successful, solution norm: " << x.norm();
         return true;
     }
-    
+
 private:
-    void convertToCSC(const Eigen::SparseMatrix<Real, Eigen::RowMajor>& mat) {
-        const int n = static_cast<int>(mat.rows());
-        const int nnz = static_cast<int>(mat.nonZeros());
-        
-        // UMFPACK requires CSC format with 0-based indexing
-        // Arrays: Ap (column pointers), Ai (row indices), Ax (values)
-        
-        ap_.resize(n + 1);
-        ai_.resize(nnz);
-        ax_.resize(nnz);
-        
-        // Count entries per column
-        std::vector<int> colCount(n, 0);
-        for (int k = 0; k < mat.outerSize(); ++k) {
-            for (typename Eigen::SparseMatrix<Real, Eigen::RowMajor>::InnerIterator it(mat, k); it; ++it) {
-                colCount[it.col()]++;
-            }
-        }
-        
-        // Build column pointers
-        ap_[0] = 0;
-        for (int i = 0; i < n; ++i) {
-            ap_[i + 1] = ap_[i] + colCount[i];
-        }
-        
-        // Fill row indices and values
-        std::vector<int> colPos = ap_;
-        for (int k = 0; k < mat.outerSize(); ++k) {
-            for (typename Eigen::SparseMatrix<Real, Eigen::RowMajor>::InnerIterator it(mat, k); it; ++it) {
-                const int col = it.col();
-                const int pos = colPos[col];
-                ai_[pos] = it.row();
-                ax_[pos] = it.value();
-                colPos[col]++;
-            }
-        }
-    }
-    
-    // UMFPACK data structures
-    void* symbolic_ = nullptr;
-    void* numeric_ = nullptr;
-    
-    // CSC format (0-based indexing)
-    std::vector<int> ap_;   // Column pointers (n+1 elements)
-    std::vector<int> ai_;   // Row indices (nnz elements)
-    std::vector<Real> ax_;  // Values (nnz elements)
-    
-    int n_ = 0;
+    Eigen::UmfPackLU<SparseMatrix::Storage> solver_;
     bool analyzed_ = false;
     bool factorized_ = false;
 };
 
 #else
 
-// Stub for when UMFPACK is not available
+// Stub for when SuiteSparse is not available
 class UmfpackSolver : public LinearSolver {
 public:
     UmfpackSolver() {
-        throw std::runtime_error("UmfpackSolver: UMFPACK not available. "
-                                 "Rebuild with -DMPFEM_USE_UMFPACK=ON");
+        throw std::runtime_error("UmfpackSolver: SuiteSparse not available. "
+                                 "Rebuild with SuiteSparse support enabled.");
     }
     std::string name() const override { return "umfpack.lu"; }
     bool solve(const SparseMatrix&, Vector&, const Vector&) override { return false; }
 };
 
-#endif  // MPFEM_USE_UMFPACK
+#endif  // MPFEM_USE_SUITESPARSE
 
 }  // namespace mpfem
 
