@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 #include "physics/electrostatics_solver.hpp"
-#include "physics/physics_problem_builder.hpp"
+#include "problem/physics_problem_builder.hpp"
 #include "mesh/mesh.hpp"
 #include "fe/coefficient.hpp"
 #include "core/logger.hpp"
@@ -27,8 +27,8 @@ protected:
 // =============================================================================
 
 TEST_F(BusbarElectrostaticsTest, SolverConvergence) {
-    PhysicsProblemSetup setup = PhysicsProblemBuilder::build(caseDir_);
-    auto& solver = setup.electrostatics;
+    auto setup = PhysicsProblemBuilder::build(caseDir_);
+    auto& solver = setup->electrostatics;
     
     solver->assemble();
     solver->solve();
