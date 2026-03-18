@@ -36,9 +36,6 @@ private:
                            Real defaultVal = 0.0);
 };
 
-// 类型别名，保持向后兼容
-using PhysicsProblemSetup = SteadyProblem;
-
 } // namespace mpfem
 
 #endif // MPFEM_PHYSICS_PROBLEM_BUILDER_HPP
