@@ -50,8 +50,19 @@ namespace mpfem
         std::unique_ptr<StructuralSolver> structural;
 
         // 所有系数统一存储（包括边界条件和耦合系数）
-        std::map<std::string, std::unique_ptr<Coefficient>> coefficients;
-        std::map<std::string, std::unique_ptr<VectorCoefficient>> vectorCoefficients;
+        std::map<std::string, AnyCoefficient> coefficients;
+        
+        // 模板化访问方法
+        template<typename T>
+        const T* get(const std::string& name) const {
+            auto it = coefficients.find(name);
+            return (it != coefficients.end()) ? it->second.get<T>() : nullptr;
+        }
+        
+        template<typename T>
+        void set(const std::string& name, std::unique_ptr<T> coef) {
+            coefficients[name] = AnyCoefficient(std::move(coef));
+        }
 
         // 耦合迭代参数
         int couplingMaxIter_ = 15;

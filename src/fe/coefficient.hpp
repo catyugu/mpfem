@@ -6,6 +6,8 @@
 #include <vector>
 #include <set>
 #include <map>
+#include <memory>
+#include <variant>
 
 namespace mpfem {
 
@@ -13,39 +15,38 @@ class ElementTransform;
 class GridFunction;
 
 // =============================================================================
+// 系数类型标签
+// =============================================================================
+
+enum class CoefficientKind { Scalar, Vector, Matrix };
+
+// =============================================================================
 // 标量系数基类
 // =============================================================================
 
-/**
- * @brief 标量系数基类
- * 
- * 设计原则：
- * - 使用 ElementTransform 获取几何和域信息
- * - 支持时间参数 t 用于瞬态问题
- * - 纯虚接口，派生类必须实现 eval
- * 
- * 所有权策略：
- * - Coefficient 实例由调用者（如 PhysicsProblemSetup）管理
- * - DomainMappedCoefficient 只持有非拥有引用
- */
 class Coefficient {
 public:
     virtual ~Coefficient() = default;
-    
-    /**
-     * @brief 在积分点评估系数值
-     * @param trans 单元变换（包含积分点、域ID等信息）
-     * @param t 时间参数（默认为0，用于瞬态问题）
-     * @return 系数值
-     */
     virtual Real eval(ElementTransform& trans, Real t = 0.0) const = 0;
+    static constexpr CoefficientKind kind = CoefficientKind::Scalar;
+};
+
+// =============================================================================
+// 向量系数基类
+// =============================================================================
+
+class VectorCoefficient {
+public:
+    virtual ~VectorCoefficient() = default;
+    virtual void eval(ElementTransform& trans, Real* result, Real t = 0.0) const = 0;
+    virtual int dim() const = 0;
+    static constexpr CoefficientKind kind = CoefficientKind::Vector;
 };
 
 // =============================================================================
 // 基础系数
 // =============================================================================
 
-/// 常量系数
 class ConstantCoefficient : public Coefficient {
 public:
     explicit ConstantCoefficient(Real c = 1.0) : value_(c) {}
@@ -56,170 +57,167 @@ private:
     Real value_;
 };
 
-/// 函数系数
 class FunctionCoefficient : public Coefficient {
 public:
-    using Func = std::function<Real(Real, Real, Real, Real)>;  // x, y, z, t
+    using Func = std::function<Real(Real, Real, Real, Real)>;
     explicit FunctionCoefficient(Func f) : func_(std::move(f)) {}
     Real eval(ElementTransform& trans, Real t = 0.0) const override;
 private:
     Func func_;
 };
 
-/// 域映射系数：不同域使用不同的系数（非持有引用）
-/// 
-/// 所有权策略：所有系数由外部管理（如 PhysicsProblemSetup::coefficients_）
-class DomainMappedCoefficient : public Coefficient {
+// =============================================================================
+// 域映射系数（模板化）
+// =============================================================================
+
+template<typename CoefType>
+class DomainMappedCoefficientT;
+
+template<>
+class DomainMappedCoefficientT<Coefficient> : public Coefficient {
 public:
-    DomainMappedCoefficient() = default;
-    
-    /// 移动构造函数
-    DomainMappedCoefficient(DomainMappedCoefficient&& other) noexcept
-        : coefs_(std::move(other.coefs_)), defaultCoef_(other.defaultCoef_) {
-        other.defaultCoef_ = nullptr;
-    }
-    
-    /// 移动赋值运算符
-    DomainMappedCoefficient& operator=(DomainMappedCoefficient&& other) noexcept {
-        if (this != &other) {
-            coefs_ = std::move(other.coefs_);
-            defaultCoef_ = other.defaultCoef_;
-            other.defaultCoef_ = nullptr;
-        }
+    DomainMappedCoefficientT() = default;
+    DomainMappedCoefficientT(DomainMappedCoefficientT&& o) noexcept
+        : coefs_(std::move(o.coefs_)), defaultCoef_(o.defaultCoef_) { o.defaultCoef_ = nullptr; }
+    DomainMappedCoefficientT& operator=(DomainMappedCoefficientT&& o) noexcept {
+        if (this != &o) { coefs_ = std::move(o.coefs_); defaultCoef_ = o.defaultCoef_; o.defaultCoef_ = nullptr; }
         return *this;
     }
     
-    /// 设置指定域的系数（非持有指针）
-    void set(int domainId, const Coefficient* coef) {
-        coefs_[domainId] = coef;
-    }
+    void set(int domainId, const Coefficient* coef) { coefs_[domainId] = coef; }
+    void set(const std::set<int>& domainIds, const Coefficient* coef) { for (int id : domainIds) coefs_[id] = coef; }
+    void setAll(const Coefficient* coef) { defaultCoef_ = coef; coefs_.clear(); }
+    const Coefficient* get(int domainId) const { auto it = coefs_.find(domainId); return it != coefs_.end() ? it->second : defaultCoef_; }
+    bool empty() const { return coefs_.empty() && !defaultCoef_; }
     
-    /// 批量设置多个域使用同一个系数（非持有指针）
-    void set(const std::set<int>& domainIds, const Coefficient* coef) {
-        for (int id : domainIds) {
-            coefs_[id] = coef;
-        }
-    }
-    
-    /// 设置所有域使用同一个系数（非持有指针，清空映射，设置默认系数）
-    void setAll(const Coefficient* coef) {
-        defaultCoef_ = coef;
-        coefs_.clear();
-    }
-    
-    /// 获取指定域的系数（如果没有则返回默认系数）
-    const Coefficient* get(int domainId) const {
-        auto it = coefs_.find(domainId);
-        if (it != coefs_.end()) return it->second;
-        return defaultCoef_;
-    }
-    
-    /// 评估系数值（实现在 cpp 文件中）
     Real eval(ElementTransform& trans, Real t = 0.0) const override;
-    
-    /// 检查是否有任何系数设置
-    bool empty() const { return coefs_.empty() && defaultCoef_ == nullptr; }
-    
 private:
     std::map<int, const Coefficient*> coefs_;
     const Coefficient* defaultCoef_ = nullptr;
 };
 
-// =============================================================================
-// 温度依赖电导率系数
-// =============================================================================
-
-/**
- * @brief 温度依赖电导率：sigma = 1 / (rho0 * (1 + alpha * (T - Tref)))
- * 
- * 单材料参数设计：每个实例仅存储一种材料的参数。
- * 多域场景通过 DomainMappedCoefficient 组合。
- */
-class TemperatureDependentConductivity : public Coefficient {
+template<>
+class DomainMappedCoefficientT<VectorCoefficient> : public VectorCoefficient {
 public:
-    /// 构造时注入温度场引用和材料参数
-    TemperatureDependentConductivity(const GridFunction& T,
-                                      Real rho0, Real alpha, Real tref)
-        : T_(&T), rho0_(rho0), alpha_(alpha), tref_(tref) {}
+    DomainMappedCoefficientT() = default;
+    DomainMappedCoefficientT(DomainMappedCoefficientT&& o) noexcept
+        : coefs_(std::move(o.coefs_)), defaultCoef_(o.defaultCoef_), dim_(o.dim_) { o.defaultCoef_ = nullptr; }
+    DomainMappedCoefficientT& operator=(DomainMappedCoefficientT&& o) noexcept {
+        if (this != &o) { coefs_ = std::move(o.coefs_); defaultCoef_ = o.defaultCoef_; dim_ = o.dim_; o.defaultCoef_ = nullptr; }
+        return *this;
+    }
     
-    Real eval(ElementTransform& trans, Real t = 0.0) const override;
+    void set(int domainId, const VectorCoefficient* coef) { coefs_[domainId] = coef; }
+    void set(const std::set<int>& domainIds, const VectorCoefficient* coef) { for (int id : domainIds) coefs_[id] = coef; }
+    void setAll(const VectorCoefficient* coef) { defaultCoef_ = coef; coefs_.clear(); }
+    const VectorCoefficient* get(int domainId) const { auto it = coefs_.find(domainId); return it != coefs_.end() ? it->second : defaultCoef_; }
+    bool empty() const { return coefs_.empty() && !defaultCoef_; }
     
+    void eval(ElementTransform& trans, Real* result, Real t = 0.0) const override;
+    int dim() const override { return dim_; }
+    void setDim(int d) { dim_ = d; }
 private:
-    const GridFunction* T_;
-    Real rho0_;
-    Real alpha_;
-    Real tref_;
+    std::map<int, const VectorCoefficient*> coefs_;
+    const VectorCoefficient* defaultCoef_ = nullptr;
+    int dim_ = 3;
 };
 
+using DomainMappedCoefficient = DomainMappedCoefficientT<Coefficient>;
+using DomainMappedVectorCoefficient = DomainMappedCoefficientT<VectorCoefficient>;
+
 // =============================================================================
-// 焦耳热系数
+// 物理耦合系数
 // =============================================================================
 
-/**
- * @brief 焦耳热系数: Q = sigma * |grad V|^2
- * 
- * 在构造时注入电势场和电导率引用。
- * 域限制通过 DomainMappedCoefficient 实现。
- */
+class TemperatureDependentConductivity : public Coefficient {
+public:
+    TemperatureDependentConductivity(const GridFunction& T, Real rho0, Real alpha, Real tref)
+        : T_(&T), rho0_(rho0), alpha_(alpha), tref_(tref) {}
+    Real eval(ElementTransform& trans, Real t = 0.0) const override;
+private:
+    const GridFunction* T_;
+    Real rho0_, alpha_, tref_;
+};
+
 class JouleHeatCoefficient : public Coefficient {
 public:
-    /// 构造时注入电势场和电导率引用
-    JouleHeatCoefficient(const GridFunction& V, const Coefficient& sigma)
-        : V_(&V), sigma_(&sigma) {}
-    
+    JouleHeatCoefficient(const GridFunction& V, const Coefficient& sigma) : V_(&V), sigma_(&sigma) {}
     Real eval(ElementTransform& trans, Real t = 0.0) const override;
-    
 private:
     const GridFunction* V_;
     const Coefficient* sigma_;
 };
 
-// =============================================================================
-// 热膨胀系数
-// =============================================================================
-
-/**
- * @brief 热膨胀应变系数: epsilon_th = alpha_T * (T - T_ref)
- * 
- * 单材料参数设计：每个实例仅存储一种材料的参数。
- * 多域场景通过 DomainMappedCoefficient 组合。
- */
 class ThermalExpansionCoefficient : public Coefficient {
 public:
-    /// 构造时注入温度场引用和材料参数
-    ThermalExpansionCoefficient(const GridFunction& T,
-                                 Real alpha_T, Real T_ref = 293.15)
+    ThermalExpansionCoefficient(const GridFunction& T, Real alpha_T, Real T_ref = 293.15)
         : T_(&T), alpha_T_(alpha_T), T_ref_(T_ref) {}
-    
     Real eval(ElementTransform& trans, Real t = 0.0) const override;
-    
 private:
     const GridFunction* T_;
-    Real alpha_T_;
-    Real T_ref_;
+    Real alpha_T_, T_ref_;
 };
 
 // =============================================================================
 // 向量系数
 // =============================================================================
 
-class VectorCoefficient {
-public:
-    virtual ~VectorCoefficient() = default;
-    virtual void eval(ElementTransform& trans, Real* result, Real t = 0.0) const = 0;
-    virtual int dim() const = 0;
-};
-
 class ConstantVectorCoefficient : public VectorCoefficient {
 public:
     explicit ConstantVectorCoefficient(Real x, Real y, Real z) : v_{x, y, z} {}
-    void eval(ElementTransform&, Real* r, Real = 0.0) const override { 
-        r[0] = v_[0]; r[1] = v_[1]; r[2] = v_[2]; 
-    }
+    void eval(ElementTransform&, Real* r, Real = 0.0) const override { r[0] = v_[0]; r[1] = v_[1]; r[2] = v_[2]; }
     int dim() const override { return 3; }
 private:
     Real v_[3];
 };
+
+// =============================================================================
+// 类型擦除系数包装器
+// =============================================================================
+
+class AnyCoefficient {
+public:
+    AnyCoefficient() = default;
+    explicit AnyCoefficient(std::unique_ptr<Coefficient> c) : data_(std::move(c)) {}
+    explicit AnyCoefficient(std::unique_ptr<VectorCoefficient> c) : data_(std::move(c)) {}
+    
+    AnyCoefficient(AnyCoefficient&&) = default;
+    AnyCoefficient& operator=(AnyCoefficient&&) = default;
+    AnyCoefficient(const AnyCoefficient&) = delete;
+    AnyCoefficient& operator=(const AnyCoefficient&) = delete;
+    
+    CoefficientKind kind() const {
+        return data_.index() == 1 ? CoefficientKind::Scalar :
+               data_.index() == 2 ? CoefficientKind::Vector : CoefficientKind::Scalar;
+    }
+    
+    bool empty() const { return data_.index() == 0; }
+    
+    template<typename T>
+    const T* get() const;
+    
+private:
+    std::variant<std::monostate, std::unique_ptr<Coefficient>, std::unique_ptr<VectorCoefficient>> data_;
+};
+
+template<> inline const Coefficient* AnyCoefficient::get<Coefficient>() const {
+    auto* p = std::get_if<1>(&data_);
+    return p ? p->get() : nullptr;
+}
+
+template<> inline const VectorCoefficient* AnyCoefficient::get<VectorCoefficient>() const {
+    auto* p = std::get_if<2>(&data_);
+    return p ? p->get() : nullptr;
+}
+
+// 工厂函数
+template<typename T, typename... Args>
+AnyCoefficient makeCoefficient(Args&&... args) {
+    if constexpr (std::is_base_of_v<Coefficient, T>)
+        return AnyCoefficient(std::make_unique<T>(std::forward<Args>(args)...));
+    else if constexpr (std::is_base_of_v<VectorCoefficient, T>)
+        return AnyCoefficient(std::make_unique<T>(std::forward<Args>(args)...));
+}
 
 }  // namespace mpfem
 

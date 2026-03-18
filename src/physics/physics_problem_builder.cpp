@@ -33,33 +33,17 @@ namespace mpfem
     void PhysicsProblemBuilder::buildSolvers(PhysicsProblemSetup &setup)
     {
         const auto &caseDef = setup.caseDef;
-        // 构建域材料映射
         for (const auto &assign : caseDef.materialAssignments)
-        {
             for (int domId : assign.domainIds)
-            {
                 setup.domainMaterial[domId] = assign.materialTag;
-            }
-        }
 
-        // 构建物理场求解器
         for (const auto &physics : caseDef.physicsDefinitions)
         {
-            if (physics.kind == "electrostatics")
-            {
-                buildElectrostatics(setup, physics);
-            }
-            else if (physics.kind == "heat_transfer")
-            {
-                buildHeatTransfer(setup, physics);
-            }
-            else if (physics.kind == "solid_mechanics")
-            {
-                buildStructural(setup, physics);
-            }
+            if (physics.kind == "electrostatics") buildElectrostatics(setup, physics);
+            else if (physics.kind == "heat_transfer") buildHeatTransfer(setup, physics);
+            else if (physics.kind == "solid_mechanics") buildStructural(setup, physics);
         }
 
-        // 设置耦合（在所有求解器初始化后）
         if (setup.hasJouleHeating() || setup.hasThermalExpansion())
         {
             setup.couplingMaxIter_ = caseDef.couplingConfig.maxIterations;
@@ -68,322 +52,199 @@ namespace mpfem
         }
     }
 
-    void PhysicsProblemBuilder::buildElectrostatics(
-        PhysicsProblemSetup &setup,
-        const PhysicsDefinition &physics)
+    void PhysicsProblemBuilder::buildElectrostatics(PhysicsProblemSetup &setup, const PhysicsDefinition &physics)
     {
-        const auto &materials = setup.materials;
         LOG_INFO << "Building electrostatics solver, order = " << physics.order;
-
-        // 创建并初始化求解器
         setup.electrostatics = std::make_unique<ElectrostaticsSolver>(physics.order);
         setup.electrostatics->setSolverConfig(physics.solver);
         setup.electrostatics->initialize(*setup.mesh);
 
-        // 设置每个域的电导率
         for (const auto &[domId, matTag] : setup.domainMaterial)
         {
-            const MaterialPropertyModel *mat = materials.getMaterial(matTag);
-            if (mat)
+            if (const auto* mat = setup.materials.getMaterial(matTag))
             {
-                // 为每个域创建单独的常量系数
                 std::string key = "conductivity_" + std::to_string(domId);
-                setup.coefficients[key] = std::make_unique<ConstantCoefficient>(mat->electricConductivity);
-                setup.electrostatics->setConductivity({domId}, setup.coefficients[key].get());
-                LOG_DEBUG << "Domain " << domId << " (" << matTag
-                         << "): sigma = " << mat->electricConductivity;
+                setup.set(key, std::make_unique<ConstantCoefficient>(mat->electricConductivity));
+                setup.electrostatics->setConductivity({domId}, setup.get<Coefficient>(key));
             }
         }
 
-        // 应用电压边界条件
         for (const auto &bc : physics.boundaries)
         {
             if (bc.kind == "voltage")
             {
-                Real value = parseValue(bc.params, "value", setup.caseDef);
                 std::string key = "voltage_bc_" + std::to_string(*bc.ids.begin());
-                setup.coefficients[key] = std::make_unique<ConstantCoefficient>(value);
-                std::set<int> ids(bc.ids.begin(), bc.ids.end());
-                setup.electrostatics->addVoltageBC(ids, setup.coefficients[key].get());
+                setup.set(key, std::make_unique<ConstantCoefficient>(parseValue(bc.params, "value", setup.caseDef)));
+                setup.electrostatics->addVoltageBC({bc.ids.begin(), bc.ids.end()}, setup.get<Coefficient>(key));
             }
         }
     }
 
-    void PhysicsProblemBuilder::buildHeatTransfer(
-        PhysicsProblemSetup &setup,
-        const PhysicsDefinition &physics)
+    void PhysicsProblemBuilder::buildHeatTransfer(PhysicsProblemSetup &setup, const PhysicsDefinition &physics)
     {
-        const auto &materials = setup.materials;
         LOG_INFO << "Building heat transfer solver, order = " << physics.order;
-
-        // 创建并初始化求解器
         setup.heatTransfer = std::make_unique<HeatTransferSolver>(physics.order);
         setup.heatTransfer->setSolverConfig(physics.solver);
         setup.heatTransfer->initialize(*setup.mesh);
 
-        // 设置每个域的热导率
         for (const auto &[domId, matTag] : setup.domainMaterial)
         {
-            const MaterialPropertyModel *mat = materials.getMaterial(matTag);
-            if (mat)
+            if (const auto* mat = setup.materials.getMaterial(matTag))
             {
                 std::string key = "thermal_conductivity_" + std::to_string(domId);
-                setup.coefficients[key] = std::make_unique<ConstantCoefficient>(mat->thermalConductivity);
-                setup.heatTransfer->setConductivity({domId}, setup.coefficients[key].get());
+                setup.set(key, std::make_unique<ConstantCoefficient>(mat->thermalConductivity));
+                setup.heatTransfer->setConductivity({domId}, setup.get<Coefficient>(key));
             }
         }
 
-        // 应用边界条件
         for (const auto &bc : physics.boundaries)
         {
             if (bc.kind == "temperature")
             {
-                Real value = parseValue(bc.params, "value", setup.caseDef);
                 std::string key = "temp_bc_" + std::to_string(*bc.ids.begin());
-                setup.coefficients[key] = std::make_unique<ConstantCoefficient>(value);
-                std::set<int> ids(bc.ids.begin(), bc.ids.end());
-                setup.heatTransfer->addTemperatureBC(ids, setup.coefficients[key].get());
+                setup.set(key, std::make_unique<ConstantCoefficient>(parseValue(bc.params, "value", setup.caseDef)));
+                setup.heatTransfer->addTemperatureBC({bc.ids.begin(), bc.ids.end()}, setup.get<Coefficient>(key));
             }
             else if (bc.kind == "convection")
             {
-                Real h = parseValue(bc.params, "h", setup.caseDef, 5.0);
-                Real Tinf = parseValue(bc.params, "T_inf", setup.caseDef, 293.15);
-
                 std::string hKey = "conv_h_" + std::to_string(*bc.ids.begin());
                 std::string tinfKey = "conv_tinf_" + std::to_string(*bc.ids.begin());
-                setup.coefficients[hKey] = std::make_unique<ConstantCoefficient>(h);
-                setup.coefficients[tinfKey] = std::make_unique<ConstantCoefficient>(Tinf);
-
-                std::set<int> ids(bc.ids.begin(), bc.ids.end());
-                setup.heatTransfer->addConvectionBC(ids,
-                                                    setup.coefficients[hKey].get(),
-                                                    setup.coefficients[tinfKey].get());
+                setup.set(hKey, std::make_unique<ConstantCoefficient>(parseValue(bc.params, "h", setup.caseDef, 5.0)));
+                setup.set(tinfKey, std::make_unique<ConstantCoefficient>(parseValue(bc.params, "T_inf", setup.caseDef, 293.15)));
+                setup.heatTransfer->addConvectionBC({bc.ids.begin(), bc.ids.end()}, setup.get<Coefficient>(hKey), setup.get<Coefficient>(tinfKey));
             }
         }
     }
 
-    void PhysicsProblemBuilder::buildStructural(
-        PhysicsProblemSetup &setup,
-        const PhysicsDefinition &physics)
+    void PhysicsProblemBuilder::buildStructural(PhysicsProblemSetup &setup, const PhysicsDefinition &physics)
     {
-        const auto &materials = setup.materials;
         LOG_INFO << "Building structural solver, order = " << physics.order;
-
-        // 创建并初始化求解器
         setup.structural = std::make_unique<StructuralSolver>(physics.order);
         setup.structural->setSolverConfig(physics.solver);
         setup.structural->initialize(*setup.mesh);
 
-        // 设置每个域的材料参数
         for (const auto &[domId, matTag] : setup.domainMaterial)
         {
-            const MaterialPropertyModel *mat = materials.getMaterial(matTag);
-            if (mat)
+            if (const auto* mat = setup.materials.getMaterial(matTag))
             {
                 std::string eKey = "young_" + std::to_string(domId);
                 std::string nuKey = "poisson_" + std::to_string(domId);
-                setup.coefficients[eKey] = std::make_unique<ConstantCoefficient>(mat->youngModulus);
-                setup.coefficients[nuKey] = std::make_unique<ConstantCoefficient>(mat->poissonRatio);
-
-                setup.structural->setYoungModulus({domId}, setup.coefficients[eKey].get());
-                setup.structural->setPoissonRatio({domId}, setup.coefficients[nuKey].get());
-
-                LOG_DEBUG << "Domain " << domId << " (" << matTag
-                         << "): E = " << mat->youngModulus
-                         << ", nu = " << mat->poissonRatio;
+                setup.set(eKey, std::make_unique<ConstantCoefficient>(mat->youngModulus));
+                setup.set(nuKey, std::make_unique<ConstantCoefficient>(mat->poissonRatio));
+                setup.structural->setYoungModulus({domId}, setup.get<Coefficient>(eKey));
+                setup.structural->setPoissonRatio({domId}, setup.get<Coefficient>(nuKey));
             }
         }
 
-        // 应用边界条件
         for (const auto &bc : physics.boundaries)
         {
             if (bc.kind == "fixed_constraint")
             {
                 std::string key = "fixed_disp_" + std::to_string(*bc.ids.begin());
-                setup.vectorCoefficients[key] = std::make_unique<ConstantVectorCoefficient>(0.0, 0.0, 0.0);
-                std::set<int> ids(bc.ids.begin(), bc.ids.end());
-                setup.structural->addFixedDisplacementBC(ids, setup.vectorCoefficients[key].get());
+                setup.set(key, std::make_unique<ConstantVectorCoefficient>(0.0, 0.0, 0.0));
+                setup.structural->addFixedDisplacementBC({bc.ids.begin(), bc.ids.end()}, setup.get<VectorCoefficient>(key));
             }
         }
     }
 
     void PhysicsProblemBuilder::setupCoupling(PhysicsProblemSetup &setup)
     {
-        const auto &materials = setup.materials;
-        const auto &caseDef = setup.caseDef;
-        
-        // 1. 温度依赖电导率：为每种有温变特性的材料创建独立系数
         DomainMappedCoefficient tempDepSigmaMap;
         
         for (const auto &[domId, matTag] : setup.domainMaterial)
         {
-            const MaterialPropertyModel *mat = materials.getMaterial(matTag);
-            if (!mat) continue;
-            
-            std::string key = "tempDepSigma_" + std::to_string(domId);
-            
-            if (mat->rho0 > 0.0)
+            if (const auto* mat = setup.materials.getMaterial(matTag))
             {
-                // 温变电导率材料
-                setup.coefficients[key] = std::make_unique<TemperatureDependentConductivity>(
-                    setup.heatTransfer->field(), mat->rho0, mat->alpha, mat->tref);
-                tempDepSigmaMap.set(domId, setup.coefficients[key].get());
-            }
-            else
-            {
-                // 常量电导率材料（复用已有的常量系数）
-                auto it = setup.coefficients.find("conductivity_" + std::to_string(domId));
-                if (it != setup.coefficients.end())
+                std::string key = "tempDepSigma_" + std::to_string(domId);
+                if (mat->rho0 > 0.0)
                 {
-                    tempDepSigmaMap.set(domId, it->second.get());
+                    setup.set(key, std::make_unique<TemperatureDependentConductivity>(
+                        setup.heatTransfer->field(), mat->rho0, mat->alpha, mat->tref));
+                    tempDepSigmaMap.set(domId, setup.get<Coefficient>(key));
+                }
+                else if (auto* c = setup.get<Coefficient>("conductivity_" + std::to_string(domId)))
+                {
+                    tempDepSigmaMap.set(domId, c);
                 }
             }
         }
         
-        // 设置到电场求解器
-        setup.coefficients["tempDepSigmaMap"] = std::make_unique<DomainMappedCoefficient>(std::move(tempDepSigmaMap));
-        setup.electrostatics->setConductivity(setup.coefficients["tempDepSigmaMap"].get());
+        setup.set("tempDepSigmaMap", std::make_unique<DomainMappedCoefficient>(std::move(tempDepSigmaMap)));
+        setup.electrostatics->setConductivity(setup.get<Coefficient>("tempDepSigmaMap"));
         
-        // 2. 焦耳热耦合
-        for (const auto &cp : caseDef.coupledPhysicsDefinitions)
+        for (const auto &cp : setup.caseDef.coupledPhysicsDefinitions)
         {
             if (cp.kind == "joule_heating")
             {
-                // 创建焦耳热系数（不再传递 domains 参数）
-                setup.coefficients["jouleHeat"] = std::make_unique<JouleHeatCoefficient>(
-                    setup.electrostatics->field(),
-                    setup.electrostatics->conductivity());
+                setup.set("jouleHeat", std::make_unique<JouleHeatCoefficient>(
+                    setup.electrostatics->field(), setup.electrostatics->conductivity()));
                 
-                // 用 DomainMappedCoefficient 限制到指定域
                 DomainMappedCoefficient jouleHeatMap;
-                std::set<int> domains(cp.domainIds.begin(), cp.domainIds.end());
-                jouleHeatMap.set(domains, setup.coefficients["jouleHeat"].get());
-                
-                setup.coefficients["jouleHeatMap"] = std::make_unique<DomainMappedCoefficient>(std::move(jouleHeatMap));
-                setup.heatTransfer->setHeatSource(setup.coefficients["jouleHeatMap"].get());
+                jouleHeatMap.set({cp.domainIds.begin(), cp.domainIds.end()}, setup.get<Coefficient>("jouleHeat"));
+                setup.set("jouleHeatMap", std::make_unique<DomainMappedCoefficient>(std::move(jouleHeatMap)));
+                setup.heatTransfer->setHeatSource(setup.get<Coefficient>("jouleHeatMap"));
                 LOG_INFO << "Joule heating domains: " << cp.domainIds.size() << " domains";
             }
             else if (cp.kind == "thermal_expansion")
             {
-                // 3. 热膨胀耦合：为每种材料创建独立系数
-                std::set<int> domains(cp.domainIds.begin(), cp.domainIds.end());
-                
                 for (int domId : cp.domainIds)
                 {
-                    const MaterialPropertyModel *mat = materials.getMaterial(setup.domainMaterial[domId]);
-                    if (mat && mat->thermalExpansion > 0.0)
+                    if (const auto* mat = setup.materials.getMaterial(setup.domainMaterial[domId]); mat && mat->thermalExpansion > 0.0)
                     {
                         std::string key = "thermalExp_" + std::to_string(domId);
-                        setup.coefficients[key] = std::make_unique<ThermalExpansionCoefficient>(
-                            setup.heatTransfer->field(), mat->thermalExpansion, 293.15);
-                        setup.structural->setThermalExpansion({domId}, setup.coefficients[key].get());
+                        setup.set(key, std::make_unique<ThermalExpansionCoefficient>(
+                            setup.heatTransfer->field(), mat->thermalExpansion, 293.15));
+                        setup.structural->setThermalExpansion({domId}, setup.get<Coefficient>(key));
                     }
                 }
-                
                 LOG_INFO << "Thermal expansion coupling enabled";
             }
         }
     }
 
     Real PhysicsProblemBuilder::parseValue(const std::map<std::string, std::string> &params,
-                                           const std::string &key,
-                                           const CaseDefinition &caseDef,
-                                           Real defaultVal)
+                                           const std::string &key, const CaseDefinition &caseDef, Real defaultVal)
     {
         auto it = params.find(key);
-        if (it == params.end())
-            return defaultVal;
-
+        if (it == params.end()) return defaultVal;
         std::string numStr = it->second;
-        size_t bracketPos = numStr.find('[');
-        if (bracketPos != std::string::npos)
-        {
-            numStr = numStr.substr(0, bracketPos);
-        }
-
-        try
-        {
-            return std::stod(numStr);
-        }
-        catch (...)
-        {
-            try
-            {
-                return caseDef.getVariable(numStr);
-            }
-            catch (...)
-            {
-                return defaultVal;
-            }
-        }
+        if (auto pos = numStr.find('['); pos != std::string::npos) numStr = numStr.substr(0, pos);
+        try { return std::stod(numStr); }
+        catch (...) { try { return caseDef.getVariable(numStr); } catch (...) { return defaultVal; } }
     }
-
-    // =========================================================================
-    // PhysicsProblemSetup 方法实现
-    // =========================================================================
 
     CouplingResult PhysicsProblemSetup::solve()
     {
         ScopedTimer timer("Coupling solve");
         CouplingResult result;
 
-        // 单场求解：无耦合
         if (!isCoupled())
         {
-            if (hasElectrostatics())
-            {
-                electrostatics->assemble();
-                electrostatics->solve();
-            }
+            if (hasElectrostatics()) { electrostatics->assemble(); electrostatics->solve(); }
             return result;
         }
 
-        // 耦合迭代求解
         for (int i = 0; i < couplingMaxIter_; ++i)
         {
-            // 求解电场
-            electrostatics->assemble();
-            electrostatics->solve();
-
-            // 求解温度场
-            heatTransfer->assemble();
-            heatTransfer->solve();
-
-            // 计算收敛误差
+            electrostatics->assemble(); electrostatics->solve();
+            heatTransfer->assemble(); heatTransfer->solve();
+            
             Real err = computeCouplingError();
             result.iterations = i + 1;
             result.residual = err;
-
             LOG_INFO << "Coupling iteration " << (i + 1) << ", residual = " << err;
-
-            if (err < couplingTol_)
-            {
-                result.converged = true;
-                break;
-            }
+            if (err < couplingTol_) { result.converged = true; break; }
         }
 
-        // 后处理：求解结构场
-        if (hasStructural())
-        {
-            structural->assemble();
-            structural->solve();
-        }
-
+        if (hasStructural()) { structural->assemble(); structural->solve(); }
         return result;
     }
 
     Real PhysicsProblemSetup::computeCouplingError()
     {
         if (!heatTransfer) return 0.0;
-
         const auto& T = heatTransfer->field().values();
-        if (prevT_.size() == 0)
-        {
-            prevT_ = T;
-            return 1.0;
-        }
-
+        if (prevT_.size() == 0) { prevT_ = T; return 1.0; }
         Real diff = (T - prevT_).norm();
         prevT_ = T;
         return diff / (T.norm() + 1e-15);
