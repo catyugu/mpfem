@@ -4,8 +4,7 @@
 #include "solver_config.hpp"
 #include "linear_solver.hpp"
 #include "eigen_solver.hpp"
-#include "superlu_solver.hpp"
-#include "umfpack_solver.hpp"
+#include "pardiso_solver.hpp"
 #include "core/logger.hpp"
 #include <memory>
 
@@ -108,11 +107,9 @@ private:
             case SolverType::Eigen_MINRES:
                 return std::make_unique<EigenMINRESSolver>();
 
-            // External solvers
-            case SolverType::SuperLU_LU:
-                return std::make_unique<SuperLUSolver>();
-            case SolverType::Umfpack_LU:
-                return std::make_unique<UmfpackSolver>();
+            // MKL PARDISO
+            case SolverType::MKL_Pardiso:
+                return std::make_unique<PardisoSolver>();
 
             default:
                 throw std::runtime_error("Unsupported solver type");

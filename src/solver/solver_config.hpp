@@ -19,10 +19,8 @@ enum class SolverType {
     Eigen_DGMRES_ILU,     ///< DGMRES with ILU preconditioner
     Eigen_MINRES,         ///< MINRES for symmetric indefinite systems
 
-    // External direct solvers (conditionally available)
-    SuperLU_LU,           ///< SuperLU direct solver
-    Umfpack_LU,           ///< SuiteSparse UMFPACK
-    Cholmod_LLT,          ///< SuiteSparse CHOLMOD (SPD only)
+    // MKL PARDISO (conditionally available)
+    MKL_Pardiso,          ///< MKL PARDISO direct solver
 };
 
 // =============================================================================
@@ -44,24 +42,8 @@ struct SolverMeta {
 
 namespace detail {
 
-inline constexpr bool isSuperLUAvailable() {
-#ifdef MPFEM_USE_SUPERLU
-    return true;
-#else
-    return false;
-#endif
-}
-
-inline constexpr bool isUmfpackAvailable() {
-#ifdef MPFEM_USE_UMFPACK
-    return true;
-#else
-    return false;
-#endif
-}
-
-inline constexpr bool isCholmodAvailable() {
-#ifdef MPFEM_USE_CHOLMOD
+inline constexpr bool isMKLAvailable() {
+#ifdef MPFEM_USE_MKL
     return true;
 #else
     return false;
@@ -74,10 +56,8 @@ inline constexpr SolverMeta solverRegistry[] = {
     {SolverType::Eigen_DGMRES_ILU,   "eigen.dgmres_ilu",    "Eigen DGMRES with ILU preconditioner", true,  false, true},
     {SolverType::Eigen_MINRES,       "eigen.minres",        "Eigen MINRES (symmetric systems)",     true,  false, true},
 
-    // External solvers
-    {SolverType::SuperLU_LU,   "superlu.lu",   "SuperLU direct solver",        false, false, isSuperLUAvailable()},
-    {SolverType::Umfpack_LU,   "umfpack.lu",   "UMFPACK direct solver",        false, false, isUmfpackAvailable()},
-    {SolverType::Cholmod_LLT,  "cholmod.llt",  "CHOLMOD Cholesky (SPD only)",  false, true,  isCholmodAvailable()},
+    // MKL PARDISO
+    {SolverType::MKL_Pardiso,        "mkl.pardiso",         "MKL PARDISO direct solver",            false, false, isMKLAvailable()},
 };
 
 inline constexpr size_t solverRegistrySize = sizeof(solverRegistry) / sizeof(SolverMeta);
@@ -155,9 +135,7 @@ struct SolverConfig {
     static SolverConfig eigenSparseLU() { return {SolverType::Eigen_SparseLU}; }
     static SolverConfig eigenDGMRES() { return {SolverType::Eigen_DGMRES_ILU}; }
     static SolverConfig eigenMINRES() { return {SolverType::Eigen_MINRES}; }
-    static SolverConfig superLU() { return {SolverType::SuperLU_LU}; }
-    static SolverConfig umfpack() { return {SolverType::Umfpack_LU}; }
-    static SolverConfig cholmod() { return {SolverType::Cholmod_LLT}; }
+    static SolverConfig pardiso() { return {SolverType::MKL_Pardiso}; }
 };
 
 }  // namespace mpfem

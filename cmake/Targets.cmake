@@ -69,35 +69,18 @@ mpfem_add_library(mpfem_core
         Eigen3::Eigen
 )
 
-# OpenBLAS support for Eigen
-if(MPFEM_OPENBLAS_FOUND)
-    target_link_libraries(mpfem_core PUBLIC OpenBLAS::OpenBLAS)
-    target_compile_definitions(mpfem_core PUBLIC EIGEN_USE_BLAS)
-    message(STATUS "OpenBLAS acceleration enabled for Eigen (EIGEN_USE_BLAS)")
+# MKL support
+if(MPFEM_MKL_FOUND)
+    target_compile_definitions(mpfem_core PUBLIC MPFEM_USE_MKL)
+    target_link_libraries(mpfem_core PUBLIC MKL::MKL)
+    # Note: Not using EIGEN_USE_BLAS to avoid MKL BLAS configuration issues
+    # MKL is only used for PARDISO solver
+    message(STATUS "MKL enabled for PARDISO solver")
 endif()
 
 # OpenMP support
 if(MPFEM_OPENMP_FOUND)
     target_link_libraries(mpfem_core PUBLIC OpenMP::OpenMP_CXX)
-endif()
-
-# SuperLU support
-if(MPFEM_SUPERLU_FOUND)
-    target_compile_definitions(mpfem_core PUBLIC MPFEM_USE_SUPERLU)
-    target_link_libraries(mpfem_core PUBLIC SuperLU::SuperLU)
-    # Eigen's SuperLUSupport needs to find SuperLU headers directly
-    # (it uses #include <slu_Cnames.h>, not #include <superlu/slu_Cnames.h>)
-    target_include_directories(mpfem_core PUBLIC ${SuperLU_INCLUDE_DIR})
-endif()
-
-# SuiteSparse support
-if(MPFEM_UMFPACK_FOUND)
-    target_compile_definitions(mpfem_core PUBLIC MPFEM_USE_UMFPACK)
-    target_link_libraries(mpfem_core PUBLIC SuiteSparse::UMFPACK)
-endif()
-
-if(MPFEM_CHOLMOD_FOUND)
-    target_compile_definitions(mpfem_core PUBLIC MPFEM_USE_CHOLMOD)
 endif()
 
 # =============================================================================
@@ -161,6 +144,17 @@ mpfem_add_library(mpfem_fe
 )
 
 # =============================================================================
+# Solver library (header-only)
+# =============================================================================
+
+mpfem_add_library(mpfem_solver
+    HEADER_ONLY
+    PUBLIC_LINK
+        Eigen3::Eigen
+        mpfem_core
+)
+
+# =============================================================================
 # Assembly library
 # =============================================================================
 
@@ -174,17 +168,6 @@ mpfem_add_library(mpfem_assembly
         mpfem_mesh
         mpfem_fe
         mpfem_solver
-)
-
-# =============================================================================
-# Solver library (header-only)
-# =============================================================================
-
-mpfem_add_library(mpfem_solver
-    HEADER_ONLY
-    PUBLIC_LINK
-        Eigen3::Eigen
-        mpfem_core
 )
 
 # =============================================================================

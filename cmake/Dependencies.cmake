@@ -7,11 +7,8 @@
 # - Header-only libraries: CPM for downloading
 #
 # Output variables:
-#   MPFEM_OPENBLAS_FOUND   - OpenBLAS available
-#   MPFEM_OPENMP_FOUND     - OpenMP available
-#   MPFEM_SUPERLU_FOUND    - SuperLU available
-#   MPFEM_SUITESPARSE_FOUND - SuiteSparse (UMFPACK) available
-#   MPFEM_CHOLMOD_FOUND    - CHOLMOD available
+#   MPFEM_MKL_FOUND       - Intel MKL available
+#   MPFEM_OPENMP_FOUND    - OpenMP available
 #
 # =============================================================================
 
@@ -25,19 +22,65 @@ include(CPM)
 find_package(Eigen3 REQUIRED)
 
 # =============================================================================
-# 2. Optional: OpenBLAS for Eigen BLAS acceleration
+# 2. Optional: Intel MKL
 # =============================================================================
 
-option(MPFEM_USE_OPENBLAS "Use OpenBLAS for Eigen BLAS acceleration" ON)
-if(MPFEM_USE_OPENBLAS)
-    find_package(OpenBLAS QUIET)
-    if(OpenBLAS_FOUND)
-        message(STATUS "OpenBLAS found: ${OpenBLAS_LIBRARIES}")
-        set(MPFEM_OPENBLAS_FOUND TRUE)
-    else()
-        message(STATUS "OpenBLAS not found, using Eigen's built-in backend")
-        set(MPFEM_OPENBLAS_FOUND FALSE)
+option(MPFEM_USE_MKL "Use Intel MKL for BLAS/LAPACK and PARDISO solver" ON)
+if(MPFEM_USE_MKL)
+    # Try to find MKL via environment variable or standard paths
+    if(DEFINED ENV{MKLROOT})
+        set(MKL_ROOT "$ENV{MKLROOT}")
+    elseif(DEFINED ENV{MKL_DIR})
+        set(MKL_ROOT "$ENV{MKL_DIR}")
+    elseif(EXISTS "E:/env/cpp/intel/oneAPI/mkl/latest")
+        set(MKL_ROOT "E:/env/cpp/intel/oneAPI/mkl/latest")
     endif()
+    
+    if(MKL_ROOT)
+        set(MKL_INCLUDE_DIRS "${MKL_ROOT}/include")
+        set(MKL_LIB_DIR "${MKL_ROOT}/lib")
+        
+        # Find MKL libraries (sequential version for simplicity)
+        find_library(MKL_CORE_LIB mkl_core PATHS "${MKL_LIB_DIR}" NO_DEFAULT_PATH)
+        find_library(MKL_INTEL_LP64_LIB mkl_intel_lp64 PATHS "${MKL_LIB_DIR}" NO_DEFAULT_PATH)
+        find_library(MKL_SEQUENTIAL_LIB mkl_sequential PATHS "${MKL_LIB_DIR}" NO_DEFAULT_PATH)
+        
+        if(MKL_CORE_LIB AND MKL_INTEL_LP64_LIB AND MKL_SEQUENTIAL_LIB)
+            set(MKL_LIBRARIES 
+                ${MKL_INTEL_LP64_LIB}
+                ${MKL_SEQUENTIAL_LIB}
+                ${MKL_CORE_LIB}
+            )
+            
+            # Create imported target
+            add_library(MKL::MKL INTERFACE IMPORTED)
+            target_include_directories(MKL::MKL INTERFACE "${MKL_INCLUDE_DIRS}")
+            target_link_libraries(MKL::MKL INTERFACE ${MKL_LIBRARIES})
+            
+            set(MKL_FOUND TRUE)
+            set(MPFEM_MKL_FOUND TRUE)
+            message(STATUS "Intel MKL found: ${MKL_ROOT}")
+            message(STATUS "  MKL libraries: ${MKL_LIBRARIES}")
+        else()
+            message(STATUS "Intel MKL libraries not found in: ${MKL_LIB_DIR}")
+            message(STATUS "  mkl_core: ${MKL_CORE_LIB}")
+            message(STATUS "  mkl_intel_lp64: ${MKL_INTEL_LP64_LIB}")
+            message(STATUS "  mkl_sequential: ${MKL_SEQUENTIAL_LIB}")
+            set(MPFEM_MKL_FOUND FALSE)
+        endif()
+    else()
+        # Try system-wide search
+        find_package(MKL QUIET)
+        if(MKL_FOUND)
+            set(MPFEM_MKL_FOUND TRUE)
+            message(STATUS "Intel MKL found (system)")
+        else()
+            message(STATUS "Intel MKL not found")
+            set(MPFEM_MKL_FOUND FALSE)
+        endif()
+    endif()
+else()
+    set(MPFEM_MKL_FOUND FALSE)
 endif()
 
 # =============================================================================
@@ -57,47 +100,7 @@ if(MPFEM_USE_OPENMP)
 endif()
 
 # =============================================================================
-# 4. Optional: Linear solver libraries
-# =============================================================================
-
-# SuperLU (optional)
-option(MPFEM_USE_SUPERLU "Use SuperLU solver" ON)
-if(MPFEM_USE_SUPERLU)
-    find_package(SuperLU QUIET)
-    if(SuperLU_FOUND)
-        message(STATUS "SuperLU found: ${SuperLU_LIBRARIES}")
-        set(MPFEM_SUPERLU_FOUND TRUE)
-    else()
-        message(STATUS "SuperLU not found")
-        set(MPFEM_SUPERLU_FOUND FALSE)
-    endif()
-endif()
-
-# SuiteSparse (UMFPACK, CHOLMOD, etc.)
-option(MPFEM_USE_SUITESPARSE "Use SuiteSparse solvers (UMFPACK, CHOLMOD)" ON)
-if(MPFEM_USE_SUITESPARSE)
-    find_package(SuiteSparse QUIET)
-    
-    if(SuiteSparse_FOUND OR UMFPACK_FOUND)
-        message(STATUS "SuiteSparse found")
-        set(MPFEM_SUITESPARSE_FOUND TRUE)
-        set(MPFEM_UMFPACK_FOUND TRUE)
-    else()
-        message(STATUS "SuiteSparse not found")
-        set(MPFEM_SUITESPARSE_FOUND FALSE)
-        set(MPFEM_UMFPACK_FOUND FALSE)
-    endif()
-    
-    if(CHOLMOD_FOUND)
-        message(STATUS "CHOLMOD found")
-        set(MPFEM_CHOLMOD_FOUND TRUE)
-    else()
-        set(MPFEM_CHOLMOD_FOUND FALSE)
-    endif()
-endif()
-
-# =============================================================================
-# 5. Build dependencies (downloaded via CPM)
+# 4. Build dependencies (downloaded via CPM)
 # =============================================================================
 
 option(MPFEM_BUILD_TESTS "Build unit tests" ON)
@@ -132,11 +135,8 @@ endif()
 message(STATUS "")
 message(STATUS "=== mpfem Dependency Summary ===")
 message(STATUS "Eigen3:          FOUND")
-message(STATUS "OpenBLAS:        ${MPFEM_OPENBLAS_FOUND}")
+message(STATUS "Intel MKL:       ${MPFEM_MKL_FOUND}")
 message(STATUS "OpenMP:          ${MPFEM_OPENMP_FOUND}")
-message(STATUS "SuperLU:         ${MPFEM_SUPERLU_FOUND}")
-message(STATUS "UMFPACK:         ${MPFEM_UMFPACK_FOUND}")
-message(STATUS "CHOLMOD:         ${MPFEM_CHOLMOD_FOUND}")
 message(STATUS "Build tests:     ${MPFEM_BUILD_TESTS}")
 message(STATUS "Build examples:  ${MPFEM_BUILD_EXAMPLES}")
 message(STATUS "================================")
