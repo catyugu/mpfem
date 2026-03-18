@@ -229,85 +229,83 @@ namespace mpfem
         const auto &materials = setup.materials;
         const auto &caseDef = setup.caseDef;
         
-        // 1. 温度依赖电导率
-        bool hasTempDepSigma = false;
+        // 1. 温度依赖电导率：为每种有温变特性的材料创建独立系数
+        DomainMappedCoefficient tempDepSigmaMap;
+        
         for (const auto &[domId, matTag] : setup.domainMaterial)
         {
             const MaterialPropertyModel *mat = materials.getMaterial(matTag);
-            if (mat && mat->rho0 > 0.0)
-            {
-                hasTempDepSigma = true;
-                break;
-            }
-        }
-
-        if (hasTempDepSigma)
-        {
-            // 创建系数，注入温度场引用，统一存储在 coefficients 中
-            auto tempDepSigma = std::make_unique<TemperatureDependentConductivity>(
-                setup.heatTransfer->field());
+            if (!mat) continue;
             
-            for (const auto &[domId, matTag] : setup.domainMaterial)
+            std::string key = "tempDepSigma_" + std::to_string(domId);
+            
+            if (mat->rho0 > 0.0)
             {
-                const MaterialPropertyModel *mat = materials.getMaterial(matTag);
-                if (mat)
+                // 温变电导率材料
+                setup.coefficients[key] = std::make_unique<TemperatureDependentConductivity>(
+                    setup.heatTransfer->field(), mat->rho0, mat->alpha, mat->tref);
+                tempDepSigmaMap.set(domId, setup.coefficients[key].get());
+            }
+            else
+            {
+                // 常量电导率材料（复用已有的常量系数）
+                auto it = setup.coefficients.find("conductivity_" + std::to_string(domId));
+                if (it != setup.coefficients.end())
                 {
-                    if (mat->rho0 > 0.0)
-                    {
-                        tempDepSigma->setMaterial(domId, mat->rho0, mat->alpha, mat->tref);
-                    }
-                    else
-                    {
-                        tempDepSigma->setConstantConductivity(domId, mat->electricConductivity);
-                    }
+                    tempDepSigmaMap.set(domId, it->second.get());
                 }
             }
-            
-            // 直接设置到电场求解器（系数绑定温度场引用，自动获取最新值）
-            setup.electrostatics->setConductivity(tempDepSigma.get());
-            setup.coefficients["tempDepSigma"] = std::move(tempDepSigma);
         }
+        
+        // 设置到电场求解器
+        setup.coefficients["tempDepSigmaMap"] = std::make_unique<DomainMappedCoefficient>(std::move(tempDepSigmaMap));
+        setup.electrostatics->setConductivity(setup.coefficients["tempDepSigmaMap"].get());
         
         // 2. 焦耳热耦合
         for (const auto &cp : caseDef.coupledPhysicsDefinitions)
         {
             if (cp.kind == "joule_heating")
             {
-                // 创建系数，注入电势场和电导率引用，统一存储在 coefficients 中
-                std::set<int> domains(cp.domainIds.begin(), cp.domainIds.end());
-                auto jouleHeat = std::make_unique<JouleHeatCoefficient>(
+                // 创建焦耳热系数（不再传递 domains 参数）
+                setup.coefficients["jouleHeat"] = std::make_unique<JouleHeatCoefficient>(
                     setup.electrostatics->field(),
-                    setup.electrostatics->conductivity(),
-                    std::move(domains));
+                    setup.electrostatics->conductivity());
                 
-                // 直接设置到热传导求解器（系数绑定电势场引用，自动获取最新值）
-                setup.heatTransfer->setHeatSource(jouleHeat.get());
-                setup.coefficients["jouleHeat"] = std::move(jouleHeat);
+                // 用 DomainMappedCoefficient 限制到指定域
+                DomainMappedCoefficient jouleHeatMap;
+                std::set<int> domains(cp.domainIds.begin(), cp.domainIds.end());
+                jouleHeatMap.set(domains, setup.coefficients["jouleHeat"].get());
+                
+                setup.coefficients["jouleHeatMap"] = std::make_unique<DomainMappedCoefficient>(std::move(jouleHeatMap));
+                setup.heatTransfer->setHeatSource(setup.coefficients["jouleHeatMap"].get());
                 LOG_INFO << "Joule heating domains: " << cp.domainIds.size() << " domains";
             }
             else if (cp.kind == "thermal_expansion")
             {
-                // 创建系数，注入温度场引用，统一存储在 coefficients 中
-                auto thermalExp = std::make_unique<ThermalExpansionCoefficient>(
-                    setup.heatTransfer->field(), 293.15);
+                // 3. 热膨胀耦合：为每种材料创建独立系数
+                DomainMappedCoefficient thermalExpMap;
                 
                 for (int domId : cp.domainIds)
                 {
                     const MaterialPropertyModel *mat = materials.getMaterial(setup.domainMaterial[domId]);
                     if (mat && mat->thermalExpansion > 0.0)
                     {
-                        thermalExp->setAlphaT(domId, mat->thermalExpansion);
+                        std::string key = "thermalExp_" + std::to_string(domId);
+                        setup.coefficients[key] = std::make_unique<ThermalExpansionCoefficient>(
+                            setup.heatTransfer->field(), mat->thermalExpansion, 293.15);
+                        thermalExpMap.set(domId, setup.coefficients[key].get());
                     }
                 }
                 
-                // 直接将热膨胀积分器添加到结构求解器（系数绑定温度场引用，自动获取最新值）
+                setup.coefficients["thermalExpMap"] = std::make_unique<DomainMappedCoefficient>(std::move(thermalExpMap));
+                
+                // 将热膨胀积分器添加到结构求解器
                 auto thermalLoad = std::make_unique<ThermalLoadIntegrator>(
                     &setup.structural->youngModulus(), 
                     &setup.structural->poissonRatio(), 
-                    thermalExp.get());
+                    setup.coefficients["thermalExpMap"].get());
                 setup.structural->addLinearIntegrator(std::move(thermalLoad));
                 
-                setup.coefficients["thermalExp"] = std::move(thermalExp);
                 LOG_INFO << "Thermal expansion coupling enabled";
             }
         }

@@ -18,7 +18,6 @@
 ## 工作任务1
 
 * 可以引入 C++ 20 的新特性用于有效简化或者抽象代码（例如span，range等等）。
-* 当前的Coefficient机制比较僵硬，明明是DomainMappedCoefficient在管理各种域的Coefficient，但是JouleHeatCoefficient， TemperatureDependentConductivity，ThermalExpansionCoefficient等却都要管理域序号，这无疑是不太好的设计。
 
 ```
  HUAWEI    mpfem  dev ≡  ~1 |  ~6  1   16.957s⠀   ./build/examples/busbar_example.exe .\cases\busbar_order2        pwsh   98  01:07:37 
