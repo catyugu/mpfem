@@ -56,26 +56,6 @@ private:
     Real value_;
 };
 
-/// 分片常量系数（按域ID索引）
-class PWConstCoefficient : public Coefficient {
-public:
-    explicit PWConstCoefficient(int numDomains = 0) : values_(numDomains, 0.0) {}
-    explicit PWConstCoefficient(const std::vector<Real>& v) : values_(v) {}
-    
-    Real eval(ElementTransform& trans, Real = 0.0) const override;
-    
-    void set(int domainId, Real v) { 
-        if (domainId >= 1 && domainId <= static_cast<int>(values_.size()))
-            values_[domainId - 1] = v; 
-    }
-    Real get(int domainId) const { return values_[domainId - 1]; }
-    void resize(int n, Real v = 0.0) { values_.resize(n, v); }
-    int size() const { return static_cast<int>(values_.size()); }
-    
-private:
-    std::vector<Real> values_;
-};
-
 /// 函数系数
 class FunctionCoefficient : public Coefficient {
 public:

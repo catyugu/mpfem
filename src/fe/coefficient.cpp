@@ -4,17 +4,7 @@
 #include <cmath>
 
 namespace mpfem {
-
-// =============================================================================
-// PWConstCoefficient
-// =============================================================================
-
-Real PWConstCoefficient::eval(ElementTransform& trans, Real) const {
-    int attr = static_cast<int>(trans.attribute());
-    if (attr < 1 || attr > static_cast<int>(values_.size())) return 0.0;
-    return values_[attr - 1];
-}
-
+    
 // =============================================================================
 // FunctionCoefficient
 // =============================================================================
