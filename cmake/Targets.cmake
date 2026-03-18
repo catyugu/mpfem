@@ -69,16 +69,42 @@ mpfem_add_library(mpfem_core
         Eigen3::Eigen
 )
 
-# MKL support
+# --- MKL support (PARDISO solver + optional BLAS acceleration) ---
 if(MPFEM_MKL_FOUND)
     target_compile_definitions(mpfem_core PUBLIC MPFEM_USE_MKL)
     target_link_libraries(mpfem_core PUBLIC MKL::MKL)
-    # Note: Not using EIGEN_USE_BLAS to avoid MKL BLAS configuration issues
-    # MKL is only used for PARDISO solver
     message(STATUS "MKL enabled for PARDISO solver")
 endif()
 
-# OpenMP support
+# --- OpenBLAS support (BLAS acceleration for Eigen) ---
+if(MPFEM_OPENBLAS_FOUND)
+    target_compile_definitions(mpfem_core PUBLIC MPFEM_USE_OPENBLAS)
+    target_compile_definitions(mpfem_core PUBLIC EIGEN_USE_BLAS)
+    if(TARGET OpenBLAS::OpenBLAS)
+        target_link_libraries(mpfem_core PUBLIC OpenBLAS::OpenBLAS)
+    elseif(TARGET PkgConfig::OpenBLAS)
+        target_link_libraries(mpfem_core PUBLIC PkgConfig::OpenBLAS)
+    else()
+        target_include_directories(mpfem_core PUBLIC ${OpenBLAS_INCLUDE_DIRS})
+        target_link_libraries(mpfem_core PUBLIC ${OpenBLAS_LIBRARIES})
+    endif()
+    message(STATUS "OpenBLAS acceleration enabled for Eigen")
+endif()
+
+# --- SuiteSparse support (UMFPACK solver) ---
+if(MPFEM_SUITESPARSE_FOUND)
+    target_compile_definitions(mpfem_core PUBLIC MPFEM_USE_SUITESPARSE)
+    if(TARGET SuiteSparse::UMFPACK)
+        target_link_libraries(mpfem_core PUBLIC SuiteSparse::UMFPACK)
+    elseif(TARGET UMFPACK::UMFPACK)
+        target_link_libraries(mpfem_core PUBLIC UMFPACK::UMFPACK)
+    else()
+        target_link_libraries(mpfem_core PUBLIC ${UMFPACK_LIBRARIES})
+    endif()
+    message(STATUS "SuiteSparse/UMFPACK solver enabled")
+endif()
+
+# --- OpenMP support ---
 if(MPFEM_OPENMP_FOUND)
     target_link_libraries(mpfem_core PUBLIC OpenMP::OpenMP_CXX)
 endif()

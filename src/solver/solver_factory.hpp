@@ -5,6 +5,7 @@
 #include "linear_solver.hpp"
 #include "eigen_solver.hpp"
 #include "pardiso_solver.hpp"
+#include "umfpack_solver.hpp"
 #include "core/logger.hpp"
 #include <memory>
 
@@ -110,6 +111,10 @@ private:
             // MKL PARDISO
             case SolverType::MKL_Pardiso:
                 return std::make_unique<PardisoSolver>();
+
+            // SuiteSparse UMFPACK
+            case SolverType::UMFPACK_LU:
+                return std::make_unique<UmfpackSolver>();
 
             default:
                 throw std::runtime_error("Unsupported solver type");

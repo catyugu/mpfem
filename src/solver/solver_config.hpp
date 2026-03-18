@@ -21,6 +21,9 @@ enum class SolverType {
 
     // MKL PARDISO (conditionally available)
     MKL_Pardiso,          ///< MKL PARDISO direct solver
+
+    // SuiteSparse UMFPACK (conditionally available)
+    UMFPACK_LU,           ///< SuiteSparse UMFPACK direct solver
 };
 
 // =============================================================================
@@ -50,6 +53,14 @@ inline constexpr bool isMKLAvailable() {
 #endif
 }
 
+inline constexpr bool isSuiteSparseAvailable() {
+#ifdef MPFEM_USE_SUITESPARSE
+    return true;
+#else
+    return false;
+#endif
+}
+
 inline constexpr SolverMeta solverRegistry[] = {
     // Eigen solvers (always available)
     {SolverType::Eigen_SparseLU,     "eigen.sparse_lu",     "Eigen SparseLU direct solver",         false, false, true},
@@ -58,6 +69,9 @@ inline constexpr SolverMeta solverRegistry[] = {
 
     // MKL PARDISO
     {SolverType::MKL_Pardiso,        "mkl.pardiso",         "MKL PARDISO direct solver",            false, false, isMKLAvailable()},
+
+    // SuiteSparse UMFPACK
+    {SolverType::UMFPACK_LU,         "umfpack.lu",          "SuiteSparse UMFPACK direct solver",    false, false, isSuiteSparseAvailable()},
 };
 
 inline constexpr size_t solverRegistrySize = sizeof(solverRegistry) / sizeof(SolverMeta);
@@ -136,6 +150,7 @@ struct SolverConfig {
     static SolverConfig eigenDGMRES() { return {SolverType::Eigen_DGMRES_ILU}; }
     static SolverConfig eigenMINRES() { return {SolverType::Eigen_MINRES}; }
     static SolverConfig pardiso() { return {SolverType::MKL_Pardiso}; }
+    static SolverConfig umfpack() { return {SolverType::UMFPACK_LU}; }
 };
 
 }  // namespace mpfem
