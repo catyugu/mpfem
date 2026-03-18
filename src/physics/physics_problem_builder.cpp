@@ -283,7 +283,7 @@ namespace mpfem
             else if (cp.kind == "thermal_expansion")
             {
                 // 3. 热膨胀耦合：为每种材料创建独立系数
-                DomainMappedCoefficient thermalExpMap;
+                std::set<int> domains(cp.domainIds.begin(), cp.domainIds.end());
                 
                 for (int domId : cp.domainIds)
                 {
@@ -293,18 +293,9 @@ namespace mpfem
                         std::string key = "thermalExp_" + std::to_string(domId);
                         setup.coefficients[key] = std::make_unique<ThermalExpansionCoefficient>(
                             setup.heatTransfer->field(), mat->thermalExpansion, 293.15);
-                        thermalExpMap.set(domId, setup.coefficients[key].get());
+                        setup.structural->setThermalExpansion({domId}, setup.coefficients[key].get());
                     }
                 }
-                
-                setup.coefficients["thermalExpMap"] = std::make_unique<DomainMappedCoefficient>(std::move(thermalExpMap));
-                
-                // 将热膨胀积分器添加到结构求解器
-                auto thermalLoad = std::make_unique<ThermalLoadIntegrator>(
-                    &setup.structural->youngModulus(), 
-                    &setup.structural->poissonRatio(), 
-                    setup.coefficients["thermalExpMap"].get());
-                setup.structural->addLinearIntegrator(std::move(thermalLoad));
                 
                 LOG_INFO << "Thermal expansion coupling enabled";
             }
