@@ -4,6 +4,7 @@
 #include "core/exception.hpp"
 
 #include <tinyxml2.h>
+#include <optional>
 
 namespace mpfem {
 
@@ -80,9 +81,10 @@ void MaterialXmlReader::readFromFile(const std::string& filePath, MaterialDataba
         }
 
         // Extract specific properties (names match material.xml)
-        auto getProperty = [&](const std::string& name) -> double {
+        // Only set member if property exists in the parsed properties map
+        auto getProperty = [&](const std::string& name) -> std::optional<double> {
             auto it = material.properties.find(name);
-            return it != material.properties.end() ? it->second : 0.0;
+            return it != material.properties.end() ? std::optional<double>{it->second} : std::nullopt;
         };
 
         material.rho0 = getProperty("rho0");

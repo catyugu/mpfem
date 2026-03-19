@@ -64,7 +64,7 @@ namespace mpfem
             if (const auto* mat = problem.materials.getMaterial(matTag))
             {
                 std::string key = "conductivity_" + std::to_string(domId);
-                problem.setCoef(key, std::make_unique<ConstantCoefficient>(mat->electricConductivity));
+                problem.setCoef(key, std::make_unique<ConstantCoefficient>(mat->electricConductivity.value_or(0.0)));
                 problem.electrostatics->setConductivity({domId}, problem.getCoef<Coefficient>(key));
             }
         }
@@ -92,7 +92,7 @@ namespace mpfem
             if (const auto* mat = problem.materials.getMaterial(matTag))
             {
                 std::string key = "thermal_conductivity_" + std::to_string(domId);
-                problem.setCoef(key, std::make_unique<ConstantCoefficient>(mat->thermalConductivity));
+                problem.setCoef(key, std::make_unique<ConstantCoefficient>(mat->thermalConductivity.value_or(0.0)));
                 problem.heatTransfer->setConductivity({domId}, problem.getCoef<Coefficient>(key));
             }
         }
@@ -129,8 +129,8 @@ namespace mpfem
             {
                 std::string eKey = "young_" + std::to_string(domId);
                 std::string nuKey = "poisson_" + std::to_string(domId);
-                problem.setCoef(eKey, std::make_unique<ConstantCoefficient>(mat->youngModulus));
-                problem.setCoef(nuKey, std::make_unique<ConstantCoefficient>(mat->poissonRatio));
+                problem.setCoef(eKey, std::make_unique<ConstantCoefficient>(mat->youngModulus.value_or(0.0)));
+                problem.setCoef(nuKey, std::make_unique<ConstantCoefficient>(mat->poissonRatio.value_or(0.0)));
                 problem.structural->setYoungModulus({domId}, problem.getCoef<Coefficient>(eKey));
                 problem.structural->setPoissonRatio({domId}, problem.getCoef<Coefficient>(nuKey));
             }
@@ -156,10 +156,11 @@ namespace mpfem
             if (const auto* mat = problem.materials.getMaterial(matTag))
             {
                 std::string key = "tempDepSigma_" + std::to_string(domId);
-                if (mat->rho0 > 0.0)
+                if (mat->rho0.has_value() && mat->rho0.value() > 0.0)
                 {
                     problem.setCoef(key, std::make_unique<TemperatureDependentConductivity>(
-                        problem.heatTransfer->field(), mat->rho0, mat->alpha, mat->tref));
+                        problem.heatTransfer->field(), mat->rho0.value(), 
+                        mat->alpha.value_or(0.0), mat->tref.value_or(298.0)));
                     tempDepSigmaMap.set(domId, problem.getCoef<Coefficient>(key));
                 }
                 else if (auto* c = problem.getCoef<Coefficient>("conductivity_" + std::to_string(domId)))
@@ -189,11 +190,12 @@ namespace mpfem
             {
                 for (int domId : cp.domainIds)
                 {
-                    if (const auto* mat = problem.materials.getMaterial(problem.domainMaterial[domId]); mat && mat->thermalExpansion > 0.0)
+                    if (const auto* mat = problem.materials.getMaterial(problem.domainMaterial[domId]); 
+                        mat && mat->thermalExpansion.has_value() && mat->thermalExpansion.value() > 0.0)
                     {
                         std::string key = "thermalExp_" + std::to_string(domId);
                         problem.setCoef(key, std::make_unique<ThermalExpansionCoefficient>(
-                            problem.heatTransfer->field(), mat->thermalExpansion, 293.15));
+                            problem.heatTransfer->field(), mat->thermalExpansion.value(), 293.15));
                         problem.structural->setThermalExpansion({domId}, problem.getCoef<Coefficient>(key));
                     }
                 }
