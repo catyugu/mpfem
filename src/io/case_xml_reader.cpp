@@ -160,6 +160,12 @@ void CaseXmlReader::readFromFile(const std::string& filePath, CaseDefinition& ca
             if (const char* printLevelAttr = solverElement->Attribute("print_level")) {
                 physics.solver.printLevel = std::atoi(printLevelAttr);
             }
+            if (const char* dropTolAttr = solverElement->Attribute("drop_tol")) {
+                physics.solver.dropTolerance = std::atof(dropTolAttr);
+            }
+            if (const char* fillFactorAttr = solverElement->Attribute("fill_factor")) {
+                physics.solver.fillFactor = std::atoi(fillFactorAttr);
+            }
         }
 
         // Boundary conditions
