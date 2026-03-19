@@ -5,6 +5,7 @@
 #include <string>
 #include <map>
 #include <vector>
+#include <optional>
 
 namespace mpfem {
 
@@ -12,6 +13,7 @@ namespace mpfem {
  * @brief Material property model.
  * 
  * Stores material properties for a single material.
+ * All properties use std::optional to distinguish "not set" from "value is zero".
  */
 struct MaterialPropertyModel {
     std::string tag;
@@ -20,31 +22,31 @@ struct MaterialPropertyModel {
     // General property storage
     std::map<std::string, double> properties;
 
-    // Convenient accessors for common properties
-    double youngModulus = 0.0;           // E [Pa]
-    double poissonRatio = 0.0;           // nu [-]
-    double density = 0.0;                // rho [kg/m^3]
-    double heatCapacity = 0.0;           // Cp [J/(kg·K)]
+    // Convenient accessors for common properties (std::optional for unset detection)
+    std::optional<double> youngModulus;           // E [Pa]
+    std::optional<double> poissonRatio;           // nu [-]
+    std::optional<double> density;                // rho [kg/m^3]
+    std::optional<double> heatCapacity;           // Cp [J/(kg·K)]
     
     // Temperature-dependent resistivity: rho(T) = rho0 * (1 + alpha * (T - Tref))
-    double rho0 = 0.0;                   // Reference resistivity [ohm·m]
-    double alpha = 0.0;                  // Temperature coefficient [1/K]
-    double tref = 298;                // Reference temperature [K]
+    std::optional<double> rho0;                   // Reference resistivity [ohm·m]
+    std::optional<double> alpha;                  // Temperature coefficient [1/K]
+    std::optional<double> tref;                   // Reference temperature [K]
     
     // Conductivities (isotropic values extracted from tensor)
-    double electricConductivity = 0.0;   // sigma [S/m]
-    double thermalConductivity = 0.0;    // k [W/(m·K)]
+    std::optional<double> electricConductivity;   // sigma [S/m]
+    std::optional<double> thermalConductivity;    // k [W/(m·K)]
     
     // Thermal expansion
-    double thermalExpansion = 0.0;       // alpha_T [1/K]
+    std::optional<double> thermalExpansion;       // alpha_T [1/K]
 
     /**
      * @brief Get a property by name.
-     * @return Property value if found, 0.0 otherwise.
+     * @return Property value if found, nullopt otherwise.
      */
-    double getProperty(const std::string& name) const {
+    std::optional<double> getProperty(const std::string& name) const {
         auto it = properties.find(name);
-        return it != properties.end() ? it->second : 0.0;
+        return it != properties.end() ? std::optional<double>{it->second} : std::nullopt;
     }
 
     /**
@@ -57,23 +59,31 @@ struct MaterialPropertyModel {
     /**
      * @brief Compute temperature-dependent electric resistivity.
      * @param temperature Temperature in Kelvin.
-     * @return Resistivity at given temperature.
+     * @return Resistivity at given temperature, or nullopt if not defined.
      */
-    double getElectricResistivity(double temperature) const {
-        if (rho0 <= 0.0) {
-            return 1.0 / electricConductivity;
+    std::optional<double> getElectricResistivity(double temperature) const {
+        if (rho0.has_value() && rho0.value() > 0.0) {
+            double a = alpha.value_or(0.0);
+            double t = tref.value_or(298.0);
+            return rho0.value() * (1.0 + a * (temperature - t));
         }
-        return rho0 * (1.0 + alpha * (temperature - tref));
+        if (electricConductivity.has_value() && electricConductivity.value() > 0.0) {
+            return 1.0 / electricConductivity.value();
+        }
+        return std::nullopt;
     }
 
     /**
      * @brief Compute temperature-dependent electric conductivity.
      * @param temperature Temperature in Kelvin.
-     * @return Conductivity at given temperature.
+     * @return Conductivity at given temperature, or nullopt if not defined.
      */
-    double getElectricConductivity(double temperature) const {
-        double resistivity = getElectricResistivity(temperature);
-        return resistivity > 0.0 ? 1.0 / resistivity : electricConductivity;
+    std::optional<double> getElectricConductivity(double temperature) const {
+        auto resistivity = getElectricResistivity(temperature);
+        if (resistivity.has_value() && resistivity.value() > 0.0) {
+            return 1.0 / resistivity.value();
+        }
+        return electricConductivity;
     }
 };
 
@@ -132,16 +142,12 @@ public:
      * @brief Get a property from a material by tag and property name.
      * @param tag Material tag.
      * @param propName Property name.
-     * @param defaultValue Default value if property not found.
-     * @return Property value, or defaultValue if not found.
+     * @return Property value if found, nullopt otherwise.
      */
-    double getProperty(const std::string& tag, const std::string& propName, 
-                       double defaultValue = 0.0) const {
+    std::optional<double> getProperty(const std::string& tag, const std::string& propName) const {
         auto* mat = getMaterial(tag);
-        if (!mat) return defaultValue;
-        
-        auto it = mat->properties.find(propName);
-        return it != mat->properties.end() ? it->second : defaultValue;
+        if (!mat) return std::nullopt;
+        return mat->getProperty(propName);
     }
 
     // Iterator access

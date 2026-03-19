@@ -16,6 +16,9 @@ namespace mpfem {
 enum class SolverType {
     // Eigen solvers (always available)
     Eigen_SparseLU,       ///< Direct LU factorization
+    Eigen_CG,             ///< Conjugate Gradient (no preconditioner)
+    Eigen_CG_Jacobi,      ///< CG with diagonal preconditioner
+    Eigen_CG_ILU,         ///< CG with ILU preconditioner
     Eigen_DGMRES_ILU,     ///< DGMRES with ILU preconditioner
     Eigen_MINRES,         ///< MINRES for symmetric indefinite systems
 
@@ -64,6 +67,9 @@ inline constexpr bool isSuiteSparseAvailable() {
 inline constexpr SolverMeta solverRegistry[] = {
     // Eigen solvers (always available)
     {SolverType::Eigen_SparseLU,     "eigen.sparse_lu",     "Eigen SparseLU direct solver",         false, false, true},
+    {SolverType::Eigen_CG,           "eigen.cg",            "Eigen Conjugate Gradient",             true,  true,  true},
+    {SolverType::Eigen_CG_Jacobi,    "eigen.cg_jacobi",     "Eigen CG with diagonal preconditioner", true,  true,  true},
+    {SolverType::Eigen_CG_ILU,       "eigen.cg_ilu",        "Eigen CG with ILU preconditioner",     true,  true,  true},
     {SolverType::Eigen_DGMRES_ILU,   "eigen.dgmres_ilu",    "Eigen DGMRES with ILU preconditioner", true,  false, true},
     {SolverType::Eigen_MINRES,       "eigen.minres",        "Eigen MINRES (symmetric systems)",     true,  false, true},
 
@@ -147,6 +153,9 @@ struct SolverConfig {
     
     // Convenience constructors
     static SolverConfig eigenSparseLU() { return {SolverType::Eigen_SparseLU}; }
+    static SolverConfig eigenCG() { return {SolverType::Eigen_CG}; }
+    static SolverConfig eigenCGJacobi() { return {SolverType::Eigen_CG_Jacobi}; }
+    static SolverConfig eigenCGILU() { return {SolverType::Eigen_CG_ILU}; }
     static SolverConfig eigenDGMRES() { return {SolverType::Eigen_DGMRES_ILU}; }
     static SolverConfig eigenMINRES() { return {SolverType::Eigen_MINRES}; }
     static SolverConfig pardiso() { return {SolverType::MKL_Pardiso}; }

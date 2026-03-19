@@ -35,6 +35,10 @@ void StructuralSolver::setPoissonRatio(const std::set<int>& domains, const Coeff
     poissonRatio_.set(domains, nu);
 }
 
+void StructuralSolver::setThermalExpansion(const std::set<int>& domains, const Coefficient* alphaT) {
+    thermalExpansion_.set(domains, alphaT);
+}
+
 void StructuralSolver::addFixedDisplacementBC(const std::set<int>& boundaryIds, 
                                                const VectorCoefficient* displacement) {
     for (int bid : boundaryIds) {
@@ -62,11 +66,12 @@ void StructuralSolver::assemble() {
     matAsm_->addDomainIntegrator(std::move(elasticity));
     matAsm_->assemble();
     
-    // 添加外部线性积分器（用于耦合载荷）
-    for (auto& integrator : linearIntegrators_) {
-        vecAsm_->addDomainIntegrator(std::move(integrator));
+    // 添加热膨胀载荷积分器（如果有热膨胀系数）
+    if (!thermalExpansion_.empty()) {
+        auto thermalLoad = std::make_unique<ThermalLoadIntegrator>(
+            &youngModulus_, &poissonRatio_, &thermalExpansion_);
+        vecAsm_->addDomainIntegrator(std::move(thermalLoad));
     }
-    linearIntegrators_.clear();
     
     vecAsm_->assemble();
     

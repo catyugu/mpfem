@@ -103,6 +103,12 @@ private:
             // Eigen solvers (always available)
             case SolverType::Eigen_SparseLU:
                 return std::make_unique<EigenSparseLUSolver>();
+            case SolverType::Eigen_CG:
+                return std::make_unique<EigenCGSolver>();
+            case SolverType::Eigen_CG_Jacobi:
+                return std::make_unique<EigenCGJacobiSolver>();
+            case SolverType::Eigen_CG_ILU:
+                return std::make_unique<EigenCGILUSolver>();
             case SolverType::Eigen_DGMRES_ILU:
                 return std::make_unique<EigenDGMRESILUSolver>();
             case SolverType::Eigen_MINRES:
@@ -122,10 +128,14 @@ private:
     }
     
     static void applySolverConfig(LinearSolver* solver, const SolverConfig& config) {
-        // Apply DGMRES-specific configuration
+        // Apply ILU-specific configuration for solvers that support it
         if (auto* dgmres = dynamic_cast<EigenDGMRESILUSolver*>(solver)) {
             dgmres->setDropTolerance(config.dropTolerance);
             dgmres->setFillFactor(config.fillFactor);
+        }
+        if (auto* cgilu = dynamic_cast<EigenCGILUSolver*>(solver)) {
+            cgilu->setDropTolerance(config.dropTolerance);
+            cgilu->setFillFactor(config.fillFactor);
         }
     }
     

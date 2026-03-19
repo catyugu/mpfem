@@ -3,8 +3,6 @@
 
 #include "physics_field_solver.hpp"
 #include "fe/coefficient.hpp"
-#include "assembly/integrator.hpp"
-#include <vector>
 #include <set>
 
 namespace mpfem {
@@ -71,16 +69,17 @@ public:
     }
     
     // =========================================================================
-    // 耦合载荷接口
+    // 热膨胀系数接口
     // =========================================================================
     
-    /// 添加线性积分器（用于耦合载荷，如热膨胀）
-    void addLinearIntegrator(std::unique_ptr<VectorDomainLinearIntegrator> integrator) {
-        linearIntegrators_.push_back(std::move(integrator));
-    }
+    /// 设置指定域的热膨胀系数
+    void setThermalExpansion(const std::set<int>& domains, const Coefficient* alphaT);
     
-    /// 清除线性积分器
-    void clearLinearIntegrators() { linearIntegrators_.clear(); }
+    /// 获取热膨胀系数
+    const DomainMappedCoefficient& thermalExpansion() const { return thermalExpansion_; }
+    
+    /// 检查是否有热膨胀载荷
+    bool hasThermalExpansion() const { return !thermalExpansion_.empty(); }
     
     // =========================================================================
     // 求解接口
@@ -97,8 +96,7 @@ private:
     
     DomainMappedCoefficient youngModulus_;
     DomainMappedCoefficient poissonRatio_;
-    
-    std::vector<std::unique_ptr<VectorDomainLinearIntegrator>> linearIntegrators_;
+    DomainMappedCoefficient thermalExpansion_;  ///< 热膨胀系数（域映射）
     
     std::map<int, const VectorCoefficient*> displacementBCs_;
 };
