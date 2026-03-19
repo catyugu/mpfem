@@ -3,43 +3,28 @@
 
 namespace mpfem {
 
-// =============================================================================
-// DomainMappedCoefficient<Coefficient> implementation
-// =============================================================================
-
+template<>
 void DomainMappedCoefficient<Coefficient>::eval(ElementTransform& trans, Real& result, Real t) const {
-    const Coefficient* coef = get(static_cast<int>(trans.attribute()));
-    if (coef) {
+    if (const Coefficient* coef = get(static_cast<int>(trans.attribute())))
         coef->eval(trans, result, t);
-    } else {
+    else
         result = 0.0;
-    }
 }
 
-// =============================================================================
-// DomainMappedCoefficient<VectorCoefficient> implementation
-// =============================================================================
-
+template<>
 void DomainMappedCoefficient<VectorCoefficient>::eval(ElementTransform& trans, Vector3& result, Real t) const {
-    const VectorCoefficient* coef = get(static_cast<int>(trans.attribute()));
-    if (coef) {
+    if (const VectorCoefficient* coef = get(static_cast<int>(trans.attribute())))
         coef->eval(trans, result, t);
-    } else {
+    else
         result.setZero();
-    }
 }
 
-// =============================================================================
-// DomainMappedCoefficient<MatrixCoefficient> implementation
-// =============================================================================
-
+template<>
 void DomainMappedCoefficient<MatrixCoefficient>::eval(ElementTransform& trans, Matrix3& result, Real t) const {
-    const MatrixCoefficient* coef = get(static_cast<int>(trans.attribute()));
-    if (coef) {
+    if (const MatrixCoefficient* coef = get(static_cast<int>(trans.attribute())))
         coef->eval(trans, result, t);
-    } else {
+    else
         result.setZero();
-    }
 }
 
 }  // namespace mpfem
