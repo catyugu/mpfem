@@ -23,7 +23,7 @@ int main(int argc, char* argv[]) {
 
         if (setup->isCoupled()) {
             LOG_INFO << "Running coupled electro-thermal solve...";
-            CouplingResult result = setup->solve();
+            SteadyResult result = setup->solve();
 
             if (!result.converged) {
                 LOG_WARN << "Coupling did not converge after " << result.iterations << " iterations";

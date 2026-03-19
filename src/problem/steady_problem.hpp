@@ -13,7 +13,7 @@ namespace mpfem {
 /**
  * @brief 耦合求解结果
  */
-struct CouplingResult {
+struct SteadyResult {
     bool converged = false;
     int iterations = 0;
     Real residual = 0.0;
@@ -46,9 +46,9 @@ public:
     /**
      * @brief 执行耦合或单场求解
      */
-    CouplingResult solve() {
+    SteadyResult solve() {
         ScopedTimer timer("Coupling solve");
-        CouplingResult result;
+        SteadyResult result;
 
         if (!isCoupled()) {
             if (hasElectrostatics()) {
