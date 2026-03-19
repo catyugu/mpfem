@@ -10,6 +10,164 @@
 namespace mpfem {
 
 /**
+ * @brief Eigen Conjugate Gradient solver (no preconditioner).
+ * 
+ * Fastest for well-conditioned symmetric positive-definite systems.
+ * Use when matrix is SPD and condition number is reasonable.
+ */
+class EigenCGSolver : public LinearSolver {
+public:
+    std::string name() const override { return "Eigen::CG"; }
+    
+    bool solve(const SparseMatrix& A, Vector& x, const Vector& b) override {
+        ScopedTimer timer("Linear solve (CG)");
+        
+        solver_.setMaxIterations(maxIterations_);
+        solver_.setTolerance(tolerance_);
+        
+        solver_.compute(A.eigen());
+        
+        if (solver_.info() != Eigen::Success) {
+            LOG_ERROR << "[EigenCG] Setup failed";
+            x.setZero(b.size());
+            return false;
+        }
+        
+        x = solver_.solveWithGuess(b, x);
+        
+        iterations_ = static_cast<int>(solver_.iterations());
+        residual_ = solver_.error();
+        
+        const bool success = solver_.info() == Eigen::Success;
+        
+        if (printLevel_ > 0 || !success) {
+            LOG_INFO << "[EigenCG] Iterations: " << iterations_ 
+                     << ", Error: " << residual_
+                     << ", Success: " << (success ? "yes" : "no");
+        }
+        
+        if (success) {
+            LOG_INFO << "[EigenCG] Solve successful, solution norm: " << x.norm();
+        }
+        
+        return success;
+    }
+    
+private:
+    Eigen::ConjugateGradient<Eigen::SparseMatrix<Real>> solver_;
+};
+
+/**
+ * @brief Eigen CG with diagonal (Jacobi) preconditioner.
+ * 
+ * Recommended for symmetric positive-definite systems.
+ * Diagonal preconditioner is cheap and effective for many FEM problems.
+ */
+class EigenCGJacobiSolver : public LinearSolver {
+public:
+    std::string name() const override { return "Eigen::CG+Jacobi"; }
+    
+    bool solve(const SparseMatrix& A, Vector& x, const Vector& b) override {
+        ScopedTimer timer("Linear solve (CG+Jacobi)");
+        
+        solver_.setMaxIterations(maxIterations_);
+        solver_.setTolerance(tolerance_);
+        
+        solver_.compute(A.eigen());
+        
+        if (solver_.info() != Eigen::Success) {
+            LOG_ERROR << "[EigenCGJacobi] Setup failed";
+            x.setZero(b.size());
+            return false;
+        }
+        
+        x = solver_.solveWithGuess(b, x);
+        
+        iterations_ = static_cast<int>(solver_.iterations());
+        residual_ = solver_.error();
+        
+        const bool success = solver_.info() == Eigen::Success;
+        
+        if (printLevel_ > 0 || !success) {
+            LOG_INFO << "[EigenCGJacobi] Iterations: " << iterations_ 
+                     << ", Error: " << residual_
+                     << ", Success: " << (success ? "yes" : "no");
+        }
+        
+        if (success) {
+            LOG_INFO << "[EigenCGJacobi] Solve successful, solution norm: " << x.norm();
+        }
+        
+        return success;
+    }
+    
+private:
+    Eigen::ConjugateGradient<Eigen::SparseMatrix<Real>,
+                             Eigen::Lower|Eigen::Upper,
+                             Eigen::DiagonalPreconditioner<Real>> solver_;
+};
+
+/**
+ * @brief Eigen CG with ILU preconditioner.
+ * 
+ * More robust than Jacobi for ill-conditioned SPD systems.
+ * ILU provides stronger preconditioning at higher setup cost.
+ */
+class EigenCGILUSolver : public LinearSolver {
+public:
+    std::string name() const override { return "Eigen::CG+ILU"; }
+    
+    void setDropTolerance(Real tol) { dropTol_ = tol; }
+    void setFillFactor(int fill) { fillFactor_ = fill; }
+    
+    bool solve(const SparseMatrix& A, Vector& x, const Vector& b) override {
+        ScopedTimer timer("Linear solve (CG+ILU)");
+        
+        // Configure preconditioner
+        solver_.preconditioner().setDroptol(dropTol_);
+        solver_.preconditioner().setFillfactor(fillFactor_);
+        
+        // Configure solver
+        solver_.setMaxIterations(maxIterations_);
+        solver_.setTolerance(tolerance_);
+        
+        solver_.compute(A.eigen());
+        
+        if (solver_.info() != Eigen::Success) {
+            LOG_ERROR << "[EigenCGILU] Preconditioner setup failed";
+            x.setZero(b.size());
+            return false;
+        }
+        
+        x = solver_.solveWithGuess(b, x);
+        
+        iterations_ = static_cast<int>(solver_.iterations());
+        residual_ = solver_.error();
+        
+        const bool success = solver_.info() == Eigen::Success;
+        
+        if (printLevel_ > 0 || !success) {
+            LOG_INFO << "[EigenCGILU] Iterations: " << iterations_ 
+                     << ", Error: " << residual_
+                     << ", Success: " << (success ? "yes" : "no");
+        }
+        
+        if (success) {
+            LOG_INFO << "[EigenCGILU] Solve successful, solution norm: " << x.norm();
+        }
+        
+        return success;
+    }
+    
+private:
+    Eigen::ConjugateGradient<Eigen::SparseMatrix<Real>,
+                             Eigen::Lower|Eigen::Upper,
+                             Eigen::IncompleteLUT<Real>> solver_;
+    Real dropTol_ = 1e-4;
+    int fillFactor_ = 10;
+};
+
+/**
  * @brief Eigen SparseLU direct solver.
  * 
  * General-purpose sparse LU factorization for square matrices.
