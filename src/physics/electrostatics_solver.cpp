@@ -8,14 +8,16 @@
 
 namespace mpfem {
 
-bool ElectrostaticsSolver::initialize(const Mesh& mesh) {
+bool ElectrostaticsSolver::initialize(const Mesh& mesh, FieldValues& fieldValues) {
     mesh_ = &mesh;
+    fieldValues_ = &fieldValues;
     
-    // 创建有限元空间（FESpace 拥有 FECollection）
+    // Create finite element space (FESpace owns FECollection)
     auto fec = std::make_unique<FECollection>(order_, FECollection::Type::H1);
     fes_ = std::make_unique<FESpace>(&mesh, std::move(fec));
-    V_ = std::make_unique<GridFunction>(fes_.get());
-    V_->setZero();
+    
+    // Register electric potential field with FieldValues
+    fieldValues.createScalarField(FieldId::ElectricPotential, fes_.get(), 0.0);
     
     matAsm_ = std::make_unique<BilinearFormAssembler>(fes_.get());
     vecAsm_ = std::make_unique<LinearFormAssembler>(fes_.get());
@@ -54,15 +56,15 @@ void ElectrostaticsSolver::assemble() {
     matAsm_->assemble();
     vecAsm_->assemble();
     
-    // 应用边界条件
-    applyDirichletBC(matAsm_->matrix(), vecAsm_->vector(), V_->values(),
+    // Apply boundary conditions
+    applyDirichletBC(matAsm_->matrix(), vecAsm_->vector(), field().values(),
                      *fes_, *mesh_, voltageBCs_);
     matAsm_->finalize();
 }
 
 bool ElectrostaticsSolver::solve() {
     if (!solver_) return false;
-    bool ok = solver_->solve(matAsm_->matrix(), V_->values(), vecAsm_->vector());
+    bool ok = solver_->solve(matAsm_->matrix(), field().values(), vecAsm_->vector());
     if (ok) {
         LOG_INFO << "Electrostatics solver converged!";
     }

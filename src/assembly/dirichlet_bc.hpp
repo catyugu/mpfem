@@ -13,20 +13,20 @@
 
 namespace mpfem {
 
-/// 应用 Dirichlet 边界条件到系统矩阵和右端向量（使用 Coefficient）
+/// Apply Dirichlet boundary conditions to system matrix and right-hand side vector (using Coefficient)
 /// 
-/// @param mat 系统矩阵（会被修改：消去对应行）
-/// @param rhs 右端向量（会被修改：减去已知值贡献）
-/// @param sol 解向量（会被修改：设置已知值）
-/// @param fes 有限元空间
-/// @param mesh 网格
-/// @param bcValues 边界条件映射 {边界ID: Coefficient指针}
+/// @param mat System matrix (will be modified: eliminate corresponding rows)
+/// @param rhs Right-hand side vector (will be modified: subtract known value contribution)
+/// @param sol Solution vector (will be modified: set known values)
+/// @param fes Finite element space
+/// @param mesh Mesh
+/// @param bcValues Boundary condition mapping {boundary ID: Coefficient pointer}
 inline void applyDirichletBC(SparseMatrix& mat, Vector& rhs, Vector& sol,
                              const FESpace& fes, const Mesh& mesh,
                              const std::map<int, const Coefficient*>& bcValues) {
     std::map<Index, Real> dofVals;
     
-    // 收集所有边界 DOF 及其值
+    // Collect all boundary DOFs and their values
     for (const auto& [bid, coef] : bcValues) {
         if (!fes.isExternalBoundaryId(bid)) continue;
         
@@ -35,34 +35,39 @@ inline void applyDirichletBC(SparseMatrix& mat, Vector& rhs, Vector& sol,
                 std::vector<Index> dofs;
                 fes.getBdrElementDofs(b, dofs);
                 
-                // 获取边界单元的参考单元和DOF坐标
+                // Get boundary element's reference element and DOF coordinates
                 const ReferenceElement* refElem = fes.bdrElementRefElement(b);
                 if (!refElem) continue;
                 
                 std::vector<std::vector<Real>> dofCoords = refElem->dofCoords();
                 
-                // 获取边界单元的几何变换
+                // Get boundary element's geometric transform
                 FacetElementTransform trans;
                 trans.setMesh(&mesh);
                 trans.setBoundaryElement(b);
                 
                 int nd = refElem->numDofs();
                 
-                // 对每个DOF在其参考坐标位置评估Coefficient
+                // Evaluate Coefficient at each DOF's reference coordinate
                 for (int i = 0; i < nd && i < static_cast<int>(dofs.size()); ++i) {
                     Index d = dofs[i];
                     if (d == InvalidIndex || dofVals.find(d) != dofVals.end()) continue;
                     
-                    // 获取该DOF在参考单元中的坐标
+                    // Get this DOF's coordinate in reference element
                     Real xi[3] = {0.0, 0.0, 0.0};
                     const auto& coord = dofCoords[i];
                     for (size_t c = 0; c < coord.size() && c < 3; ++c) {
                         xi[c] = coord[c];
                     }
                     
-                    // 在该DOF的参考坐标位置评估Coefficient
+                    // Evaluate Coefficient at this DOF's reference coordinate
                     trans.setIntegrationPoint(xi);
-                    Real value = coef ? coef->eval(trans) : 0.0;
+                    Real value;
+                    if (coef) {
+                        coef->eval(trans, value);
+                    } else {
+                        value = 0.0;
+                    }
                     dofVals[d] = value;
                 }
             }
@@ -73,7 +78,7 @@ inline void applyDirichletBC(SparseMatrix& mat, Vector& rhs, Vector& sol,
     for (const auto& [d, v] : dofVals) sol(d) = v;
 }
 
-/// 应用 Dirichlet 边界条件到系统矩阵和右端向量（向量场，使用 VectorCoefficient）
+/// Apply Dirichlet boundary conditions to system matrix and right-hand side vector (vector field, using VectorCoefficient)
 inline void applyDirichletBC(SparseMatrix& mat, Vector& rhs, Vector& sol,
                              const FESpace& fes, const Mesh& mesh,
                              const std::map<int, const VectorCoefficient*>& bcValues,
@@ -88,7 +93,7 @@ inline void applyDirichletBC(SparseMatrix& mat, Vector& rhs, Vector& sol,
                 std::vector<Index> dofs;
                 fes.getBdrElementDofs(b, dofs);
                 
-                // 获取边界单元的参考单元和DOF坐标
+                // Get boundary element's reference element and DOF coordinates
                 const ReferenceElement* refElem = fes.bdrElementRefElement(b);
                 if (!refElem) continue;
                 
@@ -100,23 +105,23 @@ inline void applyDirichletBC(SparseMatrix& mat, Vector& rhs, Vector& sol,
                 
                 int nd = refElem->numDofs();
                 
-                // 对每个DOF节点在其参考坐标位置评估VectorCoefficient
+                // Evaluate VectorCoefficient at each DOF node's reference coordinate
                 for (int i = 0; i < nd; ++i) {
-                    // 获取该DOF节点在参考单元中的坐标
+                    // Get this DOF node's coordinate in reference element
                     Real xi[3] = {0.0, 0.0, 0.0};
                     const auto& coord = dofCoords[i];
                     for (size_t c = 0; c < coord.size() && c < 3; ++c) {
                         xi[c] = coord[c];
                     }
                     
-                    // 在该DOF节点的参考坐标位置评估VectorCoefficient
+                    // Evaluate VectorCoefficient at this DOF node's reference coordinate
                     trans.setIntegrationPoint(xi);
-                    Real disp[3] = {0.0, 0.0, 0.0};
+                    Vector3 disp = Vector3::Zero();
                     if (coef) {
                         coef->eval(trans, disp);
                     }
                     
-                    // 设置该节点的所有分量DOF
+                    // Set all component DOFs for this node
                     for (int c = 0; c < vdim; ++c) {
                         Index d = dofs[i * vdim + c];
                         if (d != InvalidIndex && dofVals.find(d) == dofVals.end()) {
@@ -132,7 +137,7 @@ inline void applyDirichletBC(SparseMatrix& mat, Vector& rhs, Vector& sol,
     for (const auto& [d, v] : dofVals) sol(d) = v;
 }
 
-/// 应用分量 Dirichlet 边界条件（向量场单个分量）
+/// Apply component Dirichlet boundary conditions (single component of vector field)
 inline void applyDirichletBCComponent(SparseMatrix& mat, Vector& rhs, Vector& sol,
                                       const FESpace& fes, const Mesh& mesh,
                                       const std::map<int, Real>& componentBCs,

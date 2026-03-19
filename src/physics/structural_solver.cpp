@@ -8,15 +8,16 @@
 
 namespace mpfem {
 
-bool StructuralSolver::initialize(const Mesh& mesh) {
+bool StructuralSolver::initialize(const Mesh& mesh, FieldValues& fieldValues) {
     mesh_ = &mesh;
+    fieldValues_ = &fieldValues;
     
-    // 创建向量H1单元 (vdim=3)，FESpace 拥有 FECollection
+    // Create vector H1 element (vdim=3), FESpace owns FECollection
     auto fec = std::make_unique<FECollection>(order_, FECollection::Type::H1);
-    fes_ = std::make_unique<FESpace>(&mesh, std::move(fec), 3);  // 3D位移
+    fes_ = std::make_unique<FESpace>(&mesh, std::move(fec), 3);  // 3D displacement
     
-    u_ = std::make_unique<GridFunction>(fes_.get());
-    u_->setZero();
+    // Register displacement field with FieldValues
+    fieldValues.createVectorField(FieldId::Displacement, fes_.get(), 3);
     
     matAsm_ = std::make_unique<BilinearFormAssembler>(fes_.get());
     vecAsm_ = std::make_unique<LinearFormAssembler>(fes_.get());
@@ -61,12 +62,12 @@ void StructuralSolver::assemble() {
     matAsm_->clearIntegrators();
     vecAsm_->clearIntegrators();
     
-    // 添加弹性积分器（向量场）
+    // Add elasticity integrator (vector field)
     auto elasticity = std::make_unique<ElasticityIntegrator>(&youngModulus_, &poissonRatio_);
     matAsm_->addDomainIntegrator(std::move(elasticity));
     matAsm_->assemble();
     
-    // 添加热膨胀载荷积分器（如果有热膨胀系数）
+    // Add thermal expansion load integrator (if thermal expansion coefficient exists)
     if (!thermalExpansion_.empty()) {
         auto thermalLoad = std::make_unique<ThermalLoadIntegrator>(
             &youngModulus_, &poissonRatio_, &thermalExpansion_);
@@ -75,8 +76,8 @@ void StructuralSolver::assemble() {
     
     vecAsm_->assemble();
     
-    // 应用位移边界条件
-    applyDirichletBC(matAsm_->matrix(), vecAsm_->vector(), u_->values(),
+    // Apply displacement boundary conditions
+    applyDirichletBC(matAsm_->matrix(), vecAsm_->vector(), field().values(),
                      *fes_, *mesh_, displacementBCs_, 3);
     
     matAsm_->finalize();
@@ -85,10 +86,10 @@ void StructuralSolver::assemble() {
 bool StructuralSolver::solve() {
     if (!matAsm_ || !vecAsm_) return false;
     
-    bool success = solver_->solve(matAsm_->matrix(), u_->values(), vecAsm_->vector());
+    bool success = solver_->solve(matAsm_->matrix(), field().values(), vecAsm_->vector());
     
     if (success) {
-        LOG_INFO << "StructuralSolver: displacement norm = " << u_->values().norm();
+        LOG_INFO << "StructuralSolver: displacement norm = " << field().values().norm();
     }
     
     return success;

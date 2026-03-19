@@ -3,7 +3,6 @@
 
 #include "core/types.hpp"
 #include <functional>
-#include <vector>
 #include <set>
 #include <map>
 #include <memory>
@@ -15,143 +14,334 @@ class ElementTransform;
 class GridFunction;
 
 // =============================================================================
-// 系数类型标签
+// Coefficient type tags
 // =============================================================================
 
 enum class CoefficientKind { Scalar, Vector, Matrix };
 
 // =============================================================================
-// 标量系数基类
+// Scalar coefficient base class
 // =============================================================================
 
+/**
+ * @brief Scalar coefficient base class
+ * 
+ * Key design changes:
+ * - eval() uses reference parameter for result: void eval(trans, Real& result, t)
+ * - This enables static allocation and vectorization in integrators
+ * - All specific coefficient types are replaced by lambda-based FunctionCoefficient
+ */
 class Coefficient {
 public:
     virtual ~Coefficient() = default;
-    virtual Real eval(ElementTransform& trans, Real t = 0.0) const = 0;
+    
+    /// Evaluate coefficient at integration point
+    /// @param trans Element transform providing position and element info
+    /// @param result Output: coefficient value
+    /// @param t Time parameter (for transient problems)
+    virtual void eval(ElementTransform& trans, Real& result, Real t = 0.0) const = 0;
+    
     static constexpr CoefficientKind kind = CoefficientKind::Scalar;
 };
 
 // =============================================================================
-// 向量系数基类
+// Vector coefficient base class
 // =============================================================================
 
+/**
+ * @brief Vector coefficient base class (3D vectors)
+ */
 class VectorCoefficient {
 public:
     virtual ~VectorCoefficient() = default;
-    virtual void eval(ElementTransform& trans, Real* result, Real t = 0.0) const = 0;
-    virtual int dim() const = 0;
+    
+    /// Evaluate coefficient at integration point
+    /// @param trans Element transform providing position and element info
+    /// @param result Output: coefficient vector (3D)
+    /// @param t Time parameter (for transient problems)
+    virtual void eval(ElementTransform& trans, Vector3& result, Real t = 0.0) const = 0;
+    
     static constexpr CoefficientKind kind = CoefficientKind::Vector;
 };
 
 // =============================================================================
-// 基础系数
+// Matrix coefficient base class
 // =============================================================================
 
-class ConstantCoefficient : public Coefficient {
+/**
+ * @brief Matrix coefficient base class (3x3 matrices)
+ * 
+ * Used for anisotropic material properties like:
+ * - Anisotropic thermal conductivity tensor
+ * - Anisotropic electrical conductivity tensor
+ */
+class MatrixCoefficient {
 public:
-    explicit ConstantCoefficient(Real c = 1.0) : value_(c) {}
-    Real eval(ElementTransform&, Real = 0.0) const override { return value_; }
-    void set(Real c) { value_ = c; }
-    Real get() const { return value_; }
-private:
-    Real value_;
+    virtual ~MatrixCoefficient() = default;
+    
+    /// Evaluate coefficient at integration point
+    /// @param trans Element transform providing position and element info
+    /// @param result Output: coefficient matrix (3x3)
+    /// @param t Time parameter (for transient problems)
+    virtual void eval(ElementTransform& trans, Matrix3& result, Real t = 0.0) const = 0;
+    
+    static constexpr CoefficientKind kind = CoefficientKind::Matrix;
 };
 
-class FunctionCoefficient : public Coefficient {
+// =============================================================================
+// FunctionCoefficient - Lambda-based coefficient (unified for all types)
+// =============================================================================
+
+/**
+ * @brief Lambda-based scalar coefficient
+ * 
+ * Replaces all specific coefficient types (Constant, Function, etc.)
+ * Example:
+ *   auto coef = ScalarCoefficient([](ElementTransform& trans, Real& r, Real t) {
+ *       r = 400.0;  // constant thermal conductivity
+ *   });
+ */
+class ScalarCoefficient : public Coefficient {
 public:
-    using Func = std::function<Real(Real, Real, Real, Real)>;
-    explicit FunctionCoefficient(Func f) : func_(std::move(f)) {}
-    Real eval(ElementTransform& trans, Real t = 0.0) const override;
+    using Func = std::function<void(ElementTransform&, Real&, Real)>;
+    
+    explicit ScalarCoefficient(Func f) : func_(std::move(f)) {}
+    
+    void eval(ElementTransform& trans, Real& result, Real t) const override {
+        func_(trans, result, t);
+    }
+    
+private:
+    Func func_;
+};
+
+/**
+ * @brief Lambda-based vector coefficient
+ */
+class VectorFunctionCoefficient : public VectorCoefficient {
+public:
+    using Func = std::function<void(ElementTransform&, Vector3&, Real)>;
+    
+    explicit VectorFunctionCoefficient(Func f) : func_(std::move(f)) {}
+    
+    void eval(ElementTransform& trans, Vector3& result, Real t) const override {
+        func_(trans, result, t);
+    }
+    
+private:
+    Func func_;
+};
+
+/**
+ * @brief Lambda-based matrix coefficient
+ */
+class MatrixFunctionCoefficient : public MatrixCoefficient {
+public:
+    using Func = std::function<void(ElementTransform&, Matrix3&, Real)>;
+    
+    explicit MatrixFunctionCoefficient(Func f) : func_(std::move(f)) {}
+    
+    void eval(ElementTransform& trans, Matrix3& result, Real t) const override {
+        func_(trans, result, t);
+    }
+    
 private:
     Func func_;
 };
 
 // =============================================================================
-// 域映射系数（模板化）
+// Domain-mapped coefficient (template for all coefficient types)
 // =============================================================================
 
-template<typename CoefType>
-class DomainMappedCoefficientT;
+/**
+ * @brief Domain-mapped coefficient supporting different coefficients per domain
+ * 
+ * Template specializations for:
+ * - DomainMappedCoefficient<Coefficient> : scalar per-domain
+ * - DomainMappedCoefficient<VectorCoefficient> : vector per-domain
+ * - DomainMappedCoefficient<MatrixCoefficient> : matrix per-domain
+ */
 
+// Primary template declaration (must be declared before specialization)
+template<typename CoefType>
+class DomainMappedCoefficient;
+
+// Scalar version
 template<>
-class DomainMappedCoefficientT<Coefficient> : public Coefficient {
+class DomainMappedCoefficient<Coefficient> : public Coefficient {
 public:
-    DomainMappedCoefficientT() = default;
-    DomainMappedCoefficientT(DomainMappedCoefficientT&& o) noexcept
-        : coefs_(std::move(o.coefs_)), defaultCoef_(o.defaultCoef_) { o.defaultCoef_ = nullptr; }
-    DomainMappedCoefficientT& operator=(DomainMappedCoefficientT&& o) noexcept {
-        if (this != &o) { coefs_ = std::move(o.coefs_); defaultCoef_ = o.defaultCoef_; o.defaultCoef_ = nullptr; }
+    DomainMappedCoefficient() = default;
+    
+    DomainMappedCoefficient(DomainMappedCoefficient&& o) noexcept
+        : coefs_(std::move(o.coefs_)), defaultCoef_(o.defaultCoef_) { 
+        o.defaultCoef_ = nullptr; 
+    }
+    
+    DomainMappedCoefficient& operator=(DomainMappedCoefficient&& o) noexcept {
+        if (this != &o) { 
+            coefs_ = std::move(o.coefs_); 
+            defaultCoef_ = o.defaultCoef_; 
+            o.defaultCoef_ = nullptr; 
+        }
         return *this;
     }
     
     void set(int domainId, const Coefficient* coef) { coefs_[domainId] = coef; }
-    void set(const std::set<int>& domainIds, const Coefficient* coef) { for (int id : domainIds) coefs_[id] = coef; }
+    void set(const std::set<int>& domainIds, const Coefficient* coef) { 
+        for (int id : domainIds) coefs_[id] = coef; 
+    }
     void setAll(const Coefficient* coef) { defaultCoef_ = coef; coefs_.clear(); }
-    const Coefficient* get(int domainId) const { auto it = coefs_.find(domainId); return it != coefs_.end() ? it->second : defaultCoef_; }
+    
+    const Coefficient* get(int domainId) const { 
+        auto it = coefs_.find(domainId); 
+        return it != coefs_.end() ? it->second : defaultCoef_; 
+    }
+    
     bool empty() const { return coefs_.empty() && !defaultCoef_; }
     
-    Real eval(ElementTransform& trans, Real t = 0.0) const override;
+    void eval(ElementTransform& trans, Real& result, Real t) const override;
+    
 private:
     std::map<int, const Coefficient*> coefs_;
     const Coefficient* defaultCoef_ = nullptr;
 };
 
-using DomainMappedCoefficient = DomainMappedCoefficientT<Coefficient>;
-// =============================================================================
-// 物理耦合系数
-// =============================================================================
-
-class TemperatureDependentConductivity : public Coefficient {
+// Vector version
+template<>
+class DomainMappedCoefficient<VectorCoefficient> : public VectorCoefficient {
 public:
-    TemperatureDependentConductivity(const GridFunction& T, Real rho0, Real alpha, Real tref)
-        : T_(&T), rho0_(rho0), alpha_(alpha), tref_(tref) {}
-    Real eval(ElementTransform& trans, Real t = 0.0) const override;
+    DomainMappedCoefficient() = default;
+    
+    DomainMappedCoefficient(DomainMappedCoefficient&& o) noexcept
+        : coefs_(std::move(o.coefs_)), defaultCoef_(o.defaultCoef_) { 
+        o.defaultCoef_ = nullptr; 
+    }
+    
+    DomainMappedCoefficient& operator=(DomainMappedCoefficient&& o) noexcept {
+        if (this != &o) { 
+            coefs_ = std::move(o.coefs_); 
+            defaultCoef_ = o.defaultCoef_; 
+            o.defaultCoef_ = nullptr; 
+        }
+        return *this;
+    }
+    
+    void set(int domainId, const VectorCoefficient* coef) { coefs_[domainId] = coef; }
+    void set(const std::set<int>& domainIds, const VectorCoefficient* coef) { 
+        for (int id : domainIds) coefs_[id] = coef; 
+    }
+    void setAll(const VectorCoefficient* coef) { defaultCoef_ = coef; coefs_.clear(); }
+    
+    const VectorCoefficient* get(int domainId) const { 
+        auto it = coefs_.find(domainId); 
+        return it != coefs_.end() ? it->second : defaultCoef_; 
+    }
+    
+    bool empty() const { return coefs_.empty() && !defaultCoef_; }
+    
+    void eval(ElementTransform& trans, Vector3& result, Real t) const override;
+    
 private:
-    const GridFunction* T_;
-    Real rho0_, alpha_, tref_;
+    std::map<int, const VectorCoefficient*> coefs_;
+    const VectorCoefficient* defaultCoef_ = nullptr;
 };
 
-class JouleHeatCoefficient : public Coefficient {
+// Matrix version
+template<>
+class DomainMappedCoefficient<MatrixCoefficient> : public MatrixCoefficient {
 public:
-    JouleHeatCoefficient(const GridFunction& V, const Coefficient& sigma) : V_(&V), sigma_(&sigma) {}
-    Real eval(ElementTransform& trans, Real t = 0.0) const override;
+    DomainMappedCoefficient() = default;
+    
+    DomainMappedCoefficient(DomainMappedCoefficient&& o) noexcept
+        : coefs_(std::move(o.coefs_)), defaultCoef_(o.defaultCoef_) { 
+        o.defaultCoef_ = nullptr; 
+    }
+    
+    DomainMappedCoefficient& operator=(DomainMappedCoefficient&& o) noexcept {
+        if (this != &o) { 
+            coefs_ = std::move(o.coefs_); 
+            defaultCoef_ = o.defaultCoef_; 
+            o.defaultCoef_ = nullptr; 
+        }
+        return *this;
+    }
+    
+    void set(int domainId, const MatrixCoefficient* coef) { coefs_[domainId] = coef; }
+    void set(const std::set<int>& domainIds, const MatrixCoefficient* coef) { 
+        for (int id : domainIds) coefs_[id] = coef; 
+    }
+    void setAll(const MatrixCoefficient* coef) { defaultCoef_ = coef; coefs_.clear(); }
+    
+    const MatrixCoefficient* get(int domainId) const { 
+        auto it = coefs_.find(domainId); 
+        return it != coefs_.end() ? it->second : defaultCoef_; 
+    }
+    
+    bool empty() const { return coefs_.empty() && !defaultCoef_; }
+    
+    void eval(ElementTransform& trans, Matrix3& result, Real t) const override;
+    
 private:
-    const GridFunction* V_;
-    const Coefficient* sigma_;
+    std::map<int, const MatrixCoefficient*> coefs_;
+    const MatrixCoefficient* defaultCoef_ = nullptr;
 };
 
-class ThermalExpansionCoefficient : public Coefficient {
-public:
-    ThermalExpansionCoefficient(const GridFunction& T, Real alpha_T, Real T_ref = 293.15)
-        : T_(&T), alpha_T_(alpha_T), T_ref_(T_ref) {}
-    Real eval(ElementTransform& trans, Real t = 0.0) const override;
-private:
-    const GridFunction* T_;
-    Real alpha_T_, T_ref_;
-};
+// Type aliases for convenience
+using DomainMappedScalarCoefficient = DomainMappedCoefficient<Coefficient>;
+using DomainMappedVectorCoefficient = DomainMappedCoefficient<VectorCoefficient>;
+using DomainMappedMatrixCoefficient = DomainMappedCoefficient<MatrixCoefficient>;
 
 // =============================================================================
-// 向量系数
+// Constant coefficient helpers (convenience constructors)
 // =============================================================================
 
-class ConstantVectorCoefficient : public VectorCoefficient {
-public:
-    explicit ConstantVectorCoefficient(Real x, Real y, Real z) : v_{x, y, z} {}
-    void eval(ElementTransform&, Real* r, Real = 0.0) const override { r[0] = v_[0]; r[1] = v_[1]; r[2] = v_[2]; }
-    int dim() const override { return 3; }
-private:
-    Real v_[3];
-};
+/// Create a constant scalar coefficient
+inline std::unique_ptr<Coefficient> constantCoefficient(Real value) {
+    return std::make_unique<ScalarCoefficient>(
+        [value](ElementTransform&, Real& r, Real) { r = value; });
+}
+
+/// Create a constant vector coefficient
+inline std::unique_ptr<VectorCoefficient> constantVectorCoefficient(Real x, Real y, Real z) {
+    return std::make_unique<VectorFunctionCoefficient>(
+        [x, y, z](ElementTransform&, Vector3& r, Real) { 
+            r = Vector3(x, y, z); 
+        });
+}
+
+/// Create a constant matrix coefficient (diagonal)
+inline std::unique_ptr<MatrixCoefficient> diagonalMatrixCoefficient(Real diag) {
+    return std::make_unique<MatrixFunctionCoefficient>(
+        [diag](ElementTransform&, Matrix3& r, Real) { 
+            r = Matrix3::Identity() * diag; 
+        });
+}
+
+/// Create a constant matrix coefficient (full)
+inline std::unique_ptr<MatrixCoefficient> constantMatrixCoefficient(const Matrix3& mat) {
+    return std::make_unique<MatrixFunctionCoefficient>(
+        [mat](ElementTransform&, Matrix3& r, Real) { r = mat; });
+}
 
 // =============================================================================
-// 类型擦除系数包装器
+// AnyCoefficient - Type-erased coefficient wrapper
 // =============================================================================
 
+/**
+ * @brief Type-erased coefficient wrapper for storing coefficients of any type
+ */
 class AnyCoefficient {
 public:
     AnyCoefficient() = default;
-    explicit AnyCoefficient(std::unique_ptr<Coefficient> c) : data_(std::move(c)) {}
-    explicit AnyCoefficient(std::unique_ptr<VectorCoefficient> c) : data_(std::move(c)) {}
+    
+    explicit AnyCoefficient(std::unique_ptr<Coefficient> c) 
+        : data_(std::move(c)) {}
+    
+    explicit AnyCoefficient(std::unique_ptr<VectorCoefficient> c) 
+        : data_(std::move(c)) {}
+    
+    explicit AnyCoefficient(std::unique_ptr<MatrixCoefficient> c) 
+        : data_(std::move(c)) {}
     
     AnyCoefficient(AnyCoefficient&&) = default;
     AnyCoefficient& operator=(AnyCoefficient&&) = default;
@@ -159,35 +349,52 @@ public:
     AnyCoefficient& operator=(const AnyCoefficient&) = delete;
     
     CoefficientKind kind() const {
-        return data_.index() == 1 ? CoefficientKind::Scalar :
-               data_.index() == 2 ? CoefficientKind::Vector : CoefficientKind::Scalar;
+        if (std::holds_alternative<std::monostate>(data_)) return CoefficientKind::Scalar;
+        if (std::holds_alternative<std::unique_ptr<Coefficient>>(data_)) return CoefficientKind::Scalar;
+        if (std::holds_alternative<std::unique_ptr<VectorCoefficient>>(data_)) return CoefficientKind::Vector;
+        return CoefficientKind::Matrix;
     }
     
-    bool empty() const { return data_.index() == 0; }
+    bool empty() const { 
+        return std::holds_alternative<std::monostate>(data_); 
+    }
     
     template<typename T>
     const T* get() const;
     
 private:
-    std::variant<std::monostate, std::unique_ptr<Coefficient>, std::unique_ptr<VectorCoefficient>> data_;
+    std::variant<std::monostate, 
+                 std::unique_ptr<Coefficient>, 
+                 std::unique_ptr<VectorCoefficient>,
+                 std::unique_ptr<MatrixCoefficient>> data_;
 };
 
+// Template specializations for get()
 template<> inline const Coefficient* AnyCoefficient::get<Coefficient>() const {
-    auto* p = std::get_if<1>(&data_);
+    auto* p = std::get_if<std::unique_ptr<Coefficient>>(&data_);
     return p ? p->get() : nullptr;
 }
 
 template<> inline const VectorCoefficient* AnyCoefficient::get<VectorCoefficient>() const {
-    auto* p = std::get_if<2>(&data_);
+    auto* p = std::get_if<std::unique_ptr<VectorCoefficient>>(&data_);
     return p ? p->get() : nullptr;
 }
 
-// 工厂函数
+template<> inline const MatrixCoefficient* AnyCoefficient::get<MatrixCoefficient>() const {
+    auto* p = std::get_if<std::unique_ptr<MatrixCoefficient>>(&data_);
+    return p ? p->get() : nullptr;
+}
+
+// Factory functions
 template<typename T, typename... Args>
 AnyCoefficient makeCoefficient(Args&&... args) {
-    if constexpr (std::is_base_of_v<Coefficient, T>)
+    if constexpr (std::is_base_of_v<Coefficient, T> && !std::is_base_of_v<VectorCoefficient, T> && !std::is_base_of_v<MatrixCoefficient, T>)
         return AnyCoefficient(std::make_unique<T>(std::forward<Args>(args)...));
-    else if constexpr (std::is_base_of_v<VectorCoefficient, T>)
+    else if constexpr (std::is_base_of_v<VectorCoefficient, T> && !std::is_base_of_v<MatrixCoefficient, T>)
+        return AnyCoefficient(std::make_unique<T>(std::forward<Args>(args)...));
+    else if constexpr (std::is_base_of_v<MatrixCoefficient, T>)
+        return AnyCoefficient(std::make_unique<T>(std::forward<Args>(args)...));
+    else
         return AnyCoefficient(std::make_unique<T>(std::forward<Args>(args)...));
 }
 

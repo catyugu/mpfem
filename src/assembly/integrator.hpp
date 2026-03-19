@@ -11,36 +11,50 @@
 namespace mpfem {
 
 // =============================================================================
-// 基础积分器接口 - 只提供系数评估
+// Base integrator interface - provides coefficient evaluation helpers
 // =============================================================================
 
 /**
- * @brief 积分器基类
+ * @brief Integrator base class
  * 
- * 所有权策略：积分器不持有系数所有权。
- * - 系数的生命周期由调用者（如求解器、CouplingManager）管理
- * - 积分器仅持有非拥有的原始指针引用
+ * Ownership policy: Integrators do NOT own coefficients.
+ * - Coefficient lifecycle is managed by caller (solver, Problem, etc.)
+ * - Integrators hold non-owning raw pointer references
  */
 class IntegratorBase {
 protected:
-    const Coefficient* q_ = nullptr;  ///< 系数指针（非拥有，生命周期由外部管理）
+    const Coefficient* q_ = nullptr;  ///< Coefficient pointer (non-owning)
     
-    Real evalCoef(ElementTransform& t) const { return q_ ? q_->eval(t) : 1.0; }
-    Real evalCoef(FacetElementTransform& t) const { return q_ ? q_->eval(t) : 1.0; }
+    /// Evaluate scalar coefficient at integration point
+    void evalCoef(ElementTransform& t, Real& result) const {
+        if (q_) {
+            q_->eval(t, result);
+        } else {
+            result = 1.0;
+        }
+    }
+    
+    void evalCoef(FacetElementTransform& t, Real& result) const {
+        if (q_) {
+            q_->eval(t, result);
+        } else {
+            result = 1.0;
+        }
+    }
 
 public:
     IntegratorBase() = default;
     
-    /// 构造函数：传入系数指针（非拥有，调用者负责生命周期）
+    /// Constructor: coefficient pointer (non-owning, caller manages lifecycle)
     explicit IntegratorBase(const Coefficient* q) : q_(q) {}
     
     virtual ~IntegratorBase() = default;
     
-    // 禁止拷贝
+    // Non-copyable
     IntegratorBase(const IntegratorBase&) = delete;
     IntegratorBase& operator=(const IntegratorBase&) = delete;
     
-    // 允许移动
+    // Movable
     IntegratorBase(IntegratorBase&& other) noexcept : q_(other.q_) {
         other.q_ = nullptr;
     }
@@ -54,92 +68,135 @@ public:
 };
 
 // =============================================================================
-// 双线性型域积分器基类 - 标量场
+// Domain bilinear integrator base - scalar field
 // =============================================================================
 
 class DomainBilinearIntegrator : public IntegratorBase {
 public:
     using IntegratorBase::IntegratorBase;
     
-    /// 组装单元矩阵: ∫ coef * L(φ_i) * L(φ_j) dΩ
-    /// 输出 elmat 为 nd x nd 矩阵
+    /// Assemble element matrix: ∫ coef * L(φ_i) * L(φ_j) dΩ
+    /// Output elmat is nd x nd matrix
     virtual void assembleElementMatrix(const ReferenceElement& ref, 
                                         ElementTransform& trans, 
                                         Matrix& elmat) const = 0;
 };
 
 // =============================================================================
-// 双线性型边界积分器基类 - 标量场
+// Face bilinear integrator base - scalar field
 // =============================================================================
 
 class FaceBilinearIntegrator : public IntegratorBase {
 public:
     using IntegratorBase::IntegratorBase;
     
-    /// 组装边界矩阵: ∫ coef * L(φ_i) * L(φ_j) dΓ
-    /// 输出 elmat 为 nd x nd 矩阵
+    /// Assemble face matrix: ∫ coef * L(φ_i) * L(φ_j) dΓ
+    /// Output elmat is nd x nd matrix
     virtual void assembleFaceMatrix(const ReferenceElement& ref,
                                      FacetElementTransform& trans,
                                      Matrix& elmat) const = 0;
 };
 
 // =============================================================================
-// 线性型域积分器基类 - 标量场
+// Domain linear integrator base - scalar field
 // =============================================================================
 
 class DomainLinearIntegrator : public IntegratorBase {
 public:
     using IntegratorBase::IntegratorBase;
     
-    /// 组装单元向量: ∫ coef * L(φ_i) dΩ
-    /// 输出 elvec 为 nd 维向量
+    /// Assemble element vector: ∫ coef * L(φ_i) dΩ
+    /// Output elvec is nd dimensional vector
     virtual void assembleElementVector(const ReferenceElement& ref,
                                         ElementTransform& trans,
                                         Vector& elvec) const = 0;
 };
 
 // =============================================================================
-// 线性型边界积分器基类 - 标量场
+// Face linear integrator base - scalar field
 // =============================================================================
 
 class FaceLinearIntegrator : public IntegratorBase {
 public:
     using IntegratorBase::IntegratorBase;
     
-    /// 组装边界向量: ∫ coef * L(φ_i) dΓ
-    /// 输出 elvec 为 nd 维向量
+    /// Assemble face vector: ∫ coef * L(φ_i) dΓ
+    /// Output elvec is nd dimensional vector
     virtual void assembleFaceVector(const ReferenceElement& ref,
                                      FacetElementTransform& trans,
                                      Vector& elvec) const = 0;
 };
 
 // =============================================================================
-// 向量场积分器基类（用于位移场等）
+// Vector field integrator bases (for displacement, velocity, etc.)
 // =============================================================================
 
-/// 向量场域积分器基类
+/// Vector field domain bilinear integrator base
 class VectorDomainBilinearIntegrator : public IntegratorBase {
 public:
     using IntegratorBase::IntegratorBase;
     
-    /// 组装单元矩阵（向量场版本）
-    /// vdim 由 FESpace 提供，积分器内部使用
+    /// Assemble element matrix (vector field version)
+    /// vdim is provided by FESpace, used internally by integrator
     virtual void assembleElementMatrix(const ReferenceElement& ref,
                                         ElementTransform& trans,
                                         Matrix& elmat,
                                         int vdim) const = 0;
 };
 
-/// 向量场域线性积分器基类
+/// Vector field domain linear integrator base
 class VectorDomainLinearIntegrator : public IntegratorBase {
 public:
     using IntegratorBase::IntegratorBase;
     
-    /// 组装单元向量（向量场版本）
+    /// Assemble element vector (vector field version)
     virtual void assembleElementVector(const ReferenceElement& ref,
                                         ElementTransform& trans,
                                         Vector& elvec,
                                         int vdim) const = 0;
+};
+
+// =============================================================================
+// Matrix coefficient integrator base
+// =============================================================================
+
+/**
+ * @brief Base class for integrators that use matrix coefficients
+ * 
+ * Used for anisotropic diffusion, etc.
+ */
+class MatrixCoefficientIntegratorBase {
+protected:
+    const MatrixCoefficient* matCoef_ = nullptr;
+    
+    /// Evaluate matrix coefficient at integration point
+    void evalMatCoef(ElementTransform& t, Matrix3& result) const {
+        if (matCoef_) {
+            matCoef_->eval(t, result);
+        } else {
+            result = Matrix3::Identity();
+        }
+    }
+    
+    void evalMatCoef(FacetElementTransform& t, Matrix3& result) const {
+        if (matCoef_) {
+            matCoef_->eval(t, result);
+        } else {
+            result = Matrix3::Identity();
+        }
+    }
+
+public:
+    MatrixCoefficientIntegratorBase() = default;
+    explicit MatrixCoefficientIntegratorBase(const MatrixCoefficient* m) : matCoef_(m) {}
+    
+    virtual ~MatrixCoefficientIntegratorBase() = default;
+    
+    // Non-copyable, movable
+    MatrixCoefficientIntegratorBase(const MatrixCoefficientIntegratorBase&) = delete;
+    MatrixCoefficientIntegratorBase& operator=(const MatrixCoefficientIntegratorBase&) = delete;
+    MatrixCoefficientIntegratorBase(MatrixCoefficientIntegratorBase&&) = default;
+    MatrixCoefficientIntegratorBase& operator=(MatrixCoefficientIntegratorBase&&) = default;
 };
 
 }  // namespace mpfem

@@ -10,6 +10,7 @@
 * 重构中，不要考虑向后兼容性。
 * 禁止使用const_cast（除非为了调用外部求解器的局部使用），mutable（除非为了缓存或者锁），friend，dynamic_cast等关键字。
 * 删除冗余的成员变量、接口等。
+* 设计架构的时候请考虑未来扩展到瞬态求解时候的需要。
 * 完成一块工作任务后：
   * 拒绝向后兼容性，强制改写所有调用处，让代码更简洁，对以后的扩展更通用。
   * 验证编译运行结果，移除所有向后兼容的或容易误用的的接口，防止冗余。
@@ -17,16 +18,17 @@
 
 ## 工作任务1
 
-* 添加对矩阵系数的支持。
-* 在一些地方可以使用泛型来简化Coefficient相关的设计，以免于区分标量、向量、矩阵Coefficient的需要。
-* 只能有一个泛型化的FunctionCoefficient和一个泛型化的DomainMappedCoefficient用于所有可能的用途。消除在Coefficient层的标量/向量/矩阵的分歧。 
-* 输入材料时候，材料属性用variant处理，是矩阵就使用矩阵，是标量就用标量，接口也要泛化，而不需要任何的类型转换。
-* Diffusion积分器可以接受标量/矩阵的variant，但是实现统一使用矩阵的写法就行，因为在eigen中标量乘法语义天生可以兼容矩阵乘法。例如：
-  
-```cpp
-element_matrix = grad.transpose() * w * grad; // 不论w是标量还是矩阵，都可以兼容
-```
+* 在physics模块下创造一个FieldValues场值管理器，它管理三个场的（瞬态下不同时间片的）GridFunction的生命周期，并提供方便接口。其他类应该持有它的引用，通过它获取当前场值的引用，而不是直接存储当前场值。
+* 移除所有子类继承，统一为仅有三种Coefficient，就是（标量）Coefficient，VectorCoefficient，MatrixCoefficient。
+  * 统一它们的eval接口，分别在参数中以Real&, Vectro3&, Matrix3&承接。
+  * DomainMappedCoefficient不必继承，直接模板化，可以处理三种不同类型的Coefficient。
+  * 都持有对FieldValues的引用，创建时传入一个不捕获任何对象的lambda函数，eval函数内部调用那个Lambda函数，这样就可以满足所有不同需求。
+* 移除向后兼容的代码、冗余的接口、冗余抽象等。
 
-* 不要进行任何向后兼容的别名。不要加任何多余的代码。
-* 设计架构的时候请考虑未来扩展到瞬态求解时候的需要。
-* 你的设计应该总是让代码更精简而非更冗长。如果一些改编让代码更冗长了，请考虑是否可以进行优化。
+## 工作任务2
+
+* 添加对矩阵系数的支持。添加针对各向异性材料的扩散积分器。
+  * 把DiffusionIntegrator改造为只接受矩阵系数。HeatTransferSolver和ElectrostaticSolver里的热导率、电导率也该改为矩阵。
+  * 输入材料时候，材料属性是矩阵就使用矩阵，是标量就用标量，不要作任何的类型转换。
+  * Integrator的基类应该根据assemble的接口而不是Coefficient的类型来区分。
+* 移除向后兼容的代码、冗余的接口、冗余抽象等。

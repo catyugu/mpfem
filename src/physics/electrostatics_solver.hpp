@@ -10,14 +10,15 @@
 namespace mpfem {
 
 /**
- * @brief 静电场求解器
+ * @brief Electrostatics solver
  * 
- * 求解：-div(sigma * grad V) = 0
+ * Solves: -div(sigma * grad V) = 0
  * 
- * 设计原则：
- * - 单场求解器不包含耦合逻辑
- * - 电导率系数支持域选择，每个域可以使用不同的系数
- * - 边界条件使用 Coefficient 而非直接数值
+ * Design principles:
+ * - Single-field solver does not contain coupling logic
+ * - Conductivity coefficient supports domain selection, each domain can use different coefficients
+ * - Boundary conditions use Coefficient instead of direct values
+ * - Field values are owned by FieldValues, solver holds reference
  */
 class ElectrostaticsSolver : public PhysicsFieldSolver {
 public:
@@ -27,47 +28,49 @@ public:
     FieldKind fieldKind() const override { return FieldKind::ElectricPotential; }
     std::string fieldName() const override { return "ElectricPotential"; }
     
-    /// 初始化求解器
-    bool initialize(const Mesh& mesh);
+    /// Initialize solver (creates FESpace, registers field with FieldValues)
+    /// @param mesh The mesh
+    /// @param fieldValues Field value manager (solver registers its field here)
+    bool initialize(const Mesh& mesh, FieldValues& fieldValues);
     
     // =========================================================================
-    // 材料系数接口（支持域选择）
+    // Material coefficient interfaces (support domain selection)
     // =========================================================================
     
-    /// 设置指定域的电导率系数（非拥有指针，覆盖已存在的）
+    /// Set conductivity coefficient for specified domains (non-owning pointer, overwrites existing)
     void setConductivity(const std::set<int>& domains, const Coefficient* sigma);
     
-    /// 设置所有域的电导率系数（非拥有指针，用于耦合系数）
+    /// Set conductivity coefficient for all domains (non-owning pointer, for coupling coefficient)
     void setConductivity(const Coefficient* sigma) {
         conductivity_.setAll(sigma);
     }
     
-    /// 获取电导率系数
-    const DomainMappedCoefficient& conductivity() const { return conductivity_; }
+    /// Get conductivity coefficient
+    const DomainMappedScalarCoefficient& conductivity() const { return conductivity_; }
     
     // =========================================================================
-    // 边界条件接口（使用 Coefficient）
+    // Boundary condition interfaces (use Coefficient)
     // =========================================================================
     
-    /// 添加电压边界条件（批量设置，使用 Coefficient）
+    /// Add voltage boundary condition (batch setting, use Coefficient)
     void addVoltageBC(const std::set<int>& boundaryIds, const Coefficient* voltage);
     
-    /// 清除边界条件
+    /// Clear boundary conditions
     void clearBoundaryConditions() { voltageBCs_.clear(); }
     
     // =========================================================================
-    // 求解接口
+    // Solve interface
     // =========================================================================
     
     void assemble() override;
     bool solve() override;
     
-    const GridFunction& field() const override { return *V_; }
-    GridFunction& field() override { return *V_; }
+    const GridFunction& field() const override { return fieldValues_->current(FieldId::ElectricPotential); }
+    GridFunction& field() override { return fieldValues_->current(FieldId::ElectricPotential); }
 
 private:
-    std::unique_ptr<GridFunction> V_;
-    DomainMappedCoefficient conductivity_;
+    FieldValues* fieldValues_ = nullptr;  ///< Non-owning reference to field manager
+    DomainMappedScalarCoefficient conductivity_;
     std::map<int, const Coefficient*> voltageBCs_;
 };
 

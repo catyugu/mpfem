@@ -6,12 +6,13 @@
 #include "physics/electrostatics_solver.hpp"
 #include "physics/heat_transfer_solver.hpp"
 #include "physics/structural_solver.hpp"
+#include "physics/field_values.hpp"
 #include "core/logger.hpp"
 
 namespace mpfem {
 
 /**
- * @brief 耦合求解结果
+ * @brief Coupling solve result
  */
 struct SteadyResult {
     bool converged = false;
@@ -20,22 +21,26 @@ struct SteadyResult {
 };
 
 /**
- * @brief 稳态问题
+ * @brief Steady problem
  * 
- * 继承Problem数据基类，添加求解器所有权和求解方法。
+ * Inherits Problem data base class, adds solver ownership and solve method.
+ * Owns FieldValues which manages all GridFunction objects.
  */
 class SteadyProblem : public Problem {
 public:
-    // 求解器（拥有所有权）
+    /// Field value manager (owns all GridFunction objects)
+    FieldValues fieldValues;
+    
+    // Solvers (owning)
     std::unique_ptr<ElectrostaticsSolver> electrostatics;
     std::unique_ptr<HeatTransferSolver> heatTransfer;
     std::unique_ptr<StructuralSolver> structural;
     
-    // 耦合参数
+    // Coupling parameters
     int couplingMaxIter = 15;
     Real couplingTol = 1e-6;
     
-    // 查询方法
+    // Query methods
     bool hasElectrostatics() const { return electrostatics != nullptr; }
     bool hasHeatTransfer() const { return heatTransfer != nullptr; }
     bool hasStructural() const { return structural != nullptr; }
@@ -44,7 +49,7 @@ public:
     bool isCoupled() const { return hasJouleHeating() || hasThermalExpansion(); }
     
     /**
-     * @brief 执行耦合或单场求解
+     * @brief Execute coupled or single-field solve
      */
     SteadyResult solve() {
         ScopedTimer timer("Coupling solve");

@@ -11,14 +11,15 @@
 namespace mpfem {
 
 /**
- * @brief 热传导求解器
+ * @brief Heat transfer solver
  * 
- * 求解：-div(k * grad T) = Q
+ * Solves: -div(k * grad T) = Q
  * 
- * 设计原则：
- * - 单场求解器不包含耦合逻辑
- * - 系数支持域选择，每个域可以使用不同的系数
- * - 边界条件使用 Coefficient 而非直接数值
+ * Design principles:
+ * - Single-field solver does not contain coupling logic
+ * - Coefficient supports domain selection, each domain can use different coefficients
+ * - Boundary conditions use Coefficient instead of direct values
+ * - Field values are owned by FieldValues, solver holds reference
  */
 class HeatTransferSolver : public PhysicsFieldSolver {
 public:
@@ -28,62 +29,64 @@ public:
     FieldKind fieldKind() const override { return FieldKind::Temperature; }
     std::string fieldName() const override { return "Temperature"; }
     
-    /// 初始化求解器
-    bool initialize(const Mesh& mesh);
+    /// Initialize solver (creates FESpace, registers field with FieldValues)
+    /// @param mesh The mesh
+    /// @param fieldValues Field value manager (solver registers its field here)
+    bool initialize(const Mesh& mesh, FieldValues& fieldValues);
     
     // =========================================================================
-    // 材料系数接口（支持域选择）
+    // Material coefficient interfaces (support domain selection)
     // =========================================================================
     
-    /// 设置指定域的热导率系数
+    /// Set thermal conductivity coefficient for specified domains
     void setConductivity(const std::set<int>& domains, const Coefficient* k);
     
-    /// 设置所有域的热导率系数（用于耦合）
+    /// Set thermal conductivity coefficient for all domains (for coupling)
     void setConductivity(const Coefficient* k) {
         conductivity_.setAll(k);
     }
     
-    /// 获取热导率系数
-    const DomainMappedCoefficient& conductivity() const { return conductivity_; }
+    /// Get thermal conductivity coefficient
+    const DomainMappedScalarCoefficient& conductivity() const { return conductivity_; }
     
-    /// 设置指定域的热源系数
+    /// Set heat source coefficient for specified domains
     void setHeatSource(const std::set<int>& domains, const Coefficient* Q);
     
-    /// 设置所有域的热源系数（用于耦合系数）
+    /// Set heat source coefficient for all domains (for coupling coefficient)
     void setHeatSource(const Coefficient* Q) {
         heatSource_.setAll(Q);
     }
     
-    /// 获取热源系数
-    const DomainMappedCoefficient& heatSource() const { return heatSource_; }
+    /// Get heat source coefficient
+    const DomainMappedScalarCoefficient& heatSource() const { return heatSource_; }
     
     // =========================================================================
-    // 边界条件接口（使用 Coefficient）
+    // Boundary condition interfaces (use Coefficient)
     // =========================================================================
     
-    /// 添加温度边界条件（批量设置）
+    /// Add temperature boundary condition (batch setting)
     void addTemperatureBC(const std::set<int>& boundaryIds, const Coefficient* temperature);
     
-    /// 添加对流边界条件: h*(T - Tinf)
+    /// Add convection boundary condition: h*(T - Tinf)
     void addConvectionBC(const std::set<int>& boundaryIds, 
                          const Coefficient* h, 
                          const Coefficient* Tinf);
     
-    /// 清除边界条件
+    /// Clear boundary conditions
     void clearBoundaryConditions() { 
         temperatureBCs_.clear(); 
         convBCs_.clear(); 
     }
     
     // =========================================================================
-    // 求解接口
+    // Solve interface
     // =========================================================================
     
     void assemble() override;
     bool solve() override;
     
-    const GridFunction& field() const override { return *T_; }
-    GridFunction& field() override { return *T_; }
+    const GridFunction& field() const override { return fieldValues_->current(FieldId::Temperature); }
+    GridFunction& field() override { return fieldValues_->current(FieldId::Temperature); }
 
 private:
     struct ConvBC { 
@@ -91,9 +94,9 @@ private:
         const Coefficient* Tinf;
     };
     
-    std::unique_ptr<GridFunction> T_;
-    DomainMappedCoefficient conductivity_;
-    DomainMappedCoefficient heatSource_;
+    FieldValues* fieldValues_ = nullptr;  ///< Non-owning reference to field manager
+    DomainMappedScalarCoefficient conductivity_;
+    DomainMappedScalarCoefficient heatSource_;
     
     std::map<int, const Coefficient*> temperatureBCs_;
     std::map<int, ConvBC> convBCs_;
