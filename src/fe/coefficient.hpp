@@ -96,35 +96,7 @@ private:
     const Coefficient* defaultCoef_ = nullptr;
 };
 
-template<>
-class DomainMappedCoefficientT<VectorCoefficient> : public VectorCoefficient {
-public:
-    DomainMappedCoefficientT() = default;
-    DomainMappedCoefficientT(DomainMappedCoefficientT&& o) noexcept
-        : coefs_(std::move(o.coefs_)), defaultCoef_(o.defaultCoef_), dim_(o.dim_) { o.defaultCoef_ = nullptr; }
-    DomainMappedCoefficientT& operator=(DomainMappedCoefficientT&& o) noexcept {
-        if (this != &o) { coefs_ = std::move(o.coefs_); defaultCoef_ = o.defaultCoef_; dim_ = o.dim_; o.defaultCoef_ = nullptr; }
-        return *this;
-    }
-    
-    void set(int domainId, const VectorCoefficient* coef) { coefs_[domainId] = coef; }
-    void set(const std::set<int>& domainIds, const VectorCoefficient* coef) { for (int id : domainIds) coefs_[id] = coef; }
-    void setAll(const VectorCoefficient* coef) { defaultCoef_ = coef; coefs_.clear(); }
-    const VectorCoefficient* get(int domainId) const { auto it = coefs_.find(domainId); return it != coefs_.end() ? it->second : defaultCoef_; }
-    bool empty() const { return coefs_.empty() && !defaultCoef_; }
-    
-    void eval(ElementTransform& trans, Real* result, Real t = 0.0) const override;
-    int dim() const override { return dim_; }
-    void setDim(int d) { dim_ = d; }
-private:
-    std::map<int, const VectorCoefficient*> coefs_;
-    const VectorCoefficient* defaultCoef_ = nullptr;
-    int dim_ = 3;
-};
-
 using DomainMappedCoefficient = DomainMappedCoefficientT<Coefficient>;
-using DomainMappedVectorCoefficient = DomainMappedCoefficientT<VectorCoefficient>;
-
 // =============================================================================
 // 物理耦合系数
 // =============================================================================

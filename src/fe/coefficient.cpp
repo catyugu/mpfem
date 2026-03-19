@@ -16,12 +16,6 @@ Real DomainMappedCoefficient::eval(ElementTransform& trans, Real t) const {
     return coef ? coef->eval(trans, t) : 0.0;
 }
 
-void DomainMappedVectorCoefficient::eval(ElementTransform& trans, Real* result, Real t) const {
-    const VectorCoefficient* coef = get(static_cast<int>(trans.attribute()));
-    if (coef) coef->eval(trans, result, t);
-    else for (int i = 0; i < dim_; ++i) result[i] = 0.0;
-}
-
 Real TemperatureDependentConductivity::eval(ElementTransform& trans, Real) const {
     Real temp = tref_;
     if (T_) {
