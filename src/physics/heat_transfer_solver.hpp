@@ -23,7 +23,7 @@ public:
     std::string fieldName() const override { return "HeatTransfer"; }
     FieldId fieldId() const override { return FieldId::Temperature; }
     
-    bool initialize(const Mesh& mesh, FieldValues& fieldValues);
+    bool initialize(const Mesh& mesh, FieldValues& fieldValues, int order);
     
     // Material coefficients - matrix form for anisotropic conductivity
     void setConductivity(const std::set<int>& domains, const MatrixCoefficient* k);

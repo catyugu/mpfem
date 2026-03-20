@@ -60,7 +60,7 @@ namespace mpfem
         LOG_INFO << "Building electrostatics solver, order = " << physics.order;
         problem.electrostatics = std::make_unique<ElectrostaticsSolver>(physics.order);
         problem.electrostatics->setSolverConfig(physics.solver);
-        problem.electrostatics->initialize(*problem.mesh, problem.fieldValues);
+        problem.electrostatics->initialize(*problem.mesh, problem.fieldValues, physics.order);
 
         for (const auto &[domId, matTag] : problem.domainMaterial)
         {
@@ -92,7 +92,7 @@ namespace mpfem
         LOG_INFO << "Building heat transfer solver, order = " << physics.order;
         problem.heatTransfer = std::make_unique<HeatTransferSolver>(physics.order);
         problem.heatTransfer->setSolverConfig(physics.solver);
-        problem.heatTransfer->initialize(*problem.mesh, problem.fieldValues);
+        problem.heatTransfer->initialize(*problem.mesh, problem.fieldValues, physics.order);
 
         for (const auto &[domId, matTag] : problem.domainMaterial)
         {
@@ -135,7 +135,7 @@ namespace mpfem
         LOG_INFO << "Building structural solver, order = " << physics.order;
         problem.structural = std::make_unique<StructuralSolver>(physics.order);
         problem.structural->setSolverConfig(physics.solver);
-        problem.structural->initialize(*problem.mesh, problem.fieldValues);
+        problem.structural->initialize(*problem.mesh, problem.fieldValues, physics.order);
 
         for (const auto &[domId, matTag] : problem.domainMaterial)
         {

@@ -15,32 +15,15 @@
 
 namespace mpfem {
 
-/**
- * @brief Physics field solver base class
- * 
- * Unified design:
- * - fieldValues_ is owned by base class (shared by all solvers)
- * - field() is implemented in base class via fieldId()
- * - solve() has common logic in base class
- * - assemble() remains pure virtual (solver-specific)
- */
 class PhysicsFieldSolver {
 public:
     virtual ~PhysicsFieldSolver() = default;
     
-    /// Get field kind
     virtual FieldKind fieldKind() const = 0;
-    
-    /// Get field name for logging
     virtual std::string fieldName() const = 0;
-    
-    /// Get field ID for FieldValues lookup
     virtual FieldId fieldId() const = 0;
-    
-    /// Assemble system matrix and vector
     virtual void assemble() = 0;
     
-    /// Solve the linear system
     bool solve() {
         if (!solver_ || !matAsm_ || !vecAsm_) return false;
         bool ok = solver_->solve(matAsm_->matrix(), field().values(), vecAsm_->vector());
@@ -50,7 +33,6 @@ public:
         return ok;
     }
     
-    /// Get field (implemented in base class)
     const GridFunction& field() const { return fieldValues_->current(fieldId()); }
     GridFunction& field() { return fieldValues_->current(fieldId()); }
     
@@ -72,15 +54,13 @@ protected:
         if (vecAsm_) { vecAsm_->clear(); vecAsm_->clearIntegrators(); }
     }
     
-    // Configuration
     int order_ = 1;
     SolverConfig solverConfig_;
     int iter_ = 0;
     Real res_ = 0.0;
     
-    // Common members
     const Mesh* mesh_ = nullptr;
-    FieldValues* fieldValues_ = nullptr;  ///< Non-owning reference (owned by Problem)
+    FieldValues* fieldValues_ = nullptr;
     std::unique_ptr<FESpace> fes_;
     std::unique_ptr<BilinearFormAssembler> matAsm_;
     std::unique_ptr<LinearFormAssembler> vecAsm_;

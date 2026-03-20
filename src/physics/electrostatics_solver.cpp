@@ -6,9 +6,10 @@
 
 namespace mpfem {
 
-bool ElectrostaticsSolver::initialize(const Mesh& mesh, FieldValues& fieldValues) {
+bool ElectrostaticsSolver::initialize(const Mesh& mesh, FieldValues& fieldValues, int order) {
     mesh_ = &mesh;
     fieldValues_ = &fieldValues;
+    order_ = order;
     
     auto fec = std::make_unique<FECollection>(order_, FECollection::Type::H1);
     fes_ = std::make_unique<FESpace>(&mesh, std::move(fec));
@@ -17,7 +18,7 @@ bool ElectrostaticsSolver::initialize(const Mesh& mesh, FieldValues& fieldValues
     
     matAsm_ = std::make_unique<BilinearFormAssembler>(fes_.get());
     vecAsm_ = std::make_unique<LinearFormAssembler>(fes_.get());
-    createSolver();
+    solver_ = SolverFactory::create(solverConfig_);
     
     LOG_INFO << "ElectrostaticsSolver: " << fes_->numDofs() << " DOFs";
     return true;

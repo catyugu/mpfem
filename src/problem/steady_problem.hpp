@@ -1,7 +1,7 @@
 #ifndef MPFEM_STEADY_PROBLEM_HPP
 #define MPFEM_STEADY_PROBLEM_HPP
 
-#include "problem/problem.hpp"
+#include "problem.hpp"
 #include "physics/electrostatics_solver.hpp"
 #include "physics/heat_transfer_solver.hpp"
 #include "physics/structural_solver.hpp"
@@ -9,30 +9,18 @@
 
 namespace mpfem {
 
-/// Coupling solve result
 struct SteadyResult {
     bool converged = false;
     int iterations = 0;
     Real residual = 0.0;
 };
 
-/**
- * @brief Steady problem
- * 
- * Inherits Problem base class, adds solver ownership and solve method.
- */
 class SteadyProblem : public Problem {
 public:
-    // Solvers (owning)
-    std::unique_ptr<ElectrostaticsSolver> electrostatics;
-    std::unique_ptr<HeatTransferSolver> heatTransfer;
-    std::unique_ptr<StructuralSolver> structural;
-    
-    // Coupling parameters
+
     int couplingMaxIter = 15;
     Real couplingTol = 1e-6;
     
-    // Query methods
     bool hasElectrostatics() const { return electrostatics != nullptr; }
     bool hasHeatTransfer() const { return heatTransfer != nullptr; }
     bool hasStructural() const { return structural != nullptr; }
@@ -40,7 +28,6 @@ public:
     bool hasThermalExpansion() const { return hasHeatTransfer() && hasStructural(); }
     bool isCoupled() const { return hasJouleHeating() || hasThermalExpansion(); }
     
-    /// Execute coupled or single-field solve
     SteadyResult solve() {
         ScopedTimer timer("Coupling solve");
         SteadyResult result;
