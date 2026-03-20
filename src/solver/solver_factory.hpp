@@ -52,7 +52,7 @@ public:
         solver->setPrintLevel(config.printLevel);
         
         // Apply solver-specific configuration
-        applySolverConfig(solver.get(), config);
+        solver->applyConfig(config);
         
         return solver;
     }
@@ -122,23 +122,6 @@ private:
 
             default:
                 throw std::runtime_error("Unsupported solver type");
-        }
-    }
-    
-    static void applySolverConfig(LinearSolver* solver, const SolverConfig& config) {
-        // Apply ICC-specific configuration
-        if (auto* cgicc = dynamic_cast<EigenCGICCSolver*>(solver)) {
-            // ICC uses shift parameter, dropTolerance is repurposed for regularization
-            cgicc->setShift(config.dropTolerance > 0 ? config.dropTolerance : 1e-14);
-        }
-        // Apply ILU-specific configuration for solvers that support it
-        if (auto* dgmres = dynamic_cast<EigenDGMRESILUSolver*>(solver)) {
-            dgmres->setDropTolerance(config.dropTolerance);
-            dgmres->setFillFactor(config.fillFactor);
-        }
-        if (auto* cgilu = dynamic_cast<EigenCGILUSolver*>(solver)) {
-            cgilu->setDropTolerance(config.dropTolerance);
-            cgilu->setFillFactor(config.fillFactor);
         }
     }
     

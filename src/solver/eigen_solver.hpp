@@ -73,6 +73,11 @@ class EigenCGICCSolver : public LinearSolver {
 public:
     std::string name() const override { return "Eigen::CG+ICC"; }
     
+    void applyConfig(const SolverConfig& config) override {
+        if (config.dropTolerance > 0) setShift(config.dropTolerance);
+        else setShift(1e-14);
+    }
+    
     /// Set shift parameter for regularization (default 1e-14)
     void setShift(Real shift) { shift_ = shift; }
     
@@ -127,6 +132,11 @@ private:
 class EigenCGILUSolver : public LinearSolver {
 public:
     std::string name() const override { return "Eigen::CG+ILU"; }
+    
+    void applyConfig(const SolverConfig& config) override {
+        setDropTolerance(config.dropTolerance);
+        setFillFactor(config.fillFactor);
+    }
     
     void setDropTolerance(Real tol) { dropTol_ = tol; }
     void setFillFactor(int fill) { fillFactor_ = fill; }
@@ -240,6 +250,11 @@ private:
 class EigenDGMRESILUSolver : public LinearSolver {
 public:
     std::string name() const override { return "Eigen::DGMRES+ILU"; }
+    
+    void applyConfig(const SolverConfig& config) override {
+        setDropTolerance(config.dropTolerance);
+        setFillFactor(config.fillFactor);
+    }
     
     void setDropTolerance(Real tol) { dropTol_ = tol; }
     void setFillFactor(int fill) { fillFactor_ = fill; }

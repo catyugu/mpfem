@@ -30,11 +30,6 @@ namespace mpfem
         Tetrahedron = 4, ///< 3D: Tetrahedron (4 vertices)
         Cube = 5,        ///< 3D: Hexahedron (8 vertices)
 
-        // Aliases for convenience
-        Quad = Square,
-        Hex = Cube,
-        Tet = Tetrahedron,
-
         // Sentinel
         Invalid = 255
     };

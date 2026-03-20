@@ -3,7 +3,6 @@
 
 #include "mesh/geometry.hpp"
 #include "reference_element.hpp"
-#include "core/exception.hpp"
 #include <memory>
 #include <unordered_map>
 
@@ -69,9 +68,6 @@ public:
         return std::make_unique<FECollection>(order, Type::H1);
     }
     
-    /// Create collection from name (MFEM-style)
-    static std::unique_ptr<FECollection> create(const std::string& name);
-    
 private:
     void initialize();
     
@@ -104,22 +100,6 @@ inline void FECollection::initialize() {
             Geometry::Cube, order_);
     }
     // TODO: Implement L2, ND, RT
-}
-
-inline std::unique_ptr<FECollection> FECollection::create(const std::string& name) {
-    // Parse name like "H1_1", "H1_2", "L2_1", etc.
-    if (name.substr(0, 2) == "H1") {
-        int order = 1;
-        if (name.length() > 3) {
-            order = std::stoi(name.substr(3));
-        }
-        return createH1(order);
-    }
-    // TODO: Parse other types (L2, ND, RT)
-    
-    MPFEM_THROW(Exception, 
-        "FECollection::create: unsupported FE type '" + name + 
-        "'. Supported types: H1_1, H1_2, etc.");
 }
 
 }  // namespace mpfem
