@@ -12,7 +12,7 @@ using namespace mpfem;
 int main(int argc, char* argv[]) {
     Logger::setLevel(LogLevel::Info);
     
-    std::string caseDir = "cases/busbar";
+    std::string caseDir = "cases/busbar_steady";
     if (argc > 1) caseDir = argv[1];
     
     LOG_INFO << "=== Busbar Electro-Thermal Example ===";

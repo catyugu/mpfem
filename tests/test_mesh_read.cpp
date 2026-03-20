@@ -23,7 +23,7 @@ protected:
 
 TEST_F(MeshReadTest, ReadBusbarMesh) {
     // Test mesh file path
-    std::string meshPath = dataPath("cases/busbar/mesh.mphtxt");
+    std::string meshPath = dataPath("cases/busbar_steady/mesh.mphtxt");
     
     // Read mesh
     Mesh mesh = MphtxtReader::read(meshPath);

@@ -66,7 +66,7 @@ Vtot	20[mV]	0.02 V	Applied voltage
 
 ```
 
-## 一阶测试：`cases/busbar/`下
+## 一阶测试：`cases/busbar_steady/`下
 
 * 案例描述：一个母线板，上面有三个螺丝。求解稳态问题。
 * 网格文件：mesh.mphtxt
@@ -82,7 +82,7 @@ Vtot	20[mV]	0.02 V	Applied voltage
 * COMSOL结果文件：result.txt。
 * 请将我们的结果和COMSOL结果文件进行对比。（这一步可以用Python等外部脚本完成，C++代码只需要能export标准格式的结果即可）
 
-## 二阶测试：`cases/busbar_order2/`下
+## 二阶测试：`cases/busbar_steady_order2/`下
 
 * 其余与一阶情况一样，只是网格为二阶，基函数也为二阶多项式
 
