@@ -25,7 +25,7 @@ public:
     virtual void assemble() = 0;
     
     bool solve() {
-        if (!solver_ || !matAsm_ || !vecAsm_) return false;
+        if (!solver_ || !matAsm_ || !vecAsm_ || !fieldValues_) return false;
         bool ok = solver_->solve(matAsm_->matrix(), field().values(), vecAsm_->vector());
         if (ok) {
             LOG_INFO << fieldName() << " solver converged!";
@@ -33,8 +33,14 @@ public:
         return ok;
     }
     
-    const GridFunction& field() const { return fieldValues_->current(fieldId()); }
-    GridFunction& field() { return fieldValues_->current(fieldId()); }
+    const GridFunction& field() const { 
+        MPFEM_ASSERT(fieldValues_ != nullptr, "FieldValues not set");
+        return fieldValues_->current(fieldId()); 
+    }
+    GridFunction& field() { 
+        MPFEM_ASSERT(fieldValues_ != nullptr, "FieldValues not set");
+        return fieldValues_->current(fieldId()); 
+    }
     
     const FESpace& feSpace() const { return *fes_; }
     Index numDofs() const { return fes_ ? fes_->numDofs() : 0; }

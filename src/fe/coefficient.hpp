@@ -98,8 +98,9 @@ public:
     DomainMappedCoefficient() = default;
     
     DomainMappedCoefficient(DomainMappedCoefficient&& o) noexcept
-        : coefs_(std::move(o.coefs_)), defaultCoef_(o.defaultCoef_) { 
-        o.defaultCoef_ = nullptr; 
+        : coefs_(std::move(o.coefs_)), defaultCoef_(o.defaultCoef_) {
+        o.defaultCoef_ = nullptr;
+        o.coefs_.clear();
     }
     
     DomainMappedCoefficient& operator=(DomainMappedCoefficient&& o) noexcept {

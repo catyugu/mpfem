@@ -11,7 +11,7 @@
 namespace mpfem {
 
 // =============================================================================
-// Abstract interfaces (non-template for polymorphic storage)
+// Abstract interfaces for bilinear integrators
 // =============================================================================
 
 class DomainBilinearIntegratorBase {
@@ -30,6 +30,10 @@ public:
                                      Matrix& elmat) const = 0;
 };
 
+// =============================================================================
+// Abstract interfaces for linear integrators
+// =============================================================================
+
 class DomainLinearIntegratorBase {
 public:
     virtual ~DomainLinearIntegratorBase() = default;
@@ -47,56 +51,10 @@ public:
 };
 
 // =============================================================================
-// Template implementations with coefficient storage
-// =============================================================================
-
-template<typename CoefType>
-class DomainBilinearIntegrator : public DomainBilinearIntegratorBase {
-protected:
-    const CoefType* coef_ = nullptr;
-    
-    DomainBilinearIntegrator() = default;
-    explicit DomainBilinearIntegrator(const CoefType* c) : coef_(c) {}
-};
-
-template<typename CoefType>
-class FaceBilinearIntegrator : public FaceBilinearIntegratorBase {
-protected:
-    const CoefType* coef_ = nullptr;
-    
-    FaceBilinearIntegrator() = default;
-    explicit FaceBilinearIntegrator(const CoefType* c) : coef_(c) {}
-};
-
-template<typename CoefType>
-class DomainLinearIntegrator : public DomainLinearIntegratorBase {
-protected:
-    const CoefType* coef_ = nullptr;
-    
-    DomainLinearIntegrator() = default;
-    explicit DomainLinearIntegrator(const CoefType* c) : coef_(c) {}
-};
-
-template<typename CoefType>
-class FaceLinearIntegrator : public FaceLinearIntegratorBase {
-protected:
-    const CoefType* coef_ = nullptr;
-    
-    FaceLinearIntegrator() = default;
-    explicit FaceLinearIntegrator(const CoefType* c) : coef_(c) {}
-};
-
-// =============================================================================
-// Vector field integrator bases
+// Vector field integrator interfaces
 // =============================================================================
 
 class VectorDomainBilinearIntegrator {
-protected:
-    const Coefficient* coef_ = nullptr;
-    
-    VectorDomainBilinearIntegrator() = default;
-    explicit VectorDomainBilinearIntegrator(const Coefficient* c) : coef_(c) {}
-    
 public:
     virtual ~VectorDomainBilinearIntegrator() = default;
     virtual void assembleElementMatrix(const ReferenceElement& ref,
@@ -106,12 +64,6 @@ public:
 };
 
 class VectorDomainLinearIntegrator {
-protected:
-    const Coefficient* coef_ = nullptr;
-    
-    VectorDomainLinearIntegrator() = default;
-    explicit VectorDomainLinearIntegrator(const Coefficient* c) : coef_(c) {}
-    
 public:
     virtual ~VectorDomainLinearIntegrator() = default;
     virtual void assembleElementVector(const ReferenceElement& ref,

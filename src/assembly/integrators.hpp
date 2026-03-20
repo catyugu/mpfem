@@ -18,14 +18,16 @@ namespace mpfem {
  * - For isotropic: D = σ * I (use diagonalMatrixCoefficient)
  * - For anisotropic: D is full tensor
  */
-class DiffusionIntegrator : public DomainBilinearIntegrator<MatrixCoefficient> {
+class DiffusionIntegrator : public DomainBilinearIntegratorBase {
 public:
     DiffusionIntegrator() = default;
-    explicit DiffusionIntegrator(const MatrixCoefficient* c) : DomainBilinearIntegrator<MatrixCoefficient>(c) {}
+    explicit DiffusionIntegrator(const MatrixCoefficient* c) : coef_(c) {}
     
     void assembleElementMatrix(const ReferenceElement& ref,
                                ElementTransform& trans,
                                Matrix& elmat) const override;
+private:
+    const MatrixCoefficient* coef_ = nullptr;
 };
 
 // =============================================================================
@@ -35,14 +37,16 @@ public:
 /**
  * @brief Mass integrator: ∫ ρ φᵢ φⱼ dΩ
  */
-class MassIntegrator : public DomainBilinearIntegrator<Coefficient> {
+class MassIntegrator : public DomainBilinearIntegratorBase {
 public:
     MassIntegrator() = default;
-    explicit MassIntegrator(const Coefficient* c) : DomainBilinearIntegrator<Coefficient>(c) {}
+    explicit MassIntegrator(const Coefficient* c) : coef_(c) {}
     
     void assembleElementMatrix(const ReferenceElement& ref,
                                ElementTransform& trans,
                                Matrix& elmat) const override;
+private:
+    const Coefficient* coef_ = nullptr;
 };
 
 // =============================================================================
@@ -52,14 +56,16 @@ public:
 /**
  * @brief Domain load integrator: ∫ f φᵢ dΩ
  */
-class DomainLFIntegrator : public DomainLinearIntegrator<Coefficient> {
+class DomainLFIntegrator : public DomainLinearIntegratorBase {
 public:
     DomainLFIntegrator() = default;
-    explicit DomainLFIntegrator(const Coefficient* c) : DomainLinearIntegrator<Coefficient>(c) {}
+    explicit DomainLFIntegrator(const Coefficient* c) : coef_(c) {}
     
     void assembleElementVector(const ReferenceElement& ref,
                                ElementTransform& trans,
                                Vector& elvec) const override;
+private:
+    const Coefficient* coef_ = nullptr;
 };
 
 // =============================================================================
@@ -69,14 +75,16 @@ public:
 /**
  * @brief Boundary load integrator: ∫ g φᵢ dΓ
  */
-class BoundaryLFIntegrator : public FaceLinearIntegrator<Coefficient> {
+class BoundaryLFIntegrator : public FaceLinearIntegratorBase {
 public:
     BoundaryLFIntegrator() = default;
-    explicit BoundaryLFIntegrator(const Coefficient* c) : FaceLinearIntegrator<Coefficient>(c) {}
+    explicit BoundaryLFIntegrator(const Coefficient* c) : coef_(c) {}
     
     void assembleFaceVector(const ReferenceElement& ref,
                             FacetElementTransform& trans,
                             Vector& elvec) const override;
+private:
+    const Coefficient* coef_ = nullptr;
 };
 
 // =============================================================================
@@ -86,25 +94,27 @@ public:
 /**
  * @brief Convection mass integrator (Robin BC matrix part): ∫ h φᵢ φⱼ dΓ
  */
-class ConvectionMassIntegrator : public FaceBilinearIntegrator<Coefficient> {
+class ConvectionMassIntegrator : public FaceBilinearIntegratorBase {
 public:
     ConvectionMassIntegrator() = default;
-    explicit ConvectionMassIntegrator(const Coefficient* c) : FaceBilinearIntegrator<Coefficient>(c) {}
+    explicit ConvectionMassIntegrator(const Coefficient* c) : coef_(c) {}
     
     void assembleFaceMatrix(const ReferenceElement& ref,
                             FacetElementTransform& trans,
                             Matrix& elmat) const override;
+private:
+    const Coefficient* coef_ = nullptr;
 };
 
 /**
  * @brief Convection load integrator (Robin BC vector part): ∫ h Tinf φᵢ dΓ
  */
-class ConvectionLFIntegrator : public FaceLinearIntegrator<Coefficient> {
+class ConvectionLFIntegrator : public FaceLinearIntegratorBase {
 public:
     ConvectionLFIntegrator() = default;
     
     ConvectionLFIntegrator(const Coefficient* h, const Coefficient* Tinf)
-        : FaceLinearIntegrator<Coefficient>(h), Tinf_(Tinf) {}
+        : coef_(h), Tinf_(Tinf) {}
     
     void setAmbientTemperature(const Coefficient* Tinf) { Tinf_ = Tinf; }
     
@@ -113,6 +123,7 @@ public:
                             Vector& elvec) const override;
     
 private:
+    const Coefficient* coef_ = nullptr;
     const Coefficient* Tinf_ = nullptr;
 };
 

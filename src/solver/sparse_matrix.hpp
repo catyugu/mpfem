@@ -132,50 +132,47 @@ namespace mpfem
          * 
          * Optimized batch elimination using sparse column iteration.
          * 
-         * @param dofValues Map from DOF index to known value.
+         * @param eliminated Vector of eliminated DOF indices (must be sorted).
+         * @param dofValues Vector of values for eliminated DOFs (aligned with eliminated).
          * @param b RHS vector.
          */
-        void eliminateRows(const std::map<Index, Real>& dofValues, Vector& b)
+        void eliminateRows(const std::vector<Index>& eliminated, 
+                          const std::vector<Real>& dofValues, 
+                          Vector& b)
         {
-            if (dofValues.empty()) return;
+            if (eliminated.empty()) return;
             
             const Index n = mat_.rows();
+            const size_t numEliminated = eliminated.size();
             
-            // Build vectors for O(1) lookup
-            std::vector<bool> isEliminated(n, false);
+            std::vector<char> isEliminated(n, 0);
             std::vector<Real> eliminatedValues(n, 0.0);
-            for (const auto& [dof, val] : dofValues) {
-                isEliminated[dof] = true;
-                eliminatedValues[dof] = val;
+            for (size_t i = 0; i < numEliminated; ++i) {
+                isEliminated[eliminated[i]] = 1;
+                eliminatedValues[eliminated[i]] = dofValues[eliminated[i]];
             }
             
-            // Process all columns
             for (Index col = 0; col < mat_.outerSize(); ++col) {
-                // Iterate over all rows in this column
                 for (Storage::InnerIterator it(mat_, col); it; ++it) {
                     Index row = it.row();
                     
                     if (isEliminated[col] && isEliminated[row]) {
-                        // Both eliminated: zero off-diagonal entries
                         if (row != col) {
                             it.valueRef() = 0.0;
                         }
                     } else if (isEliminated[col]) {
-                        // Column eliminated (but row not): subtract from RHS, zero entry
                         b(row) -= it.value() * eliminatedValues[col];
                         it.valueRef() = 0.0;
                     } else if (isEliminated[row]) {
-                        // Row eliminated (but column not): just zero the entry
                         it.valueRef() = 0.0;
                     }
-                    // else: neither eliminated, keep the entry
                 }
             }
             
-            // Set diagonal to 1 and RHS to BC value for all eliminated DOFs
-            for (const auto& [dof, val] : dofValues) {
+            for (size_t i = 0; i < numEliminated; ++i) {
+                Index dof = eliminated[i];
                 mat_.coeffRef(dof, dof) = 1.0;
-                b(dof) = val;
+                b(dof) = dofValues[dof];
             }
         }
 
