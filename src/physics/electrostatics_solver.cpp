@@ -23,7 +23,7 @@ bool ElectrostaticsSolver::initialize(const Mesh& mesh, FieldValues& fieldValues
     return true;
 }
 
-void ElectrostaticsSolver::setConductivity(const std::set<int>& domains, const Coefficient* sigma) {
+void ElectrostaticsSolver::setConductivity(const std::set<int>& domains, const MatrixCoefficient* sigma) {
     conductivity_.set(domains, sigma);
 }
 

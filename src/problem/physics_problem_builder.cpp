@@ -66,10 +66,12 @@ namespace mpfem
         {
             if (const auto* mat = problem.materials.getMaterial(matTag))
             {
-                Real sigma = mat->electricConductivity.value_or(0.0);
-                std::string key = "conductivity_" + std::to_string(domId);
-                problem.setCoef(key, constantCoefficient(sigma));
-                problem.electrostatics->setConductivity({domId}, problem.getCoef<Coefficient>(key));
+                if (auto sigmaMat = mat->electricConductivity)
+                {
+                    std::string key = "conductivity_" + std::to_string(domId);
+                    problem.setCoef(key, constantMatrixCoefficient(sigmaMat.value()));
+                    problem.electrostatics->setConductivity({domId}, problem.getCoef<MatrixCoefficient>(key));
+                }
             }
         }
 
@@ -96,10 +98,12 @@ namespace mpfem
         {
             if (const auto* mat = problem.materials.getMaterial(matTag))
             {
-                Real k = mat->thermalConductivity.value_or(0.0);
-                std::string key = "thermal_conductivity_" + std::to_string(domId);
-                problem.setCoef(key, constantCoefficient(k));
-                problem.heatTransfer->setConductivity({domId}, problem.getCoef<Coefficient>(key));
+                if (auto kMat = mat->thermalConductivity)
+                {
+                    std::string key = "thermal_conductivity_" + std::to_string(domId);
+                    problem.setCoef(key, constantMatrixCoefficient(kMat.value()));
+                    problem.heatTransfer->setConductivity({domId}, problem.getCoef<MatrixCoefficient>(key));
+                }
             }
         }
 
@@ -162,43 +166,46 @@ namespace mpfem
 
     void PhysicsProblemBuilder::setupCoupling(SteadyProblem &problem)
     {
-        DomainMappedScalarCoefficient tempDepSigmaMap;
+        DomainMappedMatrixCoefficient tempDepSigmaMap;
         
-        // Build temperature-dependent conductivity map
+        // Build temperature-dependent conductivity map (matrix form)
         for (const auto &[domId, matTag] : problem.domainMaterial)
         {
             if (const auto* mat = problem.materials.getMaterial(matTag))
             {
                 std::string key = "tempDepSigma_" + std::to_string(domId);
+                
+                // Temperature-dependent case: create matrix coefficient
                 if (mat->rho0.has_value() && mat->rho0.value() > 0.0)
                 {
-                    // Create temperature-dependent conductivity using lambda
                     Real rho0 = mat->rho0.value();
                     Real alpha = mat->alpha.value_or(0.0);
                     Real tref = mat->tref.value_or(298.0);
                     const GridFunction* T_field = &problem.heatTransfer->field();
                     
-                    problem.setCoef(key, std::make_unique<ScalarCoefficient>(
-                        [T_field, rho0, alpha, tref](ElementTransform& trans, Real& result, Real) {
+                    // Create matrix coefficient that computes diagonal matrix from temperature
+                    problem.setCoef(key, std::make_unique<MatrixFunctionCoefficient>(
+                        [T_field, rho0, alpha, tref](ElementTransform& trans, Matrix3& result, Real) {
                             Real temp = tref;
                             if (T_field) {
                                 const auto& ip = trans.integrationPoint();
                                 temp = T_field->eval(trans.elementIndex(), &ip.xi);
                             }
                             Real factor = 1.0 + alpha * (temp - tref);
-                            result = 1.0 / (rho0 * (factor > 0 ? factor : 1e-10));
+                            Real sigma = 1.0 / (rho0 * (factor > 0 ? factor : 1e-10));
+                            result = Matrix3::Identity() * sigma;  // Diagonal matrix
                         }));
-                    tempDepSigmaMap.set(domId, problem.getCoef<Coefficient>(key));
+                    tempDepSigmaMap.set(domId, problem.getCoef<MatrixCoefficient>(key));
                 }
-                else if (auto* c = problem.getCoef<Coefficient>("conductivity_" + std::to_string(domId)))
+                else if (auto* c = problem.getCoef<MatrixCoefficient>("conductivity_" + std::to_string(domId)))
                 {
                     tempDepSigmaMap.set(domId, c);
                 }
             }
         }
         
-        problem.setCoef("tempDepSigmaMap", std::make_unique<DomainMappedScalarCoefficient>(std::move(tempDepSigmaMap)));
-        problem.electrostatics->setConductivity(problem.getCoef<Coefficient>("tempDepSigmaMap"));
+        problem.setCoef("tempDepSigmaMap", std::make_unique<DomainMappedMatrixCoefficient>(std::move(tempDepSigmaMap)));
+        problem.electrostatics->setConductivity(problem.getCoef<MatrixCoefficient>("tempDepSigmaMap"));
         
         // Setup coupled physics
         for (const auto &cp : problem.caseDef.coupledPhysicsDefinitions)
@@ -207,7 +214,7 @@ namespace mpfem
             {
                 // Create Joule heat coefficient using lambda
                 const GridFunction* V_field = &problem.electrostatics->field();
-                const Coefficient* sigma_coef = &problem.electrostatics->conductivity();
+                const MatrixCoefficient* sigma_coef = &problem.electrostatics->conductivity();
                 
                 problem.setCoef("jouleHeat", std::make_unique<ScalarCoefficient>(
                     [V_field, sigma_coef](ElementTransform& trans, Real& result, Real t) {
@@ -215,10 +222,11 @@ namespace mpfem
                             result = 0.0;
                             return;
                         }
-                        Real sigma_val;
-                        sigma_coef->eval(trans, sigma_val, t);
+                        Matrix3 sigma_mat;
+                        sigma_coef->eval(trans, sigma_mat, t);
                         Vector3 g = V_field->gradient(trans.elementIndex(), &trans.integrationPoint().xi, trans);
-                        result = sigma_val * g.squaredNorm();
+                        // For anisotropic: Q = g^T * sigma * g
+                        result = g.transpose() * sigma_mat * g;
                     }));
                 
                 DomainMappedScalarCoefficient jouleHeatMap;

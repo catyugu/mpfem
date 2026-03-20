@@ -82,26 +82,26 @@ void MaterialXmlReader::readFromFile(const std::string& filePath, MaterialDataba
         }
 
         // Extract specific properties
-        auto getScalar = [&](const std::string& name) -> std::optional<double> {
-            auto it = material.properties.find(name);
+        auto getScalar = [&](const std::string& n) -> std::optional<double> {
+            auto it = material.properties.find(n);
             return it != material.properties.end() ? std::optional<double>{it->second} : std::nullopt;
         };
         
-        auto getMatrix = [&](const std::string& name) -> std::optional<Matrix3> {
-            auto it = material.matrixProperties.find(name);
+        auto getMatrix = [&](const std::string& n) -> std::optional<Matrix3> {
+            auto it = material.matrixProperties.find(n);
             return it != material.matrixProperties.end() ? std::optional<Matrix3>{it->second} : std::nullopt;
         };
 
+        // Temperature-dependent resistivity
         material.rho0 = getScalar("rho0");
         material.alpha = getScalar("alpha");
         material.tref = getScalar("Tref");
         
-        // Conductivities - try matrix first, then scalar
-        material.electricConductivityTensor = getMatrix("electricconductivity");
-        material.thermalConductivityTensor = getMatrix("thermalconductivity");
-        material.electricConductivity = getScalar("electricconductivity");
-        material.thermalConductivity = getScalar("thermalconductivity");
+        // Conductivities - always as matrix
+        material.electricConductivity = getMatrix("electricconductivity");
+        material.thermalConductivity = getMatrix("thermalconductivity");
         
+        // Mechanical properties
         material.youngModulus = getScalar("E");
         material.poissonRatio = getScalar("nu");
         material.thermalExpansion = getScalar("thermalexpansioncoefficient");

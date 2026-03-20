@@ -12,6 +12,7 @@ namespace mpfem {
  * @brief Heat transfer solver
  * 
  * Solves: -div(k * grad T) = Q
+ * k is a 3x3 thermal conductivity tensor (matrix coefficient)
  */
 class HeatTransferSolver : public PhysicsFieldSolver {
 public:
@@ -24,10 +25,10 @@ public:
     
     bool initialize(const Mesh& mesh, FieldValues& fieldValues);
     
-    // Material coefficients
-    void setConductivity(const std::set<int>& domains, const Coefficient* k);
-    void setConductivity(const Coefficient* k) { conductivity_.setAll(k); }
-    const DomainMappedScalarCoefficient& conductivity() const { return conductivity_; }
+    // Material coefficients - matrix form for anisotropic conductivity
+    void setConductivity(const std::set<int>& domains, const MatrixCoefficient* k);
+    void setConductivity(const MatrixCoefficient* k) { conductivity_.setAll(k); }
+    const DomainMappedMatrixCoefficient& conductivity() const { return conductivity_; }
     
     void setHeatSource(const std::set<int>& domains, const Coefficient* Q);
     void setHeatSource(const Coefficient* Q) { heatSource_.setAll(Q); }
@@ -43,7 +44,7 @@ public:
 private:
     struct ConvBC { const Coefficient* h; const Coefficient* Tinf; };
     
-    DomainMappedScalarCoefficient conductivity_;
+    DomainMappedMatrixCoefficient conductivity_;
     DomainMappedScalarCoefficient heatSource_;
     std::map<int, const Coefficient*> temperatureBCs_;
     std::map<int, ConvBC> convBCs_;

@@ -12,6 +12,7 @@ namespace mpfem {
  * @brief Electrostatics solver
  * 
  * Solves: -div(sigma * grad V) = 0
+ * sigma is a 3x3 conductivity tensor (matrix coefficient)
  */
 class ElectrostaticsSolver : public PhysicsFieldSolver {
 public:
@@ -24,10 +25,10 @@ public:
     
     bool initialize(const Mesh& mesh, FieldValues& fieldValues);
     
-    // Material coefficients
-    void setConductivity(const std::set<int>& domains, const Coefficient* sigma);
-    void setConductivity(const Coefficient* sigma) { conductivity_.setAll(sigma); }
-    const DomainMappedScalarCoefficient& conductivity() const { return conductivity_; }
+    // Material coefficients - matrix form for anisotropic conductivity
+    void setConductivity(const std::set<int>& domains, const MatrixCoefficient* sigma);
+    void setConductivity(const MatrixCoefficient* sigma) { conductivity_.setAll(sigma); }
+    const DomainMappedMatrixCoefficient& conductivity() const { return conductivity_; }
     
     // Boundary conditions
     void addVoltageBC(const std::set<int>& boundaryIds, const Coefficient* voltage);
@@ -36,7 +37,7 @@ public:
     void assemble() override;
 
 private:
-    DomainMappedScalarCoefficient conductivity_;
+    DomainMappedMatrixCoefficient conductivity_;
     std::map<int, const Coefficient*> voltageBCs_;
 };
 

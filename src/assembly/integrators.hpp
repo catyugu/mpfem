@@ -8,46 +8,37 @@
 namespace mpfem {
 
 // =============================================================================
-// Domain integrators (bilinear) - scalar field
+// Diffusion integrator - matrix coefficient
 // =============================================================================
 
 /**
- * @brief Diffusion integrator: ∫ σ ∇φᵢ · ∇φⱼ dΩ
+ * @brief Diffusion integrator: ∫ (∇φᵢ)ᵀ · D · ∇φⱼ dΩ
  * 
- * For isotropic diffusion with scalar coefficient.
- * For anisotropic diffusion, use AnisotropicDiffusionIntegrator.
+ * D is a 3x3 matrix coefficient (diffusivity/conductivity tensor).
+ * - For isotropic: D = σ * I (use diagonalMatrixCoefficient)
+ * - For anisotropic: D is full tensor
  */
-class DiffusionIntegrator : public DomainBilinearIntegrator {
+class DiffusionIntegrator : public DomainBilinearIntegrator<MatrixCoefficient> {
 public:
-    using DomainBilinearIntegrator::DomainBilinearIntegrator;
+    DiffusionIntegrator() = default;
+    explicit DiffusionIntegrator(const MatrixCoefficient* c) : DomainBilinearIntegrator<MatrixCoefficient>(c) {}
     
     void assembleElementMatrix(const ReferenceElement& ref,
                                ElementTransform& trans,
                                Matrix& elmat) const override;
 };
 
-/**
- * @brief Anisotropic diffusion integrator: ∫ (∇φᵢ)ᵀ · D · ∇φⱼ dΩ
- * 
- * D is a 3x3 matrix coefficient (diffusivity tensor).
- * For isotropic case, D = σ * I (identity matrix).
- */
-class AnisotropicDiffusionIntegrator : public DomainBilinearIntegrator, 
-                                        public MatrixCoefficientIntegratorBase {
-public:
-    using MatrixCoefficientIntegratorBase::MatrixCoefficientIntegratorBase;
-    
-    void assembleElementMatrix(const ReferenceElement& ref,
-                               ElementTransform& trans,
-                               Matrix& elmat) const override;
-};
+// =============================================================================
+// Mass integrator
+// =============================================================================
 
 /**
  * @brief Mass integrator: ∫ ρ φᵢ φⱼ dΩ
  */
-class MassIntegrator : public DomainBilinearIntegrator {
+class MassIntegrator : public DomainBilinearIntegrator<Coefficient> {
 public:
-    using DomainBilinearIntegrator::DomainBilinearIntegrator;
+    MassIntegrator() = default;
+    explicit MassIntegrator(const Coefficient* c) : DomainBilinearIntegrator<Coefficient>(c) {}
     
     void assembleElementMatrix(const ReferenceElement& ref,
                                ElementTransform& trans,
@@ -55,15 +46,16 @@ public:
 };
 
 // =============================================================================
-// Domain integrators (linear) - scalar field
+// Domain load integrator
 // =============================================================================
 
 /**
  * @brief Domain load integrator: ∫ f φᵢ dΩ
  */
-class DomainLFIntegrator : public DomainLinearIntegrator {
+class DomainLFIntegrator : public DomainLinearIntegrator<Coefficient> {
 public:
-    using DomainLinearIntegrator::DomainLinearIntegrator;
+    DomainLFIntegrator() = default;
+    explicit DomainLFIntegrator(const Coefficient* c) : DomainLinearIntegrator<Coefficient>(c) {}
     
     void assembleElementVector(const ReferenceElement& ref,
                                ElementTransform& trans,
@@ -71,15 +63,16 @@ public:
 };
 
 // =============================================================================
-// Face integrators (linear) - scalar field
+// Boundary load integrator
 // =============================================================================
 
 /**
  * @brief Boundary load integrator: ∫ g φᵢ dΓ
  */
-class BoundaryLFIntegrator : public FaceLinearIntegrator {
+class BoundaryLFIntegrator : public FaceLinearIntegrator<Coefficient> {
 public:
-    using FaceLinearIntegrator::FaceLinearIntegrator;
+    BoundaryLFIntegrator() = default;
+    explicit BoundaryLFIntegrator(const Coefficient* c) : FaceLinearIntegrator<Coefficient>(c) {}
     
     void assembleFaceVector(const ReferenceElement& ref,
                             FacetElementTransform& trans,
@@ -87,15 +80,16 @@ public:
 };
 
 // =============================================================================
-// Face integrators (bilinear) - scalar field
+// Convection integrators (Robin BC)
 // =============================================================================
 
 /**
  * @brief Convection mass integrator (Robin BC matrix part): ∫ h φᵢ φⱼ dΓ
  */
-class ConvectionMassIntegrator : public FaceBilinearIntegrator {
+class ConvectionMassIntegrator : public FaceBilinearIntegrator<Coefficient> {
 public:
-    using FaceBilinearIntegrator::FaceBilinearIntegrator;
+    ConvectionMassIntegrator() = default;
+    explicit ConvectionMassIntegrator(const Coefficient* c) : FaceBilinearIntegrator<Coefficient>(c) {}
     
     void assembleFaceMatrix(const ReferenceElement& ref,
                             FacetElementTransform& trans,
@@ -105,13 +99,12 @@ public:
 /**
  * @brief Convection load integrator (Robin BC vector part): ∫ h Tinf φᵢ dΓ
  */
-class ConvectionLFIntegrator : public FaceLinearIntegrator {
+class ConvectionLFIntegrator : public FaceLinearIntegrator<Coefficient> {
 public:
     ConvectionLFIntegrator() = default;
     
-    /// Constructor with convection coefficient and ambient temperature coefficient (non-owning)
     ConvectionLFIntegrator(const Coefficient* h, const Coefficient* Tinf)
-        : FaceLinearIntegrator(h), Tinf_(Tinf) {}
+        : FaceLinearIntegrator<Coefficient>(h), Tinf_(Tinf) {}
     
     void setAmbientTemperature(const Coefficient* Tinf) { Tinf_ = Tinf; }
     
@@ -120,17 +113,15 @@ public:
                             Vector& elvec) const override;
     
 private:
-    const Coefficient* Tinf_ = nullptr;  ///< Ambient temperature coefficient (non-owning)
+    const Coefficient* Tinf_ = nullptr;
 };
 
 // =============================================================================
-// Elasticity integrators - vector field specific
+// Elasticity integrators
 // =============================================================================
 
 /**
  * @brief Elasticity integrator: ∫ (λ div(u) div(v) + 2μ ε(u):ε(v)) dΩ
- * 
- * Output elmat is (nd*vdim) x (nd*vdim) matrix.
  */
 class ElasticityIntegrator : public VectorDomainBilinearIntegrator {
 public:
@@ -149,10 +140,6 @@ private:
 
 /**
  * @brief Thermal load integrator: ∫ (3K α_T (T - T_ref) div(v)) dΩ
- * 
- * Output elvec is (nd*vdim) dimensional vector.
- * Note: alphaT coefficient should return thermal strain alpha_T * (T - Tref)
- *       e.g., use a lambda-based ScalarCoefficient.
  */
 class ThermalLoadIntegrator : public VectorDomainLinearIntegrator {
 public:

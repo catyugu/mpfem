@@ -18,9 +18,9 @@ struct MaterialPropertyModel {
 
     // General property storage
     std::map<std::string, double> properties;
-    std::map<std::string, Matrix3> matrixProperties;  // Matrix (anisotropic) properties
+    std::map<std::string, Matrix3> matrixProperties;
 
-    // Convenient accessors for common properties
+    // Mechanical properties (scalar)
     std::optional<double> youngModulus;           // E [Pa]
     std::optional<double> poissonRatio;           // nu [-]
     std::optional<double> density;                // rho [kg/m^3]
@@ -31,11 +31,9 @@ struct MaterialPropertyModel {
     std::optional<double> alpha;
     std::optional<double> tref;
     
-    // Conductivities
-    std::optional<double> electricConductivity;   // sigma [S/m] - isotropic
-    std::optional<double> thermalConductivity;    // k [W/(m·K)] - isotropic
-    std::optional<Matrix3> electricConductivityTensor;  // Anisotropic
-    std::optional<Matrix3> thermalConductivityTensor;   // Anisotropic
+    // Conductivities (always matrix form)
+    std::optional<Matrix3> electricConductivity;  // sigma tensor [S/m]
+    std::optional<Matrix3> thermalConductivity;   // k tensor [W/(m·K)]
     
     // Thermal expansion
     std::optional<double> thermalExpansion;       // alpha_T [1/K]
@@ -58,38 +56,21 @@ struct MaterialPropertyModel {
         matrixProperties[name] = mat;
     }
     
-    /// Check if a property is anisotropic (has matrix form)
-    bool isAnisotropic(const std::string& name) const {
-        return matrixProperties.find(name) != matrixProperties.end();
-    }
-
-    std::optional<double> getElectricResistivity(double temperature) const {
+    /// Get temperature-dependent electric conductivity as matrix
+    /// Returns diagonal matrix for isotropic case
+    std::optional<Matrix3> getElectricConductivityMatrix(double temperature) const {
+        // Temperature-dependent case
         if (rho0.has_value() && rho0.value() > 0.0) {
             double a = alpha.value_or(0.0);
             double t = tref.value_or(298.0);
-            return rho0.value() * (1.0 + a * (temperature - t));
+            double resistivity = rho0.value() * (1.0 + a * (temperature - t));
+            if (resistivity > 0.0) {
+                return Matrix3::Identity() / resistivity;  // Diagonal matrix
+            }
         }
-        if (electricConductivity.has_value() && electricConductivity.value() > 0.0) {
-            return 1.0 / electricConductivity.value();
-        }
-        return std::nullopt;
-    }
-
-    std::optional<double> getElectricConductivity(double temperature) const {
-        auto resistivity = getElectricResistivity(temperature);
-        if (resistivity.has_value() && resistivity.value() > 0.0) {
-            return 1.0 / resistivity.value();
-        }
-        return electricConductivity;
-    }
-    
-    /// Get thermal conductivity (scalar for isotropic, or diagonal element)
-    std::optional<double> getThermalConductivityScalar() const {
-        if (thermalConductivity.has_value()) return thermalConductivity;
-        if (thermalConductivityTensor.has_value()) {
-            // Return average of diagonal for anisotropic
-            const auto& m = thermalConductivityTensor.value();
-            return (m(0,0) + m(1,1) + m(2,2)) / 3.0;
+        // Direct matrix form
+        if (electricConductivity.has_value()) {
+            return electricConductivity.value();
         }
         return std::nullopt;
     }
@@ -121,12 +102,6 @@ public:
 
     size_t size() const { return materials_.size(); }
     void clear() { materials_.clear(); }
-
-    std::optional<double> getProperty(const std::string& tag, const std::string& propName) const {
-        auto* mat = getMaterial(tag);
-        if (!mat) return std::nullopt;
-        return mat->getProperty(propName);
-    }
 
     auto begin() const { return materials_.begin(); }
     auto end() const { return materials_.end(); }

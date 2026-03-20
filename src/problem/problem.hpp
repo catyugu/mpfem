@@ -6,6 +6,7 @@
 #include "mesh/mesh.hpp"
 #include "model/case_definition.hpp"
 #include "model/material_database.hpp"
+#include "physics/field_values.hpp"
 #include <memory>
 #include <map>
 #include <string>
@@ -13,10 +14,10 @@
 namespace mpfem {
 
 /**
- * @brief 问题基类 - 纯数据持有者
+ * @brief 问题基类 - 数据持有者
  * 
  * 所有问题类型（稳态/瞬态）的公共数据基类。
- * 不持有求解器，只持有原始数据。
+ * FieldValues 管理 GridFunction 的生命周期。
  */
 class Problem {
 public:
@@ -35,11 +36,14 @@ public:
     CaseDefinition caseDef;
     std::map<int, std::string> domainMaterial;
     
+    /// 场值管理器（管理所有 GridFunction 的生命周期）
+    FieldValues fieldValues;
+    
     /// 所有系数统一存储
     std::map<std::string, AnyCoefficient> coefficients;
     
     // =========================================================================
-    // 模板化系数访问方法
+    // 系数访问方法
     // =========================================================================
     
     template<typename T>

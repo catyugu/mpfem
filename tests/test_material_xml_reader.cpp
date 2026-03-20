@@ -34,9 +34,9 @@ TEST_F(MaterialXmlReaderTest, ReadBusbarMaterials) {
     const MaterialPropertyModel* copper = database.getMaterial("mat1");
     ASSERT_NE(copper, nullptr);
     
-    // Check key properties for Copper (now std::optional)
-    EXPECT_GT(copper->electricConductivity.value_or(0.0), 0.0);
-    EXPECT_GT(copper->thermalConductivity.value_or(0.0), 0.0);
+    // Check key properties for Copper (conductivities are now Matrix3)
+    EXPECT_TRUE(copper->electricConductivity.has_value());
+    EXPECT_TRUE(copper->thermalConductivity.has_value());
     EXPECT_GT(copper->youngModulus.value_or(0.0), 0.0);
     EXPECT_GT(copper->poissonRatio.value_or(0.0), 0.0);
     EXPECT_GT(copper->density.value_or(0.0), 0.0);
@@ -50,8 +50,8 @@ TEST_F(MaterialXmlReaderTest, ReadBusbarMaterials) {
     ASSERT_NE(titanium, nullptr);
     
     // Check key properties for Titanium
-    EXPECT_GT(titanium->electricConductivity.value_or(0.0), 0.0);
-    EXPECT_GT(titanium->thermalConductivity.value_or(0.0), 0.0);
+    EXPECT_TRUE(titanium->electricConductivity.has_value());
+    EXPECT_TRUE(titanium->thermalConductivity.has_value());
     EXPECT_GT(titanium->youngModulus.value_or(0.0), 0.0);
     EXPECT_GT(titanium->poissonRatio.value_or(0.0), 0.0);
 }
@@ -85,17 +85,21 @@ TEST_F(MaterialXmlReaderTest, TemperatureDependentConductivity) {
     const MaterialPropertyModel* copper = database.getMaterial("mat1");
     ASSERT_NE(copper, nullptr);
 
-    // Test temperature-dependent conductivity (now returns std::optional)
-    auto sigma_293 = copper->getElectricConductivity(293.15);
-    auto sigma_373 = copper->getElectricConductivity(373.15);
+    // Test temperature-dependent conductivity (now returns std::optional<Matrix3>)
+    auto sigma_293 = copper->getElectricConductivityMatrix(293.15);
+    auto sigma_373 = copper->getElectricConductivityMatrix(373.15);
 
     // Conductivity should decrease with temperature for metals
     EXPECT_TRUE(sigma_293.has_value());
     EXPECT_TRUE(sigma_373.has_value());
-    EXPECT_GT(sigma_293.value(), 0.0);
-    EXPECT_GT(sigma_373.value(), 0.0);
-    // Note: This depends on the temperature coefficient being positive
-    // For copper, conductivity decreases with temperature
+    
+    // Check that matrix is diagonal (isotropic case)
+    const auto& mat293 = sigma_293.value();
+    EXPECT_GT(mat293(0, 0), 0.0);
+    EXPECT_GT(mat293(1, 1), 0.0);
+    EXPECT_GT(mat293(2, 2), 0.0);
+    EXPECT_NEAR(mat293(0, 0), mat293(1, 1), 1e-10);
+    EXPECT_NEAR(mat293(0, 0), mat293(2, 2), 1e-10);
 }
 
 TEST_F(MaterialXmlReaderTest, MaterialNotFound) {

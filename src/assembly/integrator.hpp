@@ -11,192 +11,113 @@
 namespace mpfem {
 
 // =============================================================================
-// Base integrator interface - provides coefficient evaluation helpers
+// Abstract interfaces (non-template for polymorphic storage)
 // =============================================================================
 
-/**
- * @brief Integrator base class
- * 
- * Ownership policy: Integrators do NOT own coefficients.
- * - Coefficient lifecycle is managed by caller (solver, Problem, etc.)
- * - Integrators hold non-owning raw pointer references
- */
-class IntegratorBase {
-protected:
-    const Coefficient* q_ = nullptr;  ///< Coefficient pointer (non-owning)
-    
-    /// Evaluate scalar coefficient at integration point
-    void evalCoef(ElementTransform& t, Real& result) const {
-        if (q_) {
-            q_->eval(t, result);
-        } else {
-            result = 1.0;
-        }
-    }
-    
-    void evalCoef(FacetElementTransform& t, Real& result) const {
-        if (q_) {
-            q_->eval(t, result);
-        } else {
-            result = 1.0;
-        }
-    }
-
+class DomainBilinearIntegratorBase {
 public:
-    IntegratorBase() = default;
-    
-    /// Constructor: coefficient pointer (non-owning, caller manages lifecycle)
-    explicit IntegratorBase(const Coefficient* q) : q_(q) {}
-    
-    virtual ~IntegratorBase() = default;
-    
-    // Non-copyable
-    IntegratorBase(const IntegratorBase&) = delete;
-    IntegratorBase& operator=(const IntegratorBase&) = delete;
-    
-    // Movable
-    IntegratorBase(IntegratorBase&& other) noexcept : q_(other.q_) {
-        other.q_ = nullptr;
-    }
-    IntegratorBase& operator=(IntegratorBase&& other) noexcept {
-        if (this != &other) {
-            q_ = other.q_;
-            other.q_ = nullptr;
-        }
-        return *this;
-    }
-};
-
-// =============================================================================
-// Domain bilinear integrator base - scalar field
-// =============================================================================
-
-class DomainBilinearIntegrator : public IntegratorBase {
-public:
-    using IntegratorBase::IntegratorBase;
-    
-    /// Assemble element matrix: ∫ coef * L(φ_i) * L(φ_j) dΩ
-    /// Output elmat is nd x nd matrix
+    virtual ~DomainBilinearIntegratorBase() = default;
     virtual void assembleElementMatrix(const ReferenceElement& ref, 
                                         ElementTransform& trans, 
                                         Matrix& elmat) const = 0;
 };
 
-// =============================================================================
-// Face bilinear integrator base - scalar field
-// =============================================================================
-
-class FaceBilinearIntegrator : public IntegratorBase {
+class FaceBilinearIntegratorBase {
 public:
-    using IntegratorBase::IntegratorBase;
-    
-    /// Assemble face matrix: ∫ coef * L(φ_i) * L(φ_j) dΓ
-    /// Output elmat is nd x nd matrix
+    virtual ~FaceBilinearIntegratorBase() = default;
     virtual void assembleFaceMatrix(const ReferenceElement& ref,
                                      FacetElementTransform& trans,
                                      Matrix& elmat) const = 0;
 };
 
-// =============================================================================
-// Domain linear integrator base - scalar field
-// =============================================================================
-
-class DomainLinearIntegrator : public IntegratorBase {
+class DomainLinearIntegratorBase {
 public:
-    using IntegratorBase::IntegratorBase;
-    
-    /// Assemble element vector: ∫ coef * L(φ_i) dΩ
-    /// Output elvec is nd dimensional vector
+    virtual ~DomainLinearIntegratorBase() = default;
     virtual void assembleElementVector(const ReferenceElement& ref,
                                         ElementTransform& trans,
                                         Vector& elvec) const = 0;
 };
 
-// =============================================================================
-// Face linear integrator base - scalar field
-// =============================================================================
-
-class FaceLinearIntegrator : public IntegratorBase {
+class FaceLinearIntegratorBase {
 public:
-    using IntegratorBase::IntegratorBase;
-    
-    /// Assemble face vector: ∫ coef * L(φ_i) dΓ
-    /// Output elvec is nd dimensional vector
+    virtual ~FaceLinearIntegratorBase() = default;
     virtual void assembleFaceVector(const ReferenceElement& ref,
                                      FacetElementTransform& trans,
                                      Vector& elvec) const = 0;
 };
 
 // =============================================================================
-// Vector field integrator bases (for displacement, velocity, etc.)
+// Template implementations with coefficient storage
 // =============================================================================
 
-/// Vector field domain bilinear integrator base
-class VectorDomainBilinearIntegrator : public IntegratorBase {
-public:
-    using IntegratorBase::IntegratorBase;
+template<typename CoefType>
+class DomainBilinearIntegrator : public DomainBilinearIntegratorBase {
+protected:
+    const CoefType* coef_ = nullptr;
     
-    /// Assemble element matrix (vector field version)
-    /// vdim is provided by FESpace, used internally by integrator
+    DomainBilinearIntegrator() = default;
+    explicit DomainBilinearIntegrator(const CoefType* c) : coef_(c) {}
+};
+
+template<typename CoefType>
+class FaceBilinearIntegrator : public FaceBilinearIntegratorBase {
+protected:
+    const CoefType* coef_ = nullptr;
+    
+    FaceBilinearIntegrator() = default;
+    explicit FaceBilinearIntegrator(const CoefType* c) : coef_(c) {}
+};
+
+template<typename CoefType>
+class DomainLinearIntegrator : public DomainLinearIntegratorBase {
+protected:
+    const CoefType* coef_ = nullptr;
+    
+    DomainLinearIntegrator() = default;
+    explicit DomainLinearIntegrator(const CoefType* c) : coef_(c) {}
+};
+
+template<typename CoefType>
+class FaceLinearIntegrator : public FaceLinearIntegratorBase {
+protected:
+    const CoefType* coef_ = nullptr;
+    
+    FaceLinearIntegrator() = default;
+    explicit FaceLinearIntegrator(const CoefType* c) : coef_(c) {}
+};
+
+// =============================================================================
+// Vector field integrator bases
+// =============================================================================
+
+class VectorDomainBilinearIntegrator {
+protected:
+    const Coefficient* coef_ = nullptr;
+    
+    VectorDomainBilinearIntegrator() = default;
+    explicit VectorDomainBilinearIntegrator(const Coefficient* c) : coef_(c) {}
+    
+public:
+    virtual ~VectorDomainBilinearIntegrator() = default;
     virtual void assembleElementMatrix(const ReferenceElement& ref,
                                         ElementTransform& trans,
                                         Matrix& elmat,
                                         int vdim) const = 0;
 };
 
-/// Vector field domain linear integrator base
-class VectorDomainLinearIntegrator : public IntegratorBase {
-public:
-    using IntegratorBase::IntegratorBase;
+class VectorDomainLinearIntegrator {
+protected:
+    const Coefficient* coef_ = nullptr;
     
-    /// Assemble element vector (vector field version)
+    VectorDomainLinearIntegrator() = default;
+    explicit VectorDomainLinearIntegrator(const Coefficient* c) : coef_(c) {}
+    
+public:
+    virtual ~VectorDomainLinearIntegrator() = default;
     virtual void assembleElementVector(const ReferenceElement& ref,
                                         ElementTransform& trans,
                                         Vector& elvec,
                                         int vdim) const = 0;
-};
-
-// =============================================================================
-// Matrix coefficient integrator base
-// =============================================================================
-
-/**
- * @brief Base class for integrators that use matrix coefficients
- * 
- * Used for anisotropic diffusion, etc.
- */
-class MatrixCoefficientIntegratorBase {
-protected:
-    const MatrixCoefficient* matCoef_ = nullptr;
-    
-    /// Evaluate matrix coefficient at integration point
-    void evalMatCoef(ElementTransform& t, Matrix3& result) const {
-        if (matCoef_) {
-            matCoef_->eval(t, result);
-        } else {
-            result = Matrix3::Identity();
-        }
-    }
-    
-    void evalMatCoef(FacetElementTransform& t, Matrix3& result) const {
-        if (matCoef_) {
-            matCoef_->eval(t, result);
-        } else {
-            result = Matrix3::Identity();
-        }
-    }
-
-public:
-    MatrixCoefficientIntegratorBase() = default;
-    explicit MatrixCoefficientIntegratorBase(const MatrixCoefficient* m) : matCoef_(m) {}
-    
-    virtual ~MatrixCoefficientIntegratorBase() = default;
-    
-    // Non-copyable, movable
-    MatrixCoefficientIntegratorBase(const MatrixCoefficientIntegratorBase&) = delete;
-    MatrixCoefficientIntegratorBase& operator=(const MatrixCoefficientIntegratorBase&) = delete;
-    MatrixCoefficientIntegratorBase(MatrixCoefficientIntegratorBase&&) = default;
-    MatrixCoefficientIntegratorBase& operator=(MatrixCoefficientIntegratorBase&&) = default;
 };
 
 }  // namespace mpfem

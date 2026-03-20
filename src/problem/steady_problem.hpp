@@ -2,18 +2,14 @@
 #define MPFEM_STEADY_PROBLEM_HPP
 
 #include "problem/problem.hpp"
-#include "problem/transient_problem.hpp"
 #include "physics/electrostatics_solver.hpp"
 #include "physics/heat_transfer_solver.hpp"
 #include "physics/structural_solver.hpp"
-#include "physics/field_values.hpp"
 #include "core/logger.hpp"
 
 namespace mpfem {
 
-/**
- * @brief Coupling solve result
- */
+/// Coupling solve result
 struct SteadyResult {
     bool converged = false;
     int iterations = 0;
@@ -23,14 +19,10 @@ struct SteadyResult {
 /**
  * @brief Steady problem
  * 
- * Inherits Problem data base class, adds solver ownership and solve method.
- * Owns FieldValues which manages all GridFunction objects.
+ * Inherits Problem base class, adds solver ownership and solve method.
  */
 class SteadyProblem : public Problem {
 public:
-    /// Field value manager (owns all GridFunction objects)
-    FieldValues fieldValues;
-    
     // Solvers (owning)
     std::unique_ptr<ElectrostaticsSolver> electrostatics;
     std::unique_ptr<HeatTransferSolver> heatTransfer;
@@ -48,9 +40,7 @@ public:
     bool hasThermalExpansion() const { return hasHeatTransfer() && hasStructural(); }
     bool isCoupled() const { return hasJouleHeating() || hasThermalExpansion(); }
     
-    /**
-     * @brief Execute coupled or single-field solve
-     */
+    /// Execute coupled or single-field solve
     SteadyResult solve() {
         ScopedTimer timer("Coupling solve");
         SteadyResult result;
