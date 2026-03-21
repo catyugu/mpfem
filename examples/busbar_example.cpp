@@ -12,7 +12,7 @@ using namespace mpfem;
 int main(int argc, char* argv[]) {
     Logger::setLevel(LogLevel::Info);
     
-    std::string caseDir = "cases/busbar";
+    std::string caseDir = "cases/busbar_steady";
     if (argc > 1) caseDir = argv[1];
     
     LOG_INFO << "=== Busbar Electro-Thermal Example ===";
@@ -23,7 +23,7 @@ int main(int argc, char* argv[]) {
 
         if (setup->isCoupled()) {
             LOG_INFO << "Running coupled electro-thermal solve...";
-            CouplingResult result = setup->solve();
+            SteadyResult result = setup->solve();
 
             if (!result.converged) {
                 LOG_WARN << "Coupling did not converge after " << result.iterations << " iterations";

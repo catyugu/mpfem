@@ -8,6 +8,8 @@
 
 namespace mpfem {
 
+struct SolverConfig;
+
 /**
  * @brief Abstract base class for linear solvers.
  * 
@@ -58,6 +60,9 @@ public:
     virtual void setPrintLevel(int level) {
         printLevel_ = level;
     }
+    
+    /// Apply solver-specific configuration
+    virtual void applyConfig(const SolverConfig&) {}
     
     /// Get number of iterations (for iterative solvers)
     virtual int iterations() const { return iterations_; }

@@ -3,7 +3,6 @@
 
 #include "core/types.hpp"
 #include <functional>
-#include <vector>
 #include <set>
 #include <map>
 #include <memory>
@@ -15,136 +14,155 @@ class ElementTransform;
 class GridFunction;
 
 // =============================================================================
-// 系数类型标签
+// Coefficient type tags
 // =============================================================================
 
 enum class CoefficientKind { Scalar, Vector, Matrix };
 
 // =============================================================================
-// 标量系数基类
+// Base classes
 // =============================================================================
 
 class Coefficient {
 public:
     virtual ~Coefficient() = default;
-    virtual Real eval(ElementTransform& trans, Real t = 0.0) const = 0;
+    virtual void eval(ElementTransform& trans, Real& result, Real t = 0.0) const = 0;
     static constexpr CoefficientKind kind = CoefficientKind::Scalar;
 };
-
-// =============================================================================
-// 向量系数基类
-// =============================================================================
 
 class VectorCoefficient {
 public:
     virtual ~VectorCoefficient() = default;
-    virtual void eval(ElementTransform& trans, Real* result, Real t = 0.0) const = 0;
-    virtual int dim() const = 0;
+    virtual void eval(ElementTransform& trans, Vector3& result, Real t = 0.0) const = 0;
     static constexpr CoefficientKind kind = CoefficientKind::Vector;
 };
 
-// =============================================================================
-// 基础系数
-// =============================================================================
-
-class ConstantCoefficient : public Coefficient {
+class MatrixCoefficient {
 public:
-    explicit ConstantCoefficient(Real c = 1.0) : value_(c) {}
-    Real eval(ElementTransform&, Real = 0.0) const override { return value_; }
-    void set(Real c) { value_ = c; }
-    Real get() const { return value_; }
-private:
-    Real value_;
+    virtual ~MatrixCoefficient() = default;
+    virtual void eval(ElementTransform& trans, Matrix3& result, Real t = 0.0) const = 0;
+    static constexpr CoefficientKind kind = CoefficientKind::Matrix;
 };
 
-class FunctionCoefficient : public Coefficient {
+// =============================================================================
+// Lambda-based coefficients
+// =============================================================================
+
+class ScalarCoefficient : public Coefficient {
 public:
-    using Func = std::function<Real(Real, Real, Real, Real)>;
-    explicit FunctionCoefficient(Func f) : func_(std::move(f)) {}
-    Real eval(ElementTransform& trans, Real t = 0.0) const override;
+    using Func = std::function<void(ElementTransform&, Real&, Real)>;
+    explicit ScalarCoefficient(Func f) : func_(std::move(f)) {}
+    void eval(ElementTransform& trans, Real& result, Real t) const override { func_(trans, result, t); }
+private:
+    Func func_;
+};
+
+class VectorFunctionCoefficient : public VectorCoefficient {
+public:
+    using Func = std::function<void(ElementTransform&, Vector3&, Real)>;
+    explicit VectorFunctionCoefficient(Func f) : func_(std::move(f)) {}
+    void eval(ElementTransform& trans, Vector3& result, Real t) const override { func_(trans, result, t); }
+private:
+    Func func_;
+};
+
+class MatrixFunctionCoefficient : public MatrixCoefficient {
+public:
+    using Func = std::function<void(ElementTransform&, Matrix3&, Real)>;
+    explicit MatrixFunctionCoefficient(Func f) : func_(std::move(f)) {}
+    void eval(ElementTransform& trans, Matrix3& result, Real t) const override { func_(trans, result, t); }
 private:
     Func func_;
 };
 
 // =============================================================================
-// 域映射系数（模板化）
+// DomainMappedCoefficient - Template implementation
 // =============================================================================
 
-template<typename CoefType>
-class DomainMappedCoefficientT;
+// Type traits for result types
+template<typename CoefBase> struct CoefTraits;
+template<> struct CoefTraits<Coefficient> { using ResultType = Real; };
+template<> struct CoefTraits<VectorCoefficient> { using ResultType = Vector3; };
+template<> struct CoefTraits<MatrixCoefficient> { using ResultType = Matrix3; };
 
-template<>
-class DomainMappedCoefficientT<Coefficient> : public Coefficient {
+/**
+ * @brief Domain-mapped coefficient supporting different coefficients per domain
+ * 
+ * Single template implementation handles scalar, vector, and matrix types.
+ */
+template<typename CoefBase>
+class DomainMappedCoefficient : public CoefBase {
+    using ResultType = typename CoefTraits<CoefBase>::ResultType;
+    
 public:
-    DomainMappedCoefficientT() = default;
-    DomainMappedCoefficientT(DomainMappedCoefficientT&& o) noexcept
-        : coefs_(std::move(o.coefs_)), defaultCoef_(o.defaultCoef_) { o.defaultCoef_ = nullptr; }
-    DomainMappedCoefficientT& operator=(DomainMappedCoefficientT&& o) noexcept {
-        if (this != &o) { coefs_ = std::move(o.coefs_); defaultCoef_ = o.defaultCoef_; o.defaultCoef_ = nullptr; }
+    DomainMappedCoefficient() = default;
+    
+    DomainMappedCoefficient(DomainMappedCoefficient&& o) noexcept
+        : coefs_(std::move(o.coefs_)), defaultCoef_(o.defaultCoef_) {
+        o.defaultCoef_ = nullptr;
+        o.coefs_.clear();
+    }
+    
+    DomainMappedCoefficient& operator=(DomainMappedCoefficient&& o) noexcept {
+        if (this != &o) { 
+            coefs_ = std::move(o.coefs_); 
+            defaultCoef_ = o.defaultCoef_; 
+            o.defaultCoef_ = nullptr; 
+        }
         return *this;
     }
     
-    void set(int domainId, const Coefficient* coef) { coefs_[domainId] = coef; }
-    void set(const std::set<int>& domainIds, const Coefficient* coef) { for (int id : domainIds) coefs_[id] = coef; }
-    void setAll(const Coefficient* coef) { defaultCoef_ = coef; coefs_.clear(); }
-    const Coefficient* get(int domainId) const { auto it = coefs_.find(domainId); return it != coefs_.end() ? it->second : defaultCoef_; }
+    void set(int domainId, const CoefBase* coef) { coefs_[domainId] = coef; }
+    void set(const std::set<int>& domainIds, const CoefBase* coef) { 
+        for (int id : domainIds) coefs_[id] = coef; 
+    }
+    void setAll(const CoefBase* coef) { defaultCoef_ = coef; coefs_.clear(); }
+    
+    const CoefBase* get(int domainId) const { 
+        auto it = coefs_.find(domainId); 
+        return it != coefs_.end() ? it->second : defaultCoef_; 
+    }
+    
     bool empty() const { return coefs_.empty() && !defaultCoef_; }
     
-    Real eval(ElementTransform& trans, Real t = 0.0) const override;
+    void eval(ElementTransform& trans, ResultType& result, Real t) const override;
+
 private:
-    std::map<int, const Coefficient*> coefs_;
-    const Coefficient* defaultCoef_ = nullptr;
+    std::map<int, const CoefBase*> coefs_;
+    const CoefBase* defaultCoef_ = nullptr;
 };
 
-using DomainMappedCoefficient = DomainMappedCoefficientT<Coefficient>;
-// =============================================================================
-// 物理耦合系数
-// =============================================================================
-
-class TemperatureDependentConductivity : public Coefficient {
-public:
-    TemperatureDependentConductivity(const GridFunction& T, Real rho0, Real alpha, Real tref)
-        : T_(&T), rho0_(rho0), alpha_(alpha), tref_(tref) {}
-    Real eval(ElementTransform& trans, Real t = 0.0) const override;
-private:
-    const GridFunction* T_;
-    Real rho0_, alpha_, tref_;
-};
-
-class JouleHeatCoefficient : public Coefficient {
-public:
-    JouleHeatCoefficient(const GridFunction& V, const Coefficient& sigma) : V_(&V), sigma_(&sigma) {}
-    Real eval(ElementTransform& trans, Real t = 0.0) const override;
-private:
-    const GridFunction* V_;
-    const Coefficient* sigma_;
-};
-
-class ThermalExpansionCoefficient : public Coefficient {
-public:
-    ThermalExpansionCoefficient(const GridFunction& T, Real alpha_T, Real T_ref = 293.15)
-        : T_(&T), alpha_T_(alpha_T), T_ref_(T_ref) {}
-    Real eval(ElementTransform& trans, Real t = 0.0) const override;
-private:
-    const GridFunction* T_;
-    Real alpha_T_, T_ref_;
-};
+// Type aliases
+using DomainMappedScalarCoefficient = DomainMappedCoefficient<Coefficient>;
+using DomainMappedVectorCoefficient = DomainMappedCoefficient<VectorCoefficient>;
+using DomainMappedMatrixCoefficient = DomainMappedCoefficient<MatrixCoefficient>;
 
 // =============================================================================
-// 向量系数
+// Convenience functions for creating constant coefficients
 // =============================================================================
 
-class ConstantVectorCoefficient : public VectorCoefficient {
-public:
-    explicit ConstantVectorCoefficient(Real x, Real y, Real z) : v_{x, y, z} {}
-    void eval(ElementTransform&, Real* r, Real = 0.0) const override { r[0] = v_[0]; r[1] = v_[1]; r[2] = v_[2]; }
-    int dim() const override { return 3; }
-private:
-    Real v_[3];
-};
+inline std::unique_ptr<Coefficient> constantCoefficient(Real value) {
+    return std::make_unique<ScalarCoefficient>(
+        [value](ElementTransform&, Real& r, Real) { r = value; });
+}
+
+inline std::unique_ptr<VectorCoefficient> constantVectorCoefficient(Real x, Real y, Real z) {
+    return std::make_unique<VectorFunctionCoefficient>(
+        [x, y, z](ElementTransform&, Vector3& r, Real) { r << x, y, z; });
+}
+
+inline std::unique_ptr<MatrixCoefficient> diagonalMatrixCoefficient(Real diag) {
+    return std::make_unique<MatrixFunctionCoefficient>(
+        [diag](ElementTransform&, Matrix3& r, Real) { r = Matrix3::Identity() * diag; });
+}
+
+inline std::unique_ptr<MatrixCoefficient> constantMatrixCoefficient(const Matrix3& mat) {
+    return std::make_unique<MatrixFunctionCoefficient>(
+        [mat](ElementTransform&, Matrix3& r, Real) { r = mat; });
+}
 
 // =============================================================================
-// 类型擦除系数包装器
+// AnyCoefficient - Type-erased wrapper
 // =============================================================================
 
 class AnyCoefficient {
@@ -152,43 +170,39 @@ public:
     AnyCoefficient() = default;
     explicit AnyCoefficient(std::unique_ptr<Coefficient> c) : data_(std::move(c)) {}
     explicit AnyCoefficient(std::unique_ptr<VectorCoefficient> c) : data_(std::move(c)) {}
+    explicit AnyCoefficient(std::unique_ptr<MatrixCoefficient> c) : data_(std::move(c)) {}
     
     AnyCoefficient(AnyCoefficient&&) = default;
     AnyCoefficient& operator=(AnyCoefficient&&) = default;
-    AnyCoefficient(const AnyCoefficient&) = delete;
-    AnyCoefficient& operator=(const AnyCoefficient&) = delete;
     
     CoefficientKind kind() const {
-        return data_.index() == 1 ? CoefficientKind::Scalar :
-               data_.index() == 2 ? CoefficientKind::Vector : CoefficientKind::Scalar;
+        if (std::holds_alternative<std::unique_ptr<VectorCoefficient>>(data_)) return CoefficientKind::Vector;
+        if (std::holds_alternative<std::unique_ptr<MatrixCoefficient>>(data_)) return CoefficientKind::Matrix;
+        return CoefficientKind::Scalar;
     }
     
-    bool empty() const { return data_.index() == 0; }
+    bool empty() const { return std::holds_alternative<std::monostate>(data_); }
     
-    template<typename T>
-    const T* get() const;
+    template<typename T> const T* get() const;
     
 private:
-    std::variant<std::monostate, std::unique_ptr<Coefficient>, std::unique_ptr<VectorCoefficient>> data_;
+    std::variant<std::monostate, std::unique_ptr<Coefficient>, 
+                 std::unique_ptr<VectorCoefficient>, std::unique_ptr<MatrixCoefficient>> data_;
 };
 
 template<> inline const Coefficient* AnyCoefficient::get<Coefficient>() const {
-    auto* p = std::get_if<1>(&data_);
+    auto* p = std::get_if<std::unique_ptr<Coefficient>>(&data_);
     return p ? p->get() : nullptr;
 }
 
 template<> inline const VectorCoefficient* AnyCoefficient::get<VectorCoefficient>() const {
-    auto* p = std::get_if<2>(&data_);
+    auto* p = std::get_if<std::unique_ptr<VectorCoefficient>>(&data_);
     return p ? p->get() : nullptr;
 }
 
-// 工厂函数
-template<typename T, typename... Args>
-AnyCoefficient makeCoefficient(Args&&... args) {
-    if constexpr (std::is_base_of_v<Coefficient, T>)
-        return AnyCoefficient(std::make_unique<T>(std::forward<Args>(args)...));
-    else if constexpr (std::is_base_of_v<VectorCoefficient, T>)
-        return AnyCoefficient(std::make_unique<T>(std::forward<Args>(args)...));
+template<> inline const MatrixCoefficient* AnyCoefficient::get<MatrixCoefficient>() const {
+    auto* p = std::get_if<std::unique_ptr<MatrixCoefficient>>(&data_);
+    return p ? p->get() : nullptr;
 }
 
 }  // namespace mpfem

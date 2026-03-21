@@ -1,48 +1,33 @@
 #ifndef MPFEM_VALUE_PARSER_HPP
 #define MPFEM_VALUE_PARSER_HPP
 
+#include "core/types.hpp"
 #include <string>
 #include <map>
+#include <optional>
 
 namespace mpfem {
 
 /**
  * @brief Parses numeric values from COMSOL-like value strings.
- * 
- * Supports formats like:
- * - "20[mV]" -> 20.0
- * - "9[cm]" -> 9.0
- * - "0.02" -> 0.02
  */
 class ValueParser {
 public:
-    /**
-     * @brief Parses first scalar number from text such as "20[mV]".
-     * @param text Input text.
-     * @param value Parsed numeric value.
-     * @return True when parsing succeeds, false otherwise.
-     */
+    /// Parses first scalar number from text such as "20[mV]"
     static bool parseFirstNumber(const std::string& text, double& value);
-
-    /**
-     * @brief Parse a value string and resolve variables.
-     * @param text Input text (may contain variable references).
-     * @param variables Map of variable name to value.
-     * @param value Output value.
-     * @return True if parsing succeeds.
-     */
+    
+    /// Parse a value string and resolve variables
     static bool parseWithVariables(const std::string& text,
                                    const std::map<std::string, double>& variables,
                                    double& value);
-
-    /**
-     * @brief Parse a value string that may be a variable reference.
-     * @param text Input text.
-     * @param variables Map of variable name to value.
-     * @return Parsed value, or 0.0 if parsing fails.
-     */
+    
+    /// Parse a value string that may be a variable reference
     static double eval(const std::string& text,
                        const std::map<std::string, double>& variables);
+    
+    /// Parse matrix from format like "{'400','0','0','0','400','0','0','0','400'}"
+    /// Returns nullopt if not a matrix format, returns diagonal matrix if scalar
+    static std::optional<Matrix3> parseMatrix(const std::string& text);
 
 private:
     static std::string trim(const std::string& str);

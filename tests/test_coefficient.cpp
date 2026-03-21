@@ -17,77 +17,129 @@ protected:
     }
 };
 
-// ConstantCoefficient tests
-TEST_F(CoefficientTest, ConstantCoefficient_Value) {
-    ConstantCoefficient coef(3.14);
-    EXPECT_DOUBLE_EQ(coef.get(), 3.14);
-}
-
-TEST_F(CoefficientTest, ConstantCoefficient_Default) {
-    ConstantCoefficient coef;
-    EXPECT_DOUBLE_EQ(coef.get(), 1.0);
-}
-
-TEST_F(CoefficientTest, ConstantCoefficient_SetValue) {
-    ConstantCoefficient coef(1.0);
-    coef.set(2.5);
-    EXPECT_DOUBLE_EQ(coef.get(), 2.5);
-}
-
-// FunctionCoefficient tests
-TEST_F(CoefficientTest, FunctionCoefficient_Basic) {
-    FunctionCoefficient coef([](Real x, Real y, Real z, Real t) {
-        return x + 2.0 * y + t;
-    });
+// ScalarCoefficient tests (using lambda)
+TEST_F(CoefficientTest, ScalarCoefficient_Constant) {
+    auto coef = constantCoefficient(3.14);
     
-    // Simple test - just verify construction
-    EXPECT_NE(&coef, nullptr);
+    // Simple test - verify construction
+    EXPECT_NE(coef.get(), nullptr);
 }
 
-// DomainMappedCoefficient tests
-TEST_F(CoefficientTest, DomainMappedCoefficient_SetAll) {
-    DomainMappedCoefficient coef;
-    ConstantCoefficient c(5.0);
+TEST_F(CoefficientTest, ScalarCoefficient_Function) {
+    auto coef = std::make_unique<ScalarCoefficient>(
+        [](ElementTransform&, Real& result, Real t) {
+            result = 1.0 + t;
+        });
     
-    coef.setAll(&c);
+    EXPECT_NE(coef.get(), nullptr);
+}
+
+// VectorCoefficient tests
+TEST_F(CoefficientTest, VectorCoefficient_Constant) {
+    auto coef = constantVectorCoefficient(1.0, 2.0, 3.0);
+    EXPECT_NE(coef.get(), nullptr);
+}
+
+// MatrixCoefficient tests
+TEST_F(CoefficientTest, MatrixCoefficient_Diagonal) {
+    auto coef = diagonalMatrixCoefficient(5.0);
+    EXPECT_NE(coef.get(), nullptr);
+}
+
+TEST_F(CoefficientTest, MatrixCoefficient_Full) {
+    Matrix3 mat;
+    mat << 1, 0, 0,
+           0, 2, 0,
+           0, 0, 3;
+    auto coef = constantMatrixCoefficient(mat);
+    EXPECT_NE(coef.get(), nullptr);
+}
+
+// DomainMappedScalarCoefficient tests
+TEST_F(CoefficientTest, DomainMappedScalarCoefficient_SetAll) {
+    DomainMappedScalarCoefficient coef;
+    auto c = constantCoefficient(5.0);
+    
+    coef.setAll(c.get());
     EXPECT_FALSE(coef.empty());
-    EXPECT_EQ(coef.get(1), &c);
-    EXPECT_EQ(coef.get(99), &c);  // Default for any domain
+    EXPECT_EQ(coef.get(1), c.get());
+    EXPECT_EQ(coef.get(99), c.get());  // Default for any domain
 }
 
-TEST_F(CoefficientTest, DomainMappedCoefficient_DomainSpecific) {
-    DomainMappedCoefficient coef;
-    ConstantCoefficient c1(10.0);
-    ConstantCoefficient c2(20.0);
+TEST_F(CoefficientTest, DomainMappedScalarCoefficient_DomainSpecific) {
+    DomainMappedScalarCoefficient coef;
+    auto c1 = constantCoefficient(10.0);
+    auto c2 = constantCoefficient(20.0);
     
-    coef.set(1, &c1);
-    coef.set(2, &c2);
+    coef.set(1, c1.get());
+    coef.set(2, c2.get());
     
-    EXPECT_EQ(coef.get(1), &c1);
-    EXPECT_EQ(coef.get(2), &c2);
+    EXPECT_EQ(coef.get(1), c1.get());
+    EXPECT_EQ(coef.get(2), c2.get());
     EXPECT_EQ(coef.get(99), nullptr);  // No default set
 }
 
-TEST_F(CoefficientTest, DomainMappedCoefficient_BatchSet) {
-    DomainMappedCoefficient coef;
-    ConstantCoefficient c(15.0);
+TEST_F(CoefficientTest, DomainMappedScalarCoefficient_BatchSet) {
+    DomainMappedScalarCoefficient coef;
+    auto c = constantCoefficient(15.0);
     
-    coef.set({1, 2, 3}, &c);
+    coef.set({1, 2, 3}, c.get());
     
-    EXPECT_EQ(coef.get(1), &c);
-    EXPECT_EQ(coef.get(2), &c);
-    EXPECT_EQ(coef.get(3), &c);
+    EXPECT_EQ(coef.get(1), c.get());
+    EXPECT_EQ(coef.get(2), c.get());
+    EXPECT_EQ(coef.get(3), c.get());
 }
 
-TEST_F(CoefficientTest, DomainMappedCoefficient_Override) {
-    DomainMappedCoefficient coef;
-    ConstantCoefficient c1(10.0);
-    ConstantCoefficient c2(20.0);
+TEST_F(CoefficientTest, DomainMappedScalarCoefficient_Override) {
+    DomainMappedScalarCoefficient coef;
+    auto c1 = constantCoefficient(10.0);
+    auto c2 = constantCoefficient(20.0);
     
-    coef.set(1, &c1);
-    coef.set(1, &c2);  // Override
+    coef.set(1, c1.get());
+    coef.set(1, c2.get());  // Override
     
-    EXPECT_EQ(coef.get(1), &c2);
+    EXPECT_EQ(coef.get(1), c2.get());
+}
+
+// DomainMappedMatrixCoefficient tests
+TEST_F(CoefficientTest, DomainMappedMatrixCoefficient_Basic) {
+    DomainMappedMatrixCoefficient coef;
+    auto m = diagonalMatrixCoefficient(5.0);
+    
+    coef.set(1, m.get());
+    EXPECT_FALSE(coef.empty());
+    EXPECT_EQ(coef.get(1), m.get());
+}
+
+// AnyCoefficient tests
+TEST_F(CoefficientTest, AnyCoefficient_Scalar) {
+    AnyCoefficient any(constantCoefficient(3.14));
+    
+    EXPECT_EQ(any.kind(), CoefficientKind::Scalar);
+    EXPECT_FALSE(any.empty());
+    
+    const Coefficient* c = any.get<Coefficient>();
+    EXPECT_NE(c, nullptr);
+}
+
+TEST_F(CoefficientTest, AnyCoefficient_Vector) {
+    AnyCoefficient any(constantVectorCoefficient(1.0, 2.0, 3.0));
+    
+    EXPECT_EQ(any.kind(), CoefficientKind::Vector);
+    EXPECT_FALSE(any.empty());
+    
+    const VectorCoefficient* c = any.get<VectorCoefficient>();
+    EXPECT_NE(c, nullptr);
+}
+
+TEST_F(CoefficientTest, AnyCoefficient_Matrix) {
+    AnyCoefficient any(diagonalMatrixCoefficient(5.0));
+    
+    EXPECT_EQ(any.kind(), CoefficientKind::Matrix);
+    EXPECT_FALSE(any.empty());
+    
+    const MatrixCoefficient* c = any.get<MatrixCoefficient>();
+    EXPECT_NE(c, nullptr);
 }
 
 int main(int argc, char** argv) {

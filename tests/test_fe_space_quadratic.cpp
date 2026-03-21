@@ -404,7 +404,7 @@ TEST(MixedOrderTest, IsoparametricElement) {
 class COMSOLMeshTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        meshPath_ = dataPath("cases/busbar_order2/mesh.mphtxt");
+        meshPath_ = dataPath("cases/busbar_steady_order2/mesh.mphtxt");
     }
     
     std::string meshPath_;

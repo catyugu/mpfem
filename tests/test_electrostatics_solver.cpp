@@ -16,7 +16,7 @@ using namespace mpfem;
 class BusbarElectrostaticsTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        caseDir_ = MPFEM_PROJECT_ROOT + std::string("/cases/busbar");
+        caseDir_ = MPFEM_PROJECT_ROOT + std::string("/cases/busbar_steady");
     }
     
     std::string caseDir_;

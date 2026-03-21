@@ -1,46 +1,38 @@
 #ifndef MPFEM_PROBLEM_HPP
 #define MPFEM_PROBLEM_HPP
 
-#include "core/types.hpp"
 #include "fe/coefficient.hpp"
+#include "fe/grid_function.hpp"
 #include "mesh/mesh.hpp"
 #include "model/case_definition.hpp"
 #include "model/material_database.hpp"
-#include <memory>
+#include "physics/field_values.hpp"
+#include "core/types.hpp"
 #include <map>
 #include <string>
 
 namespace mpfem {
 
-/**
- * @brief 问题基类 - 纯数据持有者
- * 
- * 所有问题类型（稳态/瞬态）的公共数据基类。
- * 不持有求解器，只持有原始数据。
- */
+class ElectrostaticsSolver;
+class HeatTransferSolver;
+class StructuralSolver;
+
 class Problem {
 public:
     virtual ~Problem() = default;
-    
-    /// 是否为瞬态问题
     virtual bool isTransient() const { return false; }
-    
-    // =========================================================================
-    // 核心数据
-    // =========================================================================
+
+    std::unique_ptr<ElectrostaticsSolver> electrostatics;
+    std::unique_ptr<HeatTransferSolver> heatTransfer;
+    std::unique_ptr<StructuralSolver> structural;
     
     std::string caseName;
     std::unique_ptr<Mesh> mesh;
     MaterialDatabase materials;
     CaseDefinition caseDef;
     std::map<int, std::string> domainMaterial;
-    
-    /// 所有系数统一存储
+    FieldValues fieldValues;
     std::map<std::string, AnyCoefficient> coefficients;
-    
-    // =========================================================================
-    // 模板化系数访问方法
-    // =========================================================================
     
     template<typename T>
     const T* getCoef(const std::string& name) const {

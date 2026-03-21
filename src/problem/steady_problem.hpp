@@ -1,8 +1,7 @@
 #ifndef MPFEM_STEADY_PROBLEM_HPP
 #define MPFEM_STEADY_PROBLEM_HPP
 
-#include "problem/problem.hpp"
-#include "problem/transient_problem.hpp"
+#include "problem.hpp"
 #include "physics/electrostatics_solver.hpp"
 #include "physics/heat_transfer_solver.hpp"
 #include "physics/structural_solver.hpp"
@@ -10,32 +9,18 @@
 
 namespace mpfem {
 
-/**
- * @brief 耦合求解结果
- */
-struct CouplingResult {
+struct SteadyResult {
     bool converged = false;
     int iterations = 0;
     Real residual = 0.0;
 };
 
-/**
- * @brief 稳态问题
- * 
- * 继承Problem数据基类，添加求解器所有权和求解方法。
- */
 class SteadyProblem : public Problem {
 public:
-    // 求解器（拥有所有权）
-    std::unique_ptr<ElectrostaticsSolver> electrostatics;
-    std::unique_ptr<HeatTransferSolver> heatTransfer;
-    std::unique_ptr<StructuralSolver> structural;
-    
-    // 耦合参数
+
     int couplingMaxIter = 15;
     Real couplingTol = 1e-6;
     
-    // 查询方法
     bool hasElectrostatics() const { return electrostatics != nullptr; }
     bool hasHeatTransfer() const { return heatTransfer != nullptr; }
     bool hasStructural() const { return structural != nullptr; }
@@ -43,12 +28,9 @@ public:
     bool hasThermalExpansion() const { return hasHeatTransfer() && hasStructural(); }
     bool isCoupled() const { return hasJouleHeating() || hasThermalExpansion(); }
     
-    /**
-     * @brief 执行耦合或单场求解
-     */
-    CouplingResult solve() {
+    SteadyResult solve() {
         ScopedTimer timer("Coupling solve");
-        CouplingResult result;
+        SteadyResult result;
 
         if (!isCoupled()) {
             if (hasElectrostatics()) {

@@ -8,80 +8,113 @@
 namespace mpfem {
 
 // =============================================================================
-// 域积分器（双线性型）- 标量场
+// Diffusion integrator - matrix coefficient
 // =============================================================================
 
-/// 扩散积分器: ∫ σ ∇φᵢ · ∇φⱼ dΩ
-class DiffusionIntegrator : public DomainBilinearIntegrator {
+/**
+ * @brief Diffusion integrator: ∫ (∇φᵢ)ᵀ · D · ∇φⱼ dΩ
+ * 
+ * D is a 3x3 matrix coefficient (diffusivity/conductivity tensor).
+ * - For isotropic: D = σ * I (use diagonalMatrixCoefficient)
+ * - For anisotropic: D is full tensor
+ */
+class DiffusionIntegrator : public DomainBilinearIntegratorBase {
 public:
-    using DomainBilinearIntegrator::DomainBilinearIntegrator;
+    DiffusionIntegrator() = default;
+    explicit DiffusionIntegrator(const MatrixCoefficient* c) : coef_(c) {}
     
     void assembleElementMatrix(const ReferenceElement& ref,
                                ElementTransform& trans,
                                Matrix& elmat) const override;
+private:
+    const MatrixCoefficient* coef_ = nullptr;
 };
 
-/// 质量积分器: ∫ ρ φᵢ φⱼ dΩ
-class MassIntegrator : public DomainBilinearIntegrator {
+// =============================================================================
+// Mass integrator
+// =============================================================================
+
+/**
+ * @brief Mass integrator: ∫ ρ φᵢ φⱼ dΩ
+ */
+class MassIntegrator : public DomainBilinearIntegratorBase {
 public:
-    using DomainBilinearIntegrator::DomainBilinearIntegrator;
+    MassIntegrator() = default;
+    explicit MassIntegrator(const Coefficient* c) : coef_(c) {}
     
     void assembleElementMatrix(const ReferenceElement& ref,
                                ElementTransform& trans,
                                Matrix& elmat) const override;
+private:
+    const Coefficient* coef_ = nullptr;
 };
 
 // =============================================================================
-// 域积分器（线性型）- 标量场
+// Domain load integrator
 // =============================================================================
 
-/// 域载荷积分器: ∫ f φᵢ dΩ
-class DomainLFIntegrator : public DomainLinearIntegrator {
+/**
+ * @brief Domain load integrator: ∫ f φᵢ dΩ
+ */
+class DomainLFIntegrator : public DomainLinearIntegratorBase {
 public:
-    using DomainLinearIntegrator::DomainLinearIntegrator;
+    DomainLFIntegrator() = default;
+    explicit DomainLFIntegrator(const Coefficient* c) : coef_(c) {}
     
     void assembleElementVector(const ReferenceElement& ref,
                                ElementTransform& trans,
                                Vector& elvec) const override;
+private:
+    const Coefficient* coef_ = nullptr;
 };
 
 // =============================================================================
-// 边界积分器（线性型）- 标量场
+// Boundary load integrator
 // =============================================================================
 
-/// 边界载荷积分器: ∫ g φᵢ dΓ
-class BoundaryLFIntegrator : public FaceLinearIntegrator {
+/**
+ * @brief Boundary load integrator: ∫ g φᵢ dΓ
+ */
+class BoundaryLFIntegrator : public FaceLinearIntegratorBase {
 public:
-    using FaceLinearIntegrator::FaceLinearIntegrator;
+    BoundaryLFIntegrator() = default;
+    explicit BoundaryLFIntegrator(const Coefficient* c) : coef_(c) {}
     
     void assembleFaceVector(const ReferenceElement& ref,
                             FacetElementTransform& trans,
                             Vector& elvec) const override;
+private:
+    const Coefficient* coef_ = nullptr;
 };
 
 // =============================================================================
-// 边界积分器（双线性型）- 标量场
+// Convection integrators (Robin BC)
 // =============================================================================
 
-/// 对流边界质量积分器 (Robin BC矩阵部分): ∫ h φᵢ φⱼ dΓ
-class ConvectionMassIntegrator : public FaceBilinearIntegrator {
+/**
+ * @brief Convection mass integrator (Robin BC matrix part): ∫ h φᵢ φⱼ dΓ
+ */
+class ConvectionMassIntegrator : public FaceBilinearIntegratorBase {
 public:
-    using FaceBilinearIntegrator::FaceBilinearIntegrator;
+    ConvectionMassIntegrator() = default;
+    explicit ConvectionMassIntegrator(const Coefficient* c) : coef_(c) {}
     
     void assembleFaceMatrix(const ReferenceElement& ref,
                             FacetElementTransform& trans,
                             Matrix& elmat) const override;
+private:
+    const Coefficient* coef_ = nullptr;
 };
 
-/// 对流边界载荷积分器 (Robin BC向量部分): ∫ h Tinf φᵢ dΓ
-/// 注意：系数生命周期由调用者管理
-class ConvectionLFIntegrator : public FaceLinearIntegrator {
+/**
+ * @brief Convection load integrator (Robin BC vector part): ∫ h Tinf φᵢ dΓ
+ */
+class ConvectionLFIntegrator : public FaceLinearIntegratorBase {
 public:
     ConvectionLFIntegrator() = default;
     
-    /// 构造函数：传入对流系数和环境温度系数（非拥有）
     ConvectionLFIntegrator(const Coefficient* h, const Coefficient* Tinf)
-        : FaceLinearIntegrator(h), Tinf_(Tinf) {}
+        : coef_(h), Tinf_(Tinf) {}
     
     void setAmbientTemperature(const Coefficient* Tinf) { Tinf_ = Tinf; }
     
@@ -90,15 +123,17 @@ public:
                             Vector& elvec) const override;
     
 private:
-    const Coefficient* Tinf_ = nullptr;  ///< 环境温度系数（非拥有）
+    const Coefficient* coef_ = nullptr;
+    const Coefficient* Tinf_ = nullptr;
 };
 
 // =============================================================================
-// 弹性力学积分器 - 向量场专用
+// Elasticity integrators
 // =============================================================================
 
-/// 弹性积分器: ∫ (λ div(u) div(v) + 2μ ε(u):ε(v)) dΩ
-/// 输出 elmat 为 (nd*vdim) x (nd*vdim) 矩阵
+/**
+ * @brief Elasticity integrator: ∫ (λ div(u) div(v) + 2μ ε(u):ε(v)) dΩ
+ */
 class ElasticityIntegrator : public VectorDomainBilinearIntegrator {
 public:
     ElasticityIntegrator(const Coefficient* E, const Coefficient* nu)
@@ -114,10 +149,9 @@ private:
     const Coefficient* nu_ = nullptr;
 };
 
-/// 热膨胀载荷积分器: ∫ (3K α_T (T - T_ref) div(v)) dΩ
-/// 输出 elvec 为 (nd*vdim) 维向量
-/// 注意: alphaT 系数应返回热膨胀应变 alpha_T * (T - Tref)
-///       例如使用 ThermalExpansionCoefficient 类
+/**
+ * @brief Thermal load integrator: ∫ (3K α_T (T - T_ref) div(v)) dΩ
+ */
 class ThermalLoadIntegrator : public VectorDomainLinearIntegrator {
 public:
     ThermalLoadIntegrator(const Coefficient* E, const Coefficient* nu,

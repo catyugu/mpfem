@@ -3,20 +3,16 @@
 
 #include "physics_field_solver.hpp"
 #include "fe/coefficient.hpp"
+#include <map>
 #include <set>
 
 namespace mpfem {
 
 /**
- * @brief 结构力学求解器（线弹性）
+ * @brief Structural mechanics solver (linear elasticity)
  * 
- * 求解: -div(sigma) = 0
- * 其中 sigma = C : epsilon
- * 
- * 设计原则：
- * - 单场求解器不包含耦合逻辑
- * - 材料系数支持域选择
- * - 边界条件使用 Coefficient
+ * Solves: -div(sigma) = 0
+ * where sigma = C : epsilon
  */
 class StructuralSolver : public PhysicsFieldSolver {
 public:
@@ -24,80 +20,36 @@ public:
     explicit StructuralSolver(int order) { order_ = order; }
     
     FieldKind fieldKind() const override { return FieldKind::Displacement; }
-    std::string fieldName() const override { return "Displacement"; }
+    std::string fieldName() const override { return "Structural"; }
+    FieldId fieldId() const override { return FieldId::Displacement; }
     
-    /// 初始化求解器
-    bool initialize(const Mesh& mesh);
+    bool initialize(const Mesh& mesh, FieldValues& fieldValues, int order);
     
-    // =========================================================================
-    // 材料系数接口（支持域选择）
-    // =========================================================================
-    
-    /// 设置指定域的杨氏模量系数
+    // Material coefficients
     void setYoungModulus(const std::set<int>& domains, const Coefficient* E);
+    void setYoungModulus(const Coefficient* E) { youngModulus_.setAll(E); }
     
-    /// 设置所有域的杨氏模量系数
-    void setYoungModulus(const Coefficient* E) {
-        youngModulus_.setAll(E);
-    }
-    
-    /// 设置指定域的泊松比系数
     void setPoissonRatio(const std::set<int>& domains, const Coefficient* nu);
+    void setPoissonRatio(const Coefficient* nu) { poissonRatio_.setAll(nu); }
     
-    /// 设置所有域的泊松比系数
-    void setPoissonRatio(const Coefficient* nu) {
-        poissonRatio_.setAll(nu);
-    }
+    const DomainMappedScalarCoefficient& youngModulus() const { return youngModulus_; }
+    const DomainMappedScalarCoefficient& poissonRatio() const { return poissonRatio_; }
     
-    /// 获取杨氏模量系数
-    const DomainMappedCoefficient& youngModulus() const { return youngModulus_; }
+    // Boundary conditions
+    void addFixedDisplacementBC(const std::set<int>& boundaryIds, const VectorCoefficient* displacement);
+    void clearBoundaryConditions() { displacementBCs_.clear(); }
     
-    /// 获取泊松比系数
-    const DomainMappedCoefficient& poissonRatio() const { return poissonRatio_; }
-    
-    // =========================================================================
-    // 边界条件接口（使用 Coefficient）
-    // =========================================================================
-    
-    /// 添加固定位移边界条件（批量设置）
-    void addFixedDisplacementBC(const std::set<int>& boundaryIds, 
-                                 const VectorCoefficient* displacement);
-    
-    /// 清除边界条件
-    void clearBoundaryConditions() { 
-        displacementBCs_.clear(); 
-    }
-    
-    // =========================================================================
-    // 热膨胀系数接口
-    // =========================================================================
-    
-    /// 设置指定域的热膨胀系数
+    // Thermal expansion
     void setThermalExpansion(const std::set<int>& domains, const Coefficient* alphaT);
-    
-    /// 获取热膨胀系数
-    const DomainMappedCoefficient& thermalExpansion() const { return thermalExpansion_; }
-    
-    /// 检查是否有热膨胀载荷
+    const DomainMappedScalarCoefficient& thermalExpansion() const { return thermalExpansion_; }
     bool hasThermalExpansion() const { return !thermalExpansion_.empty(); }
     
-    // =========================================================================
-    // 求解接口
-    // =========================================================================
-    
     void assemble() override;
-    bool solve() override;
-    
-    const GridFunction& field() const override { return *u_; }
-    GridFunction& field() override { return *u_; }
 
 private:
-    std::unique_ptr<GridFunction> u_;        ///< 位移场
-    
-    DomainMappedCoefficient youngModulus_;
-    DomainMappedCoefficient poissonRatio_;
-    DomainMappedCoefficient thermalExpansion_;  ///< 热膨胀系数（域映射）
-    
+    DomainMappedScalarCoefficient youngModulus_;
+    DomainMappedScalarCoefficient poissonRatio_;
+    DomainMappedScalarCoefficient thermalExpansion_;
     std::map<int, const VectorCoefficient*> displacementBCs_;
 };
 

@@ -9,56 +9,64 @@
 #include "assembly/assembler.hpp"
 #include "solver/solver_config.hpp"
 #include "solver/solver_factory.hpp"
+#include "physics/field_values.hpp"
+#include "core/logger.hpp"
 #include <memory>
 
 namespace mpfem {
 
-/**
- * @brief 物理场求解器基类
- * 
- * 包含所有单场求解器的共同成员和接口。
- */
 class PhysicsFieldSolver {
 public:
     virtual ~PhysicsFieldSolver() = default;
     
     virtual FieldKind fieldKind() const = 0;
     virtual std::string fieldName() const = 0;
-    
+    virtual FieldId fieldId() const = 0;
     virtual void assemble() = 0;
-    virtual bool solve() = 0;
     
-    virtual const GridFunction& field() const = 0;
-    virtual GridFunction& field() = 0;
+    bool solve() {
+        if (!solver_ || !matAsm_ || !vecAsm_ || !fieldValues_) return false;
+        bool ok = solver_->solve(matAsm_->matrix(), field().values(), vecAsm_->vector());
+        if (ok) {
+            LOG_INFO << fieldName() << " solver converged!";
+        }
+        return ok;
+    }
+    
+    const GridFunction& field() const { 
+        MPFEM_ASSERT(fieldValues_ != nullptr, "FieldValues not set");
+        return fieldValues_->current(fieldId()); 
+    }
+    GridFunction& field() { 
+        MPFEM_ASSERT(fieldValues_ != nullptr, "FieldValues not set");
+        return fieldValues_->current(fieldId()); 
+    }
     
     const FESpace& feSpace() const { return *fes_; }
     Index numDofs() const { return fes_ ? fes_->numDofs() : 0; }
     const Mesh& mesh() const { return *mesh_; }
     
     void setOrder(int o) { order_ = o; }
-    
-    /// 设置求解器配置
-    void setSolverConfig(const SolverConfig& config) { 
-        solverConfig_ = config; 
-    }
+    void setSolverConfig(const SolverConfig& config) { solverConfig_ = config; }
     
     int iterations() const { return iter_; }
     Real residual() const { return res_; }
-    
+
 protected:
-    /// 创建求解器实例
-    void createSolver() {
-        solver_ = SolverFactory::create(solverConfig_);
+    void createSolver() { solver_ = SolverFactory::create(solverConfig_); }
+    
+    void clearAssemblers() {
+        if (matAsm_) { matAsm_->clear(); matAsm_->clearIntegrators(); }
+        if (vecAsm_) { vecAsm_->clear(); vecAsm_->clearIntegrators(); }
     }
     
-    // 配置参数
     int order_ = 1;
-    SolverConfig solverConfig_;  // 统一使用SolverConfig
+    SolverConfig solverConfig_;
     int iter_ = 0;
     Real res_ = 0.0;
     
-    // 共同成员变量
     const Mesh* mesh_ = nullptr;
+    FieldValues* fieldValues_ = nullptr;
     std::unique_ptr<FESpace> fes_;
     std::unique_ptr<BilinearFormAssembler> matAsm_;
     std::unique_ptr<LinearFormAssembler> vecAsm_;

@@ -3,18 +3,17 @@
 namespace mpfem {
 
 // =============================================================================
-// 标量场积分器
+// Diffusion integrator (matrix coefficient)
 // =============================================================================
 
 void DiffusionIntegrator::assembleElementMatrix(const ReferenceElement& ref,
                                                  ElementTransform& trans,
                                                  Matrix& elmat) const {
     const int nd = ref.numDofs();
-    const int dim = ref.dim();
     const int nq = ref.numQuadraturePoints();
     
     elmat.setZero(nd, nd);
-    Eigen::MatrixXd gradMat(nd, dim);
+    Eigen::MatrixXd gradMat(nd, 3);
     
     for (int q = 0; q < nq; ++q) {
         const IntegrationPoint& ip = ref.integrationPoint(q);
@@ -22,20 +21,25 @@ void DiffusionIntegrator::assembleElementMatrix(const ReferenceElement& ref,
         trans.setIntegrationPoint(xi);
         
         const Real w = ip.weight * trans.weight();
-        const Real coef = evalCoef(trans);
+        Matrix3 D = Matrix3::Identity();
+        if (coef_) coef_->eval(trans, D);
         
         const Vector3* refGrads = ref.shapeGradientsAtQuad(q);
         
         for (int i = 0; i < nd; ++i) {
             Vector3 physGrad;
             trans.transformGradient(refGrads[i].data(), physGrad.data());
-            for (int d = 0; d < dim; ++d)
-                gradMat(i, d) = physGrad[d];
+            gradMat.row(i) = physGrad;
         }
         
-        elmat.noalias() += w * coef * (gradMat * gradMat.transpose());
+        Eigen::MatrixXd Dgrad = gradMat * D;
+        elmat.noalias() += w * (gradMat * Dgrad.transpose());
     }
 }
+
+// =============================================================================
+// Mass integrator
+// =============================================================================
 
 void MassIntegrator::assembleElementMatrix(const ReferenceElement& ref,
                                             ElementTransform& trans,
@@ -51,7 +55,8 @@ void MassIntegrator::assembleElementMatrix(const ReferenceElement& ref,
         trans.setIntegrationPoint(xi);
         
         const Real w = ip.weight * trans.weight();
-        const Real coef = evalCoef(trans);
+        Real coef = 1.0;
+        if (coef_) coef_->eval(trans, coef);
         
         const Real* phi = ref.shapeValuesAtQuad(q);
         Eigen::Map<const Eigen::VectorXd> phiMap(phi, nd);
@@ -59,6 +64,10 @@ void MassIntegrator::assembleElementMatrix(const ReferenceElement& ref,
         elmat.noalias() += w * coef * (phiMap * phiMap.transpose());
     }
 }
+
+// =============================================================================
+// Domain load integrator
+// =============================================================================
 
 void DomainLFIntegrator::assembleElementVector(const ReferenceElement& ref,
                                                 ElementTransform& trans,
@@ -74,7 +83,8 @@ void DomainLFIntegrator::assembleElementVector(const ReferenceElement& ref,
         trans.setIntegrationPoint(xi);
         
         const Real w = ip.weight * trans.weight();
-        const Real f = evalCoef(trans);
+        Real f = 1.0;
+        if (coef_) coef_->eval(trans, f);
         
         const Real* phi = ref.shapeValuesAtQuad(q);
         Eigen::Map<const Eigen::VectorXd> phiMap(phi, nd);
@@ -82,6 +92,10 @@ void DomainLFIntegrator::assembleElementVector(const ReferenceElement& ref,
         elvec.noalias() += w * f * phiMap;
     }
 }
+
+// =============================================================================
+// Boundary load integrator
+// =============================================================================
 
 void BoundaryLFIntegrator::assembleFaceVector(const ReferenceElement& ref,
                                                FacetElementTransform& trans,
@@ -97,7 +111,8 @@ void BoundaryLFIntegrator::assembleFaceVector(const ReferenceElement& ref,
         trans.setIntegrationPoint(xi);
         
         const Real w = ip.weight * trans.weight();
-        const Real g = evalCoef(trans);
+        Real g = 1.0;
+        if (coef_) coef_->eval(trans, g);
         
         const Real* phi = ref.shapeValuesAtQuad(q);
         Eigen::Map<const Eigen::VectorXd> phiMap(phi, nd);
@@ -105,6 +120,10 @@ void BoundaryLFIntegrator::assembleFaceVector(const ReferenceElement& ref,
         elvec.noalias() += w * g * phiMap;
     }
 }
+
+// =============================================================================
+// Convection integrators (Robin BC)
+// =============================================================================
 
 void ConvectionMassIntegrator::assembleFaceMatrix(const ReferenceElement& ref,
                                                    FacetElementTransform& trans,
@@ -120,7 +139,8 @@ void ConvectionMassIntegrator::assembleFaceMatrix(const ReferenceElement& ref,
         trans.setIntegrationPoint(xi);
         
         const Real w = ip.weight * trans.weight();
-        const Real h = evalCoef(trans);
+        Real h = 1.0;
+        if (coef_) coef_->eval(trans, h);
         
         const Real* phi = ref.shapeValuesAtQuad(q);
         Eigen::Map<const Eigen::VectorXd> phiMap(phi, nd);
@@ -145,8 +165,10 @@ void ConvectionLFIntegrator::assembleFaceVector(const ReferenceElement& ref,
         trans.setIntegrationPoint(xi);
         
         const Real w = ip.weight * trans.weight();
-        const Real h = evalCoef(trans);
-        const Real Tinf = Tinf_->eval(trans);
+        Real h = 1.0;
+        if (coef_) coef_->eval(trans, h);
+        Real Tinf;
+        Tinf_->eval(trans, Tinf);
         
         const Real* phi = ref.shapeValuesAtQuad(q);
         Eigen::Map<const Eigen::VectorXd> phiMap(phi, nd);
@@ -156,7 +178,7 @@ void ConvectionLFIntegrator::assembleFaceVector(const ReferenceElement& ref,
 }
 
 // =============================================================================
-// 向量场积分器（弹性力学）
+// Elasticity integrators
 // =============================================================================
 
 void ElasticityIntegrator::assembleElementMatrix(const ReferenceElement& ref,
@@ -169,27 +191,22 @@ void ElasticityIntegrator::assembleElementMatrix(const ReferenceElement& ref,
     
     elmat.setZero(totalDofs, totalDofs);
     
-    // 获取材料属性
-    Real E = E_ ? E_->eval(trans) : 1.0;
-    Real nu = nu_ ? nu_->eval(trans) : 0.3;
+    Real E_val = 1.0, nu_val = 0.3;
+    if (E_) E_->eval(trans, E_val);
+    if (nu_) nu_->eval(trans, nu_val);
     
-    // Lame参数
-    Real lambda = E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu));
-    Real mu = E / (2.0 * (1.0 + nu));
+    Real lambda = E_val * nu_val / ((1.0 + nu_val) * (1.0 - 2.0 * nu_val));
+    Real mu = E_val / (2.0 * (1.0 + nu_val));
     
-    // 预计算本构矩阵 C (各向同性) - 使用固定大小矩阵
     Eigen::Matrix<Real, 6, 6> C;
     C.setZero();
     C(0, 0) = C(1, 1) = C(2, 2) = lambda + 2.0 * mu;
     C(0, 1) = C(0, 2) = C(1, 0) = C(1, 2) = C(2, 0) = C(2, 1) = lambda;
     C(3, 3) = C(4, 4) = C(5, 5) = mu;
     
-    // 使用固定大小栈数组
-    // B 矩阵: 6 x (nd * vdim), CB 矩阵: 6 x (nd * vdim)
     Eigen::Matrix<Real, MaxStrainComponents, MaxVectorDofsPerElement> B_full;
     Eigen::Matrix<Real, MaxStrainComponents, MaxVectorDofsPerElement> CB_full;
     
-    // 使用 Map 来创建正确大小的视图
     auto B = B_full.leftCols(totalDofs);
     auto CB = CB_full.leftCols(totalDofs);
     
@@ -201,7 +218,6 @@ void ElasticityIntegrator::assembleElementMatrix(const ReferenceElement& ref,
         const Real w = ip.weight * trans.weight();
         const Vector3* refGrads = ref.shapeGradientsAtQuad(q);
         
-        // B矩阵: 应变-位移关系矩阵 (6 x nd*3)
         B.setZero();
         
         for (int a = 0; a < nd; ++a) {
@@ -220,7 +236,6 @@ void ElasticityIntegrator::assembleElementMatrix(const ReferenceElement& ref,
             B(5, col + 1) = physGrad[0];
         }
         
-        // 刚度矩阵: K = B^T * C * B
         CB.noalias() = C * B;
         elmat.noalias() += w * (B.transpose() * CB);
     }
@@ -238,7 +253,6 @@ void ThermalLoadIntegrator::assembleElementVector(const ReferenceElement& ref,
     
     if (!alphaT_) return;
     
-    // 使用固定大小栈数组
     Eigen::Matrix<Real, MaxStrainComponents, MaxVectorDofsPerElement> B_full;
     auto B = B_full.leftCols(totalDofs);
     
@@ -249,27 +263,22 @@ void ThermalLoadIntegrator::assembleElementVector(const ReferenceElement& ref,
         
         const Real w = ip.weight * trans.weight();
         
-        // 获取材料属性
-        Real E = E_ ? E_->eval(trans) : 1.0;
-        Real nu = nu_ ? nu_->eval(trans) : 0.3;
+        Real E_val = 1.0, nu_val = 0.3;
+        if (E_) E_->eval(trans, E_val);
+        if (nu_) nu_->eval(trans, nu_val);
         
-        // 获取热膨胀应变: alphaT_->eval(trans) 返回 alpha_T * (T - Tref)
-        // 对于 ThermalExpansionCoefficient，这已经包含了温度差
-        Real thermalStrain = alphaT_->eval(trans);
+        Real thermalStrain;
+        alphaT_->eval(trans, thermalStrain);
         
         if (std::abs(thermalStrain) < 1e-20) continue;
         
-        // Lame参数
-        Real lambda = E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu));
-        Real mu = E / (2.0 * (1.0 + nu));
+        Real lambda = E_val * nu_val / ((1.0 + nu_val) * (1.0 - 2.0 * nu_val));
+        Real mu = E_val / (2.0 * (1.0 + nu_val));
         
-        // 热应力: sigma_th = (3*lambda + 2*mu) * thermalStrain * I
-        // 其中 thermalStrain = alpha_T * (T - Tref)
         Real diag = (3.0 * lambda + 2.0 * mu) * thermalStrain;
         
         const Vector3* refGrads = ref.shapeGradientsAtQuad(q);
         
-        // B矩阵
         B.setZero();
         
         for (int a = 0; a < nd; ++a) {
@@ -288,8 +297,6 @@ void ThermalLoadIntegrator::assembleElementVector(const ReferenceElement& ref,
             B(5, col + 1) = physGrad[0];
         }
         
-        // 热载荷向量: f = B^T * sigma_th (负号因为热膨胀产生初始应变)
-        // 手动计算避免临时向量
         for (int i = 0; i < totalDofs; ++i) {
             elvec(i) -= w * (B(0, i) + B(1, i) + B(2, i)) * diag;
         }
