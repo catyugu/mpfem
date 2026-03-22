@@ -69,6 +69,24 @@ struct CouplingConfig {
 };
 
 /**
+ * @brief Time configuration for time-dependent simulations.
+ */
+struct TimeConfig {
+    double start = 0.0;
+    double end = 1.0;
+    double step = 0.01;
+    std::string scheme = "BDF1";  // BDF1, BDF2, CrankNicolson
+};
+
+/**
+ * @brief Initial condition definition for a physics field.
+ */
+struct InitialCondition {
+    std::string fieldKind;  // "electrostatics", "heat_transfer", "solid_mechanics"
+    double value = 0.0;     // scalar value for initial condition
+};
+
+/**
  * @brief Cross-physics coupling definition extracted from case XML.
  */
 struct CoupledPhysicsDefinition {
@@ -92,6 +110,8 @@ struct CaseDefinition {
     std::vector<PhysicsDefinition> physicsDefinitions;
     std::vector<CoupledPhysicsDefinition> coupledPhysicsDefinitions;
     CouplingConfig couplingConfig;
+    TimeConfig timeConfig;
+    std::vector<InitialCondition> initialConditions;
 
     /**
      * @brief Get variable value by name.
