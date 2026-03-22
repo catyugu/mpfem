@@ -74,7 +74,8 @@ void BilinearFormAssembler::assemble() {
             trans.setElement(e);
             
             // Use pre-allocated DOF buffer
-            fes_->getElementDofs(e, buf.dofs);
+            buf.numDofs = nd * vdim;
+            fes_->getElementDofs(e, std::span<Index>{buf.dofs.data(), static_cast<size_t>(buf.numDofs)});
             const auto& dofs = buf.dofs;
             
             int totalDofs = nd * vdim;
@@ -103,11 +104,10 @@ void BilinearFormAssembler::assemble() {
                 for (int j = 0; j < totalDofs; ++j) {
                     if (dofs[j] == InvalidIndex) continue;
                     Real v = buf.elmatVector(i, j);
-                    if (std::abs(v) > 1e-30)
 #ifdef _OPENMP
-                        localTriplets.emplace_back(dofs[i], dofs[j], v);
+                    localTriplets.emplace_back(dofs[i], dofs[j], v);
 #else
-                        triplets_.emplace_back(dofs[i], dofs[j], v);
+                    triplets_.emplace_back(dofs[i], dofs[j], v);
 #endif
                 }
             }
@@ -139,7 +139,8 @@ void BilinearFormAssembler::assemble() {
             btrans.setBoundaryElement(b);
             
             // Use pre-allocated DOF buffer
-            fes_->getBdrElementDofs(b, bbuf.dofs);
+            bbuf.numDofs = nd * vdim;
+            fes_->getBdrElementDofs(b, std::span<Index>{bbuf.dofs.data(), static_cast<size_t>(bbuf.numDofs)});
             const auto& dofs = bbuf.dofs;
             
             int totalDofs = nd * vdim;
@@ -164,8 +165,7 @@ void BilinearFormAssembler::assemble() {
                 for (int j = 0; j < totalDofs; ++j) {
                     if (dofs[j] == InvalidIndex) continue;
                     Real v = bbuf.elmatVector(i, j);
-                    if (std::abs(v) > 1e-30)
-                        triplets_.emplace_back(dofs[i], dofs[j], v);
+                    triplets_.emplace_back(dofs[i], dofs[j], v);
                 }
             }
         }
@@ -240,7 +240,8 @@ void LinearFormAssembler::assemble() {
                 trans.setElement(e);
                 
                 // Use pre-allocated DOF buffer
-                fes_->getElementDofs(e, buf.dofs);
+                buf.numDofs = nd * vdim;
+                fes_->getElementDofs(e, std::span<Index>{buf.dofs.data(), static_cast<size_t>(buf.numDofs)});
                 const auto& dofs = buf.dofs;
                 
                 int totalDofs = nd * vdim;
@@ -299,7 +300,8 @@ void LinearFormAssembler::assemble() {
             btrans.setBoundaryElement(b);
             
             // Use pre-allocated DOF buffer
-            fes_->getBdrElementDofs(b, bbuf.dofs);
+            bbuf.numDofs = nd * vdim;
+            fes_->getBdrElementDofs(b, std::span<Index>{bbuf.dofs.data(), static_cast<size_t>(bbuf.numDofs)});
             const auto& dofs = bbuf.dofs;
             
             int totalDofs = nd * vdim;

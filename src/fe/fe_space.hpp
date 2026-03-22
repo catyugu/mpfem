@@ -97,10 +97,10 @@ public:
     Index numDofs() const { return numDofs_; }
     
     /// Get local to global dof mapping for an element
-    void getElementDofs(Index elemIdx, std::vector<Index>& dofs) const;
+    void getElementDofs(Index elemIdx, std::span<Index> dofs) const;
     
     /// Get local to global dof mapping for a boundary element
-    void getBdrElementDofs(Index bdrIdx, std::vector<Index>& dofs) const;
+    void getBdrElementDofs(Index bdrIdx, std::span<Index> dofs) const;
     
     /// Get number of dofs for an element
     int numElementDofs(Index elemIdx) const;
@@ -183,22 +183,25 @@ private:
 // Inline implementations
 // =============================================================================
 
-inline void FESpace::getElementDofs(Index elemIdx, std::vector<Index>& dofs) const {
+inline void FESpace::getElementDofs(Index elemIdx, std::span<Index> dofs) const {
     const FECollection* f = fec();
     if (!mesh_ || !f || elemIdx >= mesh_->numElements()) {
-        dofs.clear();
         return;
     }
     
     const Element& elem = mesh_->element(elemIdx);
     const ReferenceElement* refElem = f->get(elem.geometry());
     if (!refElem) {
-        dofs.clear();
         return;
     }
     
     int nd = refElem->numDofs();
-    dofs.resize(nd * vdim_);
+    const int totalDofs = nd * vdim_;
+    
+    // Ensure buffer is large enough
+    if (static_cast<int>(dofs.size()) < totalDofs) {
+        return;
+    }
     
     const Index base = elemIdx * maxDofsPerElem_;
     for (int i = 0; i < nd; ++i) {
@@ -216,22 +219,25 @@ inline void FESpace::getElementDofs(Index elemIdx, std::vector<Index>& dofs) con
     }
 }
 
-inline void FESpace::getBdrElementDofs(Index bdrIdx, std::vector<Index>& dofs) const {
+inline void FESpace::getBdrElementDofs(Index bdrIdx, std::span<Index> dofs) const {
     const FECollection* f = fec();
     if (!mesh_ || !f || bdrIdx >= mesh_->numBdrElements()) {
-        dofs.clear();
         return;
     }
     
     const Element& bdrElem = mesh_->bdrElement(bdrIdx);
     const ReferenceElement* refElem = f->get(bdrElem.geometry());
     if (!refElem) {
-        dofs.clear();
         return;
     }
     
     int nd = refElem->numDofs();
-    dofs.resize(nd * vdim_);
+    const int totalDofs = nd * vdim_;
+    
+    // Ensure buffer is large enough
+    if (static_cast<int>(dofs.size()) < totalDofs) {
+        return;
+    }
     
     const Index base = bdrIdx * maxDofsPerBdrElem_;
     for (int i = 0; i < nd; ++i) {

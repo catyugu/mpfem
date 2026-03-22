@@ -46,8 +46,9 @@ public:
     
     Eigen::VectorXd getElementValues(Index elem) const {
         if (!fes_) return Eigen::VectorXd();
-        std::vector<Index> dofs;
-        fes_->getElementDofs(elem, dofs);
+        const int totalDofs = fes_->numElementDofs(elem) * fes_->vdim();
+        std::vector<Index> dofs(totalDofs);
+        fes_->getElementDofs(elem, std::span<Index>{dofs.data(), static_cast<size_t>(totalDofs)});
         Eigen::VectorXd result(dofs.size());
         for (size_t i = 0; i < dofs.size(); ++i)
             result[i] = values_[dofs[i]];

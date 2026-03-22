@@ -36,7 +36,7 @@ namespace mpfem
         }
 
         sf->evalValues(xi, t_phiBuf.data());
-        fes_->getElementDofs(elem, t_dofsBuf);
+        fes_->getElementDofs(elem, std::span<Index>{t_dofsBuf.data(), t_dofsBuf.size()});
 
         Real val = 0.0;
         for (int i = 0; i < nd; ++i)
@@ -69,7 +69,7 @@ namespace mpfem
         }
 
         sf->evalGrads(xi, t_gradBuf.data());
-        fes_->getElementDofs(elem, t_dofsBuf);
+        fes_->getElementDofs(elem, std::span<Index>{t_dofsBuf.data(), t_dofsBuf.size()});
 
         Vector3 gRef = Vector3::Zero();
         for (int i = 0; i < nd; ++i)
