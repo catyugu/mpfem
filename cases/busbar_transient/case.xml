@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<case name="busbar_transient">
+  <paths
+    mesh="mesh.mphtxt"
+    materials="material.xml"
+    comsol_result="result.txt"
+  />
+
+  <study type="transient">
+    <time start="0" end="100" step="10" scheme="BDF1"/>
+    <initialConditions>
+      <field kind="electrostatics" value="0"/>
+      <field kind="heat_transfer" value="293.15"/>
+      <field kind="solid_mechanics" displacement="0"/>
+    </initialConditions>
+  </study>
+
+  <variables>
+    <var name="L" value="9[cm]" si="0.09" />
+    <var name="rad_1" value="6[mm]" si="0.006" />
+    <var name="tbb" value="5[mm]" si="0.005" />
+    <var name="wbb" value="5[cm]" si="0.05" />
+    <var name="mh" value="3[mm]" si="0.003" />
+    <var name="htc" value="5[W/m^2/K]" si="5.0" />
+    <var name="Vtot" value="20[mV]" si="0.02" />
+  </variables>
+
+  <materials>
+    <assign domains="1" material="mat1" />
+    <assign domains="2-7" material="mat2" />
+  </materials>
+
+  <physics kind="electrostatics" order="1">
+    <solver type="eigen.cg_jacobi" max_iter="1000" tolerance="1e-10" print_level="0"/>
+    <boundary kind="voltage" ids="43">
+      <param name="value" value="Vtot"/>
+    </boundary>
+    <boundary kind="voltage" ids="8">
+      <param name="value" value="0[V]"/>
+    </boundary>
+    <boundary kind="voltage" ids="15">
+      <param name="value" value="0[V]"/>
+    </boundary>
+    <boundary kind="electric_insulation" ids="1-7,9-14,16-42" />
+  </physics>
+
+  <physics kind="heat_transfer" order="1">
+    <solver type="eigen.cg_jacobi" max_iter="1000" tolerance="1e-10" print_level="0"/>
+    <boundary kind="convection" ids="1-7">
+      <param name="h" value="htc"/>
+      <param name="T_inf" value="293.15[K]"/>
+    </boundary>
+    <boundary kind="convection" ids="9-14">
+      <param name="h" value="htc"/>
+      <param name="T_inf" value="293.15[K]"/>
+    </boundary>
+    <boundary kind="convection" ids="16-28">
+      <param name="h" value="htc"/>
+      <param name="T_inf" value="293.15[K]"/>
+    </boundary>
+    <boundary kind="convection" ids="29-42">
+      <param name="h" value="htc"/>
+      <param name="T_inf" value="293.15[K]"/>
+    </boundary>
+    <boundary kind="thermal_insulation" ids="8,15,43" />
+    <source kind="volumetric_heat_source" domains="1-7" value="joule_heating" />
+  </physics>
+
+  <physics kind="solid_mechanics" order="1">
+    <solver type="umfpack.lu" max_iter="1000" tolerance="1e-10" print_level="0"/>
+    <boundary kind="fixed_constraint" ids="8" />
+    <boundary kind="fixed_constraint" ids="15" />
+    <boundary kind="fixed_constraint" ids="43" />
+    <boundary kind="free_boundary" ids="1-7,9-14,16-42" />
+  </physics>
+
+  <coupledPhysics name="joule_heat" kind="joule_heating" physics="electrostatics,heat_transfer" domains="1-7" />
+  <coupledPhysics name="thermal_expansion" kind="thermal_expansion" physics="heat_transfer,solid_mechanics" domains="1-7" />
+
+  <coupling method="picard" max_iter="20" tolerance="1e-4"/>
+</case>
