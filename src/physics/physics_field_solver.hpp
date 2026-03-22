@@ -49,8 +49,8 @@ public:
     void setOrder(int o) { order_ = o; }
     void setSolverConfig(const SolverConfig& config) { solverConfig_ = config; }
     
-    int iterations() const { return iter_; }
-    Real residual() const { return res_; }
+    int iterations() const { return  solver_->iterations(); }
+    Real residual() const { return solver_->residual(); }
 
 protected:
     void createSolver() { solver_ = SolverFactory::create(solverConfig_); }
@@ -62,8 +62,6 @@ protected:
     
     int order_ = 1;
     SolverConfig solverConfig_;
-    int iter_ = 0;
-    Real res_ = 0.0;
     
     const Mesh* mesh_ = nullptr;
     FieldValues* fieldValues_ = nullptr;
