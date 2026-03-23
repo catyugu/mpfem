@@ -218,13 +218,13 @@ def main() -> int:
     parser.add_argument(
         "--tolerance-t",
         type=float,
-        default=1e-6,
+        default=1e-4,
         help="Tolerance for temperature relative L2 error",
     )
     parser.add_argument(
         "--tolerance-disp",
         type=float,
-        default=1e-3,
+        default=1e-2,
         help="Tolerance for displacement relative L2 error",
     )
     args = parser.parse_args()

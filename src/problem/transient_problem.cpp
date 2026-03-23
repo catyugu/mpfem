@@ -60,7 +60,9 @@ TransientResult TransientProblem::solve() {
         // Reset previous temperature for new time step
         prevT_.resize(0);
 
-        // Picard coupling iteration within this time step
+        // Picard coupling iteration within this time step (electrostatics + heat transfer only)
+        // Structural (displacement) is uni-directionally coupled from temperature (thermal expansion)
+        // Only compute after electro-thermal coupling converges
         bool couplingConverged = false;
         for (int picardIter = 0; picardIter < couplingMaxIter; ++picardIter) {
             
@@ -85,12 +87,6 @@ TransientResult TransientProblem::solve() {
                 }
             }
             
-            // 3. Structural: quasi-static (thermal stress), depends on temperature
-            if (hasStructural()) {
-                structural->assemble();
-                structural->solve();
-            }
-            
             // Check coupling convergence (based on temperature change between iterations)
             Real errT = 0.0;
             if (hasHeatTransfer()) {
@@ -110,6 +106,14 @@ TransientResult TransientProblem::solve() {
                 couplingConverged = true;
                 break;
             }
+        }
+        
+        // Structural: quasi-static (thermal stress), depends on temperature
+        // Compute ONLY ONCE after electro-thermal coupling converges
+        // (uni-directional coupling: temperature -> displacement, not vice versa)
+        if (hasStructural()) {
+            structural->assemble();
+            structural->solve();
         }
         
         if (!couplingConverged) {

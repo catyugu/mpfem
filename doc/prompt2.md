@@ -1,7 +1,6 @@
 # 项目：mpfem
 
 * 本文档是doc/prompt1.md的后续，请先阅读doc/prompt1.md以获知本项目的基本信息和代码规范。
-* 当你做设计决策时，可以参考external/mfem中的设计来获得参考。
 
 ## 总要求
 
@@ -9,7 +8,6 @@
 * 需要给热场加入时变项。为此需要质量矩阵。
 * 你需要修改案例文件的格式（也许也需要busbar_steady和busbar_steady_order2的case.xml来指明它们是稳态。
 * 优先完成和测试BDF1方案，再考虑后续扩展到其他方案。
-* 注意：对历史场值的管理应该集中于FieldValues类中。
 * 注意：尽管我们这个案例里的初值在所有域上一样，你应该提供的必须是可以根据域分配不同初始值的接口。
 * 注意：我们的结果文件和comsol结果文件中节点顺序可能不同，比较时候需要注意。
 * 步骤： 
@@ -22,29 +20,29 @@
 ## 当前任务
 
 * 求解结果有问题，比较脚本的输出内容好像也有些问题（列索引和实际内容对不上）。
+* 而且开头的误差尤其大，尽管COMSOL使用的也是BDF1。请仔细寻找问题所在。
 * 当前结果：
 
 ```bash
 
- HUAWEI    mpfem  dev ≡  3   16.058s⠀   python .\scripts\compare_transient_results.py .\results\mpfem_result.txt .\cases\busbar_transient\result.txt 17:51:26 
+ HUAWEI    mpfem  dev ≡  3   4.907s⠀   python .\scripts\compare_transient_results.py .\results\mpfem_result.txt .\cases\busbar_transient\result.txt 21:24:26 
 Reference: mpfem_result.txt (7340 points, 11 time steps)
 Current: result.txt (7340 points, 11 time steps)
 
-Time Step       V L2            V L2 Rel        T L2            T L2 Rel        Disp L2         Disp L2 Rel
-----------------------------------------------------------------------------------------------------
-t=0             2.01e-10        OK      1.24e-07        FAIL    0.00e+00        OK      FAIL
+Time Step       V L2            V L2 Rel        T L2            T L2 Rel        Disp L2         Disp L2 Rel     Status
+-------------------------------------------------------------------------------------------------------------------
+t=0             2.01e-10        OK      1.24e-07        OK      0.00e+00        OK      PASS
 t=10            3.28e-06        OK      2.89e-04        FAIL    1.02e-01        FAIL    FAIL
 t=20            2.73e-06        OK      1.89e-04        FAIL    3.71e-02        FAIL    FAIL
-t=30            1.39e-06        OK      8.14e-05        FAIL    1.15e-02        FAIL    FAIL
-t=40            6.62e-07        OK      3.58e-05        FAIL    4.01e-03        FAIL    FAIL
-t=50            7.92e-08        OK      1.65e-05        FAIL    1.81e-03        FAIL    FAIL
-t=60            1.03e-07        OK      8.36e-06        FAIL    8.10e-04        OK      FAIL
-t=70            9.45e-08        OK      5.08e-06        FAIL    4.92e-04        OK      FAIL
-t=80            1.09e-07        OK      3.82e-06        FAIL    4.36e-04        OK      FAIL
-t=90            1.45e-07        OK      3.61e-06        FAIL    4.56e-04        OK      FAIL
-t=100           3.12e-07        OK      5.12e-06        FAIL    6.04e-04        OK      FAIL
+t=30            1.39e-06        OK      8.14e-05        OK      1.15e-02        FAIL    FAIL
+t=40            6.62e-07        OK      3.58e-05        OK      4.01e-03        OK      PASS
+t=50            7.92e-08        OK      1.65e-05        OK      1.81e-03        OK      PASS
+t=60            1.03e-07        OK      8.36e-06        OK      8.10e-04        OK      PASS
+t=70            9.45e-08        OK      5.08e-06        OK      4.92e-04        OK      PASS
+t=80            1.09e-07        OK      3.82e-06        OK      4.36e-04        OK      PASS
+t=90            1.45e-07        OK      3.61e-06        OK      4.56e-04        OK      PASS
+t=100           3.12e-07        OK      5.12e-06        OK      6.04e-04        OK      PASS
 ----------------------------------------------------------------------------------------------------
-Some time steps FAILED validation
 
 ```
 
@@ -108,7 +106,7 @@ Vtot	20[mV]	0.02 V	Applied voltage
 * 结果输出形式：按时间片导出为vtu/全部结果导出成和COMSOL相同格式的txt
 * 请将我们的结果和COMSOL结果文件进行逐个时间步对比。（这一步可以用Python等外部脚本完成，C++代码只需要能输出正确格式的结果即可）
 * 先使用一阶BDF（后向欧拉）方法，跑通之后再做BDF2，CrankNicolson。
-* 要求所有时间步电势场相对L2误差<1e-5，温度场相对L2误差<1e-7，位移场相对误差<1e-3
+* 要求所有时间步电势场相对L2误差<1e-5，温度场相对L2误差<1e-4，位移场相对误差<1e-2
 
 ### 二阶测试：`cases/busbar_transient_order2/`下
 

@@ -14,3 +14,8 @@
 
 `./build-llvm/examples/busbar_example .\cases\busbar_transient`
 `python .\scripts\compare_transient_results.py .\results\mpfem_result.txt .\cases\busbar_transient\result.txt`
+
+## 2阶瞬态
+
+`./build-llvm/examples/busbar_example .\cases\busbar_transient_order2`
+`python .\scripts\compare_transient_results.py .\results\mpfem_result.txt .\cases\busbar_transient_order2\result.txt`
