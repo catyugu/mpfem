@@ -192,6 +192,62 @@ namespace mpfem
             }
         }
 
+        // =====================================================================
+        // Arithmetic operators for clean matrix expressions
+        // =====================================================================
+
+        /// SparseMatrix + SparseMatrix (returns new matrix)
+        friend SparseMatrix operator+(const SparseMatrix& A, const SparseMatrix& B) {
+            MPFEM_ASSERT(A.rows() == B.rows() && A.cols() == B.cols(),
+                "SparseMatrix size mismatch in addition");
+            SparseMatrix result(A.rows(), A.cols());
+            result.mat_ = A.mat_ + B.mat_;
+            return result;
+        }
+
+        /// SparseMatrix - SparseMatrix (returns new matrix)
+        friend SparseMatrix operator-(const SparseMatrix& A, const SparseMatrix& B) {
+            MPFEM_ASSERT(A.rows() == B.rows() && A.cols() == B.cols(),
+                "SparseMatrix size mismatch in subtraction");
+            SparseMatrix result(A.rows(), A.cols());
+            result.mat_ = A.mat_ - B.mat_;
+            return result;
+        }
+
+        /// Scalar * SparseMatrix
+        friend SparseMatrix operator*(Real alpha, const SparseMatrix& A) {
+            SparseMatrix result(A.rows(), A.cols());
+            result.mat_ = alpha * A.mat_;
+            return result;
+        }
+
+        /// SparseMatrix * Scalar
+        friend SparseMatrix operator*(const SparseMatrix& A, Real alpha) {
+            return alpha * A;  // Commutative
+        }
+
+        /// SparseMatrix += SparseMatrix
+        SparseMatrix& operator+=(const SparseMatrix& B) {
+            MPFEM_ASSERT(rows() == B.rows() && cols() == B.cols(),
+                "SparseMatrix size mismatch in +=");
+            mat_ += B.mat_;
+            return *this;
+        }
+
+        /// SparseMatrix -= SparseMatrix
+        SparseMatrix& operator-=(const SparseMatrix& B) {
+            MPFEM_ASSERT(rows() == B.rows() && cols() == B.cols(),
+                "SparseMatrix size mismatch in -=");
+            mat_ -= B.mat_;
+            return *this;
+        }
+
+        /// SparseMatrix *= Scalar
+        SparseMatrix& operator*=(Real alpha) {
+            mat_ *= alpha;
+            return *this;
+        }
+
     private:
         Storage mat_;
         std::vector<Triplet> triplets_;
