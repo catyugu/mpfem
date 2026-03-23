@@ -29,7 +29,11 @@ TransientResult TransientProblem::solve() {
     // Steady-state initialization at t=0
     initializeSteadyState();
 
-    // Save t=0 snapshot (after steady-state initialization)
+    // Push initial conditions to history BEFORE first time step
+    // This ensures BDF1 has proper T_prev available
+    advanceTime();
+
+    // Save t=0 snapshot (after steady-state initialization and history setup)
     result.addSnapshot(0.0, fieldValues);
 
     // Create time integrator
@@ -66,6 +70,7 @@ TransientResult TransientProblem::solve() {
                 heatTransfer->assemble();
                 
                 // Use time integrator to do the transient heat solve
+                // Note: T_prev comes from history (properly set by advanceTime before loop)
                 bool stepOk = integrator->step(*this);
                 if (!stepOk) {
                     LOG_ERROR << "TransientProblem::solve: Time step failed";
@@ -107,10 +112,10 @@ TransientResult TransientProblem::solve() {
             return result;
         }
         
-        // Save snapshot before advancing time
+        // Save snapshot after advancing time
         result.addSnapshot(currentTime + timeStep, fieldValues);
         
-        // Advance time: push current fields to history
+        // Advance time: push current fields to history for next time step
         advanceTime();
         result.timeSteps = currentStep;
         result.finalTime = currentTime;

@@ -56,7 +56,6 @@ void BilinearFormAssembler::assemble() {
         ElementTransform trans;
         trans.setMesh(mesh);
 #else
-    int tid = 0;
     ThreadBuffer& buf = buffers_[0];
     ElementTransform trans;
     trans.setMesh(mesh);
@@ -223,7 +222,6 @@ void LinearFormAssembler::assemble() {
             ElementTransform trans;
             trans.setMesh(mesh);
 #else
-        int tid = 0;
         ThreadBuffer& buf = buffers_[0];
         ElementTransform trans;
         trans.setMesh(mesh);

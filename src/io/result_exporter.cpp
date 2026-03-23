@@ -21,32 +21,6 @@ std::string ResultExporter::getCurrentTimestamp() {
 }
 
 // -----------------------------------------------------------------------------
-// Helper: project GridFunction to corner vertices
-// -----------------------------------------------------------------------------
-static std::vector<Real> projectToCorners(const Mesh& mesh, const GridFunction& field) {
-    Index numCorners = mesh.numCornerVertices();
-    const auto& cornerIndices = mesh.cornerVertexIndices();
-    
-    std::vector<Real> result(numCorners);
-    
-    // For scalar fields, directly map corner vertices
-    if (field.vdim() == 1) {
-        for (Index i = 0; i < numCorners; ++i) {
-            result[i] = field(cornerIndices[i]);
-        }
-    } else {
-        // For vector fields, interleave components
-        for (Index i = 0; i < numCorners; ++i) {
-            Index base = cornerIndices[i] * 3;  // Assuming vdim=3 for displacement
-            result[i * 3] = field(base);
-            result[i * 3 + 1] = field(base + 1);
-            result[i * 3 + 2] = field(base + 2);
-        }
-    }
-    return result;
-}
-
-// -----------------------------------------------------------------------------
 // COMSOL text export implementation
 // -----------------------------------------------------------------------------
 void ResultExporter::exportComsolText(const SteadyResult& result, const Mesh& mesh,

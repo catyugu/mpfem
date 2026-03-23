@@ -29,11 +29,10 @@ bool BDF1Integrator::step(TransientProblem& problem) {
     const Vector& Q = heatSolver->rhsBeforeBC();
     
     // Get current field values T^n (solution goes here) and previous field values T^{n-1}
-    // At first time step (currentStep == 0), history is not available yet,
-    // so T^n is the current field (initial condition)
+    // T_prev comes from history, which is properly populated by advanceTime() before the loop
+    // This ensures correct BDF1 formula even within Picard coupling iterations
     GridFunction& T_curr = heatSolver->field();
-    const GridFunction& T_prev = (problem.currentStep > 0) ? 
-        problem.history(FieldId::Temperature, 1) : heatSolver->field();
+    const GridFunction& T_prev = problem.history(FieldId::Temperature, 1);
     
     // Build effective stiffness matrix: A = M + dt * K
     // For BDF1 (Backward Euler), the implicit system is:

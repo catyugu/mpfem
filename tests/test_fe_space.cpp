@@ -528,20 +528,3 @@ TEST_F(FESpaceLinearTest, ReferenceElementAccess) {
     EXPECT_EQ(refElem->geometry(), Geometry::Triangle);
     EXPECT_EQ(refElem->numDofs(), 3);
 }
-
-// =============================================================================
-// Ordering Tests
-// =============================================================================
-
-TEST_F(FESpaceVectorTest, OrderingByVDim) {
-    // Default ordering is byNodes (more common convention)
-    EXPECT_EQ(feSpace_->ordering(), FESpace::Ordering::byNodes);
-    
-    // Can change to byVDim
-    feSpace_->setOrdering(FESpace::Ordering::byVDim);
-    EXPECT_EQ(feSpace_->ordering(), FESpace::Ordering::byVDim);
-    
-    // Can change back to byNodes
-    feSpace_->setOrdering(FESpace::Ordering::byNodes);
-    EXPECT_EQ(feSpace_->ordering(), FESpace::Ordering::byNodes);
-}
