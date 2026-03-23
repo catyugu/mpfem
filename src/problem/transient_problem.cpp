@@ -4,9 +4,30 @@
 
 namespace mpfem {
 
+void TransientProblem::initializeSteadyState() {
+    LOG_INFO << "Steady-state initialization at t=0";
+    
+    // 1. Electrostatics: solve with initial temperature
+    if (hasElectrostatics()) {
+        electrostatics->assemble();
+        electrostatics->solve();
+    }
+    
+    // 2. Structural: solve with initial temperature
+    if (hasStructural()) {
+        structural->assemble();
+        structural->solve();
+    }
+    
+    LOG_INFO << "Steady-state initialization complete";
+}
+
 TransientResult TransientProblem::solve() {
     ScopedTimer timer("Transient solve");
     TransientResult result;
+
+    // Steady-state initialization at t=0
+    initializeSteadyState();
 
     // Create time integrator
     auto* integrator = createTimeIntegrator(scheme);

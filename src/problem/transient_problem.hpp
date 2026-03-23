@@ -68,6 +68,9 @@ public:
     
 private:
     Vector prevT_;  ///< Previous temperature for convergence check
+    
+    /// @brief Solve steady-state initialization at t=0 before time stepping
+    void initializeSteadyState();
 };
 
 }  // namespace mpfem
