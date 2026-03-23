@@ -5,6 +5,7 @@
 #include "physics/electrostatics_solver.hpp"
 #include "physics/heat_transfer_solver.hpp"
 #include "physics/structural_solver.hpp"
+#include "physics/field_values.hpp"
 #include "core/logger.hpp"
 
 namespace mpfem {
@@ -13,6 +14,7 @@ struct SteadyResult {
     bool converged = false;
     int iterations = 0;
     Real residual = 0.0;
+    FieldValues fields;  ///< Final field values after solve
 };
 
 class SteadyProblem : public Problem {
@@ -27,6 +29,7 @@ public:
                 electrostatics->assemble();
                 electrostatics->solve();
             }
+            result.fields = fieldValues;
             return result;
         }
 
@@ -47,6 +50,7 @@ public:
             structural->assemble();
             structural->solve();
         }
+        result.fields = fieldValues;
         return result;
     }
 

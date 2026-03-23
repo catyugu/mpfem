@@ -29,6 +29,9 @@ TransientResult TransientProblem::solve() {
     // Steady-state initialization at t=0
     initializeSteadyState();
 
+    // Save t=0 snapshot (after steady-state initialization)
+    result.addSnapshot(0.0, fieldValues);
+
     // Create time integrator
     auto* integrator = createTimeIntegrator(scheme);
     if (!integrator) {
@@ -103,6 +106,9 @@ TransientResult TransientProblem::solve() {
             delete integrator;
             return result;
         }
+        
+        // Save snapshot before advancing time
+        result.addSnapshot(currentTime + timeStep, fieldValues);
         
         // Advance time: push current fields to history
         advanceTime();

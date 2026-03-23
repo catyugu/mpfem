@@ -18,6 +18,17 @@ struct TransientResult {
     bool converged = false;
     int timeSteps = 0;
     Real finalTime = 0.0;
+    
+    std::vector<Real> times;                      ///< Time at each snapshot
+    std::vector<FieldValues> snapshots;            ///< Field values at each time step
+    
+    void addSnapshot(Real time, const FieldValues& fields) {
+        times.push_back(time);
+        snapshots.emplace_back();
+        snapshots.back() = fields;  // Copy
+    }
+    
+    int numTimeSteps() const { return static_cast<int>(times.size()); }
 };
 
 class TransientProblem : public Problem {
