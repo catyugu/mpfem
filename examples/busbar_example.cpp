@@ -35,7 +35,7 @@ int main(int argc, char* argv[]) {
                 // Export results
                 std::filesystem::create_directories("results");
                 ResultExporter::exportVtu(result, *setup->mesh, "results/busbar_transient.vtu");
-                ResultExporter::exportComsolText(result, *setup->mesh, "results/mpfem_result");
+                ResultExporter::exportComsolText(result, *setup->mesh, "results/mpfem_result.txt");
                 LOG_INFO << "Exported results";
             }
         } else {
