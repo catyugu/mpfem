@@ -151,8 +151,10 @@ $V_{n+1} = V_{n+1}^{(k+1)}, \quad T_{n+1} = T_{n+1}^{(k+1)}, \quad \mathbf{u}_{n
 
 ## 当前任务进度
 
-* 线性单元BDF1已经完成，但是输出接口待完善，结果待验证。详见`doc/vaidation.md`
 * 自定义包装的稀疏矩阵运算符重载待完善（以简化外层代码使用）。
+* 结果的包装与导出方式待统一，目前例子中都在用FieldResult手动导出，最好把结果以GridFunction形式统一放到TransientResult（分时间片）与SteadyResult中。
+* 移除FieldResult，改造result_exporter使其更易用。
+* 线性单元BDF1已经完成，但是输出接口待完善，结果待验证。详见`doc/validation.md`
 * 待撰写比较验证的脚本：`.\scripts\compare_transient_results.py`。
 * 质疑对eigen稀疏矩阵的包装是否必要。
 * 目前代码有些地方不符合项目宪法与约束，需要重构。
