@@ -6,34 +6,88 @@
 namespace mpfem
 {
 
-    std::unique_ptr<SteadyProblem> PhysicsProblemBuilder::build(const std::string &caseDir)
-    {
-        auto problem = std::make_unique<SteadyProblem>();
+std::unique_ptr<Problem> PhysicsProblemBuilder::build(const std::string &caseDir)
+{
+    std::string casePath = caseDir + "/case.xml";
+    LOG_INFO << "Reading case from " << casePath;
 
-        std::string casePath = caseDir + "/case.xml";
-        LOG_INFO << "Reading case from " << casePath;
+    CaseDefinition caseDef;
+    CaseXmlReader::readFromFile(casePath, caseDef);
 
-        CaseXmlReader::readFromFile(casePath, problem->caseDef);
-        problem->caseName = problem->caseDef.caseName;
-
-        std::string meshPath = caseDir + "/" + problem->caseDef.meshPath;
-        LOG_INFO << "Reading mesh from " << meshPath;
-
-        problem->mesh = std::make_unique<Mesh>(MphtxtReader::read(meshPath));
-        LOG_INFO << "Mesh loaded: " << problem->mesh->numVertices() << " vertices, "
-                 << problem->mesh->numElements() << " elements";
-
-        std::string matPath = caseDir + "/" + problem->caseDef.materialsPath;
-        LOG_INFO << "Reading materials from " << matPath;
-
-        MaterialXmlReader::readFromFile(matPath, problem->materials);
-
-        buildSolvers(*problem);
-
-        return problem;
+    std::unique_ptr<Problem> problem;
+    
+    // Determine problem type based on study type
+    bool isTransient = (caseDef.studyType == "transient");
+    
+    if (isTransient) {
+        auto transientProb = std::make_unique<TransientProblem>();
+        
+        // Configure time stepping parameters
+        transientProb->startTime = caseDef.timeConfig.start;
+        transientProb->endTime = caseDef.timeConfig.end;
+        transientProb->timeStep = caseDef.timeConfig.step;
+        
+        // Parse time scheme
+        if (caseDef.timeConfig.scheme == "BDF2") {
+            transientProb->scheme = TimeScheme::BDF2;
+        } else if (caseDef.timeConfig.scheme == "CrankNicolson") {
+            transientProb->scheme = TimeScheme::CrankNicolson;
+        } else {
+            // Default to BDF1 / BackwardEuler
+            transientProb->scheme = TimeScheme::BackwardEuler;
+        }
+        
+        // Configure coupling parameters
+        if (caseDef.couplingConfig.maxIterations > 0) {
+            transientProb->couplingMaxIter = caseDef.couplingConfig.maxIterations;
+            transientProb->couplingTol = caseDef.couplingConfig.tolerance;
+        }
+        
+        problem = std::move(transientProb);
+    } else {
+        auto steadyProb = std::make_unique<SteadyProblem>();
+        
+        // Configure coupling parameters for steady problem
+        if (caseDef.couplingConfig.maxIterations > 0) {
+            steadyProb->couplingMaxIter = caseDef.couplingConfig.maxIterations;
+            steadyProb->couplingTol = caseDef.couplingConfig.tolerance;
+        }
+        
+        problem = std::move(steadyProb);
     }
+    
+    // Set common problem properties
+    problem->caseName = caseDef.caseName;
+    problem->caseDef = caseDef;
+    
+    std::string meshPath = caseDir + "/" + caseDef.meshPath;
+    LOG_INFO << "Reading mesh from " << meshPath;
+    
+    problem->mesh = std::make_unique<Mesh>(MphtxtReader::read(meshPath));
+    LOG_INFO << "Mesh loaded: " << problem->mesh->numVertices() << " vertices, "
+             << problem->mesh->numElements() << " elements";
+    
+    std::string matPath = caseDir + "/" + caseDef.materialsPath;
+    LOG_INFO << "Reading materials from " << matPath;
+    
+    MaterialXmlReader::readFromFile(matPath, problem->materials);
+    
+    buildSolvers(*problem);
+    
+    // Initialize transient after building solvers
+    if (isTransient) {
+        auto* transProb = dynamic_cast<TransientProblem*>(problem.get());
+        int historyDepth = 1;
+        if (transProb->scheme == TimeScheme::BDF2) {
+            historyDepth = 2;
+        }
+        transProb->initializeTransient(historyDepth);
+    }
+    
+    return problem;
+}
 
-    void PhysicsProblemBuilder::buildSolvers(SteadyProblem &problem)
+    void PhysicsProblemBuilder::buildSolvers(Problem &problem)
     {
         const auto &caseDef = problem.caseDef;
         for (const auto &assign : caseDef.materialAssignments)
@@ -49,18 +103,18 @@ namespace mpfem
 
         if (problem.hasJouleHeating() || problem.hasThermalExpansion())
         {
-            problem.couplingMaxIter = caseDef.couplingConfig.maxIterations;
-            problem.couplingTol = caseDef.couplingConfig.tolerance;
             setupCoupling(problem);
         }
     }
 
-    void PhysicsProblemBuilder::buildElectrostatics(SteadyProblem &problem, const PhysicsDefinition &physics)
+    void PhysicsProblemBuilder::buildElectrostatics(Problem &problem, const PhysicsDefinition &physics)
     {
         LOG_INFO << "Building electrostatics solver, order = " << physics.order;
         problem.electrostatics = std::make_unique<ElectrostaticsSolver>(physics.order);
         problem.electrostatics->setSolverConfig(physics.solver);
-        problem.electrostatics->initialize(*problem.mesh, problem.fieldValues, physics.order);
+        
+        double icValue = getInitialCondition(problem.caseDef, "electrostatics", 0.0);
+        problem.electrostatics->initialize(*problem.mesh, problem.fieldValues, physics.order, icValue);
 
         for (const auto &[domId, matTag] : problem.domainMaterial)
         {
@@ -87,22 +141,41 @@ namespace mpfem
         }
     }
 
-    void PhysicsProblemBuilder::buildHeatTransfer(SteadyProblem &problem, const PhysicsDefinition &physics)
+    void PhysicsProblemBuilder::buildHeatTransfer(Problem &problem, const PhysicsDefinition &physics)
     {
         LOG_INFO << "Building heat transfer solver, order = " << physics.order;
         problem.heatTransfer = std::make_unique<HeatTransferSolver>(physics.order);
         problem.heatTransfer->setSolverConfig(physics.solver);
-        problem.heatTransfer->initialize(*problem.mesh, problem.fieldValues, physics.order);
+        
+        double icValue = getInitialCondition(problem.caseDef, "heat_transfer", 293.15);
+        problem.heatTransfer->initialize(*problem.mesh, problem.fieldValues, physics.order, icValue);
 
         for (const auto &[domId, matTag] : problem.domainMaterial)
         {
             if (const auto* mat = problem.materials.getMaterial(matTag))
             {
+                // Thermal conductivity (k)
                 if (auto kMat = mat->thermalConductivity)
                 {
                     std::string key = "thermal_conductivity_" + std::to_string(domId);
                     problem.setCoef(key, constantMatrixCoefficient(kMat.value()));
                     problem.heatTransfer->setConductivity({domId}, problem.getCoef<MatrixCoefficient>(key));
+                }
+                
+                // Density (rho) - needed for transient mass matrix
+                if (mat->density.has_value() && mat->density.value() > 0.0)
+                {
+                    std::string key = "density_" + std::to_string(domId);
+                    problem.setCoef(key, constantCoefficient(mat->density.value()));
+                    problem.heatTransfer->setDensity({domId}, problem.getCoef<Coefficient>(key));
+                }
+                
+                // Specific heat (Cp) - needed for transient mass matrix
+                if (mat->heatCapacity.has_value() && mat->heatCapacity.value() > 0.0)
+                {
+                    std::string key = "heat_capacity_" + std::to_string(domId);
+                    problem.setCoef(key, constantCoefficient(mat->heatCapacity.value()));
+                    problem.heatTransfer->setSpecificHeat({domId}, problem.getCoef<Coefficient>(key));
                 }
             }
         }
@@ -130,12 +203,14 @@ namespace mpfem
         }
     }
 
-    void PhysicsProblemBuilder::buildStructural(SteadyProblem &problem, const PhysicsDefinition &physics)
+    void PhysicsProblemBuilder::buildStructural(Problem &problem, const PhysicsDefinition &physics)
     {
         LOG_INFO << "Building structural solver, order = " << physics.order;
         problem.structural = std::make_unique<StructuralSolver>(physics.order);
         problem.structural->setSolverConfig(physics.solver);
-        problem.structural->initialize(*problem.mesh, problem.fieldValues, physics.order);
+        
+        double icValue = getInitialCondition(problem.caseDef, "solid_mechanics", 0.0);
+        problem.structural->initialize(*problem.mesh, problem.fieldValues, physics.order, icValue);
 
         for (const auto &[domId, matTag] : problem.domainMaterial)
         {
@@ -164,7 +239,7 @@ namespace mpfem
         }
     }
 
-    void PhysicsProblemBuilder::setupCoupling(SteadyProblem &problem)
+    void PhysicsProblemBuilder::setupCoupling(Problem &problem)
     {
         DomainMappedMatrixCoefficient tempDepSigmaMap;
         
@@ -273,6 +348,16 @@ namespace mpfem
         if (auto pos = numStr.find('['); pos != std::string::npos) numStr = numStr.substr(0, pos);
         try { return std::stod(numStr); }
         catch (...) { try { return caseDef.getVariable(numStr); } catch (...) { return defaultVal; } }
+    }
+
+    double PhysicsProblemBuilder::getInitialCondition(const CaseDefinition &caseDef, const std::string &fieldKind, double defaultVal)
+    {
+        for (const auto &ic : caseDef.initialConditions) {
+            if (ic.fieldKind == fieldKind) {
+                return ic.value;
+            }
+        }
+        return defaultVal;
     }
 
 } // namespace mpfem

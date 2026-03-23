@@ -23,7 +23,7 @@ public:
     std::string fieldName() const override { return "Structural"; }
     FieldId fieldId() const override { return FieldId::Displacement; }
     
-    bool initialize(const Mesh& mesh, FieldValues& fieldValues, int order);
+    bool initialize(const Mesh& mesh, FieldValues& fieldValues, int order, double initialDisplacement = 0.0);
     
     // Material coefficients
     void setYoungModulus(const std::set<int>& domains, const Coefficient* E);

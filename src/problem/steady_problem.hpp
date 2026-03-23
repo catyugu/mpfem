@@ -18,16 +18,6 @@ struct SteadyResult {
 class SteadyProblem : public Problem {
 public:
 
-    int couplingMaxIter = 15;
-    Real couplingTol = 1e-6;
-    
-    bool hasElectrostatics() const { return electrostatics != nullptr; }
-    bool hasHeatTransfer() const { return heatTransfer != nullptr; }
-    bool hasStructural() const { return structural != nullptr; }
-    bool hasJouleHeating() const { return hasElectrostatics() && hasHeatTransfer(); }
-    bool hasThermalExpansion() const { return hasHeatTransfer() && hasStructural(); }
-    bool isCoupled() const { return hasJouleHeating() || hasThermalExpansion(); }
-    
     SteadyResult solve() {
         ScopedTimer timer("Coupling solve");
         SteadyResult result;

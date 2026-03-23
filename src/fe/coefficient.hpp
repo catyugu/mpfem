@@ -57,6 +57,23 @@ private:
     Func func_;
 };
 
+/**
+ * @brief Product coefficient: (c1 * c2) at each evaluation point
+ */
+class ProductCoefficient : public Coefficient {
+public:
+    ProductCoefficient(const Coefficient* c1, const Coefficient* c2) : c1_(c1), c2_(c2) {}
+    void eval(ElementTransform& trans, Real& result, Real t) const override {
+        Real v1, v2;
+        c1_->eval(trans, v1, t);
+        c2_->eval(trans, v2, t);
+        result = v1 * v2;
+    }
+private:
+    const Coefficient* c1_ = nullptr;
+    const Coefficient* c2_ = nullptr;
+};
+
 class VectorFunctionCoefficient : public VectorCoefficient {
 public:
     using Func = std::function<void(ElementTransform&, Vector3&, Real)>;

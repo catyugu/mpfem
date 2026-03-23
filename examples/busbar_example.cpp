@@ -3,6 +3,8 @@
 #include "fe/fe_collection.hpp"
 #include "fe/fe_space.hpp"
 #include "problem/physics_problem_builder.hpp"
+#include "problem/transient_problem.hpp"
+#include "problem/steady_problem.hpp"
 #include "io/result_exporter.hpp"
 #include "core/logger.hpp"
 #include <filesystem>
@@ -21,14 +23,27 @@ int main(int argc, char* argv[]) {
     try {
         auto setup = PhysicsProblemBuilder::build(caseDir);
 
-        if (setup->isCoupled()) {
+        if (setup->isTransient()) {
+            LOG_INFO << "Running transient solve...";
+            auto* transProb = dynamic_cast<TransientProblem*>(setup.get());
+            if (transProb) {
+                TransientResult result = transProb->solve();
+                if (!result.converged) {
+                    LOG_ERROR << "Transient solve did not converge after " << result.timeSteps << " steps";
+                    return 1;
+                }
+                LOG_INFO << "Transient solve converged in " << result.timeSteps << " time steps";
+            }
+        } else if (setup->isCoupled()) {
             LOG_INFO << "Running coupled electro-thermal solve...";
-            SteadyResult result = setup->solve();
-
-            if (!result.converged) {
-                LOG_WARN << "Coupling did not converge after " << result.iterations << " iterations";
-            } else {
-                LOG_INFO << "Coupling converged in " << result.iterations << " iterations";
+            auto* steadyProb = dynamic_cast<SteadyProblem*>(setup.get());
+            if (steadyProb) {
+                SteadyResult result = steadyProb->solve();
+                if (!result.converged) {
+                    LOG_WARN << "Coupling did not converge after " << result.iterations << " iterations";
+                } else {
+                    LOG_INFO << "Coupling converged in " << result.iterations << " iterations";
+                }
             }
         } else if (setup->hasElectrostatics()) {
             LOG_INFO << "Running single physics electrostatics solve...";

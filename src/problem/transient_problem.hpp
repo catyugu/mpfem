@@ -5,14 +5,19 @@
 #include "physics/electrostatics_solver.hpp"
 #include "physics/heat_transfer_solver.hpp"
 #include "physics/structural_solver.hpp"
+#include "time/time_scheme.hpp"
 #include "core/logger.hpp"
+#include <memory>
 
 namespace mpfem {
 
-enum class TimeScheme {
-    BackwardEuler,
-    BDF2,
-    CrankNicolson
+/**
+ * @brief Result of transient solve
+ */
+struct TransientResult {
+    bool converged = false;
+    int timeSteps = 0;
+    Real finalTime = 0.0;
 };
 
 class TransientProblem : public Problem {
@@ -49,6 +54,20 @@ public:
     GridFunction& history(FieldId id, int stepsBack = 1) {
         return fieldValues.history(id, stepsBack);
     }
+    
+    /**
+     * @brief Solve the transient problem with time stepping and Picard coupling
+     * 
+     * Outer loop: time stepping
+     * Inner loop: Picard coupling iteration
+     *   - Electrostatics: quasi-static, temperature-dependent conductivity
+     *   - Heat: transient (handled by time integrator)
+     *   - Structural: quasi-static, thermal stress
+     */
+    TransientResult solve();
+    
+private:
+    Vector prevT_;  ///< Previous temperature for convergence check
 };
 
 }  // namespace mpfem
