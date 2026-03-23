@@ -5,7 +5,7 @@
 
 ## 总要求
 
-* 接下来我们需要时变（准静态电场，热场，位移场）求解，但由于旧代码特化于静态非线性耦合问题，需要架构上做若干改进。
+* 接下来我们需要时变（非线性耦合的准静态电场，热场，位移场）求解。
 * 需要给热场加入时变项。为此需要质量矩阵。
 * 你需要修改案例文件的格式（也许也需要busbar_steady和busbar_steady_order2的case.xml来指明它们是稳态。
 * 优先完成和测试BDF1方案，再考虑后续扩展到其他方案。
@@ -21,28 +21,30 @@
 
 ## 当前任务
 
-* 自定义包装的稀疏矩阵运算符重载待完善（以简化外层代码使用）。
-* 初始化的时候，在initializeSteadyState之后，应该给温度场也推入初值（不需要解）。
-* 线性单元BDF1已经完成，但是输出接口待完善，结果待验证。详见`doc/validation.md`
-* 求解结果有问题，比较脚本的输出内容好像也有些问题。
+* 求解结果有问题，比较脚本的输出内容好像也有些问题（列索引和实际内容对不上）。
 * 当前结果：
 
 ```bash
 
+ HUAWEI    mpfem  dev ≡  3   16.058s⠀   python .\scripts\compare_transient_results.py .\results\mpfem_result.txt .\cases\busbar_transient\result.txt 17:51:26 
+Reference: mpfem_result.txt (7340 points, 11 time steps)
+Current: result.txt (7340 points, 11 time steps)
+
 Time Step       V L2            V L2 Rel        T L2            T L2 Rel        Disp L2         Disp L2 Rel
 ----------------------------------------------------------------------------------------------------
 t=0             2.01e-10        OK      1.24e-07        FAIL    0.00e+00        OK      FAIL
-t=10            3.28e-06        OK      9.39e-04        FAIL    4.30e-01        FAIL    FAIL
-t=20            5.43e-05        FAIL    7.03e-04        FAIL    3.14e-01        FAIL    FAIL
-t=30            5.62e-05        FAIL    6.64e-04        FAIL    2.48e-01        FAIL    FAIL
-t=40            5.71e-05        FAIL    6.49e-04        FAIL    2.03e-01        FAIL    FAIL
-t=50            5.73e-05        FAIL    6.41e-04        FAIL    1.71e-01        FAIL    FAIL
-t=60            5.75e-05        FAIL    6.35e-04        FAIL    1.47e-01        FAIL    FAIL
-t=70            5.76e-05        FAIL    6.31e-04        FAIL    1.28e-01        FAIL    FAIL
-t=80            5.75e-05        FAIL    6.26e-04        FAIL    1.13e-01        FAIL    FAIL
-t=90            5.73e-05        FAIL    6.21e-04        FAIL    1.02e-01        FAIL    FAIL
-t=100           5.69e-05        FAIL    6.16e-04        FAIL    9.18e-02        FAIL    FAIL
+t=10            3.28e-06        OK      2.89e-04        FAIL    1.02e-01        FAIL    FAIL
+t=20            2.73e-06        OK      1.89e-04        FAIL    3.71e-02        FAIL    FAIL
+t=30            1.39e-06        OK      8.14e-05        FAIL    1.15e-02        FAIL    FAIL
+t=40            6.62e-07        OK      3.58e-05        FAIL    4.01e-03        FAIL    FAIL
+t=50            7.92e-08        OK      1.65e-05        FAIL    1.81e-03        FAIL    FAIL
+t=60            1.03e-07        OK      8.36e-06        FAIL    8.10e-04        OK      FAIL
+t=70            9.45e-08        OK      5.08e-06        FAIL    4.92e-04        OK      FAIL
+t=80            1.09e-07        OK      3.82e-06        FAIL    4.36e-04        OK      FAIL
+t=90            1.45e-07        OK      3.61e-06        FAIL    4.56e-04        OK      FAIL
+t=100           3.12e-07        OK      5.12e-06        FAIL    6.04e-04        OK      FAIL
 ----------------------------------------------------------------------------------------------------
+Some time steps FAILED validation
 
 ```
 
@@ -89,7 +91,7 @@ Vtot	20[mV]	0.02 V	Applied voltage
 * 案例描述：一个母线板，上面有三个螺丝。求解稳态问题。
 * 网格文件：mesh.mphtxt
 * 配置文件：case.xml
-* 时间步进要求：10秒时间步长，开始时间t=0，结束时间t=100
+* 时间步进要求：时间步长10s，开始时间t=0，结束时间t=100s，共11个点。
 * 一共7个domain，43个boundary。（到此你应该检验网格读入是否正确）
 * 三个物理场：电势（准静态，但是电导率有温变）、固体传热、刚体力学。
 * 材料：Copper用于domain 1（板体），Titanium beta-21S用于domain 2-7，材料属性见于material.xml
