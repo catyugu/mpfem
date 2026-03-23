@@ -34,17 +34,29 @@ bool BDF1Integrator::step(TransientProblem& problem) {
     GridFunction& T_curr = heatSolver->field();
     const GridFunction& T_prev = problem.history(FieldId::Temperature, 1);
     
+    // Initialize pre-allocated matrix/vector on first call
+    const Index nRows = M.rows();
+    const Index nCols = M.cols();
+    if (!initialized_ || A_.rows() != nRows || A_.cols() != nCols) {
+        A_.resize(nRows, nCols);
+        rhs_.resize(nRows);
+        initialized_ = true;
+    }
+    
     // Build effective stiffness matrix: A = M + dt * K
     // For BDF1 (Backward Euler), the implicit system is:
     // (M + dt*K) * T^{n+1} = M * T^n + dt * Q
-    SparseMatrix A = M + dt * K;
-    A.makeCompressed();
+    // Use pre-allocated A_ with in-place operations
+    A_.setZero();
+    A_.eigen() = M.eigen() + dt * K.eigen();
+    A_.makeCompressed();
     
     // Compute RHS: rhs = M * T^n + dt * Q
-    Vector rhs = M.eigen() * T_prev.values() + dt * Q;
+    // Use pre-allocated rhs_ with in-place operations
+    rhs_ = M.eigen() * T_prev.values() + dt * Q;
     
     // Solve A * T^{n+1} = rhs with boundary conditions applied to the combined system
-    bool ok = heatSolver->solveLinearSystem(A, T_curr.values(), rhs);
+    bool ok = heatSolver->solveLinearSystem(A_, T_curr.values(), rhs_);
     
     if (!ok) {
         LOG_ERROR << "BDF1Integrator: Linear solve failed";

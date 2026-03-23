@@ -2,6 +2,7 @@
 #define MPFEM_SPARSE_MATRIX_HPP
 
 #include "core/types.hpp"
+#include "core/exception.hpp"
 #include <Eigen/Sparse>
 #include <vector>
 #include <fstream>
@@ -190,40 +191,6 @@ namespace mpfem
                          << it.value() << "\n";
                 }
             }
-        }
-
-        // =====================================================================
-        // Arithmetic operators for clean matrix expressions
-        // =====================================================================
-
-        /// SparseMatrix + SparseMatrix (returns new matrix)
-        friend SparseMatrix operator+(const SparseMatrix& A, const SparseMatrix& B) {
-            MPFEM_ASSERT(A.rows() == B.rows() && A.cols() == B.cols(),
-                "SparseMatrix size mismatch in addition");
-            SparseMatrix result(A.rows(), A.cols());
-            result.mat_ = A.mat_ + B.mat_;
-            return result;
-        }
-
-        /// SparseMatrix - SparseMatrix (returns new matrix)
-        friend SparseMatrix operator-(const SparseMatrix& A, const SparseMatrix& B) {
-            MPFEM_ASSERT(A.rows() == B.rows() && A.cols() == B.cols(),
-                "SparseMatrix size mismatch in subtraction");
-            SparseMatrix result(A.rows(), A.cols());
-            result.mat_ = A.mat_ - B.mat_;
-            return result;
-        }
-
-        /// Scalar * SparseMatrix
-        friend SparseMatrix operator*(Real alpha, const SparseMatrix& A) {
-            SparseMatrix result(A.rows(), A.cols());
-            result.mat_ = alpha * A.mat_;
-            return result;
-        }
-
-        /// SparseMatrix * Scalar
-        friend SparseMatrix operator*(const SparseMatrix& A, Real alpha) {
-            return alpha * A;  // Commutative
         }
 
         /// SparseMatrix += SparseMatrix

@@ -40,7 +40,7 @@ TransientResult TransientProblem::solve() {
     result.addSnapshot(0.0, fieldValues);
 
     // Create time integrator
-    auto* integrator = createTimeIntegrator(scheme);
+    std::unique_ptr<TimeIntegrator> integrator(createTimeIntegrator(scheme));
     if (!integrator) {
         LOG_ERROR << "TransientProblem::solve: Failed to create time integrator for scheme";
         return result;
@@ -82,7 +82,6 @@ TransientResult TransientProblem::solve() {
                 bool stepOk = integrator->step(*this);
                 if (!stepOk) {
                     LOG_ERROR << "TransientProblem::solve: Time step failed";
-                    delete integrator;
                     return result;
                 }
             }
@@ -118,7 +117,6 @@ TransientResult TransientProblem::solve() {
         
         if (!couplingConverged) {
             LOG_ERROR << "TransientProblem::solve: Coupling not converged at t=" << nextTime;
-            delete integrator;
             return result;
         }
         
@@ -137,7 +135,6 @@ TransientResult TransientProblem::solve() {
     LOG_INFO << "Transient solve completed: " << result.timeSteps << " time steps";
     result.converged = true;
     
-    delete integrator;
     return result;
 }
 

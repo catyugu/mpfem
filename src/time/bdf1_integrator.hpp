@@ -2,6 +2,7 @@
 #define MPFEM_BDF1_INTEGRATOR_HPP
 
 #include "time_integrator.hpp"
+#include "solver/sparse_matrix.hpp"
 
 namespace mpfem {
 
@@ -40,6 +41,11 @@ public:
      * @brief Returns 1.0 for single-step method
      */
     Real getBeta() const override { return 1.0; }
+
+private:
+    SparseMatrix A_;  ///< Pre-allocated system matrix (reused every step)
+    Vector rhs_;      ///< Pre-allocated RHS vector (reused every step)
+    bool initialized_ = false;  ///< Track if A_ and rhs_ are sized
 };
 
 }  // namespace mpfem
