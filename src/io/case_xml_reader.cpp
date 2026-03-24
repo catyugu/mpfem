@@ -280,6 +280,8 @@ void CaseXmlReader::readFromFile(const std::string& filePath, CaseDefinition& ca
         }
     }
 
+    caseDefinition.buildVariableMap();
+
     LOG_INFO << "Loaded case definition: " << caseDefinition.caseName 
              << " with " << caseDefinition.physics.size() << " physics fields";
 }

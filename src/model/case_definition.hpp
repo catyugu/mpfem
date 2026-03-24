@@ -124,20 +124,18 @@ struct CaseDefinition {
     TimeConfig timeConfig;
     std::vector<InitialCondition> initialConditions;
 
-    // mutable cache for O(1) variable lookup
-    mutable std::map<std::string, double> variableMap_;
-    mutable bool variableMapBuilt_ = false;
+    // O(1) variable lookup map, built explicitly after variables are populated.
+    std::map<std::string, double> variableMap_;
 
     /**
      * @brief Build variable map for O(1) lookup from variables vector.
      * Call this after variables are populated or modified.
      */
-    void buildVariableMap() const {
+    void buildVariableMap() {
         variableMap_.clear();
         for (const auto& v : variables) {
             variableMap_[v.name] = v.siValue;
         }
-        variableMapBuilt_ = true;
     }
 
     /**
@@ -145,9 +143,6 @@ struct CaseDefinition {
      * @throws Exception if variable not found.
      */
     double getVariable(const std::string& name) const {
-        if (!variableMapBuilt_) {
-            buildVariableMap();
-        }
         auto it = variableMap_.find(name);
         if (it != variableMap_.end()) {
             return it->second;
@@ -160,9 +155,6 @@ struct CaseDefinition {
      * @brief Check if variable exists.
      */
     bool hasVariable(const std::string& name) const {
-        if (!variableMapBuilt_) {
-            buildVariableMap();
-        }
         return variableMap_.find(name) != variableMap_.end();
     }
     
@@ -170,9 +162,6 @@ struct CaseDefinition {
      * @brief Get variable value by name, or default if not found.
      */
     double getVariableOrDefault(const std::string& name, double defaultValue) const {
-        if (!variableMapBuilt_) {
-            buildVariableMap();
-        }
         auto it = variableMap_.find(name);
         if (it != variableMap_.end()) {
             return it->second;
