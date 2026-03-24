@@ -124,7 +124,7 @@ bool HeatTransferSolver::solveLinearSystem(const SparseMatrix& A, Vector& x, con
     Vector b_copy = b;
     
     // Apply boundary conditions to the combined system
-    applyDirichletBC(A_copy, b_copy, field().values(), *fes_, *mesh_, temperatureBCs_);
+    applyDirichletBC(A_copy, b_copy, x, *fes_, *mesh_, temperatureBCs_);
     A_copy.makeCompressed();
     
     // Solve the system
