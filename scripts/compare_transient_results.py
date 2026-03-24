@@ -256,7 +256,7 @@ def main() -> int:
     print(
         "\nTime Step\tV L2\t\tV L2 Rel\tT L2\t\tT L2 Rel\tDisp L2\t\tDisp L2 Rel\tStatus"
     )
-    print("-" * 115)
+    print("-" * 100)
 
     all_passed = True
     for i, (ref_t, cur_t) in enumerate(zip(ref_times, cur_times)):
@@ -297,7 +297,7 @@ def main() -> int:
             all_passed = False
 
         print(
-            f"t={cur_t:.0f}\t\t{v_l2_rel:.2e}\t{'OK' if v_ok else 'FAIL':s}\t{t_l2_rel:.2e}\t{'OK' if t_ok else 'FAIL':s}\t{d_l2_rel:.2e}\t{'OK' if d_ok else 'FAIL':s}\t{status}"
+            f"t={cur_t:.0f}\t\t{v_l2:.2e}\t\t{v_l2_rel:.2e}\t\t{t_l2:.2e}\t\t{t_l2_rel:.2e}\t\t{d_l2:.2e}\t\t{d_l2_rel:.2e}\t\t{status}"
         )
 
     print("-" * 100)

@@ -52,12 +52,12 @@ void HeatTransferSolver::assembleMassMatrix() {
         return;
     }
     
+    // Create rho*Cp product coefficient as member to avoid dangling pointer
+    // The MassIntegrator stores a raw pointer to this coefficient, so it must outlive the assembler
+    rhoCp_ = std::make_unique<ProductCoefficient>(&density_, &specificHeat_);
+    
     auto massAsm = std::make_unique<BilinearFormAssembler>(fes_.get());
-    
-    // Create product coefficient rho*Cp
-    auto rhoCp = std::make_unique<ProductCoefficient>(&density_, &specificHeat_);
-    
-    massAsm->addDomainIntegrator(std::make_unique<MassIntegrator>(rhoCp.get()));
+    massAsm->addDomainIntegrator(std::make_unique<MassIntegrator>(rhoCp_.get()));
     massAsm->assemble();
     
     massMatrix_ = std::move(massAsm->matrix());

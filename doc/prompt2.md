@@ -19,29 +19,30 @@
 
 ## 当前任务
 
-* 求解结果有问题，比较脚本的输出内容好像也有些问题（列索引和实际内容对不上）。
+* 求解结果有问题
 * 而且开头的误差尤其大，尽管COMSOL使用的也是BDF1。请仔细寻找问题所在。
 * 当前结果：
 
 ```bash
 
- HUAWEI    mpfem  dev ≡  3   4.907s⠀   python .\scripts\compare_transient_results.py .\results\mpfem_result.txt .\cases\busbar_transient\result.txt 21:24:26 
+python .\scripts\compare_transient_results.py .\results\mpfem_result.txt .\cases\busbar_transient\result.txt
+
 Reference: mpfem_result.txt (7340 points, 11 time steps)
 Current: result.txt (7340 points, 11 time steps)
 
 Time Step       V L2            V L2 Rel        T L2            T L2 Rel        Disp L2         Disp L2 Rel     Status
--------------------------------------------------------------------------------------------------------------------
-t=0             2.01e-10        OK      1.24e-07        OK      0.00e+00        OK      PASS
-t=10            3.28e-06        OK      2.89e-04        FAIL    1.02e-01        FAIL    FAIL
-t=20            2.73e-06        OK      1.89e-04        FAIL    3.71e-02        FAIL    FAIL
-t=30            1.39e-06        OK      8.14e-05        OK      1.15e-02        FAIL    FAIL
-t=40            6.62e-07        OK      3.58e-05        OK      4.01e-03        OK      PASS
-t=50            7.92e-08        OK      1.65e-05        OK      1.81e-03        OK      PASS
-t=60            1.03e-07        OK      8.36e-06        OK      8.10e-04        OK      PASS
-t=70            9.45e-08        OK      5.08e-06        OK      4.92e-04        OK      PASS
-t=80            1.09e-07        OK      3.82e-06        OK      4.36e-04        OK      PASS
-t=90            1.45e-07        OK      3.61e-06        OK      4.56e-04        OK      PASS
-t=100           3.12e-07        OK      5.12e-06        OK      6.04e-04        OK      PASS
+----------------------------------------------------------------------------------------------------
+t=0             1.46e-12                2.01e-10                3.64e-05                1.24e-07                1.16e-11                0.00e+00                PASS
+t=10            2.38e-08                3.28e-06                8.48e-02                2.89e-04                2.08e-08                1.02e-01                FAIL
+t=20            1.98e-08                2.73e-06                5.54e-02                1.89e-04                1.32e-08                3.71e-02                FAIL
+t=30            1.01e-08                1.39e-06                2.39e-02                8.14e-05                5.77e-09                1.15e-02                FAIL
+t=40            4.82e-09                6.62e-07                1.05e-02                3.58e-05                2.62e-09                4.01e-03                PASS
+t=50            5.76e-10                7.92e-08                4.85e-03                1.65e-05                1.47e-09                1.81e-03                PASS
+t=60            7.47e-10                1.03e-07                2.46e-03                8.36e-06                7.87e-10                8.10e-04                PASS
+t=70            6.88e-10                9.45e-08                1.50e-03                5.08e-06                5.57e-10                4.92e-04                PASS
+t=80            7.95e-10                1.09e-07                1.13e-03                3.82e-06                5.65e-10                4.36e-04                PASS
+t=90            1.05e-09                1.45e-07                1.07e-03                3.61e-06                6.67e-10                4.56e-04                PASS
+t=100           2.27e-09                3.12e-07                1.51e-03                5.12e-06                9.81e-10                6.04e-04                PASS
 ----------------------------------------------------------------------------------------------------
 
 ```

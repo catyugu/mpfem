@@ -95,6 +95,7 @@ private:
     DomainMappedScalarCoefficient heatSource_;
     DomainMappedScalarCoefficient density_;
     DomainMappedScalarCoefficient specificHeat_;
+    std::unique_ptr<ProductCoefficient> rhoCp_;  ///< Product coefficient for mass matrix (rho*Cp), stored as member to avoid dangling pointer
     SparseMatrix massMatrix_;
     bool massMatrixAssembled_ = false;
     std::map<int, const Coefficient*> temperatureBCs_;
