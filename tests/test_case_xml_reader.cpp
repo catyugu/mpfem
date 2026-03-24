@@ -68,40 +68,25 @@ TEST_F(CaseXmlReaderTest, ReadBusbarCase) {
     EXPECT_GE(caseDef.materialAssignments.size(), 2);
 
     // Verify physics definitions (should have 3: electrostatics, heat_transfer, solid_mechanics)
-    EXPECT_EQ(caseDef.physicsDefinitions.size(), 3);
+    EXPECT_EQ(caseDef.physics.size(), 3);
 
     // Check electrostatics physics
-    bool foundElectrostatics = false;
-    for (const auto& physics : caseDef.physicsDefinitions) {
-        if (physics.kind == "electrostatics") {
-            foundElectrostatics = true;
-            EXPECT_EQ(physics.order, 1);
-            EXPECT_GE(physics.boundaries.size(), 2);  // At least voltage and ground
-        }
-    }
-    EXPECT_TRUE(foundElectrostatics);
+    ASSERT_TRUE(caseDef.physics.count("electrostatics") > 0);
+    const auto& electrostatics = caseDef.physics.at("electrostatics");
+    EXPECT_EQ(electrostatics.order, 1);
+    EXPECT_GE(electrostatics.boundaries.size(), 2);  // At least voltage and ground
 
     // Check heat transfer physics
-    bool foundHeatTransfer = false;
-    for (const auto& physics : caseDef.physicsDefinitions) {
-        if (physics.kind == "heat_transfer") {
-            foundHeatTransfer = true;
-            EXPECT_EQ(physics.order, 1);
-            EXPECT_GE(physics.boundaries.size(), 1);  // At least convection
-        }
-    }
-    EXPECT_TRUE(foundHeatTransfer);
+    ASSERT_TRUE(caseDef.physics.count("heat_transfer") > 0);
+    const auto& heatTransfer = caseDef.physics.at("heat_transfer");
+    EXPECT_EQ(heatTransfer.order, 1);
+    EXPECT_GE(heatTransfer.boundaries.size(), 1);  // At least convection
 
     // Check solid mechanics physics
-    bool foundSolidMechanics = false;
-    for (const auto& physics : caseDef.physicsDefinitions) {
-        if (physics.kind == "solid_mechanics") {
-            foundSolidMechanics = true;
-            EXPECT_EQ(physics.order, 1);
-            EXPECT_GE(physics.boundaries.size(), 1);  // At least fixed constraint
-        }
-    }
-    EXPECT_TRUE(foundSolidMechanics);
+    ASSERT_TRUE(caseDef.physics.count("solid_mechanics") > 0);
+    const auto& solidMechanics = caseDef.physics.at("solid_mechanics");
+    EXPECT_EQ(solidMechanics.order, 1);
+    EXPECT_GE(solidMechanics.boundaries.size(), 1);  // At least fixed constraint
 
     // Verify coupled physics definitions
     EXPECT_GE(caseDef.coupledPhysicsDefinitions.size(), 2);
@@ -118,7 +103,7 @@ TEST_F(CaseXmlReaderTest, ReadBusbarOrder2Case) {
     });
 
     // Should have order 2 for all physics
-    for (const auto& physics : caseDef.physicsDefinitions) {
+    for (const auto& [kind, physics] : caseDef.physics) {
         EXPECT_EQ(physics.order, 2);
     }
 }
@@ -139,18 +124,17 @@ TEST_F(CaseXmlReaderTest, BoundaryConditionParsing) {
     CaseXmlReader::readFromFile(dataPath("cases/busbar_steady/case.xml"), caseDef);
 
     // Find the electrostatics physics and check voltage boundary
-    for (const auto& physics : caseDef.physicsDefinitions) {
-        if (physics.kind == "electrostatics") {
-            bool foundVoltage43 = false;
-            for (const auto& bc : physics.boundaries) {
-                if (bc.kind == "voltage" && bc.ids.count(43) > 0) {
-                    foundVoltage43 = true;
-                    // Check that value parameter exists
-                    EXPECT_TRUE(bc.params.count("value") > 0);
-                }
+    if (caseDef.physics.count("electrostatics") > 0) {
+        const auto& physics = caseDef.physics.at("electrostatics");
+        bool foundVoltage43 = false;
+        for (const auto& bc : physics.boundaries) {
+            if (bc.kind == "voltage" && bc.ids.count(43) > 0) {
+                foundVoltage43 = true;
+                // Check that value parameter exists
+                EXPECT_TRUE(bc.params.count("value") > 0);
             }
-            EXPECT_TRUE(foundVoltage43);
         }
+        EXPECT_TRUE(foundVoltage43);
     }
 }
 

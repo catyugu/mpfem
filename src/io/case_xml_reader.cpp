@@ -159,7 +159,7 @@ void CaseXmlReader::readFromFile(const std::string& filePath, CaseDefinition& ca
          physicsElement != nullptr;
          physicsElement = physicsElement->NextSiblingElement("physics")) {
         
-        PhysicsDefinition physics;
+        CaseDefinition::Physics physics;
         
         if (const char* kindAttr = physicsElement->Attribute("kind")) {
             physics.kind = kindAttr;
@@ -237,7 +237,8 @@ void CaseXmlReader::readFromFile(const std::string& filePath, CaseDefinition& ca
             physics.sources.push_back(source);
         }
 
-        caseDefinition.physicsDefinitions.push_back(physics);
+        std::string kind = physics.kind;
+        caseDefinition.physics[kind] = std::move(physics);
     }
 
     // Coupled physics definitions
@@ -280,7 +281,7 @@ void CaseXmlReader::readFromFile(const std::string& filePath, CaseDefinition& ca
     }
 
     LOG_INFO << "Loaded case definition: " << caseDefinition.caseName 
-             << " with " << caseDefinition.physicsDefinitions.size() << " physics fields";
+             << " with " << caseDefinition.physics.size() << " physics fields";
 }
 
 }  // namespace mpfem
