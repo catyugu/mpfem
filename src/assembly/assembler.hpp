@@ -21,11 +21,10 @@ namespace mpfem {
 struct alignas(64) ThreadBuffer {
     Eigen::Matrix<Real, MaxVectorDofsPerElement, MaxVectorDofsPerElement, Eigen::RowMajor> elmatVector;
     Eigen::Matrix<Real, MaxVectorDofsPerElement, 1> elvecVector;
-    std::vector<Index> dofs;  // Pre-allocated DOF buffer
+    std::array<Index, MaxVectorDofsPerElement> dofs;  // Fixed-size DOF buffer, no heap allocation
+    Index numDofs = 0;  // Track actual number of DOFs
     
-    ThreadBuffer() {
-        dofs.reserve(MaxVectorDofsPerElement);
-    }
+    ThreadBuffer() = default;
 };
 
 // =============================================================================

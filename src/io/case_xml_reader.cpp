@@ -79,6 +79,29 @@ void CaseXmlReader::readFromFile(const std::string& filePath, CaseDefinition& ca
         if (const char* typeAttr = studyElement->Attribute("type")) {
             caseDefinition.studyType = typeAttr;
         }
+
+        // Parse <time start="0" end="100" step="10" scheme="BDF1"/>
+        if (const tinyxml2::XMLElement* timeElement = studyElement->FirstChildElement("time")) {
+            caseDefinition.timeConfig.start = timeElement->DoubleAttribute("start", 0.0);
+            caseDefinition.timeConfig.end = timeElement->DoubleAttribute("end", 1.0);
+            caseDefinition.timeConfig.step = timeElement->DoubleAttribute("step", 0.01);
+            if (const char* schemeAttr = timeElement->Attribute("scheme")) {
+                caseDefinition.timeConfig.scheme = schemeAttr;
+            }
+        }
+
+        // Parse <initialConditions><field kind="..." value="..."/></initialConditions>
+        if (const tinyxml2::XMLElement* icElement = studyElement->FirstChildElement("initialConditions")) {
+            for (auto* fieldElement = icElement->FirstChildElement("field");
+                 fieldElement; fieldElement = fieldElement->NextSiblingElement("field")) {
+                InitialCondition ic;
+                if (const char* kindAttr = fieldElement->Attribute("kind")) {
+                    ic.fieldKind = kindAttr;
+                }
+                ic.value = fieldElement->DoubleAttribute("value", 0.0);
+                caseDefinition.initialConditions.push_back(ic);
+            }
+        }
     }
 
     // Paths

@@ -6,7 +6,7 @@
 
 namespace mpfem {
 
-bool StructuralSolver::initialize(const Mesh& mesh, FieldValues& fieldValues, int order) {
+bool StructuralSolver::initialize(const Mesh& mesh, FieldValues& fieldValues, int order, double initialDisplacement) {
     mesh_ = &mesh;
     fieldValues_ = &fieldValues;
     order_ = order;
@@ -15,6 +15,9 @@ bool StructuralSolver::initialize(const Mesh& mesh, FieldValues& fieldValues, in
     fes_ = std::make_unique<FESpace>(&mesh, std::move(fec), 3);
     
     fieldValues.createVectorField(FieldId::Displacement, fes_.get(), 3);
+    
+    // Set initial displacement value for all components
+    fieldValues.current(FieldId::Displacement).values().setConstant(initialDisplacement);
     
     matAsm_ = std::make_unique<BilinearFormAssembler>(fes_.get());
     vecAsm_ = std::make_unique<LinearFormAssembler>(fes_.get());

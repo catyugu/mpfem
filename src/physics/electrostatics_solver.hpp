@@ -23,7 +23,7 @@ public:
     std::string fieldName() const override { return "Electrostatics"; }
     FieldId fieldId() const override { return FieldId::ElectricPotential; }
     
-    bool initialize(const Mesh& mesh, FieldValues& fieldValues, int order);
+    bool initialize(const Mesh& mesh, FieldValues& fieldValues, int order, double initialPotential = 0.0);
     
     // Material coefficients - matrix form for anisotropic conductivity
     void setConductivity(const std::set<int>& domains, const MatrixCoefficient* sigma);

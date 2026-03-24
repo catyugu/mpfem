@@ -1,4 +1,6 @@
 #include "io/result_exporter.hpp"
+#include "problem/steady_problem.hpp"
+#include "problem/transient_problem.hpp"
 #include "core/logger.hpp"
 #include "core/exception.hpp"
 
@@ -18,71 +20,79 @@ std::string ResultExporter::getCurrentTimestamp() {
     return std::string(buffer);
 }
 
-void ResultExporter::exportComsolText(const std::string& filename,
-                                      const Mesh& mesh,
-                                      const std::vector<FieldResult>& fields,
-                                      const std::string& description) {
+// -----------------------------------------------------------------------------
+// COMSOL text export implementation
+// -----------------------------------------------------------------------------
+void ResultExporter::exportComsolText(const SteadyResult& result, const Mesh& mesh,
+                                      const std::string& filename) {
+    exportComsolTextImpl(result.fields, mesh, filename, -1);
+}
+
+void ResultExporter::exportComsolText(const TransientResult& result, const Mesh& mesh,
+                                      const std::string& filename) {
+    // Export all time steps to single file (COMSOL format)
     std::ofstream file(filename);
     if (!file.is_open()) {
         throw FileException("Cannot open file for writing: " + filename);
     }
 
-    // Determine number of points to export from first field
-    // (for quadratic meshes, this may be less than mesh.numVertices())
-    Index numExportPoints = mesh.numVertices();
-    bool useCornerVertices = false;
-    
-    if (!fields.empty() && fields[0].nodalValues.size() < static_cast<size_t>(numExportPoints)) {
-        numExportPoints = static_cast<Index>(fields[0].nodalValues.size());
-        useCornerVertices = true;
-    }
+    Index numExportPoints = mesh.numCornerVertices();
+    const auto& cornerIndices = mesh.cornerVertexIndices();
 
-    // Use default floating-point format (not forced scientific)
-    // This matches COMSOL's output style
     file << std::setprecision(16);
 
-    // Write header
-    file << "% Model:              busbar.mph\n";
-    file << "% Version:            mpfem\n";
+    // Header
+    file << "% Model:              mpfem\n";
+    file << "% Version:            1.0\n";
     file << "% Date:               " << getCurrentTimestamp() << "\n";
     file << "% Dimension:          " << mesh.dim() << "\n";
     file << "% Nodes:              " << numExportPoints << "\n";
-    file << "% Expressions:        " << fields.size() << "\n";
-    
-    if (!description.empty()) {
-        file << "% Description:        " << description << "\n";
-    }
-    
-    // Write field names header line (matching COMSOL format)
+    file << "% Expressions:        " << (result.numTimeSteps() * 3) << "\n";
+    file << "% Description:        Electric potential, Temperature, Displacement magnitude\n";
     file << "% Length unit:        m\n";
+    
+    // Field names header: x y z V@t0 T@t0 disp@t0 V@t1 T@t1 disp@t1 ...
     file << "x                       y                        z";
-    for (const auto& field : fields) {
-        file << "                        " << field.name;
-        if (!field.unit.empty()) {
-            file << " (" << field.unit << ")";
-        }
+    for (int i = 0; i < result.numTimeSteps(); ++i) {
+        file << "                        V (V) @ t=" << result.times[i] 
+             << "              T (K) @ t=" << result.times[i] 
+             << "        solid.disp (m) @ t=" << result.times[i];
     }
     file << "\n";
 
-    // Get corner vertex indices if needed
-    const std::vector<Index>* cornerIndices = nullptr;
-    if (useCornerVertices) {
-        cornerIndices = &mesh.cornerVertexIndices();
-    }
-
-    // Write data - one line per node (only export numExportPoints)
-    for (Index i = 0; i < numExportPoints; ++i) {
-        // Get the actual vertex index (for corner vertices or all vertices)
-        Index vIdx = (cornerIndices) ? (*cornerIndices)[i] : i;
-        const Vertex& v = mesh.vertex(vIdx);
-        
-        // Coordinates with COMSOL-style spacing
+    // Data - all time steps per row
+    for (Index j = 0; j < numExportPoints; ++j) {
+        const Vertex& v = mesh.vertex(cornerIndices[j]);
         file << v.x() << "       " << v.y() << "       " << v.z();
         
-        // Field values
-        for (const auto& field : fields) {
-            if (i < static_cast<Index>(field.nodalValues.size())) {
-                file << "       " << field.nodalValues[i];
+        for (int i = 0; i < result.numTimeSteps(); ++i) {
+            const auto& fields = result.snapshots[i];
+            
+            // V - ElectricPotential
+            if (fields.hasField(FieldId::ElectricPotential)) {
+                const auto& V = fields.current(FieldId::ElectricPotential);
+                file << "       " << V(cornerIndices[j]);
+            } else {
+                file << "       0.0";
+            }
+            
+            // T - Temperature
+            if (fields.hasField(FieldId::Temperature)) {
+                const auto& T = fields.current(FieldId::Temperature);
+                file << "       " << T(cornerIndices[j]);
+            } else {
+                file << "       0.0";
+            }
+            
+            // displacement magnitude
+            if (fields.hasField(FieldId::Displacement)) {
+                const auto& u = fields.current(FieldId::Displacement);
+                Index base = cornerIndices[j] * 3;
+                Real dx = u(base);
+                Real dy = u(base + 1);
+                Real dz = u(base + 2);
+                Real mag = std::sqrt(dx*dx + dy*dy + dz*dz);
+                file << "       " << mag;
             } else {
                 file << "       0.0";
             }
@@ -91,20 +101,96 @@ void ResultExporter::exportComsolText(const std::string& filename,
     }
 
     file.close();
+    LOG_INFO << "Exported transient results to " << filename;
+}
+
+void ResultExporter::exportComsolTextImpl(const FieldValues& fields, const Mesh& mesh,
+                                          const std::string& filename, Real time) {
+    std::ofstream file(filename);
+    if (!file.is_open()) {
+        throw FileException("Cannot open file for writing: " + filename);
+    }
+
+    Index numExportPoints = mesh.numCornerVertices();
+    const auto& cornerIndices = mesh.cornerVertexIndices();
+
+    file << std::setprecision(16);
+
+    // Header
+    file << "% Model:              mpfem\n";
+    file << "% Version:            1.0\n";
+    file << "% Date:               " << getCurrentTimestamp() << "\n";
+    file << "% Dimension:          " << mesh.dim() << "\n";
+    file << "% Nodes:              " << numExportPoints << "\n";
+    file << "% Expressions:        3\n";  // V, T, displacement magnitude
+    
+    if (time >= 0) {
+        file << "% Time:               " << time << "\n";
+    }
+    
+    file << "% Length unit:        m\n";
+    file << "x                       y                        z                       V (V)                     T (K)                     disp (m)\n";
+
+    // Data
+    for (Index i = 0; i < numExportPoints; ++i) {
+        const Vertex& v = mesh.vertex(cornerIndices[i]);
+        file << v.x() << "       " << v.y() << "       " << v.z();
+        
+        // V - ElectricPotential
+        if (fields.hasField(FieldId::ElectricPotential)) {
+            const auto& V = fields.current(FieldId::ElectricPotential);
+            file << "       " << V(cornerIndices[i]);
+        } else {
+            file << "       0.0";
+        }
+        
+        // T - Temperature
+        if (fields.hasField(FieldId::Temperature)) {
+            const auto& T = fields.current(FieldId::Temperature);
+            file << "       " << T(cornerIndices[i]);
+        } else {
+            file << "       0.0";
+        }
+        
+        // displacement magnitude
+        if (fields.hasField(FieldId::Displacement)) {
+            const auto& u = fields.current(FieldId::Displacement);
+            Index base = cornerIndices[i] * 3;
+            Real dx = u(base);
+            Real dy = u(base + 1);
+            Real dz = u(base + 2);
+            Real mag = std::sqrt(dx*dx + dy*dy + dz*dz);
+            file << "       " << mag;
+        } else {
+            file << "       0.0";
+        }
+        
+        file << "\n";
+    }
+
+    file.close();
     LOG_INFO << "Exported results to " << filename;
 }
 
-void ResultExporter::exportVtu(const std::string& filename,
-                               const Mesh& mesh,
-                               const std::vector<FieldResult>& fields) {
-    std::map<std::string, std::vector<Vector3>> emptyVectors;
-    exportVtuWithVectors(filename, mesh, fields, emptyVectors);
+// -----------------------------------------------------------------------------
+// VTU export implementation
+// -----------------------------------------------------------------------------
+void ResultExporter::exportVtu(const SteadyResult& result, const Mesh& mesh,
+                               const std::string& filename) {
+    exportVtuImpl(result.fields, mesh, filename);
 }
 
-void ResultExporter::exportVtuWithVectors(const std::string& filename,
-                                          const Mesh& mesh,
-                                          const std::vector<FieldResult>& scalarFields,
-                                          const std::map<std::string, std::vector<Vector3>>& vectorFields) {
+void ResultExporter::exportVtu(const TransientResult& result, const Mesh& mesh,
+                               const std::string& filename) {
+    for (int i = 0; i < result.numTimeSteps(); ++i) {
+        std::ostringstream oss;
+        oss << filename << "_" << i << ".vtu";
+        exportVtuImpl(result.snapshots[i], mesh, oss.str());
+    }
+}
+
+void ResultExporter::exportVtuImpl(const FieldValues& fields, const Mesh& mesh,
+                                   const std::string& filename) {
     std::ofstream file(filename);
     if (!file.is_open()) {
         throw FileException("Cannot open file for writing: " + filename);
@@ -112,112 +198,89 @@ void ResultExporter::exportVtuWithVectors(const std::string& filename,
 
     file << std::scientific << std::setprecision(10);
 
-    // Determine if we need to export only corner vertices (for high-order meshes)
-    Index numExportPoints = mesh.numVertices();
-    bool useCornerVertices = false;
-    const std::vector<Index>* cornerIndices = nullptr;
-    
-    // Check if scalar fields are smaller than total vertices
-    if (!scalarFields.empty() && scalarFields[0].nodalValues.size() < static_cast<size_t>(numExportPoints)) {
-        numExportPoints = static_cast<Index>(scalarFields[0].nodalValues.size());
-        useCornerVertices = true;
-        cornerIndices = &mesh.cornerVertexIndices();
-    }
-    // Check if vector fields are smaller than total vertices
-    if (!vectorFields.empty()) {
-        const auto& firstVec = vectorFields.begin()->second;
-        if (firstVec.size() < static_cast<size_t>(numExportPoints)) {
-            numExportPoints = static_cast<Index>(firstVec.size());
-            useCornerVertices = true;
-            cornerIndices = &mesh.cornerVertexIndices();
-        }
-    }
+    Index numExportPoints = mesh.numCornerVertices();
+    const auto& cornerIndices = mesh.cornerVertexIndices();
 
     // XML header
     file << "<?xml version=\"1.0\"?>\n";
     file << "<VTKFile type=\"UnstructuredGrid\" version=\"0.1\" byte_order=\"LittleEndian\">\n";
     file << "<UnstructuredGrid>\n";
-
-    // Piece
     file << "<Piece NumberOfPoints=\"" << numExportPoints 
          << "\" NumberOfCells=\"" << mesh.numElements() << "\">\n";
 
-    // Point data
+    // Point data - scalar fields
     file << "<PointData>\n";
     
-    // Scalar fields
-    for (const auto& field : scalarFields) {
-        file << "<DataArray type=\"Float64\" Name=\"" << field.name 
-             << "\" format=\"ascii\">\n";
-        for (size_t i = 0; i < field.nodalValues.size(); ++i) {
-            file << field.nodalValues[i];
-            if ((i + 1) % 5 == 0) file << "\n";
-            else file << " ";
-        }
-        if (field.nodalValues.size() % 5 != 0) file << "\n";
-        file << "</DataArray>\n";
-    }
-
-    // Vector fields
-    for (const auto& [name, values] : vectorFields) {
-        file << "<DataArray type=\"Float64\" Name=\"" << name 
-             << "\" NumberOfComponents=\"3\" format=\"ascii\">\n";
-        for (size_t i = 0; i < values.size(); ++i) {
-            file << values[i].x() << " " << values[i].y() << " " << values[i].z() << "\n";
+    // V - ElectricPotential
+    if (fields.hasField(FieldId::ElectricPotential)) {
+        const auto& V = fields.current(FieldId::ElectricPotential);
+        file << "<DataArray type=\"Float64\" Name=\"V\" format=\"ascii\">\n";
+        for (Index i = 0; i < numExportPoints; ++i) {
+            file << V(cornerIndices[i]) << "\n";
         }
         file << "</DataArray>\n";
     }
-
+    
+    // T - Temperature
+    if (fields.hasField(FieldId::Temperature)) {
+        const auto& T = fields.current(FieldId::Temperature);
+        file << "<DataArray type=\"Float64\" Name=\"T\" format=\"ascii\">\n";
+        for (Index i = 0; i < numExportPoints; ++i) {
+            file << T(cornerIndices[i]) << "\n";
+        }
+        file << "</DataArray>\n";
+    }
+    
+    // displacement
+    if (fields.hasField(FieldId::Displacement)) {
+        const auto& u = fields.current(FieldId::Displacement);
+        file << "<DataArray type=\"Float64\" Name=\"displacement\" NumberOfComponents=\"3\" format=\"ascii\">\n";
+        for (Index i = 0; i < numExportPoints; ++i) {
+            Index base = cornerIndices[i] * 3;
+            file << u(base) << " " << u(base + 1) << " " << u(base + 2) << "\n";
+        }
+        file << "</DataArray>\n";
+        
+        // displacement magnitude
+        file << "<DataArray type=\"Float64\" Name=\"disp_magnitude\" format=\"ascii\">\n";
+        for (Index i = 0; i < numExportPoints; ++i) {
+            Index base = cornerIndices[i] * 3;
+            Real dx = u(base);
+            Real dy = u(base + 1);
+            Real dz = u(base + 2);
+            file << std::sqrt(dx*dx + dy*dy + dz*dz) << "\n";
+        }
+        file << "</DataArray>\n";
+    }
+    
     file << "</PointData>\n";
 
-    // Points (coordinates) - export only the vertices we need
+    // Points
     file << "<Points>\n";
     file << "<DataArray type=\"Float64\" NumberOfComponents=\"3\" format=\"ascii\">\n";
-    if (useCornerVertices && cornerIndices) {
-        // Export only corner vertices
-        for (Index i = 0; i < numExportPoints; ++i) {
-            const Vertex& v = mesh.vertex((*cornerIndices)[i]);
-            file << v.x() << " " << v.y() << " " << v.z() << "\n";
-        }
-    } else {
-        // Export all vertices
-        for (Index i = 0; i < mesh.numVertices(); ++i) {
-            const Vertex& v = mesh.vertex(i);
-            file << v.x() << " " << v.y() << " " << v.z() << "\n";
-        }
+    for (Index i = 0; i < numExportPoints; ++i) {
+        const Vertex& v = mesh.vertex(cornerIndices[i]);
+        file << v.x() << " " << v.y() << " " << v.z() << "\n";
     }
     file << "</DataArray>\n";
     file << "</Points>\n";
 
-    // Cells - need to remap vertex indices for corner-only export
+    // Cells
     file << "<Cells>\n";
-
-    // Connectivity
+    
+    // Connectivity - remap vertex indices to corner indices
     file << "<DataArray type=\"Int64\" Name=\"connectivity\" format=\"ascii\">\n";
-    if (useCornerVertices && cornerIndices) {
-        // Build a map from original vertex index to corner index
-        std::unordered_map<Index, Index> vertexToCorner;
-        for (Index i = 0; i < static_cast<Index>(cornerIndices->size()); ++i) {
-            vertexToCorner[(*cornerIndices)[i]] = i;
+    std::unordered_map<Index, Index> vertexToCorner;
+    for (Index i = 0; i < numExportPoints; ++i) {
+        vertexToCorner[cornerIndices[i]] = i;
+    }
+    for (Index i = 0; i < mesh.numElements(); ++i) {
+        const Element& elem = mesh.element(i);
+        for (int j = 0; j < elem.numCorners(); ++j) {
+            if (j > 0) file << " ";
+            file << vertexToCorner[elem.vertex(j)];
         }
-        for (Index i = 0; i < mesh.numElements(); ++i) {
-            const Element& elem = mesh.element(i);
-            for (int j = 0; j < elem.numCorners(); ++j) {
-                if (j > 0) file << " ";
-                auto it = vertexToCorner.find(elem.vertex(j));
-                file << ((it != vertexToCorner.end()) ? it->second : 0);
-            }
-            file << "\n";
-        }
-    } else {
-        for (Index i = 0; i < mesh.numElements(); ++i) {
-            const Element& elem = mesh.element(i);
-            for (int j = 0; j < elem.numCorners(); ++j) {
-                if (j > 0) file << " ";
-                file << elem.vertex(j);
-            }
-            file << "\n";
-        }
+        file << "\n";
     }
     file << "</DataArray>\n";
 
@@ -226,12 +289,9 @@ void ResultExporter::exportVtuWithVectors(const std::string& filename,
     Index offset = 0;
     for (Index i = 0; i < mesh.numElements(); ++i) {
         offset += mesh.element(i).numCorners();
-        file << offset;
-        if ((i + 1) % 10 == 0) file << "\n";
-        else file << " ";
+        file << offset << " ";
     }
-    if (mesh.numElements() % 10 != 0) file << "\n";
-    file << "</DataArray>\n";
+    file << "\n</DataArray>\n";
 
     // Types
     file << "<DataArray type=\"UInt8\" Name=\"types\" format=\"ascii\">\n";
@@ -239,19 +299,16 @@ void ResultExporter::exportVtuWithVectors(const std::string& filename,
         Geometry geom = mesh.element(i).geometry();
         int vtkType = 0;
         switch (geom) {
-            case Geometry::Segment:     vtkType = 3; break;  // VTK_LINE
-            case Geometry::Triangle:    vtkType = 5; break;  // VTK_TRIANGLE
-            case Geometry::Square:      vtkType = 9; break;  // VTK_QUAD
-            case Geometry::Tetrahedron: vtkType = 10; break; // VTK_TETRA
-            case Geometry::Cube:        vtkType = 12; break; // VTK_HEXAHEDRON
+            case Geometry::Segment:     vtkType = 3; break;
+            case Geometry::Triangle:    vtkType = 5; break;
+            case Geometry::Square:      vtkType = 9; break;
+            case Geometry::Tetrahedron: vtkType = 10; break;
+            case Geometry::Cube:        vtkType = 12; break;
             default:                    vtkType = 0; break;
         }
-        file << vtkType;
-        if ((i + 1) % 10 == 0) file << "\n";
-        else file << " ";
+        file << vtkType << " ";
     }
-    if (mesh.numElements() % 10 != 0) file << "\n";
-    file << "</DataArray>\n";
+    file << "\n</DataArray>\n";
 
     file << "</Cells>\n";
     file << "</Piece>\n";

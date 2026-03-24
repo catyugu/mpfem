@@ -5,6 +5,7 @@
 #include "physics/electrostatics_solver.hpp"
 #include "physics/heat_transfer_solver.hpp"
 #include "physics/structural_solver.hpp"
+#include "physics/field_values.hpp"
 #include "core/logger.hpp"
 
 namespace mpfem {
@@ -13,21 +14,12 @@ struct SteadyResult {
     bool converged = false;
     int iterations = 0;
     Real residual = 0.0;
+    FieldValues fields;  ///< Final field values after solve
 };
 
 class SteadyProblem : public Problem {
 public:
 
-    int couplingMaxIter = 15;
-    Real couplingTol = 1e-6;
-    
-    bool hasElectrostatics() const { return electrostatics != nullptr; }
-    bool hasHeatTransfer() const { return heatTransfer != nullptr; }
-    bool hasStructural() const { return structural != nullptr; }
-    bool hasJouleHeating() const { return hasElectrostatics() && hasHeatTransfer(); }
-    bool hasThermalExpansion() const { return hasHeatTransfer() && hasStructural(); }
-    bool isCoupled() const { return hasJouleHeating() || hasThermalExpansion(); }
-    
     SteadyResult solve() {
         ScopedTimer timer("Coupling solve");
         SteadyResult result;
@@ -37,14 +29,23 @@ public:
                 electrostatics->assemble();
                 electrostatics->solve();
             }
+            result.fields = fieldValues;
             return result;
         }
 
+        // Hoist physics checks outside loop to avoid per-iteration branching
+        const bool hasElectrostatics = this->hasElectrostatics();
+        const bool hasHeatTransfer = this->hasHeatTransfer();
+        
         for (int i = 0; i < couplingMaxIter; ++i) {
-            electrostatics->assemble();
-            electrostatics->solve();
-            heatTransfer->assemble();
-            heatTransfer->solve();
+            if (hasElectrostatics) {
+                electrostatics->assemble();
+                electrostatics->solve();
+            }
+            if (hasHeatTransfer) {
+                heatTransfer->assemble();
+                heatTransfer->solve();
+            }
             
             Real err = computeCouplingError();
             result.iterations = i + 1;
@@ -57,6 +58,7 @@ public:
             structural->assemble();
             structural->solve();
         }
+        result.fields = fieldValues;
         return result;
     }
 

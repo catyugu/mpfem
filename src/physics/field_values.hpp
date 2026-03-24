@@ -55,8 +55,41 @@ public:
     
     explicit FieldValues(int maxHistorySteps) : maxHistorySteps_(maxHistorySteps) {}
     
-    FieldValues(const FieldValues&) = delete;
-    FieldValues& operator=(const FieldValues&) = delete;
+    // Copyable for result storage - deep copies GridFunctions
+    FieldValues(const FieldValues& other) {
+        maxHistorySteps_ = other.maxHistorySteps_;
+        for (const auto& [id, entry] : other.fields_) {
+            auto& newEntry = fields_[id];
+            newEntry.isVector = entry.isVector;
+            newEntry.vdim = entry.vdim;
+            if (entry.field) {
+                newEntry.field = std::make_unique<GridFunction>(*entry.field);
+            }
+            for (const auto& hist : entry.history) {
+                newEntry.history.push_back(std::make_unique<GridFunction>(*hist));
+            }
+        }
+    }
+    
+    FieldValues& operator=(const FieldValues& other) {
+        if (this != &other) {
+            fields_.clear();
+            maxHistorySteps_ = other.maxHistorySteps_;
+            for (const auto& [id, entry] : other.fields_) {
+                auto& newEntry = fields_[id];
+                newEntry.isVector = entry.isVector;
+                newEntry.vdim = entry.vdim;
+                if (entry.field) {
+                    newEntry.field = std::make_unique<GridFunction>(*entry.field);
+                }
+                for (const auto& hist : entry.history) {
+                    newEntry.history.push_back(std::make_unique<GridFunction>(*hist));
+                }
+            }
+        }
+        return *this;
+    }
+    
     FieldValues(FieldValues&&) = default;
     FieldValues& operator=(FieldValues&&) = default;
     

@@ -31,14 +31,15 @@ inline void applyDirichletBC(SparseMatrix& mat, Vector& rhs, Vector& sol,
         for (Index b = 0; b < mesh.numBdrElements(); ++b) {
             if (mesh.bdrElement(b).attribute() != bid) continue;
             
-            std::vector<Index> dofs;
-            fes.getBdrElementDofs(b, dofs);
-            
             const ReferenceElement* refElem = fes.bdrElementRefElement(b);
             if (!refElem) continue;
             
             const auto& dofCoords = refElem->dofCoords();
             const int nd = refElem->numDofs();
+            const int totalDofs = nd * fes.vdim();
+            
+            std::vector<Index> dofs(totalDofs);
+            fes.getBdrElementDofs(b, std::span<Index>{dofs.data(), static_cast<size_t>(totalDofs)});
             
             trans.setBoundaryElement(b);
             
@@ -90,14 +91,15 @@ inline void applyDirichletBC(SparseMatrix& mat, Vector& rhs, Vector& sol,
         for (Index b = 0; b < mesh.numBdrElements(); ++b) {
             if (mesh.bdrElement(b).attribute() != bid) continue;
             
-            std::vector<Index> dofs;
-            fes.getBdrElementDofs(b, dofs);
-            
             const ReferenceElement* refElem = fes.bdrElementRefElement(b);
             if (!refElem) continue;
             
             const auto& dofCoords = refElem->dofCoords();
             const int nd = refElem->numDofs();
+            const int totalDofs = nd * vdim;
+            
+            std::vector<Index> dofs(totalDofs);
+            fes.getBdrElementDofs(b, std::span<Index>{dofs.data(), static_cast<size_t>(totalDofs)});
             
             trans.setBoundaryElement(b);
             
@@ -151,13 +153,14 @@ inline void applyDirichletBCComponent(SparseMatrix& mat, Vector& rhs, Vector& so
         for (Index b = 0; b < mesh.numBdrElements(); ++b) {
             if (mesh.bdrElement(b).attribute() != bid) continue;
             
-            std::vector<Index> dofs;
-            fes.getBdrElementDofs(b, dofs);
-            
             const ReferenceElement* refElem = fes.bdrElementRefElement(b);
             if (!refElem) continue;
             
             const int nd = refElem->numDofs();
+            const int totalDofs = nd * vdim;
+            
+            std::vector<Index> dofs(totalDofs);
+            fes.getBdrElementDofs(b, std::span<Index>{dofs.data(), static_cast<size_t>(totalDofs)});
             
             for (int i = 0; i < nd; ++i) {
                 Index d = dofs[i * vdim + comp];

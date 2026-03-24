@@ -2,6 +2,7 @@
 #define MPFEM_SPARSE_MATRIX_HPP
 
 #include "core/types.hpp"
+#include "core/exception.hpp"
 #include <Eigen/Sparse>
 #include <vector>
 #include <fstream>
@@ -190,6 +191,28 @@ namespace mpfem
                          << it.value() << "\n";
                 }
             }
+        }
+
+        /// SparseMatrix += SparseMatrix
+        SparseMatrix& operator+=(const SparseMatrix& B) {
+            MPFEM_ASSERT(rows() == B.rows() && cols() == B.cols(),
+                "SparseMatrix size mismatch in +=");
+            mat_ += B.mat_;
+            return *this;
+        }
+
+        /// SparseMatrix -= SparseMatrix
+        SparseMatrix& operator-=(const SparseMatrix& B) {
+            MPFEM_ASSERT(rows() == B.rows() && cols() == B.cols(),
+                "SparseMatrix size mismatch in -=");
+            mat_ -= B.mat_;
+            return *this;
+        }
+
+        /// SparseMatrix *= Scalar
+        SparseMatrix& operator*=(Real alpha) {
+            mat_ *= alpha;
+            return *this;
         }
 
     private:

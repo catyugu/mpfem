@@ -22,6 +22,18 @@ public:
     virtual ~Problem() = default;
     virtual bool isTransient() const { return false; }
 
+    // Physics presence queries
+    bool hasElectrostatics() const { return electrostatics != nullptr; }
+    bool hasHeatTransfer() const { return heatTransfer != nullptr; }
+    bool hasStructural() const { return structural != nullptr; }
+    bool hasJouleHeating() const { return hasElectrostatics() && hasHeatTransfer(); }
+    bool hasThermalExpansion() const { return hasHeatTransfer() && hasStructural(); }
+    bool isCoupled() const { return hasJouleHeating() || hasThermalExpansion(); }
+
+    // Coupling parameters for coupled problems
+    int couplingMaxIter = 15;
+    Real couplingTol = 1e-4;
+
     std::unique_ptr<ElectrostaticsSolver> electrostatics;
     std::unique_ptr<HeatTransferSolver> heatTransfer;
     std::unique_ptr<StructuralSolver> structural;

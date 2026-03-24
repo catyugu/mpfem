@@ -6,34 +6,100 @@
 namespace mpfem
 {
 
-    std::unique_ptr<SteadyProblem> PhysicsProblemBuilder::build(const std::string &caseDir)
+    std::unique_ptr<Problem> PhysicsProblemBuilder::build(const std::string &caseDir)
     {
-        auto problem = std::make_unique<SteadyProblem>();
-
         std::string casePath = caseDir + "/case.xml";
         LOG_INFO << "Reading case from " << casePath;
 
-        CaseXmlReader::readFromFile(casePath, problem->caseDef);
-        problem->caseName = problem->caseDef.caseName;
+        CaseDefinition caseDef;
+        CaseXmlReader::readFromFile(casePath, caseDef);
 
-        std::string meshPath = caseDir + "/" + problem->caseDef.meshPath;
+        std::unique_ptr<Problem> problem;
+
+        // Determine problem type based on study type
+        bool isTransient = (caseDef.studyType == "transient");
+
+        if (isTransient)
+        {
+            auto transientProb = std::make_unique<TransientProblem>();
+
+            // Configure time stepping parameters
+            transientProb->startTime = caseDef.timeConfig.start;
+            transientProb->endTime = caseDef.timeConfig.end;
+            transientProb->timeStep = caseDef.timeConfig.step;
+
+            // Parse time scheme
+            if (caseDef.timeConfig.scheme == "BDF2")
+            {
+                transientProb->scheme = TimeScheme::BDF2;
+            }
+            else if (caseDef.timeConfig.scheme == "CrankNicolson")
+            {
+                transientProb->scheme = TimeScheme::CrankNicolson;
+            }
+            else
+            {
+                // Default to BDF1 / BackwardEuler
+                transientProb->scheme = TimeScheme::BackwardEuler;
+            }
+
+            // Configure coupling parameters
+            if (caseDef.couplingConfig.maxIterations > 0)
+            {
+                transientProb->couplingMaxIter = caseDef.couplingConfig.maxIterations;
+                transientProb->couplingTol = caseDef.couplingConfig.tolerance;
+            }
+
+            problem = std::move(transientProb);
+        }
+        else
+        {
+            auto steadyProb = std::make_unique<SteadyProblem>();
+
+            // Configure coupling parameters for steady problem
+            if (caseDef.couplingConfig.maxIterations > 0)
+            {
+                steadyProb->couplingMaxIter = caseDef.couplingConfig.maxIterations;
+                steadyProb->couplingTol = caseDef.couplingConfig.tolerance;
+            }
+
+            problem = std::move(steadyProb);
+        }
+
+        // Set common problem properties
+        problem->caseName = caseDef.caseName;
+        problem->caseDef = caseDef;
+
+        std::string meshPath = caseDir + "/" + caseDef.meshPath;
         LOG_INFO << "Reading mesh from " << meshPath;
 
         problem->mesh = std::make_unique<Mesh>(MphtxtReader::read(meshPath));
         LOG_INFO << "Mesh loaded: " << problem->mesh->numVertices() << " vertices, "
                  << problem->mesh->numElements() << " elements";
 
-        std::string matPath = caseDir + "/" + problem->caseDef.materialsPath;
+        std::string matPath = caseDir + "/" + caseDef.materialsPath;
         LOG_INFO << "Reading materials from " << matPath;
 
         MaterialXmlReader::readFromFile(matPath, problem->materials);
 
         buildSolvers(*problem);
 
+        // Initialize transient after building solvers
+        if (isTransient)
+        {
+            auto *transProb = dynamic_cast<TransientProblem *>(problem.get());
+            int historyDepth = 1;
+            if (transProb->scheme == TimeScheme::BDF2)
+            {
+                historyDepth = 2;
+            }
+            transProb->initializeTransient(historyDepth);
+        }
+
         return problem;
     }
 
-    void PhysicsProblemBuilder::buildSolvers(SteadyProblem &problem)
+    void PhysicsProblemBuilder::buildSolvers(Problem &problem)
     {
         const auto &caseDef = problem.caseDef;
         for (const auto &assign : caseDef.materialAssignments)
@@ -42,29 +108,32 @@ namespace mpfem
 
         for (const auto &physics : caseDef.physicsDefinitions)
         {
-            if (physics.kind == "electrostatics") buildElectrostatics(problem, physics);
-            else if (physics.kind == "heat_transfer") buildHeatTransfer(problem, physics);
-            else if (physics.kind == "solid_mechanics") buildStructural(problem, physics);
+            if (physics.kind == "electrostatics")
+                buildElectrostatics(problem, physics);
+            else if (physics.kind == "heat_transfer")
+                buildHeatTransfer(problem, physics);
+            else if (physics.kind == "solid_mechanics")
+                buildStructural(problem, physics);
         }
 
         if (problem.hasJouleHeating() || problem.hasThermalExpansion())
         {
-            problem.couplingMaxIter = caseDef.couplingConfig.maxIterations;
-            problem.couplingTol = caseDef.couplingConfig.tolerance;
             setupCoupling(problem);
         }
     }
 
-    void PhysicsProblemBuilder::buildElectrostatics(SteadyProblem &problem, const PhysicsDefinition &physics)
+    void PhysicsProblemBuilder::buildElectrostatics(Problem &problem, const PhysicsDefinition &physics)
     {
         LOG_INFO << "Building electrostatics solver, order = " << physics.order;
         problem.electrostatics = std::make_unique<ElectrostaticsSolver>(physics.order);
         problem.electrostatics->setSolverConfig(physics.solver);
-        problem.electrostatics->initialize(*problem.mesh, problem.fieldValues, physics.order);
+
+        double icValue = getInitialCondition(problem.caseDef, "electrostatics", 0.0);
+        problem.electrostatics->initialize(*problem.mesh, problem.fieldValues, physics.order, icValue);
 
         for (const auto &[domId, matTag] : problem.domainMaterial)
         {
-            if (const auto* mat = problem.materials.getMaterial(matTag))
+            if (const auto *mat = problem.materials.getMaterial(matTag))
             {
                 if (auto sigmaMat = mat->electricConductivity)
                 {
@@ -87,22 +156,41 @@ namespace mpfem
         }
     }
 
-    void PhysicsProblemBuilder::buildHeatTransfer(SteadyProblem &problem, const PhysicsDefinition &physics)
+    void PhysicsProblemBuilder::buildHeatTransfer(Problem &problem, const PhysicsDefinition &physics)
     {
         LOG_INFO << "Building heat transfer solver, order = " << physics.order;
         problem.heatTransfer = std::make_unique<HeatTransferSolver>(physics.order);
         problem.heatTransfer->setSolverConfig(physics.solver);
-        problem.heatTransfer->initialize(*problem.mesh, problem.fieldValues, physics.order);
+
+        double icValue = getInitialCondition(problem.caseDef, "heat_transfer", 293.15);
+        problem.heatTransfer->initialize(*problem.mesh, problem.fieldValues, physics.order, icValue);
 
         for (const auto &[domId, matTag] : problem.domainMaterial)
         {
-            if (const auto* mat = problem.materials.getMaterial(matTag))
+            if (const auto *mat = problem.materials.getMaterial(matTag))
             {
+                // Thermal conductivity (k)
                 if (auto kMat = mat->thermalConductivity)
                 {
                     std::string key = "thermal_conductivity_" + std::to_string(domId);
                     problem.setCoef(key, constantMatrixCoefficient(kMat.value()));
                     problem.heatTransfer->setConductivity({domId}, problem.getCoef<MatrixCoefficient>(key));
+                }
+
+                // Density (rho) - needed for transient mass matrix
+                if (mat->density.has_value() && mat->density.value() > 0.0)
+                {
+                    std::string key = "density_" + std::to_string(domId);
+                    problem.setCoef(key, constantCoefficient(mat->density.value()));
+                    problem.heatTransfer->setDensity({domId}, problem.getCoef<Coefficient>(key));
+                }
+
+                // Specific heat (Cp) - needed for transient mass matrix
+                if (mat->heatCapacity.has_value() && mat->heatCapacity.value() > 0.0)
+                {
+                    std::string key = "heat_capacity_" + std::to_string(domId);
+                    problem.setCoef(key, constantCoefficient(mat->heatCapacity.value()));
+                    problem.heatTransfer->setSpecificHeat({domId}, problem.getCoef<Coefficient>(key));
                 }
             }
         }
@@ -124,22 +212,24 @@ namespace mpfem
                 std::string tinfKey = "conv_tinf_" + std::to_string(*bc.ids.begin());
                 problem.setCoef(hKey, constantCoefficient(h));
                 problem.setCoef(tinfKey, constantCoefficient(tinf));
-                problem.heatTransfer->addConvectionBC({bc.ids.begin(), bc.ids.end()}, 
-                    problem.getCoef<Coefficient>(hKey), problem.getCoef<Coefficient>(tinfKey));
+                problem.heatTransfer->addConvectionBC({bc.ids.begin(), bc.ids.end()},
+                                                      problem.getCoef<Coefficient>(hKey), problem.getCoef<Coefficient>(tinfKey));
             }
         }
     }
 
-    void PhysicsProblemBuilder::buildStructural(SteadyProblem &problem, const PhysicsDefinition &physics)
+    void PhysicsProblemBuilder::buildStructural(Problem &problem, const PhysicsDefinition &physics)
     {
         LOG_INFO << "Building structural solver, order = " << physics.order;
         problem.structural = std::make_unique<StructuralSolver>(physics.order);
         problem.structural->setSolverConfig(physics.solver);
-        problem.structural->initialize(*problem.mesh, problem.fieldValues, physics.order);
+
+        double icValue = getInitialCondition(problem.caseDef, "solid_mechanics", 0.0);
+        problem.structural->initialize(*problem.mesh, problem.fieldValues, physics.order, icValue);
 
         for (const auto &[domId, matTag] : problem.domainMaterial)
         {
-            if (const auto* mat = problem.materials.getMaterial(matTag))
+            if (const auto *mat = problem.materials.getMaterial(matTag))
             {
                 Real E = mat->youngModulus.value_or(0.0);
                 Real nu = mat->poissonRatio.value_or(0.0);
@@ -158,77 +248,81 @@ namespace mpfem
             {
                 std::string key = "fixed_disp_" + std::to_string(*bc.ids.begin());
                 problem.setCoef(key, constantVectorCoefficient(0.0, 0.0, 0.0));
-                problem.structural->addFixedDisplacementBC({bc.ids.begin(), bc.ids.end()}, 
-                    problem.getCoef<VectorCoefficient>(key));
+                problem.structural->addFixedDisplacementBC({bc.ids.begin(), bc.ids.end()},
+                                                           problem.getCoef<VectorCoefficient>(key));
             }
         }
     }
 
-    void PhysicsProblemBuilder::setupCoupling(SteadyProblem &problem)
+    void PhysicsProblemBuilder::setupCoupling(Problem &problem)
     {
         DomainMappedMatrixCoefficient tempDepSigmaMap;
-        
+
         // Build temperature-dependent conductivity map (matrix form)
         for (const auto &[domId, matTag] : problem.domainMaterial)
         {
-            if (const auto* mat = problem.materials.getMaterial(matTag))
+            if (const auto *mat = problem.materials.getMaterial(matTag))
             {
                 std::string key = "tempDepSigma_" + std::to_string(domId);
-                
+
                 // Temperature-dependent case: create matrix coefficient
                 if (mat->rho0.has_value() && mat->rho0.value() > 0.0)
                 {
                     Real rho0 = mat->rho0.value();
                     Real alpha = mat->alpha.value_or(0.0);
                     Real tref = mat->tref.value_or(298.0);
-                    const GridFunction* T_field = &problem.heatTransfer->field();
-                    
+                    const GridFunction *T_field = &problem.heatTransfer->field();
+
                     // Create matrix coefficient that computes diagonal matrix from temperature
                     problem.setCoef(key, std::make_unique<MatrixFunctionCoefficient>(
-                        [T_field, rho0, alpha, tref](ElementTransform& trans, Matrix3& result, Real) {
-                            Real temp = tref;
-                            if (T_field) {
-                                const auto& ip = trans.integrationPoint();
-                                temp = T_field->eval(trans.elementIndex(), &ip.xi);
-                            }
-                            Real factor = 1.0 + alpha * (temp - tref);
-                            Real sigma = 1.0 / (rho0 * (factor > 0 ? factor : 1e-10));
-                            result = Matrix3::Identity() * sigma;  // Diagonal matrix
-                        }));
+                                             [T_field, rho0, alpha, tref](ElementTransform &trans, Matrix3 &result, Real)
+                                             {
+                                                 Real temp = tref;
+                                                 if (T_field)
+                                                 {
+                                                     const auto &ip = trans.integrationPoint();
+                                                     temp = T_field->eval(trans.elementIndex(), &ip.xi);
+                                                 }
+                                                 Real factor = 1.0 + alpha * (temp - tref);
+                                                 Real sigma = 1.0 / (rho0 * (factor > 0 ? factor : 1e-10));
+                                                 result = Matrix3::Identity() * sigma; // Diagonal matrix
+                                             }));
                     tempDepSigmaMap.set(domId, problem.getCoef<MatrixCoefficient>(key));
                 }
-                else if (auto* c = problem.getCoef<MatrixCoefficient>("conductivity_" + std::to_string(domId)))
+                else if (auto *c = problem.getCoef<MatrixCoefficient>("conductivity_" + std::to_string(domId)))
                 {
                     tempDepSigmaMap.set(domId, c);
                 }
             }
         }
-        
+
         problem.setCoef("tempDepSigmaMap", std::make_unique<DomainMappedMatrixCoefficient>(std::move(tempDepSigmaMap)));
         problem.electrostatics->setConductivity(problem.getCoef<MatrixCoefficient>("tempDepSigmaMap"));
-        
+
         // Setup coupled physics
         for (const auto &cp : problem.caseDef.coupledPhysicsDefinitions)
         {
             if (cp.kind == "joule_heating")
             {
                 // Create Joule heat coefficient using lambda
-                const GridFunction* V_field = &problem.electrostatics->field();
-                const MatrixCoefficient* sigma_coef = &problem.electrostatics->conductivity();
-                
+                const GridFunction *V_field = &problem.electrostatics->field();
+                const MatrixCoefficient *sigma_coef = &problem.electrostatics->conductivity();
+
                 problem.setCoef("jouleHeat", std::make_unique<ScalarCoefficient>(
-                    [V_field, sigma_coef](ElementTransform& trans, Real& result, Real t) {
-                        if (!V_field || !sigma_coef) {
-                            result = 0.0;
-                            return;
-                        }
-                        Matrix3 sigma_mat;
-                        sigma_coef->eval(trans, sigma_mat, t);
-                        Vector3 g = V_field->gradient(trans.elementIndex(), &trans.integrationPoint().xi, trans);
-                        // For anisotropic: Q = g^T * sigma * g
-                        result = g.transpose() * sigma_mat * g;
-                    }));
-                
+                                                 [V_field, sigma_coef](ElementTransform &trans, Real &result, Real t)
+                                                 {
+                                                     if (!V_field || !sigma_coef)
+                                                     {
+                                                         result = 0.0;
+                                                         return;
+                                                     }
+                                                     Matrix3 sigma_mat;
+                                                     sigma_coef->eval(trans, sigma_mat, t);
+                                                     Vector3 g = V_field->gradient(trans.elementIndex(), &trans.integrationPoint().xi, trans);
+                                                     // For anisotropic: Q = g^T * sigma * g
+                                                     result = g.transpose() * sigma_mat * g;
+                                                 }));
+
                 DomainMappedScalarCoefficient jouleHeatMap;
                 jouleHeatMap.set({cp.domainIds.begin(), cp.domainIds.end()}, problem.getCoef<Coefficient>("jouleHeat"));
                 problem.setCoef("jouleHeatMap", std::make_unique<DomainMappedScalarCoefficient>(std::move(jouleHeatMap)));
@@ -239,25 +333,27 @@ namespace mpfem
             {
                 for (int domId : cp.domainIds)
                 {
-                    if (const auto* mat = problem.materials.getMaterial(problem.domainMaterial[domId]))
-                    if (mat && mat->thermalExpansion.has_value() && mat->thermalExpansion.value() > 0.0)
-                    {
-                        Real alpha_T = mat->thermalExpansion.value();
-                        Real T_ref = 293.15;
-                        const GridFunction* T_field = &problem.heatTransfer->field();
-                        
-                        std::string key = "thermalExp_" + std::to_string(domId);
-                        problem.setCoef(key, std::make_unique<ScalarCoefficient>(
-                            [T_field, alpha_T, T_ref](ElementTransform& trans, Real& result, Real) {
-                                Real T = T_ref;
-                                if (T_field) {
-                                    const auto& ip = trans.integrationPoint();
-                                    T = T_field->eval(trans.elementIndex(), &ip.xi);
-                                }
-                                result = alpha_T * (T - T_ref);
-                            }));
-                        problem.structural->setThermalExpansion({domId}, problem.getCoef<Coefficient>(key));
-                    }
+                    if (const auto *mat = problem.materials.getMaterial(problem.domainMaterial[domId]))
+                        if (mat && mat->thermalExpansion.has_value() && mat->thermalExpansion.value() > 0.0)
+                        {
+                            Real alpha_T = mat->thermalExpansion.value();
+                            Real T_ref = 293.15;
+                            const GridFunction *T_field = &problem.heatTransfer->field();
+
+                            std::string key = "thermalExp_" + std::to_string(domId);
+                            problem.setCoef(key, std::make_unique<ScalarCoefficient>(
+                                                     [T_field, alpha_T, T_ref](ElementTransform &trans, Real &result, Real)
+                                                     {
+                                                         Real T = T_ref;
+                                                         if (T_field)
+                                                         {
+                                                             const auto &ip = trans.integrationPoint();
+                                                             T = T_field->eval(trans.elementIndex(), &ip.xi);
+                                                         }
+                                                         result = alpha_T * (T - T_ref);
+                                                     }));
+                            problem.structural->setThermalExpansion({domId}, problem.getCoef<Coefficient>(key));
+                        }
                 }
                 LOG_INFO << "Thermal expansion coupling enabled";
             }
@@ -268,11 +364,38 @@ namespace mpfem
                                            const std::string &key, const CaseDefinition &caseDef, Real defaultVal)
     {
         auto it = params.find(key);
-        if (it == params.end()) return defaultVal;
+        if (it == params.end())
+            return defaultVal;
         std::string numStr = it->second;
-        if (auto pos = numStr.find('['); pos != std::string::npos) numStr = numStr.substr(0, pos);
-        try { return std::stod(numStr); }
-        catch (...) { try { return caseDef.getVariable(numStr); } catch (...) { return defaultVal; } }
+        if (auto pos = numStr.find('['); pos != std::string::npos)
+            numStr = numStr.substr(0, pos);
+        try
+        {
+            return std::stod(numStr);
+        }
+        catch (...)
+        {
+            try
+            {
+                return caseDef.getVariable(numStr);
+            }
+            catch (...)
+            {
+                return defaultVal;
+            }
+        }
+    }
+
+    double PhysicsProblemBuilder::getInitialCondition(const CaseDefinition &caseDef, const std::string &fieldKind, double defaultVal)
+    {
+        for (const auto &ic : caseDef.initialConditions)
+        {
+            if (ic.fieldKind == fieldKind)
+            {
+                return ic.value;
+            }
+        }
+        return defaultVal;
     }
 
 } // namespace mpfem

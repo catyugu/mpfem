@@ -232,6 +232,9 @@ mpfem_add_library(mpfem_physics
         src/physics/electrostatics_solver.cpp
         src/physics/heat_transfer_solver.cpp
         src/physics/structural_solver.cpp
+        src/problem/transient_problem.cpp
+        src/time/time_integrator.cpp
+        src/time/bdf1_integrator.cpp
     PUBLIC_LINK
         Eigen3::Eigen
         mpfem_core

@@ -46,8 +46,9 @@ public:
     
     Eigen::VectorXd getElementValues(Index elem) const {
         if (!fes_) return Eigen::VectorXd();
-        std::vector<Index> dofs;
-        fes_->getElementDofs(elem, dofs);
+        const int totalDofs = fes_->numElementDofs(elem) * fes_->vdim();
+        std::vector<Index> dofs(totalDofs);
+        fes_->getElementDofs(elem, std::span<Index>{dofs.data(), static_cast<size_t>(totalDofs)});
         Eigen::VectorXd result(dofs.size());
         for (size_t i = 0; i < dofs.size(); ++i)
             result[i] = values_[dofs[i]];
@@ -56,21 +57,6 @@ public:
     
     Real eval(Index elem, const Real* xi) const;
     Vector3 gradient(Index elem, const Real* xi, ElementTransform& trans) const;
-    
-    /**
-     * @brief Project field values to corner vertices only.
-     * 
-     * For high-order elements, the mesh contains more vertices than geometric corners.
-     * This method extracts only the values at corner vertices for comparison with
-     * reference solutions that only provide corner vertex values (e.g., COMSOL exports).
-     * 
-     * @param mesh The mesh to get corner vertex count from.
-     * @return Vector of values at corner vertices only.
-     * 
-     * For scalar fields (vdim=1): returns values at corner vertices.
-     * For vector fields (vdim>1): returns interleaved values [vx0,vy0,vz0, vx1,vy1,vz1, ...]
-     */
-    Eigen::VectorXd projectToCorners(const Mesh& mesh) const;
     
 private:
     const FESpace* fes_ = nullptr;
