@@ -89,10 +89,6 @@ namespace mpfem
             {
                 transientProb->scheme = TimeScheme::BDF2;
             }
-            else if (caseDef.timeConfig.scheme == "CrankNicolson")
-            {
-                transientProb->scheme = TimeScheme::CrankNicolson;
-            }
             else
             {
                 // Default to BDF1 / BackwardEuler

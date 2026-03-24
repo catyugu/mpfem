@@ -7,7 +7,7 @@
 #include "fe/grid_function.hpp"
 #include <map>
 #include <memory>
-#include <deque>
+#include <vector>
 #include <string>
 
 namespace mpfem {
@@ -62,11 +62,16 @@ public:
             auto& newEntry = fields_[id];
             newEntry.isVector = entry.isVector;
             newEntry.vdim = entry.vdim;
+            newEntry.maxHistory_ = entry.maxHistory_;
+            newEntry.historyHead = entry.historyHead;
+            newEntry.historyCount = entry.historyCount;
             if (entry.field) {
                 newEntry.field = std::make_unique<GridFunction>(*entry.field);
             }
-            for (const auto& hist : entry.history) {
-                newEntry.history.push_back(std::make_unique<GridFunction>(*hist));
+            // Copy history buffer (ring buffer)
+            newEntry.historyBuffer.reserve(entry.historyBuffer.size());
+            for (const auto& hist : entry.historyBuffer) {
+                newEntry.historyBuffer.push_back(std::make_unique<GridFunction>(*hist));
             }
         }
     }
@@ -79,11 +84,16 @@ public:
                 auto& newEntry = fields_[id];
                 newEntry.isVector = entry.isVector;
                 newEntry.vdim = entry.vdim;
+                newEntry.maxHistory_ = entry.maxHistory_;
+                newEntry.historyHead = entry.historyHead;
+                newEntry.historyCount = entry.historyCount;
                 if (entry.field) {
                     newEntry.field = std::make_unique<GridFunction>(*entry.field);
                 }
-                for (const auto& hist : entry.history) {
-                    newEntry.history.push_back(std::make_unique<GridFunction>(*hist));
+                // Copy history buffer (ring buffer)
+                newEntry.historyBuffer.reserve(entry.historyBuffer.size());
+                for (const auto& hist : entry.historyBuffer) {
+                    newEntry.historyBuffer.push_back(std::make_unique<GridFunction>(*hist));
                 }
             }
         }
@@ -97,6 +107,8 @@ public:
         auto& entry = fields_[id];
         entry.field = std::make_unique<GridFunction>(fes, initVal);
         entry.isVector = false;
+        entry.maxHistory_ = maxHistorySteps_;
+        allocateHistoryBuffer(entry, fes);
     }
     
     void createVectorField(FieldId id, const FESpace* fes, int vdim) {
@@ -106,6 +118,8 @@ public:
         entry.field = std::move(gf);
         entry.isVector = true;
         entry.vdim = vdim;
+        entry.maxHistory_ = maxHistorySteps_;
+        allocateHistoryBuffer(entry, fes);
     }
     
     GridFunction& current(FieldId id) {
@@ -124,46 +138,56 @@ public:
         auto it = fields_.find(id);
         MPFEM_ASSERT(it != fields_.end(), 
             "Field not found: " + toString(id));
-        MPFEM_ASSERT(it->second.history.size() >= static_cast<size_t>(stepsBack),
+        MPFEM_ASSERT(it->second.historyBuffer.size() >= static_cast<size_t>(stepsBack),
             "History not available for field: " + toString(id) + 
             ", requested " + std::to_string(stepsBack) + " steps back, available: " +
-            std::to_string(static_cast<int>(it->second.history.size())));
-        return *it->second.history[stepsBack - 1];
+            std::to_string(static_cast<int>(it->second.historyBuffer.size())));
+        // Ring buffer: compute physical index from logical stepsBack
+        int idx = (it->second.historyHead - stepsBack + it->second.maxHistory_) 
+                   % it->second.maxHistory_;
+        return *it->second.historyBuffer[idx];
     }
     
     const GridFunction& history(FieldId id, int stepsBack = 1) const {
         auto it = fields_.find(id);
         MPFEM_ASSERT(it != fields_.end(), 
             "Field not found: " + toString(id));
-        MPFEM_ASSERT(it->second.history.size() >= static_cast<size_t>(stepsBack),
+        MPFEM_ASSERT(it->second.historyBuffer.size() >= static_cast<size_t>(stepsBack),
             "History not available for field: " + toString(id));
-        return *it->second.history[stepsBack - 1];
+        int idx = (it->second.historyHead - stepsBack + it->second.maxHistory_) 
+                   % it->second.maxHistory_;
+        return *it->second.historyBuffer[idx];
     }
     
     void advanceTime() {
         for (auto& [id, entry] : fields_) {
-            if (maxHistorySteps_ > 0 && entry.field) {
-                auto histField = std::make_unique<GridFunction>();
-                *histField = *entry.field;
-                
-                entry.history.push_front(std::move(histField));
-                
-                while (entry.history.size() > static_cast<size_t>(maxHistorySteps_)) {
-                    entry.history.pop_back();
-                }
+            if (entry.maxHistory_ > 0 && entry.field) {
+                // Copy current field to ring buffer at head position
+                *entry.historyBuffer[entry.historyHead] = *entry.field;
+                // Advance head (circular)
+                entry.historyHead = (entry.historyHead + 1) % entry.maxHistory_;
+                entry.historyCount = std::min(entry.historyCount + 1, entry.maxHistory_);
             }
         }
     }
     
     void setMaxHistorySteps(int steps) {
         maxHistorySteps_ = steps;
+        // Reallocate history buffers for all existing fields
+        for (auto& [id, entry] : fields_) {
+            if (entry.field) {
+                entry.maxHistory_ = steps;
+                allocateHistoryBuffer(entry, entry.field->fes());
+            }
+        }
     }
     
     int maxHistorySteps() const { return maxHistorySteps_; }
     
     void clearHistory() {
         for (auto& [id, entry] : fields_) {
-            entry.history.clear();
+            entry.historyHead = 0;
+            entry.historyCount = 0;
         }
     }
     
@@ -176,10 +200,23 @@ public:
 private:
     struct FieldEntry {
         std::unique_ptr<GridFunction> field;
-        std::deque<std::unique_ptr<GridFunction>> history;
+        std::vector<std::unique_ptr<GridFunction>> historyBuffer;  // Pre-allocated ring buffer
+        int historyHead = 0;    // Current write position in ring buffer
+        int historyCount = 0;   // Number of valid history entries
+        int maxHistory_ = 0;     // Max history depth for this field
         bool isVector = false;
         int vdim = 1;
     };
+    
+    void allocateHistoryBuffer(FieldEntry& entry, const FESpace* fes) {
+        entry.historyBuffer.clear();
+        entry.historyBuffer.reserve(entry.maxHistory_);
+        for (int i = 0; i < entry.maxHistory_; ++i) {
+            entry.historyBuffer.push_back(std::make_unique<GridFunction>(fes));
+        }
+        entry.historyHead = 0;
+        entry.historyCount = 0;
+    }
     
     std::map<FieldId, FieldEntry> fields_;
     int maxHistorySteps_ = 0;

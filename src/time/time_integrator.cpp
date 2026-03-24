@@ -11,13 +11,9 @@ TimeIntegrator* createTimeIntegrator(TimeScheme scheme) {
             return new BDF1Integrator();
         case TimeScheme::BDF2:
             return new BDF2Integrator();
-        case TimeScheme::CrankNicolson:
-            LOG_ERROR << "CrankNicolson not implemented yet";
-            return nullptr;
-        default:
-            LOG_ERROR << "Unknown time scheme";
-            return nullptr;
     }
+    LOG_ERROR << "Unknown time scheme";
+    return nullptr;
 }
 
 }  // namespace mpfem
