@@ -8,8 +8,7 @@ namespace mpfem {
  */
 enum class TimeScheme {
     BackwardEuler,  ///< BDF1 - first-order backward Euler
-    BDF2,           ///< BDF2 - second-order backward differentiation
-    CrankNicolson   ///< Crank-Nicolson - second-order mid-point
+    BDF2            ///< BDF2 - second-order backward differentiation
 };
 
 }  // namespace mpfem

@@ -30,7 +30,7 @@ bool HeatTransferSolver::initialize(const Mesh& mesh, FieldValues& fieldValues, 
     return true;
 }
 
-void HeatTransferSolver::setConductivity(const std::set<int>& domains, const MatrixCoefficient* k) {
+void HeatTransferSolver::setThermalConductivity(const std::set<int>& domains, const MatrixCoefficient* k) {
     conductivity_.set(domains, k);
 }
 
@@ -124,7 +124,7 @@ bool HeatTransferSolver::solveLinearSystem(const SparseMatrix& A, Vector& x, con
     Vector b_copy = b;
     
     // Apply boundary conditions to the combined system
-    applyDirichletBC(A_copy, b_copy, field().values(), *fes_, *mesh_, temperatureBCs_);
+    applyDirichletBC(A_copy, b_copy, x, *fes_, *mesh_, temperatureBCs_);
     A_copy.makeCompressed();
     
     // Solve the system

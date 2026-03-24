@@ -23,64 +23,60 @@ int main(int argc, char* argv[]) {
 
         if (setup->isTransient()) {
             LOG_INFO << "Running transient solve...";
-            auto* transProb = dynamic_cast<TransientProblem*>(setup.get());
-            if (transProb) {
-                TransientResult result = transProb->solve();
-                if (!result.converged) {
-                    LOG_ERROR << "Transient solve did not converge after " << result.timeSteps << " steps";
-                    return 1;
-                }
-                LOG_INFO << "Transient solve converged in " << result.timeSteps << " time steps";
-                
-                // Export results
-                std::filesystem::create_directories("results");
-                ResultExporter::exportVtu(result, *setup->mesh, "results/busbar_transient.vtu");
-                ResultExporter::exportComsolText(result, *setup->mesh, "results/mpfem_result.txt");
-                LOG_INFO << "Exported results";
+            auto& transProb = static_cast<TransientProblem&>(*setup);
+            TransientResult result = transProb.solve();
+            if (!result.converged) {
+                LOG_ERROR << "Transient solve did not converge after " << result.timeSteps << " steps";
+                return 1;
             }
+            LOG_INFO << "Transient solve converged in " << result.timeSteps << " time steps";
+
+            // Export results
+            std::filesystem::create_directories("results");
+            ResultExporter::exportVtu(result, *setup->mesh, "results/busbar_transient.vtu");
+            ResultExporter::exportComsolText(result, *setup->mesh, "results/mpfem_result.txt");
+            LOG_INFO << "Exported results";
         } else {
             LOG_INFO << "Running coupled electro-thermal solve...";
-            auto* steadyProb = dynamic_cast<SteadyProblem*>(setup.get());
-            if (steadyProb) {
-                SteadyResult result = steadyProb->solve();
-                if (!result.converged) {
-                    LOG_WARN << "Coupling did not converge after " << result.iterations << " iterations";
-                } else {
-                    LOG_INFO << "Coupling converged in " << result.iterations << " iterations";
-                }
-                
-                // Print summary
-                if (result.fields.hasField(FieldId::ElectricPotential)) {
-                    const auto& V = result.fields.current(FieldId::ElectricPotential);
-                    LOG_INFO << "Potential range: [" << V.values().minCoeff() 
-                             << ", " << V.values().maxCoeff() << "] V";
-                }
-                if (result.fields.hasField(FieldId::Temperature)) {
-                    const auto& T = result.fields.current(FieldId::Temperature);
-                    Real minT = T.values().minCoeff();
-                    Real maxT = T.values().maxCoeff();
-                    LOG_INFO << "Temperature range: [" << minT << ", " << maxT << "] K";
-                    LOG_INFO << "Temperature range: [" << (minT - 273.15) << ", " 
-                             << (maxT - 273.15) << "] C";
-                }
-                if (result.fields.hasField(FieldId::Displacement)) {
-                    const auto& u = result.fields.current(FieldId::Displacement);
-                    Real maxDisp = 0.0;
-                    for (Index i = 0; i < u.numDofs() / 3; ++i) {
-                        Real dx = u(i * 3);
-                        Real dy = u(i * 3 + 1);
-                        Real dz = u(i * 3 + 2);
-                        maxDisp = std::max(maxDisp, std::sqrt(dx*dx + dy*dy + dz*dz));
-                    }
-                    LOG_INFO << "Max displacement magnitude: " << maxDisp << " m";
-                }
-                
-                // Export results
-                std::filesystem::create_directories("results");
-                ResultExporter::exportVtu(result, *setup->mesh, "results/busbar_steady.vtu");
-                ResultExporter::exportComsolText(result, *setup->mesh, "results/mpfem_result.txt");
-                LOG_INFO << "Exported results";
+            auto& steadyProb = static_cast<SteadyProblem&>(*setup);
+            SteadyResult result = steadyProb.solve();
+            if (!result.converged) {
+                LOG_WARN << "Coupling did not converge after " << result.iterations << " iterations";
+            } else {
+                LOG_INFO << "Coupling converged in " << result.iterations << " iterations";
             }
+
+            // Print summary
+            if (result.fields.hasField(FieldId::ElectricPotential)) {
+                const auto& V = result.fields.current(FieldId::ElectricPotential);
+                LOG_INFO << "Potential range: [" << V.values().minCoeff()
+                         << ", " << V.values().maxCoeff() << "] V";
+            }
+            if (result.fields.hasField(FieldId::Temperature)) {
+                const auto& T = result.fields.current(FieldId::Temperature);
+                Real minT = T.values().minCoeff();
+                Real maxT = T.values().maxCoeff();
+                LOG_INFO << "Temperature range: [" << minT << ", " << maxT << "] K";
+                LOG_INFO << "Temperature range: [" << (minT - 273.15) << ", "
+                         << (maxT - 273.15) << "] C";
+            }
+            if (result.fields.hasField(FieldId::Displacement)) {
+                const auto& u = result.fields.current(FieldId::Displacement);
+                Real maxDisp = 0.0;
+                for (Index i = 0; i < u.numDofs() / 3; ++i) {
+                    Real dx = u(i * 3);
+                    Real dy = u(i * 3 + 1);
+                    Real dz = u(i * 3 + 2);
+                    maxDisp = std::max(maxDisp, std::sqrt(dx*dx + dy*dy + dz*dz));
+                }
+                LOG_INFO << "Max displacement magnitude: " << maxDisp << " m";
+            }
+
+            // Export results
+            std::filesystem::create_directories("results");
+            ResultExporter::exportVtu(result, *setup->mesh, "results/busbar_steady.vtu");
+            ResultExporter::exportComsolText(result, *setup->mesh, "results/mpfem_result.txt");
+            LOG_INFO << "Exported results";
         }
         
         LOG_INFO << "=== Example completed successfully! ===";

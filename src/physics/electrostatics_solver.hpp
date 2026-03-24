@@ -25,10 +25,10 @@ public:
     
     bool initialize(const Mesh& mesh, FieldValues& fieldValues, int order, double initialPotential = 0.0);
     
-    // Material coefficients - matrix form for anisotropic conductivity
-    void setConductivity(const std::set<int>& domains, const MatrixCoefficient* sigma);
-    void setConductivity(const MatrixCoefficient* sigma) { conductivity_.setAll(sigma); }
-    const DomainMappedMatrixCoefficient& conductivity() const { return conductivity_; }
+    // Material coefficients - matrix form for anisotropic electrical conductivity
+    void setElectricalConductivity(const std::set<int>& domains, const MatrixCoefficient* sigma);
+    void setElectricalConductivity(const MatrixCoefficient* sigma) { conductivity_.setAll(sigma); }
+    const DomainMappedMatrixCoefficient& electricalConductivity() const { return conductivity_; }
     
     // Boundary conditions
     void addVoltageBC(const std::set<int>& boundaryIds, const Coefficient* voltage);

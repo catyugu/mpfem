@@ -100,6 +100,17 @@ struct CoupledPhysicsDefinition {
  * @brief Fully parsed case configuration.
  */
 struct CaseDefinition {
+    /**
+     * @brief Physics block keyed by physics kind (e.g., "electrostatics", "heat_transfer").
+     */
+    struct Physics {
+        std::string kind;
+        int order = 1;  // Polynomial order for this physics field
+        SolverConfig solver;
+        std::vector<BoundaryCondition> boundaries;
+        std::vector<SourceDefinition> sources;
+    };
+
     std::string caseName;
     std::string studyType;
     std::string meshPath;
@@ -107,21 +118,34 @@ struct CaseDefinition {
     std::string comsolResultPath;
     std::vector<VariableEntry> variables;
     std::vector<MaterialAssignment> materialAssignments;
-    std::vector<PhysicsDefinition> physicsDefinitions;
+    std::map<std::string, Physics> physics;  // keyed by physics kind
     std::vector<CoupledPhysicsDefinition> coupledPhysicsDefinitions;
     CouplingConfig couplingConfig;
     TimeConfig timeConfig;
     std::vector<InitialCondition> initialConditions;
+
+    // O(1) variable lookup map, built explicitly after variables are populated.
+    std::map<std::string, double> variableMap_;
+
+    /**
+     * @brief Build variable map for O(1) lookup from variables vector.
+     * Call this after variables are populated or modified.
+     */
+    void buildVariableMap() {
+        variableMap_.clear();
+        for (const auto& v : variables) {
+            variableMap_[v.name] = v.siValue;
+        }
+    }
 
     /**
      * @brief Get variable value by name.
      * @throws Exception if variable not found.
      */
     double getVariable(const std::string& name) const {
-        for (const auto& v : variables) {
-            if (v.name == name) {
-                return v.siValue;
-            }
+        auto it = variableMap_.find(name);
+        if (it != variableMap_.end()) {
+            return it->second;
         }
         MPFEM_THROW(Exception, 
             "CaseDefinition::getVariable: variable '" + name + "' not found");
@@ -131,36 +155,20 @@ struct CaseDefinition {
      * @brief Check if variable exists.
      */
     bool hasVariable(const std::string& name) const {
-        for (const auto& v : variables) {
-            if (v.name == name) {
-                return true;
-            }
-        }
-        return false;
+        return variableMap_.find(name) != variableMap_.end();
     }
     
     /**
      * @brief Get variable value by name, or default if not found.
      */
     double getVariableOrDefault(const std::string& name, double defaultValue) const {
-        for (const auto& v : variables) {
-            if (v.name == name) {
-                return v.siValue;
-            }
+        auto it = variableMap_.find(name);
+        if (it != variableMap_.end()) {
+            return it->second;
         }
         return defaultValue;
     }
 
-    /**
-     * @brief Build variable map for value resolution.
-     */
-    std::map<std::string, double> getVariableMap() const {
-        std::map<std::string, double> result;
-        for (const auto& v : variables) {
-            result[v.name] = v.siValue;
-        }
-        return result;
-    }
 };
 
 }  // namespace mpfem

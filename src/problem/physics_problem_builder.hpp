@@ -12,6 +12,8 @@
 namespace mpfem
 {
 
+class Problem;
+
 /**
  * @brief 物理问题构建器
  * 
@@ -26,18 +28,10 @@ public:
 
 private:
     static void buildSolvers(Problem &problem);
-    static void buildElectrostatics(Problem &problem, const PhysicsDefinition &physics);
-    static void buildHeatTransfer(Problem &problem, const PhysicsDefinition &physics);
-    static void buildStructural(Problem &problem, const PhysicsDefinition &physics);
     static void setupCoupling(Problem &problem);
-    
-    static Real parseValue(const std::map<std::string, std::string> &params,
-                           const std::string &key,
-                           const CaseDefinition &caseDef,
-                           Real defaultVal = 0.0);
-    
-    /// Get initial condition value for a physics kind, returns default if not found
-    static double getInitialCondition(const CaseDefinition &caseDef, const std::string &fieldKind, double defaultVal);
+    static void buildElectrostatics(Problem &problem, const CaseDefinition::Physics &physics);
+    static void buildHeatTransfer(Problem &problem, const CaseDefinition::Physics &physics);
+    static void buildStructural(Problem &problem, const CaseDefinition::Physics &physics);
 };
 
 } // namespace mpfem

@@ -103,6 +103,22 @@ Mesh createHexMesh3D() {
     return mesh;
 }
 
+std::vector<Index> getElementDofsVec(const FESpace& fes, Index elemIdx) {
+    std::vector<Index> dofs(static_cast<size_t>(fes.numElementDofs(elemIdx)), InvalidIndex);
+    if (!dofs.empty()) {
+        fes.getElementDofs(elemIdx, std::span<Index>{dofs.data(), dofs.size()});
+    }
+    return dofs;
+}
+
+std::vector<Index> getBdrElementDofsVec(const FESpace& fes, Index bdrIdx) {
+    std::vector<Index> dofs(static_cast<size_t>(fes.numBdrElementDofs(bdrIdx)), InvalidIndex);
+    if (!dofs.empty()) {
+        fes.getBdrElementDofs(bdrIdx, std::span<Index>{dofs.data(), dofs.size()});
+    }
+    return dofs;
+}
+
 // =============================================================================
 // Linear FE Space Tests (Order 1)
 // =============================================================================
@@ -132,26 +148,22 @@ TEST_F(FESpaceLinearTest, NumDofs) {
 
 TEST_F(FESpaceLinearTest, ElementDofs) {
     // Check DOF mapping for each element
-    std::vector<Index> dofs0;
-    feSpace_->getElementDofs(0, dofs0);
+    std::vector<Index> dofs0 = getElementDofsVec(*feSpace_, 0);
     EXPECT_EQ(dofs0.size(), 3);  // 3 nodes per triangle
     
-    std::vector<Index> dofs1;
-    feSpace_->getElementDofs(1, dofs1);
+    std::vector<Index> dofs1 = getElementDofsVec(*feSpace_, 1);
     EXPECT_EQ(dofs1.size(), 3);
 }
 
 TEST_F(FESpaceLinearTest, DofMappingConsistency) {
     // Element 0: vertices (0, 1, 2) -> DOFs (0, 1, 2)
-    std::vector<Index> dofs0;
-    feSpace_->getElementDofs(0, dofs0);
+    std::vector<Index> dofs0 = getElementDofsVec(*feSpace_, 0);
     EXPECT_EQ(dofs0[0], 0);
     EXPECT_EQ(dofs0[1], 1);
     EXPECT_EQ(dofs0[2], 2);
     
     // Element 1: vertices (1, 3, 2) -> DOFs (1, 3, 2)
-    std::vector<Index> dofs1;
-    feSpace_->getElementDofs(1, dofs1);
+    std::vector<Index> dofs1 = getElementDofsVec(*feSpace_, 1);
     EXPECT_EQ(dofs1[0], 1);
     EXPECT_EQ(dofs1[1], 3);
     EXPECT_EQ(dofs1[2], 2);
@@ -159,9 +171,8 @@ TEST_F(FESpaceLinearTest, DofMappingConsistency) {
 
 TEST_F(FESpaceLinearTest, SharedDofConsistency) {
     // Vertex 2 is shared by both elements
-    std::vector<Index> dofs0, dofs1;
-    feSpace_->getElementDofs(0, dofs0);
-    feSpace_->getElementDofs(1, dofs1);
+    std::vector<Index> dofs0 = getElementDofsVec(*feSpace_, 0);
+    std::vector<Index> dofs1 = getElementDofsVec(*feSpace_, 1);
     
     // Vertex 2 -> DOF 2 in both elements
     EXPECT_EQ(dofs0[2], dofs1[2]);
@@ -170,8 +181,7 @@ TEST_F(FESpaceLinearTest, SharedDofConsistency) {
 
 TEST_F(FESpaceLinearTest, BoundaryElementDofs) {
     // Boundary 0: vertices (0, 1) -> DOFs (0, 1)
-    std::vector<Index> dofs;
-    feSpace_->getElementDofs(0, dofs);
+    std::vector<Index> dofs = getElementDofsVec(*feSpace_, 0);
     EXPECT_EQ(dofs.size(), 3);
 }
 
@@ -210,8 +220,7 @@ TEST_F(FESpaceQuadraticTest, ElementDofs) {
     // Reference element has 6 DOFs for quadratic triangle
     // But with linear mesh (3 vertices per element), only 3 DOFs are valid
     // The remaining DOFs are InvalidIndex
-    std::vector<Index> dofs0;
-    feSpace_->getElementDofs(0, dofs0);
+    std::vector<Index> dofs0 = getElementDofsVec(*feSpace_, 0);
     EXPECT_EQ(dofs0.size(), 6);  // Reference element has 6 DOFs
     
     // Check that first 3 DOFs are valid vertex DOFs
@@ -224,8 +233,7 @@ TEST_F(FESpaceQuadraticTest, ElementDofs) {
     EXPECT_EQ(dofs0[4], InvalidIndex);
     EXPECT_EQ(dofs0[5], InvalidIndex);
     
-    std::vector<Index> dofs1;
-    feSpace_->getElementDofs(1, dofs1);
+    std::vector<Index> dofs1 = getElementDofsVec(*feSpace_, 1);
     EXPECT_EQ(dofs1.size(), 6);
 }
 
@@ -238,9 +246,8 @@ TEST_F(FESpaceQuadraticTest, EdgeDofSharing) {
     // Element 1: vertices (1, 3, 2)
     // Shared vertex is 1 and 2
     
-    std::vector<Index> dofs0, dofs1;
-    feSpace_->getElementDofs(0, dofs0);
-    feSpace_->getElementDofs(1, dofs1);
+    std::vector<Index> dofs0 = getElementDofsVec(*feSpace_, 0);
+    std::vector<Index> dofs1 = getElementDofsVec(*feSpace_, 1);
     
     // Check that shared vertices have same DOF indices
     // Element 0 vertices: 0, 1, 2 -> DOFs at indices 0, 1, 2
@@ -273,20 +280,17 @@ TEST_F(FESpaceTetTest, NumDofs) {
 
 TEST_F(FESpaceTetTest, ElementDofs) {
     // Linear tetrahedron has 4 DOFs
-    std::vector<Index> dofs0;
-    feSpace_->getElementDofs(0, dofs0);
+    std::vector<Index> dofs0 = getElementDofsVec(*feSpace_, 0);
     EXPECT_EQ(dofs0.size(), 4);
     
-    std::vector<Index> dofs1;
-    feSpace_->getElementDofs(1, dofs1);
+    std::vector<Index> dofs1 = getElementDofsVec(*feSpace_, 1);
     EXPECT_EQ(dofs1.size(), 4);
 }
 
 TEST_F(FESpaceTetTest, SharedFaceDofs) {
     // Elements 0 and 1 share face with vertices (1, 2, 3)
-    std::vector<Index> dofs0, dofs1;
-    feSpace_->getElementDofs(0, dofs0);
-    feSpace_->getElementDofs(1, dofs1);
+    std::vector<Index> dofs0 = getElementDofsVec(*feSpace_, 0);
+    std::vector<Index> dofs1 = getElementDofsVec(*feSpace_, 1);
     
     // Element 0: vertices (0, 1, 2, 3)
     // Element 1: vertices (1, 2, 3, 4)
@@ -322,8 +326,7 @@ TEST_F(FESpaceQuadTest, NumDofs) {
 
 TEST_F(FESpaceQuadTest, ElementDofs) {
     // Linear quad has 4 DOFs
-    std::vector<Index> dofs;
-    feSpace_->getElementDofs(0, dofs);
+    std::vector<Index> dofs = getElementDofsVec(*feSpace_, 0);
     EXPECT_EQ(dofs.size(), 4);
 }
 
@@ -332,9 +335,8 @@ TEST_F(FESpaceQuadTest, SharedEdgeDofs) {
     // Element 1: vertices {1, 2, 5, 4}
     // Shared edge: vertices {1, 4}
     
-    std::vector<Index> dofs0, dofs1;
-    feSpace_->getElementDofs(0, dofs0);
-    feSpace_->getElementDofs(1, dofs1);
+    std::vector<Index> dofs0 = getElementDofsVec(*feSpace_, 0);
+    std::vector<Index> dofs1 = getElementDofsVec(*feSpace_, 1);
     
     // Element 0 DOFs: [vertex0, vertex1, vertex4, vertex3] = [0, 1, 4, 3]
     // Element 1 DOFs: [vertex1, vertex2, vertex5, vertex4] = [1, 2, 5, 4]
@@ -375,8 +377,7 @@ TEST_F(FESpaceQuadQuadraticTest, ElementDofs) {
     // Reference element has 9 DOFs for quadratic quad
     // But with linear mesh (4 vertices per element), only 4 DOFs are valid
     // The remaining DOFs are InvalidIndex
-    std::vector<Index> dofs;
-    feSpace_->getElementDofs(0, dofs);
+    std::vector<Index> dofs = getElementDofsVec(*feSpace_, 0);
     EXPECT_EQ(dofs.size(), 9);  // Reference element has 9 DOFs
     
     // Check that first 4 DOFs are valid vertex DOFs
@@ -417,8 +418,7 @@ TEST_F(FESpaceVectorTest, NumDofs) {
 
 TEST_F(FESpaceVectorTest, ElementDofs) {
     // 3 nodes * 2 components = 6 DOFs per element
-    std::vector<Index> dofs;
-    feSpace_->getElementDofs(0, dofs);
+    std::vector<Index> dofs = getElementDofsVec(*feSpace_, 0);
     EXPECT_EQ(dofs.size(), 6);
 }
 
@@ -449,8 +449,7 @@ TEST_F(FESpace3DVectorTest, NumDofs) {
 
 TEST_F(FESpace3DVectorTest, ElementDofs) {
     // 4 nodes * 3 components = 12 DOFs per element
-    std::vector<Index> dofs;
-    feSpace_->getElementDofs(0, dofs);
+    std::vector<Index> dofs = getElementDofsVec(*feSpace_, 0);
     EXPECT_EQ(dofs.size(), 12);
 }
 
@@ -501,8 +500,7 @@ protected:
 
 TEST_F(FESpaceBdrTest, BoundaryElementDofs) {
     // Get DOFs for boundary element 0 (edge 0-1)
-    std::vector<Index> dofs;
-    feSpace_->getBdrElementDofs(0, dofs);
+    std::vector<Index> dofs = getBdrElementDofsVec(*feSpace_, 0);
     
     // Linear edge has 2 DOFs
     EXPECT_EQ(dofs.size(), 2);

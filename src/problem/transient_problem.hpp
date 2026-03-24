@@ -6,7 +6,6 @@
 #include "physics/heat_transfer_solver.hpp"
 #include "physics/structural_solver.hpp"
 #include "time/time_scheme.hpp"
-#include "core/logger.hpp"
 #include <memory>
 
 namespace mpfem {
@@ -45,17 +44,6 @@ public:
     
     void initializeTransient(int historyDepth = 2) {
         fieldValues.setMaxHistorySteps(historyDepth);
-    }
-    
-    void advanceTime() {
-        fieldValues.advanceTime();
-        currentTime += timeStep;
-        ++currentStep;
-        LOG_INFO << "Time step " << currentStep << ", t = " << currentTime;
-    }
-    
-    bool finished() const {
-        return currentTime >= endTime - 1e-10;
     }
     
     const GridFunction& history(FieldId id, int stepsBack = 1) const {

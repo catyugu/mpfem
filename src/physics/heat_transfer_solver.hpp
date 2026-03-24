@@ -25,10 +25,10 @@ public:
     
     bool initialize(const Mesh& mesh, FieldValues& fieldValues, int order, double initialTemperature = 293.15);
     
-    // Material coefficients - matrix form for anisotropic conductivity
-    void setConductivity(const std::set<int>& domains, const MatrixCoefficient* k);
-    void setConductivity(const MatrixCoefficient* k) { conductivity_.setAll(k); }
-    const DomainMappedMatrixCoefficient& conductivity() const { return conductivity_; }
+    // Material coefficients - matrix form for anisotropic thermal conductivity
+    void setThermalConductivity(const std::set<int>& domains, const MatrixCoefficient* k);
+    void setThermalConductivity(const MatrixCoefficient* k) { conductivity_.setAll(k); }
+    const DomainMappedMatrixCoefficient& thermalConductivity() const { return conductivity_; }
     
     void setHeatSource(const std::set<int>& domains, const Coefficient* Q);
     void setHeatSource(const Coefficient* Q) { heatSource_.setAll(Q); }

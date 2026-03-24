@@ -53,7 +53,7 @@ inline void applyDirichletBC(SparseMatrix& mat, Vector& rhs, Vector& sol,
                 }
                 
                 trans.setIntegrationPoint(xi);
-                Real value = coef ? 0.0 : 0.0;
+                Real value = 0.0;
                 if (coef) coef->eval(trans, value);
                 
                 dofVals[d] = value;

@@ -145,7 +145,7 @@ public:
     void eval(ElementTransform& trans, ResultType& result, Real t) const override;
 
 private:
-    std::map<int, const CoefBase*> coefs_;
+    std::unordered_map<int, const CoefBase*> coefs_;
     const CoefBase* defaultCoef_ = nullptr;
 };
 
