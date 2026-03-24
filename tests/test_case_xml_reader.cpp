@@ -108,15 +108,17 @@ TEST_F(CaseXmlReaderTest, ReadBusbarOrder2Case) {
     }
 }
 
-TEST_F(CaseXmlReaderTest, GetVariableMap) {
+TEST_F(CaseXmlReaderTest, VariableLookup) {
     CaseDefinition caseDef;
     CaseXmlReader::readFromFile(dataPath("cases/busbar_steady/case.xml"), caseDef);
 
-    auto varMap = caseDef.getVariableMap();
-    
-    EXPECT_DOUBLE_EQ(varMap["Vtot"], 0.02);
-    EXPECT_DOUBLE_EQ(varMap["L"], 0.09);
-    EXPECT_DOUBLE_EQ(varMap["htc"], 5.0);
+    EXPECT_TRUE(caseDef.hasVariable("Vtot"));
+    EXPECT_TRUE(caseDef.hasVariable("L"));
+    EXPECT_TRUE(caseDef.hasVariable("htc"));
+
+    EXPECT_DOUBLE_EQ(caseDef.getVariable("Vtot"), 0.02);
+    EXPECT_DOUBLE_EQ(caseDef.getVariable("L"), 0.09);
+    EXPECT_DOUBLE_EQ(caseDef.getVariable("htc"), 5.0);
 }
 
 TEST_F(CaseXmlReaderTest, BoundaryConditionParsing) {

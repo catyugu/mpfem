@@ -83,19 +83,6 @@ public:
 private:
     static void buildSolvers(Problem &problem);
     static void setupCoupling(Problem &problem);
-    
-    static Real parseValue(const std::map<std::string, std::string> &params,
-                           const std::string &key,
-                           const CaseDefinition &caseDef,
-                           Real defaultVal = 0.0);
-    
-    /// Get initial condition value for a physics kind, returns default if not found
-    static double getInitialCondition(const CaseDefinition &caseDef, const std::string &fieldKind, double defaultVal);
-    
-    // Allow builder classes to access private members
-    friend class ElectrostaticsBuilder;
-    friend class HeatTransferBuilder;
-    friend class StructuralBuilder;
 };
 
 } // namespace mpfem

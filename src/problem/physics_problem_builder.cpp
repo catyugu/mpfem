@@ -6,6 +6,52 @@
 namespace mpfem
 {
 
+namespace {
+
+Real parseValue(const std::map<std::string, std::string> &params,
+                const std::string &key,
+                const CaseDefinition &caseDef,
+                Real defaultVal = 0.0)
+{
+    auto it = params.find(key);
+    if (it == params.end())
+        return defaultVal;
+    std::string numStr = it->second;
+    if (auto pos = numStr.find('['); pos != std::string::npos)
+        numStr = numStr.substr(0, pos);
+    try
+    {
+        return std::stod(numStr);
+    }
+    catch (...)
+    {
+        try
+        {
+            return caseDef.getVariable(numStr);
+        }
+        catch (...)
+        {
+            return defaultVal;
+        }
+    }
+}
+
+double getInitialCondition(const CaseDefinition &caseDef,
+                           const std::string &fieldKind,
+                           double defaultVal)
+{
+    for (const auto &ic : caseDef.initialConditions)
+    {
+        if (ic.fieldKind == fieldKind)
+        {
+            return ic.value;
+        }
+    }
+    return defaultVal;
+}
+
+} // namespace
+
 std::unique_ptr<Problem> PhysicsProblemBuilder::build(const std::string &caseDir)
 {
     std::string casePath = caseDir + "/case.xml";
@@ -127,7 +173,7 @@ void ElectrostaticsBuilder::build(Problem &problem, const CaseDefinition::Physic
     problem.electrostatics = std::make_unique<ElectrostaticsSolver>(physics.order);
     problem.electrostatics->setSolverConfig(physics.solver);
 
-    double icValue = PhysicsProblemBuilder::getInitialCondition(problem.caseDef, "electrostatics", 0.0);
+    double icValue = getInitialCondition(problem.caseDef, "electrostatics", 0.0);
     problem.electrostatics->initialize(*problem.mesh, problem.fieldValues, physics.order, icValue);
 
     for (const auto &[domId, matTag] : problem.domainMaterial)
@@ -147,7 +193,7 @@ void ElectrostaticsBuilder::build(Problem &problem, const CaseDefinition::Physic
     {
         if (bc.kind == "voltage")
         {
-            Real voltage = PhysicsProblemBuilder::parseValue(bc.params, "value", problem.caseDef);
+            Real voltage = parseValue(bc.params, "value", problem.caseDef);
             std::string key = "voltage_bc_" + std::to_string(*bc.ids.begin());
             problem.setCoef(key, constantCoefficient(voltage));
             problem.electrostatics->addVoltageBC({bc.ids.begin(), bc.ids.end()}, problem.getCoef<Coefficient>(key));
@@ -161,7 +207,7 @@ void HeatTransferBuilder::build(Problem &problem, const CaseDefinition::Physics 
     problem.heatTransfer = std::make_unique<HeatTransferSolver>(physics.order);
     problem.heatTransfer->setSolverConfig(physics.solver);
 
-    double icValue = PhysicsProblemBuilder::getInitialCondition(problem.caseDef, "heat_transfer", 293.15);
+    double icValue = getInitialCondition(problem.caseDef, "heat_transfer", 293.15);
     problem.heatTransfer->initialize(*problem.mesh, problem.fieldValues, physics.order, icValue);
 
     for (const auto &[domId, matTag] : problem.domainMaterial)
@@ -198,15 +244,15 @@ void HeatTransferBuilder::build(Problem &problem, const CaseDefinition::Physics 
     {
         if (bc.kind == "temperature")
         {
-            Real temp = PhysicsProblemBuilder::parseValue(bc.params, "value", problem.caseDef);
+            Real temp = parseValue(bc.params, "value", problem.caseDef);
             std::string key = "temp_bc_" + std::to_string(*bc.ids.begin());
             problem.setCoef(key, constantCoefficient(temp));
             problem.heatTransfer->addTemperatureBC({bc.ids.begin(), bc.ids.end()}, problem.getCoef<Coefficient>(key));
         }
         else if (bc.kind == "convection")
         {
-            Real h = PhysicsProblemBuilder::parseValue(bc.params, "h", problem.caseDef, 5.0);
-            Real tinf = PhysicsProblemBuilder::parseValue(bc.params, "T_inf", problem.caseDef, 293.15);
+            Real h = parseValue(bc.params, "h", problem.caseDef, 5.0);
+            Real tinf = parseValue(bc.params, "T_inf", problem.caseDef, 293.15);
             std::string hKey = "conv_h_" + std::to_string(*bc.ids.begin());
             std::string tinfKey = "conv_tinf_" + std::to_string(*bc.ids.begin());
             problem.setCoef(hKey, constantCoefficient(h));
@@ -224,7 +270,7 @@ void StructuralBuilder::build(Problem &problem, const CaseDefinition::Physics &p
     problem.structural = std::make_unique<StructuralSolver>(physics.order);
     problem.structural->setSolverConfig(physics.solver);
 
-    double icValue = PhysicsProblemBuilder::getInitialCondition(problem.caseDef, "solid_mechanics", 0.0);
+    double icValue = getInitialCondition(problem.caseDef, "solid_mechanics", 0.0);
     problem.structural->initialize(*problem.mesh, problem.fieldValues, physics.order, icValue);
 
     for (const auto &[domId, matTag] : problem.domainMaterial)
@@ -363,44 +409,6 @@ void PhysicsProblemBuilder::setupCoupling(Problem &problem)
             LOG_INFO << "Thermal expansion coupling enabled";
         }
     }
-}
-
-Real PhysicsProblemBuilder::parseValue(const std::map<std::string, std::string> &params,
-                                       const std::string &key, const CaseDefinition &caseDef, Real defaultVal)
-{
-    auto it = params.find(key);
-    if (it == params.end())
-        return defaultVal;
-    std::string numStr = it->second;
-    if (auto pos = numStr.find('['); pos != std::string::npos)
-        numStr = numStr.substr(0, pos);
-    try
-    {
-        return std::stod(numStr);
-    }
-    catch (...)
-    {
-        try
-        {
-            return caseDef.getVariable(numStr);
-        }
-        catch (...)
-        {
-            return defaultVal;
-        }
-    }
-}
-
-double PhysicsProblemBuilder::getInitialCondition(const CaseDefinition &caseDef, const std::string &fieldKind, double defaultVal)
-{
-    for (const auto &ic : caseDef.initialConditions)
-    {
-        if (ic.fieldKind == fieldKind)
-        {
-            return ic.value;
-        }
-    }
-    return defaultVal;
 }
 
 } // namespace mpfem

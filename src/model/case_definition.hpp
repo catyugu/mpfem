@@ -180,16 +180,6 @@ struct CaseDefinition {
         return defaultValue;
     }
 
-    /**
-     * @brief Build variable map for value resolution.
-     * @deprecated Use buildVariableMap() or rely on lazy building in getVariable/hasVariable.
-     */
-    std::map<std::string, double> getVariableMap() const {
-        if (!variableMapBuilt_) {
-            buildVariableMap();
-        }
-        return variableMap_;
-    }
 };
 
 }  // namespace mpfem
