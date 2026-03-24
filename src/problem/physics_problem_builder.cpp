@@ -151,12 +151,22 @@ namespace mpfem
             for (int domId : assign.domainIds)
                 problem.domainMaterial[domId] = assign.materialTag;
 
-        // Use IPhysicsBuilder factory for explicit dispatch over caseDef.physics map
         for (const auto &[kind, physics] : caseDef.physics)
         {
-            auto builder = createPhysicsBuilder(kind);
-            if (builder)
-                builder->build(problem, physics);
+            if (kind == "electrostatics")
+            {
+                buildElectrostatics(problem, physics);
+                continue;
+            }
+            if (kind == "heat_transfer")
+            {
+                buildHeatTransfer(problem, physics);
+                continue;
+            }
+            if (kind == "solid_mechanics")
+            {
+                buildStructural(problem, physics);
+            }
         }
 
         if (problem.hasJouleHeating() || problem.hasThermalExpansion())
@@ -165,7 +175,7 @@ namespace mpfem
         }
     }
 
-    void ElectrostaticsBuilder::build(Problem &problem, const CaseDefinition::Physics &physics)
+    void PhysicsProblemBuilder::buildElectrostatics(Problem &problem, const CaseDefinition::Physics &physics)
     {
         LOG_INFO << "Building electrostatics solver, order = " << physics.order;
         problem.electrostatics = std::make_unique<ElectrostaticsSolver>(physics.order);
@@ -197,7 +207,7 @@ namespace mpfem
         }
     }
 
-    void HeatTransferBuilder::build(Problem &problem, const CaseDefinition::Physics &physics)
+    void PhysicsProblemBuilder::buildHeatTransfer(Problem &problem, const CaseDefinition::Physics &physics)
     {
         LOG_INFO << "Building heat transfer solver, order = " << physics.order;
         problem.heatTransfer = std::make_unique<HeatTransferSolver>(physics.order);
@@ -263,7 +273,7 @@ namespace mpfem
         }
     }
 
-    void StructuralBuilder::build(Problem &problem, const CaseDefinition::Physics &physics)
+    void PhysicsProblemBuilder::buildStructural(Problem &problem, const CaseDefinition::Physics &physics)
     {
         LOG_INFO << "Building structural solver, order = " << physics.order;
         problem.structural = std::make_unique<StructuralSolver>(physics.order);
