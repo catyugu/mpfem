@@ -33,11 +33,19 @@ public:
             return result;
         }
 
+        // Hoist physics checks outside loop to avoid per-iteration branching
+        const bool hasElectrostatics = this->hasElectrostatics();
+        const bool hasHeatTransfer = this->hasHeatTransfer();
+        
         for (int i = 0; i < couplingMaxIter; ++i) {
-            electrostatics->assemble();
-            electrostatics->solve();
-            heatTransfer->assemble();
-            heatTransfer->solve();
+            if (hasElectrostatics) {
+                electrostatics->assemble();
+                electrostatics->solve();
+            }
+            if (hasHeatTransfer) {
+                heatTransfer->assemble();
+                heatTransfer->solve();
+            }
             
             Real err = computeCouplingError();
             result.iterations = i + 1;

@@ -64,16 +64,21 @@ TransientResult TransientProblem::solve() {
         // Structural (displacement) is uni-directionally coupled from temperature (thermal expansion)
         // Only compute after electro-thermal coupling converges
         bool couplingConverged = false;
+        
+        // Hoist physics checks outside loop to avoid per-iteration branching
+        const bool hasElectrostatics = this->hasElectrostatics();
+        const bool hasHeatTransfer = this->hasHeatTransfer();
+        
         for (int picardIter = 0; picardIter < couplingMaxIter; ++picardIter) {
             
             // 1. Electrostatics: quasi-static, depends on temperature via sigma(T)
-            if (hasElectrostatics()) {
+            if (hasElectrostatics) {
                 electrostatics->assemble();
                 electrostatics->solve();
             }
             
             // 2. Heat transfer: TRANSIENT - use time integrator to advance
-            if (hasHeatTransfer()) {
+            if (hasHeatTransfer) {
                 // Re-assemble heat solver to pick up any changed coefficients
                 // (e.g., Joule heat from updated electrostatics solution)
                 heatTransfer->assemble();
@@ -88,7 +93,7 @@ TransientResult TransientProblem::solve() {
             
             // Check coupling convergence (based on temperature change between iterations)
             Real errT = 0.0;
-            if (hasHeatTransfer()) {
+            if (hasHeatTransfer) {
                 const auto& T = heatTransfer->field().values();
                 if (prevT_.size() == 0) {
                     prevT_ = T;
