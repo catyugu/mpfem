@@ -19,9 +19,12 @@ std::unique_ptr<Problem> PhysicsProblemBuilder::build(const std::string &caseDir
     // Determine problem type based on study type
     bool isTransient = (caseDef.studyType == "transient");
 
+    TransientProblem* transientProblem = nullptr;
+
     if (isTransient)
     {
         auto transientProb = std::make_unique<TransientProblem>();
+        transientProblem = transientProb.get();
 
         // Configure time stepping parameters
         transientProb->startTime = caseDef.timeConfig.start;
@@ -87,13 +90,10 @@ std::unique_ptr<Problem> PhysicsProblemBuilder::build(const std::string &caseDir
     // Initialize transient after building solvers
     if (isTransient)
     {
-        auto *transProb = dynamic_cast<TransientProblem *>(problem.get());
-        int historyDepth = 1;
-        if (transProb->scheme == TimeScheme::BDF2)
-        {
-            historyDepth = 2;
-        }
-        transProb->initializeTransient(historyDepth);
+        // BDF2 is a 2-step method requiring T^{n+1}, T^n, T^{n-1} -> historyDepth = 3
+        // BDF1 is a 1-step method requiring T^{n+1}, T^n -> historyDepth = 2
+        int historyDepth = (transientProblem->scheme == TimeScheme::BDF2) ? 3 : 2;
+        transientProblem->initializeTransient(historyDepth);
     }
 
     return problem;
@@ -138,7 +138,7 @@ void ElectrostaticsBuilder::build(Problem &problem, const CaseDefinition::Physic
             {
                 std::string key = "conductivity_" + std::to_string(domId);
                 problem.setCoef(key, constantMatrixCoefficient(sigmaMat.value()));
-                problem.electrostatics->setConductivity({domId}, problem.getCoef<MatrixCoefficient>(key));
+                problem.electrostatics->setElectricalConductivity({domId}, problem.getCoef<MatrixCoefficient>(key));
             }
         }
     }
@@ -173,7 +173,7 @@ void HeatTransferBuilder::build(Problem &problem, const CaseDefinition::Physics 
             {
                 std::string key = "thermal_conductivity_" + std::to_string(domId);
                 problem.setCoef(key, constantMatrixCoefficient(kMat.value()));
-                problem.heatTransfer->setConductivity({domId}, problem.getCoef<MatrixCoefficient>(key));
+                problem.heatTransfer->setThermalConductivity({domId}, problem.getCoef<MatrixCoefficient>(key));
             }
 
             // Density (rho) - needed for transient mass matrix
@@ -299,7 +299,7 @@ void PhysicsProblemBuilder::setupCoupling(Problem &problem)
 
     auto tempDepSigmaMapPtr = std::make_unique<DomainMappedMatrixCoefficient>(std::move(tempDepSigmaMap));
     problem.setCoef("tempDepSigmaMap", std::move(tempDepSigmaMapPtr));
-    problem.electrostatics->setConductivity(problem.getCoef<MatrixCoefficient>("tempDepSigmaMap"));
+    problem.electrostatics->setElectricalConductivity(problem.getCoef<MatrixCoefficient>("tempDepSigmaMap"));
 
     // Setup coupled physics
     for (const auto &cp : problem.caseDef.coupledPhysicsDefinitions)
@@ -308,7 +308,7 @@ void PhysicsProblemBuilder::setupCoupling(Problem &problem)
         {
             // Create Joule heat coefficient using lambda
             const GridFunction *V_field = &problem.electrostatics->field();
-            const MatrixCoefficient *sigma_coef = &problem.electrostatics->conductivity();
+            const MatrixCoefficient *sigma_coef = &problem.electrostatics->electricalConductivity();
 
             auto jouleHeat = std::make_unique<ScalarCoefficient>(
                 [V_field, sigma_coef](ElementTransform &trans, Real &result, Real t)

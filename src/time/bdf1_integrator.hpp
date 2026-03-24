@@ -31,16 +31,6 @@ public:
      * @return true if step succeeded, false otherwise
      */
     bool step(TransientProblem& problem) override;
-    
-    /**
-     * @brief Returns 1.0 for fully implicit BDF1
-     */
-    Real getAlpha() const override { return 1.0; }
-    
-    /**
-     * @brief Returns 1.0 for single-step method
-     */
-    Real getBeta() const override { return 1.0; }
 
 private:
     SparseMatrix A_;  ///< Pre-allocated system matrix (reused every step)

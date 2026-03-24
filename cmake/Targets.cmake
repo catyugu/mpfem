@@ -235,6 +235,7 @@ mpfem_add_library(mpfem_physics
         src/problem/transient_problem.cpp
         src/time/time_integrator.cpp
         src/time/bdf1_integrator.cpp
+        src/time/bdf2_integrator.cpp
     PUBLIC_LINK
         Eigen3::Eigen
         mpfem_core

@@ -13,10 +13,6 @@ public:
     virtual ~TimeIntegrator() = default;
     
     virtual bool step(TransientProblem& problem) = 0;
-    
-    virtual Real getAlpha() const = 0;
-    
-    virtual Real getBeta() const = 0;
 };
 
 TimeIntegrator* createTimeIntegrator(TimeScheme scheme);

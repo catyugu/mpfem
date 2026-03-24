@@ -30,7 +30,7 @@ bool HeatTransferSolver::initialize(const Mesh& mesh, FieldValues& fieldValues, 
     return true;
 }
 
-void HeatTransferSolver::setConductivity(const std::set<int>& domains, const MatrixCoefficient* k) {
+void HeatTransferSolver::setThermalConductivity(const std::set<int>& domains, const MatrixCoefficient* k) {
     conductivity_.set(domains, k);
 }
 

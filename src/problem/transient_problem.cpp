@@ -26,8 +26,14 @@ TransientResult TransientProblem::solve() {
     ScopedTimer timer("Transient solve");
     TransientResult result;
 
-    // Initialize history storage for transient analysis
-    initializeTransient(2);
+    // Ensure enough history depth for the selected time scheme.
+    const int requiredHistoryDepth = (scheme == TimeScheme::BDF2) ? 3 : 2;
+    if (fieldValues.maxHistorySteps() < requiredHistoryDepth) {
+        initializeTransient(requiredHistoryDepth);
+    }
+
+    currentTime = startTime;
+    currentStep = 0;
 
     // Steady-state initialization at t=0
     initializeSteadyState();
@@ -36,8 +42,8 @@ TransientResult TransientProblem::solve() {
     // This ensures BDF1 has proper T_prev available
     fieldValues.advanceTime();
 
-    // Save t=0 snapshot (after steady-state initialization and history setup)
-    result.addSnapshot(0.0, fieldValues);
+    // Save initial snapshot (after steady-state initialization and history setup)
+    result.addSnapshot(currentTime, fieldValues);
 
     // Create time integrator
     std::unique_ptr<TimeIntegrator> integrator(createTimeIntegrator(scheme));
@@ -46,16 +52,15 @@ TransientResult TransientProblem::solve() {
         return result;
     }
 
-    LOG_INFO << "Starting transient solve: t=[" << startTime << ", " << endTime 
+    LOG_INFO << "Starting transient solve: t=[" << startTime << ", " << endTime
              << "], dt=" << timeStep << ", scheme=" << static_cast<int>(scheme);
 
-    // Time stepping loop
-    // We compute nextTime and check BEFORE solving, to ensure we save at all requested times
-    int stepNum = 0;
-    Real nextTime = timeStep;
-    while (nextTime <= endTime + 1e-10) {
-        ++stepNum;
-        LOG_INFO << "Time step " << stepNum << ", t=" << nextTime;
+    const Real eps = 1e-10;
+
+    // Time stepping loop: one committed step per outer iteration.
+    while (currentTime + timeStep <= endTime + eps) {
+        const Real nextTime = currentTime + timeStep;
+        LOG_INFO << "Time step " << (currentStep + 1) << ", t=" << nextTime;
         
         // Reset previous temperature for new time step
         prevT_.resize(0);
@@ -65,9 +70,9 @@ TransientResult TransientProblem::solve() {
         // Only compute after electro-thermal coupling converges
         bool couplingConverged = false;
         
-        // Hoist physics checks outside loop to avoid per-iteration branching
         const bool hasElectrostatics = this->hasElectrostatics();
         const bool hasHeatTransfer = this->hasHeatTransfer();
+        const bool hasStructural = this->hasStructural();
         
         for (int picardIter = 0; picardIter < couplingMaxIter; ++picardIter) {
             
@@ -115,7 +120,7 @@ TransientResult TransientProblem::solve() {
         // Structural: quasi-static (thermal stress), depends on temperature
         // Compute ONLY ONCE after electro-thermal coupling converges
         // (uni-directional coupling: temperature -> displacement, not vice versa)
-        if (hasStructural()) {
+        if (hasStructural) {
             structural->assemble();
             structural->solve();
         }
@@ -125,18 +130,19 @@ TransientResult TransientProblem::solve() {
             return result;
         }
         
-        // Save snapshot at this time point
+        // Commit this time step after coupling convergence.
+        currentTime = nextTime;
+        ++currentStep;
+
+        // Save snapshot at this committed time point.
         result.addSnapshot(nextTime, fieldValues);
         
-        // Push current fields to history for next time step
+        // Push committed fields to history for the next time step.
         fieldValues.advanceTime();
-        
-        // Advance to next time
-        nextTime += timeStep;
     }
-    
-    result.timeSteps = stepNum;
-    result.finalTime = endTime;
+
+    result.timeSteps = currentStep;
+    result.finalTime = currentTime;
     LOG_INFO << "Transient solve completed: " << result.timeSteps << " time steps";
     result.converged = true;
     
