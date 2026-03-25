@@ -23,7 +23,6 @@ public:
 
 private:
     static void parseIds(const std::string& text, std::set<int>& ids);
-    static std::string trim(const std::string& str);
 };
 
 }  // namespace mpfem

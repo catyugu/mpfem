@@ -28,9 +28,6 @@ public:
     /// Parse matrix from format like "{'400','0','0','0','400','0','0','0','400'}"
     /// Returns nullopt if not a matrix format, returns diagonal matrix if scalar
     static std::optional<Matrix3> parseMatrix(const std::string& text);
-
-private:
-    static std::string trim(const std::string& str);
 };
 
 }  // namespace mpfem

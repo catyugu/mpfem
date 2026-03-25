@@ -1,17 +1,13 @@
 #include "io/value_parser.hpp"
+#include "core/string_utils.hpp"
 #include <cctype>
 #include <cstdlib>
 #include <vector>
 
 namespace mpfem {
 
-std::string ValueParser::trim(const std::string& str) {
-    size_t first = 0;
-    while (first < str.size() && std::isspace(static_cast<unsigned char>(str[first]))) ++first;
-    size_t last = str.size();
-    while (last > first && std::isspace(static_cast<unsigned char>(str[last - 1]))) --last;
-    return str.substr(first, last - first);
-}
+// Use shared trim from strings::
+using strings::trim;
 
 bool ValueParser::parseFirstNumber(const std::string& text, double& value) {
     value = 0.0;

@@ -60,11 +60,12 @@ namespace dunavant {
 QuadratureRule getTriangle(int order) {
     QuadratureRule rule;
     
+    // Point counts per order: 1, 3, 4, 6, 7
     if (order == 1) {
-        // Order 1, 1 point, exact for degree 1
+        rule.points().reserve(1);
         rule.points().push_back(IntegrationPoint(1.0/3.0, 1.0/3.0, 0.0, 0.5));
     } else if (order == 2) {
-        // Order 2, 3 points, exact for degree 2
+        rule.points().reserve(3);
         const Real a = 1.0/6.0;
         const Real b = 2.0/3.0;
         const Real w = 1.0/6.0;
@@ -72,7 +73,7 @@ QuadratureRule getTriangle(int order) {
         rule.points().push_back(IntegrationPoint(b, a, 0.0, w));
         rule.points().push_back(IntegrationPoint(a, b, 0.0, w));
     } else if (order == 3) {
-        // Order 3, 4 points, exact for degree 3
+        rule.points().reserve(4);
         const Real w1 = -27.0/96.0;
         const Real w2 = 25.0/96.0;
         const Real a = 0.2;
@@ -82,29 +83,24 @@ QuadratureRule getTriangle(int order) {
         rule.points().push_back(IntegrationPoint(b, a, 0.0, w2));
         rule.points().push_back(IntegrationPoint(a, b, 0.0, w2));
     } else if (order == 4) {
-        // Order 4, 6 points, exact for degree 4
-        // Reference: Dunavant (1985), same as MFEM
-        // AddTriPoints3(off, a, weight) adds points: (a,a), (a,1-2a), (1-2a,a)
-        
+        rule.points().reserve(6);
         // Group 1: a = 0.091576213509771, weight per point = 0.054975871827661
-        // Points: (0.091576, 0.091576), (0.091576, 0.816848), (0.816848, 0.091576)
         const Real a1 = 0.091576213509770743460;
         const Real w1 = 0.054975871827660933819;
-        const Real b1 = 1.0 - 2.0 * a1;  // = 0.81684757298045851208
+        const Real b1 = 1.0 - 2.0 * a1;
         rule.points().push_back(IntegrationPoint(a1, a1, 0.0, w1));
         rule.points().push_back(IntegrationPoint(a1, b1, 0.0, w1));
         rule.points().push_back(IntegrationPoint(b1, a1, 0.0, w1));
         
         // Group 2: a = 0.445948490915965, weight per point = 0.111690794839006
-        // Points: (0.445948, 0.445948), (0.445948, 0.108103), (0.108103, 0.445948)
         const Real a2 = 0.44594849091596488632;
         const Real w2 = 0.11169079483900573285;
-        const Real b2 = 1.0 - 2.0 * a2;  // = 0.10810301816807022736
+        const Real b2 = 1.0 - 2.0 * a2;
         rule.points().push_back(IntegrationPoint(a2, a2, 0.0, w2));
         rule.points().push_back(IntegrationPoint(a2, b2, 0.0, w2));
         rule.points().push_back(IntegrationPoint(b2, a2, 0.0, w2));
     } else if (order == 5) {
-        // Order 5, 7 points, exact for degree 5
+        rule.points().reserve(7);
         const Real w1 = 0.225000000000000;
         const Real w2 = 0.132394152788506;
         const Real w3 = 0.125939180544827;
@@ -140,23 +136,21 @@ QuadratureRule getTetrahedron(int order) {
     // Reference coordinates: (xi, eta, zeta) -> barycentric (1-xi-eta-zeta, xi, eta, zeta)
     
     if (order == 1) {
-        // Order 1, 1 point
+        rule.points().reserve(1);
         const Real w = 1.0/6.0;
         rule.points().push_back(IntegrationPoint(0.25, 0.25, 0.25, w));
     } else if (order == 2) {
-        // Order 2, 4 points
+        rule.points().reserve(4);
         const Real a = (5.0 - std::sqrt(5.0)) / 20.0;
         const Real b = (5.0 + 3.0 * std::sqrt(5.0)) / 20.0;
         const Real w = 1.0/24.0;
         
-        // Points are permutations of (a, a, a, b) in barycentric
-        // (xi, eta, zeta) = (a, a, a), (a, a, b), (a, b, a), (b, a, a)
         rule.points().push_back(IntegrationPoint(a, a, a, w));
         rule.points().push_back(IntegrationPoint(a, a, b, w));
         rule.points().push_back(IntegrationPoint(a, b, a, w));
         rule.points().push_back(IntegrationPoint(b, a, a, w));
     } else if (order == 3) {
-        // Order 3, 5 points
+        rule.points().reserve(5);
         const Real w0 = -2.0/15.0;
         const Real w1 = 3.0/40.0;
         const Real a = 0.25;
@@ -169,33 +163,24 @@ QuadratureRule getTetrahedron(int order) {
         rule.points().push_back(IntegrationPoint(b, c, b, w1));
         rule.points().push_back(IntegrationPoint(b, b, c, w1));
     } else if (order == 4) {
-        // Order 4, 11 points - degree 4 (with negative weight)
-        // Reference: MFEM intrules.cpp, same as Keast (1986)
+        rule.points().reserve(11);
+        const Real a1 = 1.0 / 14.0;
+        const Real b1 = 11.0 / 14.0;
+        const Real w1 = 343.0 / 45000.0;
+        rule.points().push_back(IntegrationPoint(a1, a1, a1, w1));
+        rule.points().push_back(IntegrationPoint(a1, a1, b1, w1));
+        rule.points().push_back(IntegrationPoint(a1, b1, a1, w1));
+        rule.points().push_back(IntegrationPoint(b1, a1, a1, w1));
         
-        // Group 1: AddTetPoints4(0, 1/14, 343/45000)
-        // Permutations of (a, a, a, b) where a = 1/14, b = 11/14
-        const Real a1 = 1.0 / 14.0;                    // ≈ 0.0714285714285714
-        const Real b1 = 11.0 / 14.0;                   // ≈ 0.7857142857142857
-        const Real w1 = 343.0 / 45000.0;               // ≈ 0.0076222222222222
-        rule.points().push_back(IntegrationPoint(a1, a1, a1, w1));  // (a,a,a)
-        rule.points().push_back(IntegrationPoint(a1, a1, b1, w1));  // (a,a,b)
-        rule.points().push_back(IntegrationPoint(a1, b1, a1, w1));  // (a,b,a)
-        rule.points().push_back(IntegrationPoint(b1, a1, a1, w1));  // (b,a,a)
-        
-        // Group 2: AddTetMidPoint(4, -74/5625) - center point with negative weight
-        const Real w2 = -74.0 / 5625.0;                // ≈ -0.0131555555555556
+        const Real w2 = -74.0 / 5625.0;
         rule.points().push_back(IntegrationPoint(0.25, 0.25, 0.25, w2));
         
-        // Group 3: AddTetPoints6(5, a, 28/1125)
-        // Permutations of (a, a, b, b) where a = 0.100596423833200795, b = 0.399403576166799205
         const Real a3 = 0.100596423833200795;
-        const Real b3 = 0.5 - a3;                      // ≈ 0.399403576166799205
-        const Real w3 = 28.0 / 1125.0;                 // ≈ 0.0248888888888889
-        // Permutations of (a, a, b): (a,a,b), (a,b,a), (b,a,a)
+        const Real b3 = 0.5 - a3;
+        const Real w3 = 28.0 / 1125.0;
         rule.points().push_back(IntegrationPoint(a3, a3, b3, w3));
         rule.points().push_back(IntegrationPoint(a3, b3, a3, w3));
         rule.points().push_back(IntegrationPoint(b3, a3, a3, w3));
-        // Permutations of (b, b, a): (b,b,a), (b,a,b), (a,b,b)
         rule.points().push_back(IntegrationPoint(b3, b3, a3, w3));
         rule.points().push_back(IntegrationPoint(b3, a3, b3, w3));
         rule.points().push_back(IntegrationPoint(a3, b3, b3, w3));

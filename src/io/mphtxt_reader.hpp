@@ -4,6 +4,7 @@
 #include "mesh/mesh.hpp"
 #include "core/exception.hpp"
 #include "core/logger.hpp"
+#include "core/string_utils.hpp"
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -211,7 +212,7 @@ private:
         std::string line;
         
         while (std::getline(file, line)) {
-            std::string trimmed = trim(line);
+            std::string trimmed = strings::trim(line);
             
             // Look for spatial dimension - exact match with "# sdim"
             if (trimmed.find("# sdim") != std::string::npos) {
@@ -238,7 +239,7 @@ private:
                 data.vertices.reserve(numVertices);
                 Index count = 0;
                 while (count < numVertices && std::getline(file, line)) {
-                    std::string coordLine = trim(line);
+                    std::string coordLine = strings::trim(line);
                     if (coordLine.empty() || coordLine[0] == '#') continue;
                     
                     std::istringstream iss(coordLine);
@@ -278,13 +279,13 @@ private:
         
         // Skip empty lines after "# Type #N" header
         while (std::getline(file, line)) {
-            std::string trimmed = trim(line);
+            std::string trimmed = strings::trim(line);
             if (!trimmed.empty()) break;
         }
         
         // Parse type name: format is "<len> <typename> # type name"
         // e.g., "3 vtx # type name" means type name is "vtx" with length 3
-        line = trim(line);
+        line = strings::trim(line);
         std::istringstream iss(line);
         std::string token;
         iss >> token;  // Skip count (e.g., "3" in "3 vtx")
@@ -297,7 +298,7 @@ private:
         
         // Read number of vertices per element
         while (std::getline(file, line)) {
-            std::string trimmed = trim(line);
+            std::string trimmed = strings::trim(line);
             if (trimmed.empty()) continue;
             
             if (trimmed.find("# number of vertices per element") != std::string::npos ||
@@ -316,7 +317,7 @@ private:
         // Read number of elements
         Index numElements = 0;
         while (std::getline(file, line)) {
-            std::string trimmed = trim(line);
+            std::string trimmed = strings::trim(line);
             if (trimmed.empty()) continue;
             
             if (trimmed.find("# number of elements") != std::string::npos) {
@@ -338,7 +339,7 @@ private:
             block.elements.reserve(numElements);
             Index count = 0;
             while (count < numElements && std::getline(file, line)) {
-                std::string trimmed = trim(line);
+                std::string trimmed = strings::trim(line);
                 if (trimmed.empty() || trimmed[0] == '#') continue;
                 
                 std::vector<Index> elemVertices;
@@ -351,7 +352,7 @@ private:
                 // Handle case where vertices span multiple lines
                 while (elemVertices.size() < static_cast<size_t>(block.numVertsPerElem) && 
                        std::getline(file, line)) {
-                    trimmed = trim(line);
+                    trimmed = strings::trim(line);
                     if (trimmed.empty() || trimmed[0] == '#') continue;
                     
                     std::istringstream viss2(trimmed);
@@ -369,7 +370,7 @@ private:
             
             // Look for geometric entity indices
             while (std::getline(file, line)) {
-                std::string trimmed = trim(line);
+                std::string trimmed = strings::trim(line);
                 if (trimmed.find("# number of geometric entity indices") != std::string::npos) {
                     Index numIndices = 0;
                     std::istringstream tiss(trimmed);
@@ -382,7 +383,7 @@ private:
                     // Read indices - one per line
                     block.geomIndices.reserve(numIndices);
                     for (Index i = 0; i < numIndices && std::getline(file, line); ++i) {
-                        std::istringstream iiss(trim(line));
+                        std::istringstream iiss(strings::trim(line));
                         Index idx;
                         if (iiss >> idx) {
                             block.geomIndices.push_back(idx);
@@ -482,19 +483,6 @@ private:
             return geom == Geometry::Point;
         }
         return false;
-    }
-
-    /// Trim whitespace from string
-    static std::string trim(const std::string& str) {
-        size_t start = 0;
-        while (start < str.size() && std::isspace(static_cast<unsigned char>(str[start]))) {
-            start++;
-        }
-        size_t end = str.size();
-        while (end > start && std::isspace(static_cast<unsigned char>(str[end - 1]))) {
-            end--;
-        }
-        return str.substr(start, end - start);
     }
 
     /// Convert string to lowercase

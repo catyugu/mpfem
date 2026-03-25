@@ -2,6 +2,7 @@
 #include "io/value_parser.hpp"
 #include "core/logger.hpp"
 #include "core/exception.hpp"
+#include "core/string_utils.hpp"
 
 #include <tinyxml2.h>
 
@@ -10,17 +11,7 @@
 
 namespace mpfem {
 
-std::string CaseXmlReader::trim(const std::string& str) {
-    size_t first = 0;
-    while (first < str.size() && std::isspace(static_cast<unsigned char>(str[first]))) {
-        ++first;
-    }
-    size_t last = str.size();
-    while (last > first && std::isspace(static_cast<unsigned char>(str[last - 1]))) {
-        --last;
-    }
-    return str.substr(first, last - first);
-}
+using strings::trim;
 
 void CaseXmlReader::parseIds(const std::string& text, std::set<int>& ids) {
     ids.clear();
