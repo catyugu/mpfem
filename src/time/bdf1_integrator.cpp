@@ -37,11 +37,7 @@ bool BDF1Integrator::step(TransientProblem& problem) {
     // Initialize pre-allocated matrix/vector on first call
     const Index nRows = M.rows();
     const Index nCols = M.cols();
-    if (!initialized_ || A_.rows() != nRows || A_.cols() != nCols) {
-        A_.resize(nRows, nCols);
-        rhs_.resize(nRows);
-        initialized_ = true;
-    }
+    ensureSize(nRows, nCols);
     
     // Build effective stiffness matrix: A = M + dt * K
     // For BDF1 (Backward Euler), the implicit system is:
