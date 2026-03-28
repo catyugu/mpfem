@@ -8,7 +8,7 @@
 #include "mesh/mesh.hpp"
 #include "assembly/assembler.hpp"
 #include "solver/solver_config.hpp"
-#include "solver/solver_factory.hpp"
+#include "solver/linear_solver.hpp"
 #include "physics/field_values.hpp"
 #include "core/logger.hpp"
 #include <memory>
@@ -46,15 +46,12 @@ public:
     Index numDofs() const { return fes_ ? fes_->numDofs() : 0; }
     const Mesh& mesh() const { return *mesh_; }
     
-    void setOrder(int o) { order_ = o; }
     void setSolverConfig(const SolverConfig& config) { solverConfig_ = config; }
     
     int iterations() const { return  solver_->iterations(); }
     Real residual() const { return solver_->residual(); }
 
 protected:
-    void createSolver() { solver_ = SolverFactory::create(solverConfig_); }
-    
     void clearAssemblers() {
         if (matAsm_) { matAsm_->clear(); matAsm_->clearIntegrators(); }
         if (vecAsm_) { vecAsm_->clear(); vecAsm_->clearIntegrators(); }

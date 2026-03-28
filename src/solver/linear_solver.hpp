@@ -51,11 +51,6 @@ public:
         tolerance_ = tol;
     }
     
-    /// Set absolute tolerance (for iterative solvers)
-    virtual void setAbsoluteTolerance(Real tol) {
-        absTolerance_ = tol;
-    }
-    
     /// Set print level (0 = silent, 1 = summary, 2 = verbose)
     virtual void setPrintLevel(int level) {
         printLevel_ = level;
@@ -76,7 +71,6 @@ public:
 protected:
     int maxIterations_ = 1000;
     Real tolerance_ = 1e-10;
-    Real absTolerance_ = 1e-14;
     int printLevel_ = 0;
     int iterations_ = 0;
     Real residual_ = 0.0;
