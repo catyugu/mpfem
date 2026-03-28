@@ -142,7 +142,7 @@ public:
     
     bool empty() const { return coefs_.empty() && !defaultCoef_; }
     
-    void eval(ElementTransform& trans, ResultType& result, Real t) const override;
+    void eval(ElementTransform& trans, ResultType& result, Real t = 0.0) const override;
 
 private:
     std::unordered_map<int, const CoefBase*> coefs_;
@@ -176,50 +176,6 @@ inline std::unique_ptr<MatrixCoefficient> diagonalMatrixCoefficient(Real diag) {
 inline std::unique_ptr<MatrixCoefficient> constantMatrixCoefficient(const Matrix3& mat) {
     return std::make_unique<MatrixFunctionCoefficient>(
         [mat](ElementTransform&, Matrix3& r, Real) { r = mat; });
-}
-
-// =============================================================================
-// AnyCoefficient - Type-erased wrapper
-// =============================================================================
-
-class AnyCoefficient {
-public:
-    AnyCoefficient() = default;
-    explicit AnyCoefficient(std::unique_ptr<Coefficient> c) : data_(std::move(c)) {}
-    explicit AnyCoefficient(std::unique_ptr<VectorCoefficient> c) : data_(std::move(c)) {}
-    explicit AnyCoefficient(std::unique_ptr<MatrixCoefficient> c) : data_(std::move(c)) {}
-    
-    AnyCoefficient(AnyCoefficient&&) = default;
-    AnyCoefficient& operator=(AnyCoefficient&&) = default;
-    
-    CoefficientKind kind() const {
-        if (std::holds_alternative<std::unique_ptr<VectorCoefficient>>(data_)) return CoefficientKind::Vector;
-        if (std::holds_alternative<std::unique_ptr<MatrixCoefficient>>(data_)) return CoefficientKind::Matrix;
-        return CoefficientKind::Scalar;
-    }
-    
-    bool empty() const { return std::holds_alternative<std::monostate>(data_); }
-    
-    template<typename T> const T* get() const;
-    
-private:
-    std::variant<std::monostate, std::unique_ptr<Coefficient>, 
-                 std::unique_ptr<VectorCoefficient>, std::unique_ptr<MatrixCoefficient>> data_;
-};
-
-template<> inline const Coefficient* AnyCoefficient::get<Coefficient>() const {
-    auto* p = std::get_if<std::unique_ptr<Coefficient>>(&data_);
-    return p ? p->get() : nullptr;
-}
-
-template<> inline const VectorCoefficient* AnyCoefficient::get<VectorCoefficient>() const {
-    auto* p = std::get_if<std::unique_ptr<VectorCoefficient>>(&data_);
-    return p ? p->get() : nullptr;
-}
-
-template<> inline const MatrixCoefficient* AnyCoefficient::get<MatrixCoefficient>() const {
-    auto* p = std::get_if<std::unique_ptr<MatrixCoefficient>>(&data_);
-    return p ? p->get() : nullptr;
 }
 
 }  // namespace mpfem

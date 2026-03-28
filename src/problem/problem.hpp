@@ -44,17 +44,35 @@ public:
     CaseDefinition caseDef;
     std::map<int, std::string> domainMaterial;
     FieldValues fieldValues;
-    std::map<std::string, AnyCoefficient> coefficients;
+    std::map<std::string, std::unique_ptr<Coefficient>> scalarCoefficients;
+    std::map<std::string, std::unique_ptr<VectorCoefficient>> vectorCoefficients;
+    std::map<std::string, std::unique_ptr<MatrixCoefficient>> matrixCoefficients;
     
-    template<typename T>
-    const T* getCoef(const std::string& name) const {
-        auto it = coefficients.find(name);
-        return (it != coefficients.end()) ? it->second.get<T>() : nullptr;
+    // Scalar coefficients
+    const Coefficient* getScalarCoef(const std::string& name) const {
+        auto it = scalarCoefficients.find(name);
+        return it != scalarCoefficients.end() ? it->second.get() : nullptr;
+    }
+    void setScalarCoef(const std::string& name, std::unique_ptr<Coefficient> coef) {
+        scalarCoefficients[name] = std::move(coef);
     }
     
-    template<typename T>
-    void setCoef(const std::string& name, std::unique_ptr<T> coef) {
-        coefficients[name] = AnyCoefficient(std::move(coef));
+    // Vector coefficients
+    const VectorCoefficient* getVectorCoef(const std::string& name) const {
+        auto it = vectorCoefficients.find(name);
+        return it != vectorCoefficients.end() ? it->second.get() : nullptr;
+    }
+    void setVectorCoef(const std::string& name, std::unique_ptr<VectorCoefficient> coef) {
+        vectorCoefficients[name] = std::move(coef);
+    }
+    
+    // Matrix coefficients
+    const MatrixCoefficient* getMatrixCoef(const std::string& name) const {
+        auto it = matrixCoefficients.find(name);
+        return it != matrixCoefficients.end() ? it->second.get() : nullptr;
+    }
+    void setMatrixCoef(const std::string& name, std::unique_ptr<MatrixCoefficient> coef) {
+        matrixCoefficients[name] = std::move(coef);
     }
 };
 

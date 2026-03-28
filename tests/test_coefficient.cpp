@@ -111,37 +111,6 @@ TEST_F(CoefficientTest, DomainMappedMatrixCoefficient_Basic) {
     EXPECT_EQ(coef.get(1), m.get());
 }
 
-// AnyCoefficient tests
-TEST_F(CoefficientTest, AnyCoefficient_Scalar) {
-    AnyCoefficient any(constantCoefficient(3.14));
-    
-    EXPECT_EQ(any.kind(), CoefficientKind::Scalar);
-    EXPECT_FALSE(any.empty());
-    
-    const Coefficient* c = any.get<Coefficient>();
-    EXPECT_NE(c, nullptr);
-}
-
-TEST_F(CoefficientTest, AnyCoefficient_Vector) {
-    AnyCoefficient any(constantVectorCoefficient(1.0, 2.0, 3.0));
-    
-    EXPECT_EQ(any.kind(), CoefficientKind::Vector);
-    EXPECT_FALSE(any.empty());
-    
-    const VectorCoefficient* c = any.get<VectorCoefficient>();
-    EXPECT_NE(c, nullptr);
-}
-
-TEST_F(CoefficientTest, AnyCoefficient_Matrix) {
-    AnyCoefficient any(diagonalMatrixCoefficient(5.0));
-    
-    EXPECT_EQ(any.kind(), CoefficientKind::Matrix);
-    EXPECT_FALSE(any.empty());
-    
-    const MatrixCoefficient* c = any.get<MatrixCoefficient>();
-    EXPECT_NE(c, nullptr);
-}
-
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

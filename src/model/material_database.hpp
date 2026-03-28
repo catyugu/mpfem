@@ -36,7 +36,7 @@ struct MaterialPropertyModel {
     std::optional<Matrix3> thermalConductivity;   // k tensor [W/(m·K)]
     
     // Thermal expansion
-    std::optional<double> thermalExpansion;       // alpha_T [1/K]
+    std::optional<Matrix3> thermalExpansion;      // alpha_T tensor [1/K]
 
     std::optional<double> getProperty(const std::string& name) const {
         auto it = properties.find(name);

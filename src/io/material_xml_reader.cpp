@@ -104,7 +104,7 @@ void MaterialXmlReader::readFromFile(const std::string& filePath, MaterialDataba
         // Mechanical properties
         material.youngModulus = getScalar("E");
         material.poissonRatio = getScalar("nu");
-        material.thermalExpansion = getScalar("thermalexpansioncoefficient");
+        material.thermalExpansion = getMatrix("thermalexpansioncoefficient");
         material.density = getScalar("density");
         material.heatCapacity = getScalar("heatcapacity");
 

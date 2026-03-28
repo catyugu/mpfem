@@ -35,7 +35,7 @@ void StructuralSolver::setPoissonRatio(const std::set<int>& domains, const Coeff
     poissonRatio_.set(domains, nu);
 }
 
-void StructuralSolver::setThermalExpansion(const std::set<int>& domains, const Coefficient* alphaT) {
+void StructuralSolver::setThermalExpansion(const std::set<int>& domains, const MatrixCoefficient* alphaT) {
     thermalExpansion_.set(domains, alphaT);
 }
 

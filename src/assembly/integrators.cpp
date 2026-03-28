@@ -251,9 +251,12 @@ void ThermalLoadIntegrator::assembleElementVector(const ReferenceElement& ref,
     
     elvec.setZero(totalDofs);
     
-    if (!alphaT_) return;
+    if (!alphaT_ || !E_ || !nu_) return;
     
     Eigen::Matrix<Real, MaxStrainComponents, MaxVectorDofsPerElement> B_full;
+    Eigen::Matrix<Real, 6, 6> C;
+    Eigen::Matrix<Real, 6, 1> epsilonThermal;
+    Eigen::Matrix<Real, 6, 1> sigmaThermal;
     auto B = B_full.leftCols(totalDofs);
     
     for (int q = 0; q < nq; ++q) {
@@ -264,18 +267,37 @@ void ThermalLoadIntegrator::assembleElementVector(const ReferenceElement& ref,
         const Real w = ip.weight * trans.weight();
         
         Real E_val = 1.0, nu_val = 0.3;
-        if (E_) E_->eval(trans, E_val);
-        if (nu_) nu_->eval(trans, nu_val);
+        E_->eval(trans, E_val);
+        nu_->eval(trans, nu_val);
         
-        Real thermalStrain;
-        alphaT_->eval(trans, thermalStrain);
-        
-        if (std::abs(thermalStrain) < 1e-20) continue;
-        
+        // Compute elasticity tensor C from E and nu (Lamé parameters)
         Real lambda = E_val * nu_val / ((1.0 + nu_val) * (1.0 - 2.0 * nu_val));
         Real mu = E_val / (2.0 * (1.0 + nu_val));
         
-        Real diag = (3.0 * lambda + 2.0 * mu) * thermalStrain;
+        C.setZero();
+        C(0, 0) = C(1, 1) = C(2, 2) = lambda + 2.0 * mu;
+        C(0, 1) = C(0, 2) = C(1, 0) = C(1, 2) = C(2, 0) = C(2, 1) = lambda;
+        C(3, 3) = C(4, 4) = C(5, 5) = mu;
+        
+        // Get thermal expansion tensor (Matrix3) and compute thermal strain
+        Matrix3 alpha_mat;
+        alphaT_->eval(trans, alpha_mat);
+        
+        // Skip if thermal expansion is zero
+        if (alpha_mat.norm() < 1e-20) continue;
+        
+        // Convert 3x3 thermal expansion tensor to Voigt 6-vector:
+        // ε_thermal = {α₁₁, α₂₂, α₃₃, 2α₁₂, 2α₁₃, 2α₂₃} * (T - T_ref)
+        // The alpha_mat already contains (T - T_ref) baked in from the coefficient evaluation
+        epsilonThermal(0) = alpha_mat(0, 0);  // α₁₁
+        epsilonThermal(1) = alpha_mat(1, 1);  // α₂₂
+        epsilonThermal(2) = alpha_mat(2, 2);  // α₃₃
+        epsilonThermal(3) = 2.0 * alpha_mat(0, 1);  // 2α₁₂
+        epsilonThermal(4) = 2.0 * alpha_mat(0, 2);  // 2α₁₃
+        epsilonThermal(5) = 2.0 * alpha_mat(1, 2);  // 2α₂₃
+        
+        // Compute thermal stress: σ_thermal = C : ε_thermal
+        sigmaThermal = C * epsilonThermal;
         
         const Vector3* refGrads = ref.shapeGradientsAtQuad(q);
         
@@ -297,9 +319,8 @@ void ThermalLoadIntegrator::assembleElementVector(const ReferenceElement& ref,
             B(5, col + 1) = physGrad[0];
         }
         
-        for (int i = 0; i < totalDofs; ++i) {
-            elvec(i) -= w * (B(0, i) + B(1, i) + B(2, i)) * diag;
-        }
+        // F_thermal += B^T · σ_thermal · w
+        elvec.noalias() += w * (B.transpose() * sigmaThermal);
     }
 }
 
