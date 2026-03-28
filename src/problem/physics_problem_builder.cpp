@@ -59,7 +59,9 @@ namespace mpfem
 
     } // namespace
 
-    std::unique_ptr<Problem> PhysicsProblemBuilder::build(const std::string &caseDir)
+    namespace PhysicsProblemBuilder {
+
+    std::unique_ptr<Problem> build(const std::string &caseDir)
     {
         std::string casePath = caseDir + "/case.xml";
         LOG_INFO << "Reading case from " << casePath;
@@ -138,7 +140,7 @@ namespace mpfem
         return problem;
     }
 
-    void PhysicsProblemBuilder::buildSolvers(Problem &problem)
+    void buildSolvers(Problem &problem)
     {
         const auto &caseDef = problem.caseDef;
 
@@ -171,7 +173,7 @@ namespace mpfem
         }
     }
 
-    void PhysicsProblemBuilder::buildElectrostatics(Problem &problem, const CaseDefinition::Physics &physics)
+    void buildElectrostatics(Problem &problem, const CaseDefinition::Physics &physics)
     {
         LOG_INFO << "Building electrostatics solver, order = " << physics.order;
         problem.electrostatics = std::make_unique<ElectrostaticsSolver>(physics.order);
@@ -203,7 +205,7 @@ namespace mpfem
         }
     }
 
-    void PhysicsProblemBuilder::buildHeatTransfer(Problem &problem, const CaseDefinition::Physics &physics)
+    void buildHeatTransfer(Problem &problem, const CaseDefinition::Physics &physics)
     {
         LOG_INFO << "Building heat transfer solver, order = " << physics.order;
         problem.heatTransfer = std::make_unique<HeatTransferSolver>(physics.order);
@@ -269,7 +271,7 @@ namespace mpfem
         }
     }
 
-    void PhysicsProblemBuilder::buildStructural(Problem &problem, const CaseDefinition::Physics &physics)
+    void buildStructural(Problem &problem, const CaseDefinition::Physics &physics)
     {
         LOG_INFO << "Building structural solver, order = " << physics.order;
         problem.structural = std::make_unique<StructuralSolver>(physics.order);
@@ -307,7 +309,7 @@ namespace mpfem
         }
     }
 
-    void PhysicsProblemBuilder::setupCoupling(Problem &problem)
+    void setupCoupling(Problem &problem)
     {
         // Storage for coupling coefficients - kept alive in problem.coefficients
         DomainMappedMatrixCoefficient tempDepSigmaMap;
@@ -422,5 +424,7 @@ namespace mpfem
             }
         }
     }
+
+    } // namespace PhysicsProblemBuilder
 
 } // namespace mpfem

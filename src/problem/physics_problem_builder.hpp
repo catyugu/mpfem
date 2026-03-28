@@ -20,19 +20,16 @@ class Problem;
  * 根据 case.xml 和 material.xml 构建问题实例。
  * 目前默认返回稳态问题。
  */
-class PhysicsProblemBuilder
-{
-public:
+namespace PhysicsProblemBuilder {
     /// 构建问题
-    static std::unique_ptr<Problem> build(const std::string &caseDir);
+    std::unique_ptr<Problem> build(const std::string &caseDir);
 
-private:
-    static void buildSolvers(Problem &problem);
-    static void setupCoupling(Problem &problem);
-    static void buildElectrostatics(Problem &problem, const CaseDefinition::Physics &physics);
-    static void buildHeatTransfer(Problem &problem, const CaseDefinition::Physics &physics);
-    static void buildStructural(Problem &problem, const CaseDefinition::Physics &physics);
-};
+    void buildSolvers(Problem &problem);
+    void setupCoupling(Problem &problem);
+    void buildElectrostatics(Problem &problem, const CaseDefinition::Physics &physics);
+    void buildHeatTransfer(Problem &problem, const CaseDefinition::Physics &physics);
+    void buildStructural(Problem &problem, const CaseDefinition::Physics &physics);
+} // namespace PhysicsProblemBuilder
 
 } // namespace mpfem
 
