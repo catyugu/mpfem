@@ -28,17 +28,19 @@ void Logger::log(LogLevel level, const std::string& message) {
     
     std::lock_guard<std::mutex> lock(logger.mutex_);
     
-    // Format: [LEVEL] [elapsed] message
+    // Format: [LEVEL] [elapsed] message with ANSI colors
     const char* levelStr = "";
+    const char* colorCode = "";
+    
     switch (level) {
-        case LogLevel::Debug:   levelStr = "DEBUG"; break;
-        case LogLevel::Info:    levelStr = "INFO"; break;
-        case LogLevel::Warning: levelStr = "WARN"; break;
-        case LogLevel::Error:   levelStr = "ERROR"; break;
+        case LogLevel::Debug:   levelStr = "DEBUG"; colorCode = "\033[36m"; break;   // Cyan
+        case LogLevel::Info:    levelStr = "INFO";  colorCode = "\033[32m"; break;   // Green
+        case LogLevel::Warning: levelStr = "WARN";  colorCode = "\033[33m"; break;   // Yellow
+        case LogLevel::Error:   levelStr = "ERROR"; colorCode = "\033[31m"; break;   // Red
     }
     
-    std::cout << "[" << levelStr << "] "
-              << "[" << formatElapsed() << "] "
+    std::cout << colorCode << "[" << levelStr << "]\033[0m"
+              << " [" << formatElapsed() << "] "
               << message << std::endl;
 }
 
