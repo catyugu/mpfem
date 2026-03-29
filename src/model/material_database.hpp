@@ -2,6 +2,7 @@
 #define MPFEM_MATERIAL_DATABASE_HPP
 
 #include "core/types.hpp"
+#include "io/exprtk_expression_parser.hpp"
 #include <string>
 #include <map>
 #include <vector>
@@ -10,41 +11,60 @@
 namespace mpfem {
 
 /**
- * @brief Material property model.
+ * @brief Material property model with unified storage for constants and expressions.
+ * 
+ * Design principles:
+ * - Type-level distinction: scalar vs matrix properties via separate storage
+ * - Properties can be either constants or expressions (evaluated at runtime)
+ * - Expressions support variables like T (temperature), V (voltage), u (displacement)
+ * - Evaluation is deferred to runtime using ExpressionParser
  */
 struct MaterialPropertyModel {
     std::string tag;
     std::string label;
 
-    // General property storage
-    std::map<std::string, double> properties;
+    // =======================================================================
+    // Scalar properties (constants)
+    // =======================================================================
+    std::map<std::string, double> scalarProperties;
+
+    // =======================================================================
+    // Matrix properties (constants)  
+    // =======================================================================
     std::map<std::string, Matrix3> matrixProperties;
 
-    // Mechanical properties (scalar)
+    // =======================================================================
+    // Scalar expressions (evaluated at runtime with variables)
+    // =======================================================================
+    std::map<std::string, std::string> scalarExpressions;
+
+    // =======================================================================
+    // Matrix expressions (evaluated at runtime with variables)
+    // =======================================================================
+    std::map<std::string, std::string> matrixExpressions;
+
+    // =======================================================================
+    // Typed accessors for well-known mechanical/thermal properties
+    // These are convenience accessors that use the generic storage
+    // =======================================================================
+    
     std::optional<double> youngModulus;           // E [Pa]
     std::optional<double> poissonRatio;           // nu [-]
     std::optional<double> density;                // rho [kg/m^3]
     std::optional<double> heatCapacity;           // Cp [J/(kg·K)]
-    
-    // Temperature-dependent resistivity: rho(T) = rho0 * (1 + alpha * (T - Tref))
-    std::optional<double> rho0;
-    std::optional<double> alpha;
-    std::optional<double> tref;
-    
-    // Conductivities (always matrix form)
-    std::optional<Matrix3> electricConductivity;  // sigma tensor [S/m]
-    std::optional<Matrix3> thermalConductivity;   // k tensor [W/(m·K)]
-    
-    // Thermal expansion
-    std::optional<double> thermalExpansion;       // alpha_T [1/K]
+    std::optional<Matrix3> thermalExpansion;      // alpha_T tensor [1/K]
 
-    std::optional<double> getProperty(const std::string& name) const {
-        auto it = properties.find(name);
-        return it != properties.end() ? std::optional<double>{it->second} : std::nullopt;
+    // =======================================================================
+    // Generic property access
+    // =======================================================================
+    
+    std::optional<double> getScalarProperty(const std::string& name) const {
+        auto it = scalarProperties.find(name);
+        return it != scalarProperties.end() ? std::optional<double>{it->second} : std::nullopt;
     }
 
-    void setProperty(const std::string& name, double value) {
-        properties[name] = value;
+    void setScalarProperty(const std::string& name, double value) {
+        scalarProperties[name] = value;
     }
     
     std::optional<Matrix3> getMatrixProperty(const std::string& name) const {
@@ -55,24 +75,67 @@ struct MaterialPropertyModel {
     void setMatrixProperty(const std::string& name, const Matrix3& mat) {
         matrixProperties[name] = mat;
     }
+
+    // =======================================================================
+    // Expression access
+    // =======================================================================
     
-    /// Get temperature-dependent electric conductivity as matrix
-    /// Returns diagonal matrix for isotropic case
-    std::optional<Matrix3> getElectricConductivityMatrix(double temperature) const {
-        // Temperature-dependent case
-        if (rho0.has_value() && rho0.value() > 0.0) {
-            double a = alpha.value_or(0.0);
-            double t = tref.value_or(298.0);
-            double resistivity = rho0.value() * (1.0 + a * (temperature - t));
-            if (resistivity > 0.0) {
-                return Matrix3::Identity() / resistivity;  // Diagonal matrix
-            }
+    bool hasScalarExpression(const std::string& name) const {
+        return scalarExpressions.find(name) != scalarExpressions.end();
+    }
+
+    bool hasMatrixExpression(const std::string& name) const {
+        return matrixExpressions.find(name) != matrixExpressions.end();
+    }
+
+    void setScalarExpression(const std::string& name, const std::string& expr) {
+        scalarExpressions[name] = expr;
+    }
+
+    void setMatrixExpression(const std::string& name, const std::string& expr) {
+        matrixExpressions[name] = expr;
+    }
+
+    // =======================================================================
+    // Property evaluation with variables
+    // Returns evaluated value for the given variables map
+    // =======================================================================
+    
+    /// Evaluate a scalar property (constant or expression)
+    /// Returns nullopt if property not found
+    std::optional<double> evaluateScalar(const std::string& name,
+                                        const std::map<std::string, double>& variables = {}) const {
+        // Check expressions first
+        auto exprIt = scalarExpressions.find(name);
+        if (exprIt != scalarExpressions.end()) {
+            double result = ExpressionParser::instance().evaluateScalar(exprIt->second, variables);
+            return result;
         }
-        // Direct matrix form
-        if (electricConductivity.has_value()) {
-            return electricConductivity.value();
+        // Fall back to constant
+        return getScalarProperty(name);
+    }
+
+    /// Evaluate a matrix property (constant or expression)
+    /// Returns nullopt if property not found
+    std::optional<Matrix3> evaluateMatrix(const std::string& name,
+                                        const std::map<std::string, double>& variables = {}) const {
+        // Check expressions first
+        auto exprIt = matrixExpressions.find(name);
+        if (exprIt != matrixExpressions.end()) {
+            Matrix3 result = ExpressionParser::instance().evaluateMatrix(exprIt->second, variables);
+            return result;
         }
-        return std::nullopt;
+        // Fall back to constant
+        return getMatrixProperty(name);
+    }
+
+    /// Check if a property exists (either constant or expression)
+    bool hasScalar(const std::string& name) const {
+        return hasScalarExpression(name) || scalarProperties.count(name) > 0;
+    }
+
+    bool hasMatrix(const std::string& name) const {
+        return hasMatrixExpression(name) || matrixProperties.count(name) > 0;
     }
 };
 

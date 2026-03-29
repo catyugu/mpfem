@@ -151,11 +151,14 @@ public:
         
         x.resize(n_);
         
+        // PARDISO modifies RHS, so copy to mutable buffer
+        Vector b_copy = b;
+        
         // Solve
         pardiso(pt_, &maxfct_, &mnum_, &mtype_, &phase_,
                 &n_, a_.data(), ia_.data(), ja_.data(),
                 nullptr, &nrhs, iparm_, &msglvl_, 
-                const_cast<Real*>(b.data()), x.data(), &error_);
+                b_copy.data(), x.data(), &error_);
         
         if (error_ != 0) {
             LOG_ERROR << "PARDISO solve failed with error: " << error_;

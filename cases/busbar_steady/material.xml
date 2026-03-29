@@ -6,17 +6,13 @@
         <set name="E" value="110[GPa]"/>
         <set name="nu" value="0.35"/>
       </propertyGroup>
-      <propertyGroup tag="linzRes" descr="Linearized resistivity">
-        <set name="rho0" value="1.72e-8[ohm*m]"/>
-        <set name="alpha" value="0.0039[1/K]"/>
-        <set name="Tref" value="298[K]"/>
-        <addInput quantity="temperature"/>
-      </propertyGroup>
       <label label="Copper"/>
       <set name="family" value="copper"/>
       <propertyGroup tag="def">
         <set name="relpermeability" value="{'1','0','0','0','1','0','0','0','1'}"/>
-        <set name="electricconductivity" value="{'5.998e7[S/m]','0','0','0','5.998e7[S/m]','0','0','0','5.998e7[S/m]'}"/>
+        <!-- Temperature-dependent conductivity: sigma = 1/(rho0*(1+alpha*(T-Tref))) -->
+        <!-- rho0 = 1.72e-8 ohm*m, alpha = 0.0039 1/K, Tref = 298 K -->
+        <set name="electricconductivity" value="1/(1.72e-8*(1+0.0039*(T-298)))"/>
         <set name="thermalexpansioncoefficient" value="{'17e-6[1/K]','0','0','0','17e-6[1/K]','0','0','0','17e-6[1/K]'}"/>
         <set name="heatcapacity" value="385[J/(kg*K)]"/>
         <set name="relpermittivity" value="{'1','0','0','0','1','0','0','0','1'}"/>
@@ -43,4 +39,3 @@
     </material>
   </model>
 </archive>
-

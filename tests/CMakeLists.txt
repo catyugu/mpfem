@@ -43,7 +43,6 @@ mpfem_add_test(mpfem_test_fe_space mpfem::fe test_fe_space.cpp)
 # =============================================================================
 # IO Tests
 # =============================================================================
-mpfem_add_test(mpfem_test_value_parser mpfem::io test_value_parser.cpp)
 mpfem_add_test(mpfem_test_case_xml_reader mpfem::io test_case_xml_reader.cpp)
 mpfem_add_test(mpfem_test_material_xml_reader mpfem::io test_material_xml_reader.cpp)
 

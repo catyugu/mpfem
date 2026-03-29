@@ -32,11 +32,7 @@ bool BDF2Integrator::step(TransientProblem& problem) {
     
     const Index nRows = M.rows();
     const Index nCols = M.cols();
-    if (!initialized_ || A_.rows() != nRows || A_.cols() != nCols) {
-        A_.resize(nRows, nCols);
-        rhs_.resize(nRows);
-        initialized_ = true;
-    }
+    ensureSize(nRows, nCols);
     
     if (problem.currentStep == 0) {
         // First step: use BDF1 (Backward Euler)

@@ -30,10 +30,6 @@ protected:
         // Use new coefficient helper functions
         k1_ = constantCoefficient(1.0);
         k2_ = constantCoefficient(2.0);
-        
-        // Matrix coefficients for diffusion integrator
-        mat1_ = diagonalMatrixCoefficient(1.0);
-        mat2_ = diagonalMatrixCoefficient(2.0);
     }
     
     Mesh mesh_;

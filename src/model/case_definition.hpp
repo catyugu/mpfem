@@ -101,7 +101,7 @@ struct CoupledPhysicsDefinition {
  */
 struct CaseDefinition {
     /**
-     * @brief Physics block keyed by physics kind (e.g., "electrostatics", "heat_transfer").
+     * Physics block keyed by physics kind (e.g., "electrostatics", "heat_transfer").
      */
     struct Physics {
         std::string kind;
@@ -109,6 +109,8 @@ struct CaseDefinition {
         SolverConfig solver;
         std::vector<BoundaryCondition> boundaries;
         std::vector<SourceDefinition> sources;
+        // Reference temperature for thermal expansion [K]
+        double referenceTemperature = 293.15;
     };
 
     std::string caseName;

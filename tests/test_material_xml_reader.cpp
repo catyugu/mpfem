@@ -34,24 +34,27 @@ TEST_F(MaterialXmlReaderTest, ReadBusbarMaterials) {
     const MaterialPropertyModel* copper = database.getMaterial("mat1");
     ASSERT_NE(copper, nullptr);
     
-    // Check key properties for Copper (conductivities are now Matrix3)
-    EXPECT_TRUE(copper->electricConductivity.has_value());
-    EXPECT_TRUE(copper->thermalConductivity.has_value());
+    // Check key properties for Copper
+    // Electric conductivity is now an expression (temperature-dependent)
+    EXPECT_TRUE(copper->hasMatrix("electricconductivity"));
+    EXPECT_TRUE(copper->hasMatrixExpression("electricconductivity"));
+    
+    // Thermal conductivity is a constant matrix
+    EXPECT_TRUE(copper->hasMatrix("thermalconductivity"));
+    EXPECT_FALSE(copper->hasMatrixExpression("thermalconductivity"));
+    
     EXPECT_GT(copper->youngModulus.value_or(0.0), 0.0);
     EXPECT_GT(copper->poissonRatio.value_or(0.0), 0.0);
     EXPECT_GT(copper->density.value_or(0.0), 0.0);
-    
-    // Check temperature-dependent resistivity parameters
-    EXPECT_GT(copper->rho0.value_or(0.0), 0.0);
-    EXPECT_GT(copper->alpha.value_or(0.0), 0.0);
 
     // Check mat2 (Titanium)
     const MaterialPropertyModel* titanium = database.getMaterial("mat2");
     ASSERT_NE(titanium, nullptr);
     
-    // Check key properties for Titanium
-    EXPECT_TRUE(titanium->electricConductivity.has_value());
-    EXPECT_TRUE(titanium->thermalConductivity.has_value());
+    // Titanium has constant electric conductivity (no expression)
+    EXPECT_TRUE(titanium->hasMatrix("electricconductivity"));
+    EXPECT_FALSE(titanium->hasMatrixExpression("electricconductivity"));
+    EXPECT_TRUE(titanium->hasMatrix("thermalconductivity"));
     EXPECT_GT(titanium->youngModulus.value_or(0.0), 0.0);
     EXPECT_GT(titanium->poissonRatio.value_or(0.0), 0.0);
 }
@@ -63,18 +66,18 @@ TEST_F(MaterialXmlReaderTest, MaterialPropertyAccess) {
     const MaterialPropertyModel* copper = database.getMaterial("mat1");
     ASSERT_NE(copper, nullptr);
 
-    // Test getProperty (now returns std::optional)
-    auto E = copper->getProperty("E");
+    // Test getScalarProperty
+    auto E = copper->getScalarProperty("E");
     EXPECT_TRUE(E.has_value());
     EXPECT_GT(E.value(), 0.0);
 
-    auto nu = copper->getProperty("nu");
+    auto nu = copper->getScalarProperty("nu");
     EXPECT_TRUE(nu.has_value());
     EXPECT_GT(nu.value(), 0.0);
     EXPECT_LT(nu.value(), 1.0);  // Poisson ratio should be between 0 and 1
 
     // Test non-existent property returns nullopt
-    auto nonexistent = copper->getProperty("nonexistent_property");
+    auto nonexistent = copper->getScalarProperty("nonexistent_property");
     EXPECT_FALSE(nonexistent.has_value());
 }
 
@@ -85,21 +88,31 @@ TEST_F(MaterialXmlReaderTest, TemperatureDependentConductivity) {
     const MaterialPropertyModel* copper = database.getMaterial("mat1");
     ASSERT_NE(copper, nullptr);
 
-    // Test temperature-dependent conductivity (now returns std::optional<Matrix3>)
-    auto sigma_293 = copper->getElectricConductivityMatrix(293.15);
-    auto sigma_373 = copper->getElectricConductivityMatrix(373.15);
+    // Copper has temperature-dependent conductivity
+    EXPECT_TRUE(copper->hasMatrixExpression("electricconductivity"));
 
-    // Conductivity should decrease with temperature for metals
+    // Evaluate at different temperatures
+    std::map<std::string, double> vars;
+    
+    vars["T"] = 293.15;
+    auto sigma_293 = copper->evaluateMatrix("electricconductivity", vars);
     EXPECT_TRUE(sigma_293.has_value());
+    
+    vars["T"] = 373.15;
+    auto sigma_373 = copper->evaluateMatrix("electricconductivity", vars);
     EXPECT_TRUE(sigma_373.has_value());
     
-    // Check that matrix is diagonal (isotropic case)
+    // Check that matrices are diagonal (isotropic case)
     const auto& mat293 = sigma_293.value();
     EXPECT_GT(mat293(0, 0), 0.0);
     EXPECT_GT(mat293(1, 1), 0.0);
     EXPECT_GT(mat293(2, 2), 0.0);
     EXPECT_NEAR(mat293(0, 0), mat293(1, 1), 1e-10);
     EXPECT_NEAR(mat293(0, 0), mat293(2, 2), 1e-10);
+    
+    // Conductivity should decrease with temperature for metals
+    EXPECT_GT(sigma_373.value()(0, 0), 0.0);
+    EXPECT_GT(mat293(0, 0), sigma_373.value()(0, 0));
 }
 
 TEST_F(MaterialXmlReaderTest, MaterialNotFound) {
@@ -142,4 +155,27 @@ TEST_F(MaterialXmlReaderTest, ReadOrder2Materials) {
     EXPECT_EQ(database.size(), 2);
     EXPECT_TRUE(database.hasMaterial("mat1"));
     EXPECT_TRUE(database.hasMaterial("mat2"));
+}
+
+TEST_F(MaterialXmlReaderTest, ConstantConductivity) {
+    MaterialDatabase database;
+    MaterialXmlReader::readFromFile(dataPath("cases/busbar_steady/material.xml"), database);
+
+    // Titanium has constant (non-temperature-dependent) conductivity
+    const MaterialPropertyModel* titanium = database.getMaterial("mat2");
+    ASSERT_NE(titanium, nullptr);
+
+    EXPECT_TRUE(titanium->hasMatrix("electricconductivity"));
+    EXPECT_FALSE(titanium->hasMatrixExpression("electricconductivity"));
+    
+    // Evaluate without temperature variable (should still work)
+    std::map<std::string, double> emptyVars;
+    auto sigma = titanium->evaluateMatrix("electricconductivity", emptyVars);
+    EXPECT_TRUE(sigma.has_value());
+    
+    // Check diagonal matrix
+    const auto& mat = sigma.value();
+    EXPECT_GT(mat(0, 0), 0.0);
+    EXPECT_NEAR(mat(0, 0), mat(1, 1), 1e-10);
+    EXPECT_NEAR(mat(0, 0), mat(2, 2), 1e-10);
 }

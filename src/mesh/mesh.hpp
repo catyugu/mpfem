@@ -232,7 +232,6 @@ private:
     void buildElementToFaceMap();
     void identifyBoundaryFaces();
     void buildBoundaryElementMapping();
-    void buildCornerVertexMap() const;
 
     int dim_ = 3;
     std::vector<Vertex> vertices_;
@@ -249,10 +248,9 @@ private:
     std::unordered_map<Index, Index> bdrElementToFace_;
     std::unordered_map<Index, bool> bdrIdExternalCache_;  ///< Cache: boundary ID -> isExternal
     
-    // Corner vertex cache (for high-order meshes)
-    mutable std::vector<Index> cornerVertexIndices_;       ///< Sorted list of corner vertex indices
-    mutable std::vector<Index> cornerVertexMap_;           ///< Mapping: vertex index -> corner index (InvalidIndex if not corner)
-    mutable bool cornerVertexMapBuilt_ = false;
+    // Corner vertex data (for high-order meshes)
+    std::vector<Index> cornerVertexIndices_;       ///< Sorted list of corner vertex indices
+    std::vector<Index> cornerVertexMap_;           ///< Mapping: vertex index -> corner index (InvalidIndex if not corner)
 };
 
 }  // namespace mpfem

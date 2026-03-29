@@ -1,25 +1,38 @@
 #include "io/case_xml_reader.hpp"
-#include "io/value_parser.hpp"
 #include "core/logger.hpp"
 #include "core/exception.hpp"
+#include "core/string_utils.hpp"
 
 #include <tinyxml2.h>
 
 #include <sstream>
 #include <cstdlib>
+#include <cctype>
 
 namespace mpfem {
 
-std::string CaseXmlReader::trim(const std::string& str) {
-    size_t first = 0;
-    while (first < str.size() && std::isspace(static_cast<unsigned char>(str[first]))) {
-        ++first;
+using strings::trim;
+
+// Helper function to parse first number from text (e.g., "20[mV]" -> 20.0)
+static bool parseFirstNumber(const char* text, double& value) {
+    value = 0.0;
+    if (!text) return false;
+    std::string token;
+    for (size_t i = 0; i < std::strlen(text); ++i) {
+        char current = text[i];
+        bool isNumeric = std::isdigit(static_cast<unsigned char>(current)) != 0
+                       || current == '+' || current == '-'
+                       || current == '.' || current == 'e' || current == 'E';
+        if (isNumeric) {
+            token.push_back(current);
+            continue;
+        }
+        if (!token.empty()) break;
     }
-    size_t last = str.size();
-    while (last > first && std::isspace(static_cast<unsigned char>(str[last - 1]))) {
-        --last;
-    }
-    return str.substr(first, last - first);
+    if (token.empty()) return false;
+    char* endPtr = nullptr;
+    value = std::strtod(token.c_str(), &endPtr);
+    return endPtr != token.c_str();
 }
 
 void CaseXmlReader::parseIds(const std::string& text, std::set<int>& ids) {
@@ -131,7 +144,7 @@ void CaseXmlReader::readFromFile(const std::string& filePath, CaseDefinition& ca
                 entry.valueText = valueAttr;
             }
             if (const char* siAttr = varElement->Attribute("si")) {
-                ValueParser::parseFirstNumber(siAttr, entry.siValue);
+                parseFirstNumber(siAttr, entry.siValue);
             }
             caseDefinition.variables.push_back(entry);
         }
@@ -167,6 +180,10 @@ void CaseXmlReader::readFromFile(const std::string& filePath, CaseDefinition& ca
         if (const char* orderAttr = physicsElement->Attribute("order")) {
             physics.order = std::atoi(orderAttr);
             if (physics.order < 1) physics.order = 1;
+        }
+        // Reference temperature for thermal expansion [K]
+        if (const tinyxml2::XMLElement* refTempElement = physicsElement->FirstChildElement("referenceTemperature")) {
+            physics.referenceTemperature = refTempElement->DoubleAttribute("value", 293.15);
         }
 
         // Solver configuration

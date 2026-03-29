@@ -10,47 +10,87 @@
 namespace mpfem {
 
 /**
- * @brief Eigen CG with diagonal (Jacobi) preconditioner.
+ * @brief Base class for Eigen iterative solvers with common solve pattern.
  * 
- * Recommended for well-conditioned symmetric positive-definite systems.
- * Cheap and effective for scalar Poisson/Laplace problems.
+ * Provides protected template method solveIterative() that handles the
+ * boilerplate of iterative solver invocation, logging, and error handling.
  */
-class EigenCGJacobiSolver : public LinearSolver {
-public:
-    std::string name() const override { return "Eigen::CG+Jacobi"; }
-    
-    bool solve(const SparseMatrix& A, Vector& x, const Vector& b) override {
-        ScopedTimer timer("Linear solve (CG+Jacobi)");
+class EigenIterativeSolverBase : public LinearSolver {
+protected:
+    /**
+     * @brief Template method for iterative solvers.
+     * 
+     * @tparam SolverType The Eigen solver type (e.g., ConjugateGradient, DGMRES)
+     * @tparam HasILUPreconditioner Compile-time flag for ILU preconditioner config
+     * @param solver The solver instance
+     * @param A The sparse matrix
+     * @param x Solution vector (modified in place)
+     * @param b Right-hand side vector
+     * @param solverName Name for logging
+     * @return true if solve converged
+     */
+    template<typename SolverType, bool HasILUPreconditioner>
+    bool solveIterative(SolverType& solver, const SparseMatrix& A, Vector& x, const Vector& b,
+                        const std::string& solverName) {
+        ScopedTimer timer("Linear solve (" + solverName + ")");
         
-        solver_.setMaxIterations(maxIterations_);
-        solver_.setTolerance(tolerance_);
+        // Preconditioner config (only ILU solvers) - compile-time dispatch via if constexpr
+        if constexpr (HasILUPreconditioner) {
+            solver.preconditioner().setDroptol(dropTol_);
+            solver.preconditioner().setFillfactor(fillFactor_);
+        }
         
-        solver_.compute(A.eigen());
+        // Configure solver
+        solver.setMaxIterations(maxIterations_);
+        solver.setTolerance(tolerance_);
         
-        if (solver_.info() != Eigen::Success) {
-            LOG_ERROR << "[EigenCGJacobi] Setup failed";
+        solver.compute(A.eigen());
+        
+        if (solver.info() != Eigen::Success) {
+            LOG_ERROR << "[" << solverName << "] Preconditioner setup failed";
             x.setZero(b.size());
             return false;
         }
         
-        x = solver_.solveWithGuess(b, x);
+        x = solver.solveWithGuess(b, x);
         
-        iterations_ = static_cast<int>(solver_.iterations());
-        residual_ = solver_.error();
+        iterations_ = static_cast<int>(solver.iterations());
+        residual_ = solver.error();
         
-        const bool success = solver_.info() == Eigen::Success;
+        const bool success = solver.info() == Eigen::Success;
         
         if (printLevel_ > 0 || !success) {
-            LOG_INFO << "[EigenCGJacobi] Iterations: " << iterations_ 
+            LOG_INFO << "[" << solverName << "] Iterations: " << iterations_
                      << ", Error: " << residual_
                      << ", Success: " << (success ? "yes" : "no");
         }
         
         if (success) {
-            LOG_INFO << "[EigenCGJacobi] Solve successful, solution norm: " << x.norm();
+            LOG_INFO << "[" << solverName << "] Solve successful, solution norm: " << x.norm();
         }
         
         return success;
+    }
+    
+    Real dropTol_ = 1e-4;
+    int fillFactor_ = 10;
+};
+
+/**
+ * @brief Eigen CG with diagonal (Jacobi) preconditioner.
+ * 
+ * Recommended for well-conditioned symmetric positive-definite systems.
+ * Cheap and effective for scalar Poisson/Laplace problems.
+ */
+class EigenCGJacobiSolver : public EigenIterativeSolverBase {
+public:
+    std::string name() const override { return "Eigen::CG+Jacobi"; }
+    
+    bool solve(const SparseMatrix& A, Vector& x, const Vector& b) override {
+        return solveIterative<Eigen::ConjugateGradient<Eigen::SparseMatrix<Real>,
+                                                         Eigen::Lower|Eigen::Upper,
+                                                         Eigen::DiagonalPreconditioner<Real>>, false>(
+            solver_, A, x, b, "CG+Jacobi");
     }
     
 private:
@@ -69,7 +109,7 @@ private:
  * Note: IncompleteCholesky uses shift parameter for regularization
  * on near-singular systems (default 1e-14).
  */
-class EigenCGICCSolver : public LinearSolver {
+class EigenCGICCSolver : public EigenIterativeSolverBase {
 public:
     std::string name() const override { return "Eigen::CG+ICC"; }
     
@@ -84,36 +124,10 @@ public:
     bool solve(const SparseMatrix& A, Vector& x, const Vector& b) override {
         ScopedTimer timer("Linear solve (CG+ICC)");
         
-        // Configure solver
-        solver_.setMaxIterations(maxIterations_);
-        solver_.setTolerance(tolerance_);
-        
-        solver_.compute(A.eigen());
-        
-        if (solver_.info() != Eigen::Success) {
-            LOG_ERROR << "[EigenCGICC] Preconditioner setup failed";
-            x.setZero(b.size());
-            return false;
-        }
-        
-        x = solver_.solveWithGuess(b, x);
-        
-        iterations_ = static_cast<int>(solver_.iterations());
-        residual_ = solver_.error();
-        
-        const bool success = solver_.info() == Eigen::Success;
-        
-        if (printLevel_ > 0 || !success) {
-            LOG_INFO << "[EigenCGICC] Iterations: " << iterations_ 
-                     << ", Error: " << residual_
-                     << ", Success: " << (success ? "yes" : "no");
-        }
-        
-        if (success) {
-            LOG_INFO << "[EigenCGICC] Solve successful, solution norm: " << x.norm();
-        }
-        
-        return success;
+        return solveIterative<Eigen::ConjugateGradient<Eigen::SparseMatrix<Real>,
+                                                         Eigen::Lower|Eigen::Upper,
+                                                         Eigen::IncompleteCholesky<Real>>, false>(
+            solver_, A, x, b, "CG+ICC");
     }
     
 private:
@@ -129,7 +143,7 @@ private:
  * General-purpose preconditioner for moderately ill-conditioned SPD systems.
  * ILU is more robust than ICC for non-SPD matrices but less efficient for SPD.
  */
-class EigenCGILUSolver : public LinearSolver {
+class EigenCGILUSolver : public EigenIterativeSolverBase {
 public:
     std::string name() const override { return "Eigen::CG+ILU"; }
     
@@ -142,50 +156,16 @@ public:
     void setFillFactor(int fill) { fillFactor_ = fill; }
     
     bool solve(const SparseMatrix& A, Vector& x, const Vector& b) override {
-        ScopedTimer timer("Linear solve (CG+ILU)");
-        
-        // Configure preconditioner
-        solver_.preconditioner().setDroptol(dropTol_);
-        solver_.preconditioner().setFillfactor(fillFactor_);
-        
-        // Configure solver
-        solver_.setMaxIterations(maxIterations_);
-        solver_.setTolerance(tolerance_);
-        
-        solver_.compute(A.eigen());
-        
-        if (solver_.info() != Eigen::Success) {
-            LOG_ERROR << "[EigenCGILU] Preconditioner setup failed";
-            x.setZero(b.size());
-            return false;
-        }
-        
-        x = solver_.solveWithGuess(b, x);
-        
-        iterations_ = static_cast<int>(solver_.iterations());
-        residual_ = solver_.error();
-        
-        const bool success = solver_.info() == Eigen::Success;
-        
-        if (printLevel_ > 0 || !success) {
-            LOG_INFO << "[EigenCGILU] Iterations: " << iterations_ 
-                     << ", Error: " << residual_
-                     << ", Success: " << (success ? "yes" : "no");
-        }
-        
-        if (success) {
-            LOG_INFO << "[EigenCGILU] Solve successful, solution norm: " << x.norm();
-        }
-        
-        return success;
+        return solveIterative<Eigen::ConjugateGradient<Eigen::SparseMatrix<Real>,
+                                                         Eigen::Lower|Eigen::Upper,
+                                                         Eigen::IncompleteLUT<Real>>, true>(
+            solver_, A, x, b, "CG+ILU");
     }
     
 private:
     Eigen::ConjugateGradient<Eigen::SparseMatrix<Real>,
                              Eigen::Lower|Eigen::Upper,
                              Eigen::IncompleteLUT<Real>> solver_;
-    Real dropTol_ = 1e-4;
-    int fillFactor_ = 10;
 };
 
 /**
@@ -247,7 +227,7 @@ private:
  * Deflated GMRES with Incomplete LU factorization preconditioner.
  * Suitable for non-symmetric and indefinite systems (e.g., convection-diffusion).
  */
-class EigenDGMRESILUSolver : public LinearSolver {
+class EigenDGMRESILUSolver : public EigenIterativeSolverBase {
 public:
     std::string name() const override { return "Eigen::DGMRES+ILU"; }
     
@@ -260,48 +240,12 @@ public:
     void setFillFactor(int fill) { fillFactor_ = fill; }
     
     bool solve(const SparseMatrix& A, Vector& x, const Vector& b) override {
-        ScopedTimer timer("Linear solve (DGMRES+ILU)");
-        
-        // Configure preconditioner
-        solver_.preconditioner().setDroptol(dropTol_);
-        solver_.preconditioner().setFillfactor(fillFactor_);
-        
-        // Configure solver
-        solver_.setMaxIterations(maxIterations_);
-        solver_.setTolerance(tolerance_);
-        
-        solver_.compute(A.eigen());
-        
-        if (solver_.info() != Eigen::Success) {
-            LOG_ERROR << "[EigenDGMRES] Preconditioner setup failed";
-            x.setZero(b.size());
-            return false;
-        }
-        
-        x = solver_.solveWithGuess(b, x);
-        
-        iterations_ = static_cast<int>(solver_.iterations());
-        residual_ = solver_.error();
-        
-        const bool success = solver_.info() == Eigen::Success;
-        
-        if (printLevel_ > 0 || !success) {
-            LOG_INFO << "[EigenDGMRES] Iterations: " << iterations_ 
-                     << ", Error: " << residual_
-                     << ", Success: " << (success ? "yes" : "no");
-        }
-        
-        if (success) {
-            LOG_INFO << "[EigenDGMRES] Solve successful, solution norm: " << x.norm();
-        }
-        
-        return success;
+        return solveIterative<Eigen::DGMRES<Eigen::SparseMatrix<Real>, Eigen::IncompleteLUT<Real>>, true>(
+            solver_, A, x, b, "DGMRES+ILU");
     }
     
 private:
     Eigen::DGMRES<Eigen::SparseMatrix<Real>, Eigen::IncompleteLUT<Real>> solver_;
-    Real dropTol_ = 1e-4;
-    int fillFactor_ = 10;
 };
 
 }  // namespace mpfem

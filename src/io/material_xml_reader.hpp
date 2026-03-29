@@ -10,6 +10,7 @@ namespace mpfem {
  * @brief Reads material properties from material XML.
  * 
  * Parses the material.xml file and populates a MaterialDatabase.
+ * Supports both constant values and expressions (with operators like +, -, *, /, ^).
  */
 class MaterialXmlReader {
 public:
@@ -20,10 +21,6 @@ public:
      * @throws FileException if file cannot be opened or parsed.
      */
     static void readFromFile(const std::string& filePath, MaterialDatabase& database);
-
-private:
-    static void parsePropertySets(const void* materialElement, 
-                                  std::map<std::string, double>& target);
 };
 
 }  // namespace mpfem

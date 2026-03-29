@@ -15,12 +15,9 @@ namespace mpfem {
  * @brief Diffusion integrator: ∫ (∇φᵢ)ᵀ · D · ∇φⱼ dΩ
  * 
  * D is a 3x3 matrix coefficient (diffusivity/conductivity tensor).
- * - For isotropic: D = σ * I (use diagonalMatrixCoefficient)
- * - For anisotropic: D is full tensor
  */
 class DiffusionIntegrator : public DomainBilinearIntegratorBase {
 public:
-    DiffusionIntegrator() = default;
     explicit DiffusionIntegrator(const MatrixCoefficient* c) : coef_(c) {}
     
     void assembleElementMatrix(const ReferenceElement& ref,
@@ -39,7 +36,6 @@ private:
  */
 class MassIntegrator : public DomainBilinearIntegratorBase {
 public:
-    MassIntegrator() = default;
     explicit MassIntegrator(const Coefficient* c) : coef_(c) {}
     
     void assembleElementMatrix(const ReferenceElement& ref,
@@ -58,7 +54,6 @@ private:
  */
 class DomainLFIntegrator : public DomainLinearIntegratorBase {
 public:
-    DomainLFIntegrator() = default;
     explicit DomainLFIntegrator(const Coefficient* c) : coef_(c) {}
     
     void assembleElementVector(const ReferenceElement& ref,
@@ -77,7 +72,6 @@ private:
  */
 class BoundaryLFIntegrator : public FaceLinearIntegratorBase {
 public:
-    BoundaryLFIntegrator() = default;
     explicit BoundaryLFIntegrator(const Coefficient* c) : coef_(c) {}
     
     void assembleFaceVector(const ReferenceElement& ref,
@@ -96,7 +90,6 @@ private:
  */
 class ConvectionMassIntegrator : public FaceBilinearIntegratorBase {
 public:
-    ConvectionMassIntegrator() = default;
     explicit ConvectionMassIntegrator(const Coefficient* c) : coef_(c) {}
     
     void assembleFaceMatrix(const ReferenceElement& ref,
@@ -111,8 +104,6 @@ private:
  */
 class ConvectionLFIntegrator : public FaceLinearIntegratorBase {
 public:
-    ConvectionLFIntegrator() = default;
-    
     ConvectionLFIntegrator(const Coefficient* h, const Coefficient* Tinf)
         : coef_(h), Tinf_(Tinf) {}
     
@@ -150,12 +141,18 @@ private:
 };
 
 /**
- * @brief Thermal load integrator: ∫ (3K α_T (T - T_ref) div(v)) dΩ
+ * @brief Thermal load integrator: ∫ σ_thermal : ε(v) dΩ
+ * 
+ * Computes anisotropic thermal stress: σ_thermal = C : α_tensor : (T - T_ref)
+ * - C is the 6×6 elasticity tensor (computed from E and nu)
+ * - α_tensor is the 3×3 thermal expansion coefficient matrix
+ * - ε_thermal in Voigt notation = {α₁₁, α₂₂, α₃₃, 2α₁₂, 2α₁₃, 2α₂₃} · (T - T_ref)
  */
 class ThermalLoadIntegrator : public VectorDomainLinearIntegrator {
 public:
-    ThermalLoadIntegrator(const Coefficient* E, const Coefficient* nu,
-                          const Coefficient* alphaT)
+    ThermalLoadIntegrator(const Coefficient* E,
+                          const Coefficient* nu,
+                          const MatrixCoefficient* alphaT)
         : E_(E), nu_(nu), alphaT_(alphaT) {}
     
     void assembleElementVector(const ReferenceElement& ref,
@@ -166,7 +163,7 @@ public:
 private:
     const Coefficient* E_ = nullptr;
     const Coefficient* nu_ = nullptr;
-    const Coefficient* alphaT_ = nullptr;
+    const MatrixCoefficient* alphaT_ = nullptr;
 };
 
 }  // namespace mpfem

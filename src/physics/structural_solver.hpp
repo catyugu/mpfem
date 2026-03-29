@@ -40,8 +40,8 @@ public:
     void clearBoundaryConditions() { displacementBCs_.clear(); }
     
     // Thermal expansion
-    void setThermalExpansion(const std::set<int>& domains, const Coefficient* alphaT);
-    const DomainMappedScalarCoefficient& thermalExpansion() const { return thermalExpansion_; }
+    void setThermalExpansion(const std::set<int>& domains, const MatrixCoefficient* alphaT);
+    const DomainMappedMatrixCoefficient& thermalExpansion() const { return thermalExpansion_; }
     bool hasThermalExpansion() const { return !thermalExpansion_.empty(); }
     
     void assemble() override;
@@ -49,7 +49,7 @@ public:
 private:
     DomainMappedScalarCoefficient youngModulus_;
     DomainMappedScalarCoefficient poissonRatio_;
-    DomainMappedScalarCoefficient thermalExpansion_;
+    DomainMappedMatrixCoefficient thermalExpansion_;
     std::map<int, const VectorCoefficient*> displacementBCs_;
 };
 

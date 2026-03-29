@@ -1,0 +1,124 @@
+#ifndef MPFEM_EXPRTK_EXPRESSION_PARSER_HPP
+#define MPFEM_EXPRTK_EXPRESSION_PARSER_HPP
+
+#include "core/types.hpp"
+#include <string>
+#include <map>
+#include <vector>
+#include <mutex>
+
+// ExprTk header - single file library
+#include <exprtk.hpp>
+
+namespace mpfem {
+
+/**
+ * @brief Expression parser using ExprTk with thread-safe caching.
+ * 
+ * Provides evaluation of scalar and matrix expressions with support for
+ * variables T (temperature), V (voltage), and u (displacement vector).
+ * 
+ * Thread-safe through mutex protection on cache access.
+ */
+class ExpressionParser {
+public:
+    // Singleton access
+    static ExpressionParser& instance();
+    
+    // Prevent copying
+    ExpressionParser(const ExpressionParser&) = delete;
+    ExpressionParser& operator=(const ExpressionParser&) = delete;
+
+    /**
+     * @brief Evaluate a scalar expression.
+     * @param expr Expression string, e.g., "1.72e-8*(1+0.0039*(T-298))"
+     * @param variables Map of variable names to values
+     * @return Evaluated scalar result
+     */
+    double evaluateScalar(const std::string& expr,
+                         const std::map<std::string, double>& variables = {});
+
+    /**
+     * @brief Evaluate a matrix expression to a 3x3 Matrix3.
+     * @param expr Expression string for each component, or single scalar to create diagonal
+     * @param variables Map of variable names to values
+     * @return Evaluated Matrix3 result
+     */
+    Matrix3 evaluateMatrix(const std::string& expr,
+                           const std::map<std::string, double>& variables = {});
+
+    /**
+     * @brief Clear the expression cache.
+     */
+    void clearCache();
+
+private:
+    // Private constructor for singleton
+    ExpressionParser() = default;
+
+    // Thread-safe cache entry - stores compiled expression and variable storage
+    struct CachedExpression {
+        exprtk::expression<double> expression;
+        exprtk::parser<double> parser;
+        std::vector<double> varStorage;  // Persistent storage for variables
+        std::vector<std::string> varNames;
+        bool compiled = false;
+    };
+
+    // Cache: expression string -> compiled expression
+    using ExpressionCache = std::map<std::string, CachedExpression>;
+
+    // Mutex for thread safety
+    std::mutex mutex_;
+
+    // Separate caches for scalar and matrix expressions
+    ExpressionCache scalarCache_;
+    ExpressionCache matrixCache_;
+
+    // Helper to compile and evaluate scalar expression
+    double compileAndEvaluate(const std::string& expr,
+                             const std::map<std::string, double>& variables,
+                             ExpressionCache& cache);
+
+    // Parse matrix format {'a','b',...} with expression support
+    Matrix3 parseMatrixWithExpressions(const std::string& expr,
+                                      const std::map<std::string, double>& variables);
+};
+
+/**
+ * @brief Check if a string is a simple number (not an expression).
+ */
+inline bool isNumberString(const std::string& s) {
+    if (s.empty()) return false;
+    size_t i = 0;
+    if (s[0] == '+' || s[0] == '-') {
+        if (s.length() == 1) return false;
+        i = 1;
+    }
+    if (!std::isdigit(static_cast<unsigned char>(s[i])) && s[i] != '.') return false;
+    for (; i < s.length(); ++i) {
+        char c = s[i];
+        if (!std::isdigit(static_cast<unsigned char>(c)) && c != '.' && 
+            c != 'e' && c != 'E' && c != '+' && c != '-') {
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
+ * @brief Check if value contains operators indicating it's an expression.
+ */
+inline bool isExpression(const std::string& value) {
+    for (char c : value) {
+        if (c == '(' || c == ')' || c == '*' || c == '/' || 
+            c == '+' || c == '-' || c == '^') {
+            return true;
+        }
+    }
+    return false;
+}
+
+}  // namespace mpfem
+
+#endif  // MPFEM_EXPRTK_EXPRESSION_PARSER_HPP

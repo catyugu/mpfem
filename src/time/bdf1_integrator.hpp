@@ -31,11 +31,6 @@ public:
      * @return true if step succeeded, false otherwise
      */
     bool step(TransientProblem& problem) override;
-
-private:
-    SparseMatrix A_;  ///< Pre-allocated system matrix (reused every step)
-    Vector rhs_;      ///< Pre-allocated RHS vector (reused every step)
-    bool initialized_ = false;  ///< Track if A_ and rhs_ are sized
 };
 
 }  // namespace mpfem
