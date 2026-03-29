@@ -16,25 +16,13 @@ std::string stripUnits(const std::string& value) {
     if (bracketPos != std::string::npos) {
         result = result.substr(0, bracketPos);
     }
-    // Trim whitespace
-    while (!result.empty() && std::isspace(static_cast<unsigned char>(result.front()))) {
-        result.erase(result.begin());
-    }
-    while (!result.empty() && std::isspace(static_cast<unsigned char>(result.back()))) {
-        result.pop_back();
-    }
-    return result;
+    // Trim whitespace using strings::trim()
+    return strings::trim(result);
 }
 
 // Parse matrix format {'a','b',...} - returns nullopt if not matrix format
 std::optional<Matrix3> parseMatrixConstant(const std::string& value) {
-    std::string trimmed = value;
-    while (!trimmed.empty() && std::isspace(static_cast<unsigned char>(trimmed.front()))) {
-        trimmed.erase(trimmed.begin());
-    }
-    while (!trimmed.empty() && std::isspace(static_cast<unsigned char>(trimmed.back()))) {
-        trimmed.pop_back();
-    }
+    std::string trimmed = strings::trim(value);
     
     if (trimmed.size() < 2 || trimmed[0] != '{') {
         return std::nullopt;
