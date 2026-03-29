@@ -181,6 +181,10 @@ void CaseXmlReader::readFromFile(const std::string& filePath, CaseDefinition& ca
             physics.order = std::atoi(orderAttr);
             if (physics.order < 1) physics.order = 1;
         }
+        // Reference temperature for thermal expansion [K]
+        if (const tinyxml2::XMLElement* refTempElement = physicsElement->FirstChildElement("referenceTemperature")) {
+            physics.referenceTemperature = refTempElement->DoubleAttribute("value", 293.15);
+        }
 
         // Solver configuration
         if (const tinyxml2::XMLElement* solverElement = physicsElement->FirstChildElement("solver")) {

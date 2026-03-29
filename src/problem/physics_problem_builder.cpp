@@ -2,6 +2,7 @@
 #include "physics/field_values.hpp"
 #include "fe/element_transform.hpp"
 #include "fe/grid_function.hpp"
+#include "core/exception.hpp"
 #include <optional>
 
 namespace mpfem
@@ -9,39 +10,6 @@ namespace mpfem
 
     namespace
     {
-
-        bool hasValidValue(const std::optional<Real> &value)
-        {
-            return value.has_value() && value.value() > 0.0;
-        }
-
-        Real parseValue(const std::map<std::string, std::string> &params,
-                        const std::string &key,
-                        const CaseDefinition &caseDef,
-                        Real defaultVal = 0.0)
-        {
-            auto it = params.find(key);
-            if (it == params.end())
-                return defaultVal;
-            std::string numStr = it->second;
-            if (auto pos = numStr.find('['); pos != std::string::npos)
-                numStr = numStr.substr(0, pos);
-            try
-            {
-                return std::stod(numStr);
-            }
-            catch (...)
-            {
-                try
-                {
-                    return caseDef.getVariable(numStr);
-                }
-                catch (...)
-                {
-                    return defaultVal;
-                }
-            }
-        }
 
         double getInitialCondition(const CaseDefinition &caseDef,
                                    const std::string &fieldKind,
@@ -55,6 +23,32 @@ namespace mpfem
                 }
             }
             return defaultVal;
+        }
+
+        /**
+         * @brief Parse a required parameter value from BC params.
+         * @throws ArgumentException if parameter is missing.
+         */
+        Real parseRequiredValue(const std::map<std::string, std::string> &params,
+                               const std::string &key,
+                               const CaseDefinition &caseDef)
+        {
+            auto it = params.find(key);
+            if (it == params.end()) {
+                throw ArgumentException("Missing required parameter: " + key);
+            }
+            std::string numStr = it->second;
+            if (auto pos = numStr.find('['); pos != std::string::npos)
+                numStr = numStr.substr(0, pos);
+            try
+            {
+                return std::stod(numStr);
+            }
+            catch (...)
+            {
+                // Try variable lookup
+                return caseDef.getVariable(numStr);
+            }
         }
 
     } // namespace
@@ -229,7 +223,7 @@ namespace mpfem
             if (bc.kind != "voltage" || bc.ids.empty())
                 continue;
 
-            Real voltage = parseValue(bc.params, "value", problem.caseDef);
+            Real voltage = parseRequiredValue(bc.params, "value", problem.caseDef);
             std::string key = "voltage_bc_" + std::to_string(*bc.ids.begin());
             problem.setScalarCoef(key, constantCoefficient(voltage));
             problem.electrostatics->addVoltageBC({bc.ids.begin(), bc.ids.end()}, problem.getScalarCoef(key));
@@ -281,15 +275,21 @@ namespace mpfem
                 problem.heatTransfer->setThermalConductivity({domId}, problem.getMatrixCoef(key));
             }
 
-            if (hasValidValue(mat->density))
+            if (mat->density.has_value())
             {
+                if (mat->density.value() <= 0.0) {
+                    throw ArgumentException("Density must be positive for material: " + matTag);
+                }
                 std::string key = "density_" + std::to_string(domId);
                 problem.setScalarCoef(key, constantCoefficient(mat->density.value()));
                 problem.heatTransfer->setDensity({domId}, problem.getScalarCoef(key));
             }
 
-            if (hasValidValue(mat->heatCapacity))
+            if (mat->heatCapacity.has_value())
             {
+                if (mat->heatCapacity.value() <= 0.0) {
+                    throw ArgumentException("Heat capacity must be positive for material: " + matTag);
+                }
                 std::string key = "heat_capacity_" + std::to_string(domId);
                 problem.setScalarCoef(key, constantCoefficient(mat->heatCapacity.value()));
                 problem.heatTransfer->setSpecificHeat({domId}, problem.getScalarCoef(key));
@@ -303,7 +303,7 @@ namespace mpfem
 
             if (bc.kind == "temperature")
             {
-                Real temp = parseValue(bc.params, "value", problem.caseDef);
+                Real temp = parseRequiredValue(bc.params, "value", problem.caseDef);
                 std::string key = "temp_bc_" + std::to_string(*bc.ids.begin());
                 problem.setScalarCoef(key, constantCoefficient(temp));
                 problem.heatTransfer->addTemperatureBC({bc.ids.begin(), bc.ids.end()}, problem.getScalarCoef(key));
@@ -312,8 +312,9 @@ namespace mpfem
 
             if (bc.kind == "convection")
             {
-                Real h = parseValue(bc.params, "h", problem.caseDef, 5.0);
-                Real tinf = parseValue(bc.params, "T_inf", problem.caseDef, 293.15);
+                // h and T_inf are required for convection BC
+                Real h = parseRequiredValue(bc.params, "h", problem.caseDef);
+                Real tinf = parseRequiredValue(bc.params, "T_inf", problem.caseDef);
                 std::string hKey = "conv_h_" + std::to_string(*bc.ids.begin());
                 std::string tinfKey = "conv_tinf_" + std::to_string(*bc.ids.begin());
                 problem.setScalarCoef(hKey, constantCoefficient(h));
@@ -340,8 +341,16 @@ namespace mpfem
             if (!mat)
                 continue;
 
-            Real E = mat->youngModulus.value_or(0.0);
-            Real nu = mat->poissonRatio.value_or(0.0);
+            // E and nu are required for structural analysis - throw if missing
+            if (!mat->youngModulus.has_value()) {
+                throw ArgumentException("Young's modulus (E) not defined for material: " + matTag);
+            }
+            if (!mat->poissonRatio.has_value()) {
+                throw ArgumentException("Poisson's ratio (nu) not defined for material: " + matTag);
+            }
+            
+            Real E = mat->youngModulus.value();
+            Real nu = mat->poissonRatio.value();
 
             std::string eKey = "young_" + std::to_string(domId);
             std::string nuKey = "poisson_" + std::to_string(domId);
@@ -400,6 +409,11 @@ namespace mpfem
             }
             else if (cp.kind == "thermal_expansion")
             {
+                // Get reference temperature from solid_mechanics physics block
+                auto physicsIt = problem.caseDef.physics.find("solid_mechanics");
+                Real T_ref = (physicsIt != problem.caseDef.physics.end()) 
+                    ? physicsIt->second.referenceTemperature : 293.15;
+                
                 for (int domId : cp.domainIds)
                 {
                     const auto domIt = problem.domainMaterial.find(domId);
@@ -411,7 +425,6 @@ namespace mpfem
                         continue;
 
                     Matrix3 alpha_T = mat->thermalExpansion.value();
-                    Real T_ref = 293.15;
                     const GridFunction *T_field = &problem.heatTransfer->field();
 
                     std::string key = "thermalExp_" + std::to_string(domId);
@@ -431,7 +444,7 @@ namespace mpfem
                     problem.structural->setThermalExpansion({domId}, coef.get());
                 problem.setMatrixCoef(key, std::move(coef));
                 }
-                LOG_INFO << "Thermal expansion coupling enabled";
+                LOG_INFO << "Thermal expansion coupling enabled (T_ref = " << T_ref << " K)";
             }
         }
     }
