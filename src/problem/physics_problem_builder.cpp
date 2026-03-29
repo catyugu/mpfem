@@ -262,12 +262,9 @@ namespace mpfem
                     auto coef = std::make_unique<MatrixFunctionCoefficient>(
                         [mat, &problem](ElementTransform &trans, Matrix3 &result, Real) {
                             std::map<std::string, double> vars;
-                            if (problem.heatTransfer)
-                            {
-                                const auto &T_field = problem.heatTransfer->field();
-                                const auto &ip = trans.integrationPoint();
-                                vars["T"] = T_field.eval(trans.elementIndex(), &ip.xi);
-                            }
+                            const auto &T_field = problem.heatTransfer->field();
+                            const auto &ip = trans.integrationPoint();
+                            vars["T"] = T_field.eval(trans.elementIndex(), &ip.xi);
                             result = mat->evaluateMatrix("thermalconductivity", vars).value_or(Matrix3::Identity());
                         });
                     problem.setMatrixCoef(key, std::move(coef));

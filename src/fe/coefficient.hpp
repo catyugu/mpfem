@@ -168,11 +168,6 @@ inline std::unique_ptr<VectorCoefficient> constantVectorCoefficient(Real x, Real
         [x, y, z](ElementTransform&, Vector3& r, Real) { r << x, y, z; });
 }
 
-inline std::unique_ptr<MatrixCoefficient> diagonalMatrixCoefficient(Real diag) {
-    return std::make_unique<MatrixFunctionCoefficient>(
-        [diag](ElementTransform&, Matrix3& r, Real) { r = Matrix3::Identity() * diag; });
-}
-
 inline std::unique_ptr<MatrixCoefficient> constantMatrixCoefficient(const Matrix3& mat) {
     return std::make_unique<MatrixFunctionCoefficient>(
         [mat](ElementTransform&, Matrix3& r, Real) { r = mat; });

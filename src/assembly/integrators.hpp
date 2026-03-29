@@ -15,8 +15,6 @@ namespace mpfem {
  * @brief Diffusion integrator: ∫ (∇φᵢ)ᵀ · D · ∇φⱼ dΩ
  * 
  * D is a 3x3 matrix coefficient (diffusivity/conductivity tensor).
- * - For isotropic: D = σ * I (use diagonalMatrixCoefficient)
- * - For anisotropic: D is full tensor
  */
 class DiffusionIntegrator : public DomainBilinearIntegratorBase {
 public:

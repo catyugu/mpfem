@@ -40,11 +40,6 @@ TEST_F(CoefficientTest, VectorCoefficient_Constant) {
     EXPECT_NE(coef.get(), nullptr);
 }
 
-// MatrixCoefficient tests
-TEST_F(CoefficientTest, MatrixCoefficient_Diagonal) {
-    auto coef = diagonalMatrixCoefficient(5.0);
-    EXPECT_NE(coef.get(), nullptr);
-}
 
 TEST_F(CoefficientTest, MatrixCoefficient_Full) {
     Matrix3 mat;
@@ -100,17 +95,6 @@ TEST_F(CoefficientTest, DomainMappedScalarCoefficient_Override) {
     
     EXPECT_EQ(coef.get(1), c2.get());
 }
-
-// DomainMappedMatrixCoefficient tests
-TEST_F(CoefficientTest, DomainMappedMatrixCoefficient_Basic) {
-    DomainMappedMatrixCoefficient coef;
-    auto m = diagonalMatrixCoefficient(5.0);
-    
-    coef.set(1, m.get());
-    EXPECT_FALSE(coef.empty());
-    EXPECT_EQ(coef.get(1), m.get());
-}
-
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
