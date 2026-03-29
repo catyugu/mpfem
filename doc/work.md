@@ -21,7 +21,7 @@
 
 ## 工作任务1
 
+* 统一Vector Bilinear/Linear Integrator 与标量的 Bilinear/Linear Integrator。
 * 进行架构重构，物理场应该持有总是持有几个积分器列表而不是直接持有系数。积分器应该持有系数的共享引用（原始指针）
-* ConvectionLFIntegrator和BoundaryLFIntegrator功能重复，可考虑借助ProductCoefficient构造线性项系数，并删除之。
 * 移除各种随意选取的默认值等（遇到无效值应该明确日志告警并报出所用的默认值），集中管理默认值设置。
 * 清理冗余、重复的方法、变量等。

@@ -152,9 +152,9 @@ private:
  */
 class ThermalLoadIntegrator : public VectorDomainLinearIntegrator {
 public:
-    ThermalLoadIntegrator(const DomainMappedScalarCoefficient* E,
-                          const DomainMappedScalarCoefficient* nu,
-                          const DomainMappedMatrixCoefficient* alphaT)
+    ThermalLoadIntegrator(const Coefficient* E,
+                          const Coefficient* nu,
+                          const MatrixCoefficient* alphaT)
         : E_(E), nu_(nu), alphaT_(alphaT) {}
     
     void assembleElementVector(const ReferenceElement& ref,
@@ -163,9 +163,9 @@ public:
                                int vdim) const override;
     
 private:
-    const DomainMappedScalarCoefficient* E_ = nullptr;
-    const DomainMappedScalarCoefficient* nu_ = nullptr;
-    const DomainMappedMatrixCoefficient* alphaT_ = nullptr;
+    const Coefficient* E_ = nullptr;
+    const Coefficient* nu_ = nullptr;
+    const MatrixCoefficient* alphaT_ = nullptr;
 };
 
 }  // namespace mpfem
