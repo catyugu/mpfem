@@ -21,8 +21,8 @@ void DiffusionIntegrator::assembleElementMatrix(const ReferenceElement& ref,
         trans.setIntegrationPoint(xi);
         
         const Real w = ip.weight * trans.weight();
-        Matrix3 D = Matrix3::Identity();
-        if (coef_) coef_->eval(trans, D);
+        Matrix3 D;
+        coef_->eval(trans, D);
         
         const Vector3* refGrads = ref.shapeGradientsAtQuad(q);
         
@@ -55,8 +55,8 @@ void MassIntegrator::assembleElementMatrix(const ReferenceElement& ref,
         trans.setIntegrationPoint(xi);
         
         const Real w = ip.weight * trans.weight();
-        Real coef = 1.0;
-        if (coef_) coef_->eval(trans, coef);
+        Real coef;
+        coef_->eval(trans, coef);
         
         const Real* phi = ref.shapeValuesAtQuad(q);
         Eigen::Map<const Eigen::VectorXd> phiMap(phi, nd);
@@ -83,8 +83,8 @@ void DomainLFIntegrator::assembleElementVector(const ReferenceElement& ref,
         trans.setIntegrationPoint(xi);
         
         const Real w = ip.weight * trans.weight();
-        Real f = 1.0;
-        if (coef_) coef_->eval(trans, f);
+        Real f;
+        coef_->eval(trans, f);
         
         const Real* phi = ref.shapeValuesAtQuad(q);
         Eigen::Map<const Eigen::VectorXd> phiMap(phi, nd);
@@ -111,8 +111,8 @@ void BoundaryLFIntegrator::assembleFaceVector(const ReferenceElement& ref,
         trans.setIntegrationPoint(xi);
         
         const Real w = ip.weight * trans.weight();
-        Real g = 1.0;
-        if (coef_) coef_->eval(trans, g);
+        Real g;
+        coef_->eval(trans, g);
         
         const Real* phi = ref.shapeValuesAtQuad(q);
         Eigen::Map<const Eigen::VectorXd> phiMap(phi, nd);
@@ -139,8 +139,8 @@ void ConvectionMassIntegrator::assembleFaceMatrix(const ReferenceElement& ref,
         trans.setIntegrationPoint(xi);
         
         const Real w = ip.weight * trans.weight();
-        Real h = 1.0;
-        if (coef_) coef_->eval(trans, h);
+        Real h;
+        coef_->eval(trans, h);
         
         const Real* phi = ref.shapeValuesAtQuad(q);
         Eigen::Map<const Eigen::VectorXd> phiMap(phi, nd);
@@ -157,16 +157,14 @@ void ConvectionLFIntegrator::assembleFaceVector(const ReferenceElement& ref,
     
     elvec.setZero(nd);
     
-    if (!Tinf_) return;
-    
     for (int q = 0; q < nq; ++q) {
         const IntegrationPoint& ip = ref.integrationPoint(q);
         Real xi[3] = {ip.xi, ip.eta, ip.zeta};
         trans.setIntegrationPoint(xi);
         
         const Real w = ip.weight * trans.weight();
-        Real h = 1.0;
-        if (coef_) coef_->eval(trans, h);
+        Real h;
+        coef_->eval(trans, h);
         Real Tinf;
         Tinf_->eval(trans, Tinf);
         
@@ -191,9 +189,9 @@ void ElasticityIntegrator::assembleElementMatrix(const ReferenceElement& ref,
     
     elmat.setZero(totalDofs, totalDofs);
     
-    Real E_val = 1.0, nu_val = 0.3;
-    if (E_) E_->eval(trans, E_val);
-    if (nu_) nu_->eval(trans, nu_val);
+    Real E_val, nu_val;
+    E_->eval(trans, E_val);
+    nu_->eval(trans, nu_val);
     
     Real lambda = E_val * nu_val / ((1.0 + nu_val) * (1.0 - 2.0 * nu_val));
     Real mu = E_val / (2.0 * (1.0 + nu_val));
@@ -251,8 +249,6 @@ void ThermalLoadIntegrator::assembleElementVector(const ReferenceElement& ref,
     
     elvec.setZero(totalDofs);
     
-    if (!alphaT_ || !E_ || !nu_) return;
-    
     Eigen::Matrix<Real, MaxStrainComponents, MaxVectorDofsPerElement> B_full;
     Eigen::Matrix<Real, 6, 6> C;
     Eigen::Matrix<Real, 6, 1> epsilonThermal;
@@ -266,7 +262,7 @@ void ThermalLoadIntegrator::assembleElementVector(const ReferenceElement& ref,
         
         const Real w = ip.weight * trans.weight();
         
-        Real E_val = 1.0, nu_val = 0.3;
+        Real E_val, nu_val;
         E_->eval(trans, E_val);
         nu_->eval(trans, nu_val);
         
