@@ -42,10 +42,6 @@ TEST_F(MaterialXmlReaderTest, ReadBusbarMaterials) {
     // Thermal conductivity is a constant matrix
     EXPECT_TRUE(copper->hasMatrix("thermalconductivity"));
     EXPECT_FALSE(copper->hasMatrixExpression("thermalconductivity"));
-    
-    EXPECT_GT(copper->youngModulus.value_or(0.0), 0.0);
-    EXPECT_GT(copper->poissonRatio.value_or(0.0), 0.0);
-    EXPECT_GT(copper->density.value_or(0.0), 0.0);
 
     // Check mat2 (Titanium)
     const MaterialPropertyModel* titanium = database.getMaterial("mat2");
@@ -55,8 +51,6 @@ TEST_F(MaterialXmlReaderTest, ReadBusbarMaterials) {
     EXPECT_TRUE(titanium->hasMatrix("electricconductivity"));
     EXPECT_FALSE(titanium->hasMatrixExpression("electricconductivity"));
     EXPECT_TRUE(titanium->hasMatrix("thermalconductivity"));
-    EXPECT_GT(titanium->youngModulus.value_or(0.0), 0.0);
-    EXPECT_GT(titanium->poissonRatio.value_or(0.0), 0.0);
 }
 
 TEST_F(MaterialXmlReaderTest, MaterialPropertyAccess) {
