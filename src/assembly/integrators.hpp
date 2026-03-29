@@ -20,7 +20,6 @@ namespace mpfem {
  */
 class DiffusionIntegrator : public DomainBilinearIntegratorBase {
 public:
-    DiffusionIntegrator() = default;
     explicit DiffusionIntegrator(const MatrixCoefficient* c) : coef_(c) {}
     
     void assembleElementMatrix(const ReferenceElement& ref,
@@ -39,7 +38,6 @@ private:
  */
 class MassIntegrator : public DomainBilinearIntegratorBase {
 public:
-    MassIntegrator() = default;
     explicit MassIntegrator(const Coefficient* c) : coef_(c) {}
     
     void assembleElementMatrix(const ReferenceElement& ref,
@@ -58,7 +56,6 @@ private:
  */
 class DomainLFIntegrator : public DomainLinearIntegratorBase {
 public:
-    DomainLFIntegrator() = default;
     explicit DomainLFIntegrator(const Coefficient* c) : coef_(c) {}
     
     void assembleElementVector(const ReferenceElement& ref,
@@ -77,7 +74,6 @@ private:
  */
 class BoundaryLFIntegrator : public FaceLinearIntegratorBase {
 public:
-    BoundaryLFIntegrator() = default;
     explicit BoundaryLFIntegrator(const Coefficient* c) : coef_(c) {}
     
     void assembleFaceVector(const ReferenceElement& ref,
@@ -96,7 +92,6 @@ private:
  */
 class ConvectionMassIntegrator : public FaceBilinearIntegratorBase {
 public:
-    ConvectionMassIntegrator() = default;
     explicit ConvectionMassIntegrator(const Coefficient* c) : coef_(c) {}
     
     void assembleFaceMatrix(const ReferenceElement& ref,
@@ -111,8 +106,6 @@ private:
  */
 class ConvectionLFIntegrator : public FaceLinearIntegratorBase {
 public:
-    ConvectionLFIntegrator() = default;
-    
     ConvectionLFIntegrator(const Coefficient* h, const Coefficient* Tinf)
         : coef_(h), Tinf_(Tinf) {}
     
