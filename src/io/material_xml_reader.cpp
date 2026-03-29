@@ -169,28 +169,6 @@ void MaterialXmlReader::readFromFile(const std::string& filePath, MaterialDataba
             parseSetElement(setElement);
         }
 
-        // Extract well-known properties into typed optionals for convenience
-        // These use the unified storage (scalarProperties/scalarExpressions/matrixProperties/matrixExpressions)
-        
-        // Mechanical properties
-        if (auto E = material.getScalarProperty("E")) {
-            material.youngModulus = E;
-        }
-        if (auto nu = material.getScalarProperty("nu")) {
-            material.poissonRatio = nu;
-        }
-        if (auto rho = material.getScalarProperty("density")) {
-            material.density = rho;
-        }
-        if (auto cp = material.getScalarProperty("heatcapacity")) {
-            material.heatCapacity = cp;
-        }
-        
-        // Matrix properties
-        if (auto alpha = material.getMatrixProperty("thermalexpansioncoefficient")) {
-            material.thermalExpansion = alpha;
-        }
-
         database.addMaterial(material);
         LOG_DEBUG << "Loaded material: " << material.tag;
     }

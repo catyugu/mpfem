@@ -3,6 +3,8 @@
 
 #include "core/types.hpp"
 #include "io/exprtk_expression_parser.hpp"
+#include "fe/element_transform.hpp"
+#include "fe/coefficient.hpp"
 #include <string>
 #include <map>
 #include <vector>
@@ -42,17 +44,6 @@ struct MaterialPropertyModel {
     // Matrix expressions (evaluated at runtime with variables)
     // =======================================================================
     std::map<std::string, std::string> matrixExpressions;
-
-    // =======================================================================
-    // Typed accessors for well-known mechanical/thermal properties
-    // These are convenience accessors that use the generic storage
-    // =======================================================================
-    
-    std::optional<double> youngModulus;           // E [Pa]
-    std::optional<double> poissonRatio;           // nu [-]
-    std::optional<double> density;                // rho [kg/m^3]
-    std::optional<double> heatCapacity;           // Cp [J/(kg·K)]
-    std::optional<Matrix3> thermalExpansion;      // alpha_T tensor [1/K]
 
     // =======================================================================
     // Generic property access
@@ -136,6 +127,47 @@ struct MaterialPropertyModel {
 
     bool hasMatrix(const std::string& name) const {
         return hasMatrixExpression(name) || matrixProperties.count(name) > 0;
+    }
+
+    // =======================================================================
+    // Factory methods for creating coefficients
+    // The getVars callback takes ElementTransform& and returns variables map
+    // =======================================================================
+    
+    /// Create a scalar coefficient from expression or constant property
+    /// Expression takes precedence if both exist
+    template<typename Func>
+    std::unique_ptr<Coefficient> createScalarCoefficient(const std::string& name, Func&& getVars) const {
+        if (hasScalarExpression(name)) {
+            return std::make_unique<ScalarCoefficient>(
+                [this, name, getVars](ElementTransform& trans, Real& result, Real) {
+                    auto vars = getVars(trans);
+                    result = evaluateScalar(name, vars).value_or(0.0);
+                });
+        }
+        auto value = getScalarProperty(name);
+        if (value.has_value()) {
+            return constantCoefficient(value.value());
+        }
+        return nullptr;
+    }
+
+    /// Create a matrix coefficient from expression or constant property
+    /// Expression takes precedence if both exist
+    template<typename Func>
+    std::unique_ptr<MatrixCoefficient> createMatrixCoefficient(const std::string& name, Func&& getVars) const {
+        if (hasMatrixExpression(name)) {
+            return std::make_unique<MatrixFunctionCoefficient>(
+                [this, name, getVars](ElementTransform& trans, Matrix3& result, Real) {
+                    auto vars = getVars(trans);
+                    result = evaluateMatrix(name, vars).value_or(Matrix3::Identity());
+                });
+        }
+        auto value = getMatrixProperty(name);
+        if (value.has_value()) {
+            return constantMatrixCoefficient(value.value());
+        }
+        return nullptr;
     }
 };
 

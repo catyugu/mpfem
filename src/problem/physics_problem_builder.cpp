@@ -188,31 +188,22 @@ namespace mpfem
 
             std::string key = "conductivity_" + std::to_string(domId);
 
-            // If it's an expression, create function coefficient
-            if (mat->hasMatrixExpression("electricconductivity"))
+            // Create coefficient for electric conductivity (expression or constant)
+            auto coef = mat->createMatrixCoefficient("electricconductivity",
+                [&problem](ElementTransform &trans) {
+                    std::map<std::string, double> vars;
+                    // Get temperature if heat transfer is available
+                    if (problem.heatTransfer)
+                    {
+                        const auto &T_field = problem.heatTransfer->field();
+                        const auto &ip = trans.integrationPoint();
+                        vars["T"] = T_field.eval(trans.elementIndex(), &ip.xi);
+                    }
+                    return vars;
+                });
+            if (coef)
             {
-                auto coef = std::make_unique<MatrixFunctionCoefficient>(
-                    [mat, &problem](ElementTransform &trans, Matrix3 &result, Real) {
-                        std::map<std::string, double> vars;
-                        // Get temperature if heat transfer is available
-                        if (problem.heatTransfer)
-                        {
-                            const auto &T_field = problem.heatTransfer->field();
-                            const auto &ip = trans.integrationPoint();
-                            vars["T"] = T_field.eval(trans.elementIndex(), &ip.xi);
-                        }
-                        result = mat->evaluateMatrix("electricconductivity", vars).value_or(Matrix3::Identity());
-                    });
                 problem.setMatrixCoef(key, std::move(coef));
-            }
-            else
-            {
-                // Constant matrix
-                auto sigma = mat->getMatrixProperty("electricconductivity");
-                if (sigma.has_value())
-                {
-                    problem.setMatrixCoef(key, constantMatrixCoefficient(sigma.value()));
-                }
             }
 
             problem.electrostatics->setElectricalConductivity({domId}, problem.getMatrixCoef(key));
@@ -250,48 +241,39 @@ namespace mpfem
             {
                 std::string key = "thermal_conductivity_" + std::to_string(domId);
                 
-                if (mat->hasMatrixExpression("thermalconductivity"))
+                // Create coefficient for thermal conductivity (expression or constant)
+                auto coef = mat->createMatrixCoefficient("thermalconductivity",
+                    [&problem](ElementTransform &trans) {
+                        std::map<std::string, double> vars;
+                        const auto &T_field = problem.heatTransfer->field();
+                        const auto &ip = trans.integrationPoint();
+                        vars["T"] = T_field.eval(trans.elementIndex(), &ip.xi);
+                        return vars;
+                    });
+                if (coef)
                 {
-                    // Expression-based thermal conductivity
-                    auto coef = std::make_unique<MatrixFunctionCoefficient>(
-                        [mat, &problem](ElementTransform &trans, Matrix3 &result, Real) {
-                            std::map<std::string, double> vars;
-                            const auto &T_field = problem.heatTransfer->field();
-                            const auto &ip = trans.integrationPoint();
-                            vars["T"] = T_field.eval(trans.elementIndex(), &ip.xi);
-                            result = mat->evaluateMatrix("thermalconductivity", vars).value_or(Matrix3::Identity());
-                        });
                     problem.setMatrixCoef(key, std::move(coef));
-                }
-                else
-                {
-                    // Constant matrix
-                    auto k = mat->getMatrixProperty("thermalconductivity");
-                    if (k.has_value())
-                    {
-                        problem.setMatrixCoef(key, constantMatrixCoefficient(k.value()));
-                    }
                 }
                 problem.heatTransfer->setThermalConductivity({domId}, problem.getMatrixCoef(key));
             }
 
-            if (mat->density.has_value())
+            if (mat->getScalarProperty("density").has_value())
             {
-                if (mat->density.value() <= 0.0) {
+                if (mat->getScalarProperty("density").value() <= 0.0) {
                     throw ArgumentException("Density must be positive for material: " + matTag);
                 }
                 std::string key = "density_" + std::to_string(domId);
-                problem.setScalarCoef(key, constantCoefficient(mat->density.value()));
+                problem.setScalarCoef(key, constantCoefficient(mat->getScalarProperty("density").value()));
                 problem.heatTransfer->setDensity({domId}, problem.getScalarCoef(key));
             }
 
-            if (mat->heatCapacity.has_value())
+            if (mat->getScalarProperty("heatcapacity").has_value())
             {
-                if (mat->heatCapacity.value() <= 0.0) {
+                if (mat->getScalarProperty("heatcapacity").value() <= 0.0) {
                     throw ArgumentException("Heat capacity must be positive for material: " + matTag);
                 }
                 std::string key = "heat_capacity_" + std::to_string(domId);
-                problem.setScalarCoef(key, constantCoefficient(mat->heatCapacity.value()));
+                problem.setScalarCoef(key, constantCoefficient(mat->getScalarProperty("heatcapacity").value()));
                 problem.heatTransfer->setSpecificHeat({domId}, problem.getScalarCoef(key));
             }
         }
@@ -342,15 +324,15 @@ namespace mpfem
                 continue;
 
             // E and nu are required for structural analysis - throw if missing
-            if (!mat->youngModulus.has_value()) {
+            if (!mat->getScalarProperty("E").has_value()) {
                 throw ArgumentException("Young's modulus (E) not defined for material: " + matTag);
             }
-            if (!mat->poissonRatio.has_value()) {
+            if (!mat->getScalarProperty("nu").has_value()) {
                 throw ArgumentException("Poisson's ratio (nu) not defined for material: " + matTag);
             }
             
-            Real E = mat->youngModulus.value();
-            Real nu = mat->poissonRatio.value();
+            Real E = mat->getScalarProperty("E").value();
+            Real nu = mat->getScalarProperty("nu").value();
 
             std::string eKey = "young_" + std::to_string(domId);
             std::string nuKey = "poisson_" + std::to_string(domId);
@@ -421,10 +403,10 @@ namespace mpfem
                         continue;
 
                     const auto *mat = problem.materials.getMaterial(domIt->second);
-                    if (!mat || !mat->thermalExpansion.has_value())
+                    if (!mat || !mat->getMatrixProperty("thermalexpansioncoefficient").has_value())
                         continue;
 
-                    Matrix3 alpha_T = mat->thermalExpansion.value();
+                    Matrix3 alpha_T = mat->getMatrixProperty("thermalexpansioncoefficient").value();
                     const GridFunction *T_field = &problem.heatTransfer->field();
 
                     std::string key = "thermalExp_" + std::to_string(domId);
