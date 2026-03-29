@@ -1,5 +1,4 @@
 #include "io/case_xml_reader.hpp"
-#include "io/value_parser.hpp"
 #include "core/logger.hpp"
 #include "core/exception.hpp"
 #include "core/string_utils.hpp"
@@ -8,10 +7,33 @@
 
 #include <sstream>
 #include <cstdlib>
+#include <cctype>
 
 namespace mpfem {
 
 using strings::trim;
+
+// Helper function to parse first number from text (e.g., "20[mV]" -> 20.0)
+static bool parseFirstNumber(const char* text, double& value) {
+    value = 0.0;
+    if (!text) return false;
+    std::string token;
+    for (size_t i = 0; i < std::strlen(text); ++i) {
+        char current = text[i];
+        bool isNumeric = std::isdigit(static_cast<unsigned char>(current)) != 0
+                       || current == '+' || current == '-'
+                       || current == '.' || current == 'e' || current == 'E';
+        if (isNumeric) {
+            token.push_back(current);
+            continue;
+        }
+        if (!token.empty()) break;
+    }
+    if (token.empty()) return false;
+    char* endPtr = nullptr;
+    value = std::strtod(token.c_str(), &endPtr);
+    return endPtr != token.c_str();
+}
 
 void CaseXmlReader::parseIds(const std::string& text, std::set<int>& ids) {
     ids.clear();
@@ -122,7 +144,7 @@ void CaseXmlReader::readFromFile(const std::string& filePath, CaseDefinition& ca
                 entry.valueText = valueAttr;
             }
             if (const char* siAttr = varElement->Attribute("si")) {
-                ValueParser::parseFirstNumber(siAttr, entry.siValue);
+                parseFirstNumber(siAttr, entry.siValue);
             }
             caseDefinition.variables.push_back(entry);
         }

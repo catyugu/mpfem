@@ -1,10 +1,91 @@
 #include "io/material_xml_reader.hpp"
-#include "io/value_parser.hpp"
+#include "io/exprtk_expression_parser.hpp"
 #include "core/logger.hpp"
 #include "core/exception.hpp"
+#include "core/string_utils.hpp"
 #include <tinyxml2.h>
 
 namespace mpfem {
+
+namespace {
+
+// Remove unit brackets like [S/m], [K], etc. from value string
+std::string stripUnits(const std::string& value) {
+    std::string result = value;
+    size_t bracketPos = result.find('[');
+    if (bracketPos != std::string::npos) {
+        result = result.substr(0, bracketPos);
+    }
+    // Trim whitespace
+    while (!result.empty() && std::isspace(static_cast<unsigned char>(result.front()))) {
+        result.erase(result.begin());
+    }
+    while (!result.empty() && std::isspace(static_cast<unsigned char>(result.back()))) {
+        result.pop_back();
+    }
+    return result;
+}
+
+// Parse matrix format {'a','b',...} - returns nullopt if not matrix format
+std::optional<Matrix3> parseMatrixConstant(const std::string& value) {
+    std::string trimmed = value;
+    while (!trimmed.empty() && std::isspace(static_cast<unsigned char>(trimmed.front()))) {
+        trimmed.erase(trimmed.begin());
+    }
+    while (!trimmed.empty() && std::isspace(static_cast<unsigned char>(trimmed.back()))) {
+        trimmed.pop_back();
+    }
+    
+    if (trimmed.size() < 2 || trimmed[0] != '{') {
+        return std::nullopt;
+    }
+    
+    std::vector<double> values;
+    std::string token;
+    bool inQuote = false;
+    
+    for (size_t i = 1; i < trimmed.size(); ++i) {
+        char c = trimmed[i];
+        if (c == '\'') {
+            inQuote = !inQuote;
+            if (!inQuote && !token.empty()) {
+                try {
+                    values.push_back(std::stod(stripUnits(token)));
+                } catch (...) {
+                    token.clear();
+                    continue;
+                }
+                token.clear();
+            }
+        } else if (inQuote) {
+            token.push_back(c);
+        }
+    }
+    
+    if (values.size() == 9) {
+        Matrix3 m;
+        m << values[0], values[3], values[6],
+             values[1], values[4], values[7],
+             values[2], values[5], values[8];
+        return m;
+    } else if (values.size() == 1) {
+        return Matrix3::Identity() * values[0];
+    }
+    
+    return std::nullopt;
+}
+
+// Parse scalar constant from value string
+std::optional<double> parseScalarConstant(const std::string& value) {
+    std::string stripped = stripUnits(value);
+    try {
+        return std::stod(stripped);
+    } catch (...) {
+        return std::nullopt;
+    }
+}
+
+}  // anonymous namespace
 
 void MaterialXmlReader::readFromFile(const std::string& filePath, MaterialDatabase& database) {
     database.clear();
@@ -49,19 +130,26 @@ void MaterialXmlReader::readFromFile(const std::string& filePath, MaterialDataba
             std::string name = nameAttr;
             std::string value = valueAttr;
             
-            // Try to parse as matrix first
-            auto mat = ValueParser::parseMatrix(value);
-            if (mat.has_value()) {
-                material.matrixProperties[name] = mat.value();
-                // Also store scalar for backward compatibility
-                const auto& m = mat.value();
-                material.properties[name] = (m(0,0) + m(1,1) + m(2,2)) / 3.0;
-            } else {
-                // Fallback to scalar
-                double scalar = 0.0;
-                if (ValueParser::parseFirstNumber(value, scalar)) {
-                    material.properties[name] = scalar;
-                }
+            // Check if it's a matrix format {'a','b',...}
+            auto matConst = parseMatrixConstant(value);
+            if (matConst.has_value()) {
+                material.matrixProperties[name] = matConst.value();
+                return;
+            }
+            
+            // Check if it's an expression (contains operators)
+            // IMPORTANT: Strip units first because unit strings like [kg/m^3] contain
+            // '^' which would incorrectly trigger isExpression to return true
+            std::string strippedValue = stripUnits(value);
+            if (isExpression(strippedValue)) {
+                material.matrixExpressions[name] = strippedValue;
+                return;
+            }
+            
+            // Otherwise it's a scalar constant
+            auto scalarConst = parseScalarConstant(value);
+            if (scalarConst.has_value()) {
+                material.scalarProperties[name] = scalarConst.value();
             }
         };
 
@@ -81,32 +169,27 @@ void MaterialXmlReader::readFromFile(const std::string& filePath, MaterialDataba
             parseSetElement(setElement);
         }
 
-        // Extract specific properties
-        auto getScalar = [&](const std::string& n) -> std::optional<double> {
-            auto it = material.properties.find(n);
-            return it != material.properties.end() ? std::optional<double>{it->second} : std::nullopt;
-        };
-        
-        auto getMatrix = [&](const std::string& n) -> std::optional<Matrix3> {
-            auto it = material.matrixProperties.find(n);
-            return it != material.matrixProperties.end() ? std::optional<Matrix3>{it->second} : std::nullopt;
-        };
-
-        // Temperature-dependent resistivity
-        material.rho0 = getScalar("rho0");
-        material.alpha = getScalar("alpha");
-        material.tref = getScalar("Tref");
-        
-        // Conductivities - always as matrix
-        material.electricConductivity = getMatrix("electricconductivity");
-        material.thermalConductivity = getMatrix("thermalconductivity");
+        // Extract well-known properties into typed optionals for convenience
+        // These use the unified storage (scalarProperties/scalarExpressions/matrixProperties/matrixExpressions)
         
         // Mechanical properties
-        material.youngModulus = getScalar("E");
-        material.poissonRatio = getScalar("nu");
-        material.thermalExpansion = getMatrix("thermalexpansioncoefficient");
-        material.density = getScalar("density");
-        material.heatCapacity = getScalar("heatcapacity");
+        if (auto E = material.getScalarProperty("E")) {
+            material.youngModulus = E;
+        }
+        if (auto nu = material.getScalarProperty("nu")) {
+            material.poissonRatio = nu;
+        }
+        if (auto rho = material.getScalarProperty("density")) {
+            material.density = rho;
+        }
+        if (auto cp = material.getScalarProperty("heatcapacity")) {
+            material.heatCapacity = cp;
+        }
+        
+        // Matrix properties
+        if (auto alpha = material.getMatrixProperty("thermalexpansioncoefficient")) {
+            material.thermalExpansion = alpha;
+        }
 
         database.addMaterial(material);
         LOG_DEBUG << "Loaded material: " << material.tag;

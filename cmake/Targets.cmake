@@ -138,7 +138,7 @@ mpfem_add_library(mpfem_mesh
 
 mpfem_add_library(mpfem_io
     SOURCES
-        src/io/value_parser.cpp
+        src/io/exprtk_expression_parser.cpp
         src/io/case_xml_reader.cpp
         src/io/material_xml_reader.cpp
         src/io/result_exporter.cpp
@@ -149,6 +149,9 @@ mpfem_add_library(mpfem_io
         mpfem_model
         tinyxml2::tinyxml2
 )
+
+# Add ExprTk include directory (local header in external/exprtk)
+target_include_directories(mpfem_io PUBLIC ${CMAKE_SOURCE_DIR}/external/exprtk)
 
 # =============================================================================
 # FE library
@@ -223,6 +226,9 @@ mpfem_add_library(mpfem_problem
         mpfem_model
 )
 
+# Add ExprTk include directory for mpfem_problem (used by physics_problem_builder.cpp transitively)
+target_include_directories(mpfem_problem PRIVATE ${CMAKE_SOURCE_DIR}/external/exprtk)
+
 # =============================================================================
 # Physics library
 # =============================================================================
@@ -248,6 +254,9 @@ mpfem_add_library(mpfem_physics
         mpfem_model
         mpfem_problem
 )
+
+# Add ExprTk include directory for mpfem_physics (used transitively through problem headers)
+target_include_directories(mpfem_physics PRIVATE ${CMAKE_SOURCE_DIR}/external/exprtk)
 
 # =============================================================================
 # Create simple aliases (mpfem::core, mpfem::mesh, etc.)

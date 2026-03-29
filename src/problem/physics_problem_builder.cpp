@@ -185,11 +185,42 @@ namespace mpfem
         for (const auto &[domId, matTag] : problem.domainMaterial)
         {
             const auto *mat = problem.materials.getMaterial(matTag);
-            if (!mat || !mat->electricConductivity.has_value())
+            if (!mat)
+                continue;
+
+            // Check if material has electric conductivity (expression or constant)
+            if (!mat->hasMatrix("electricconductivity"))
                 continue;
 
             std::string key = "conductivity_" + std::to_string(domId);
-            problem.setMatrixCoef(key, constantMatrixCoefficient(mat->electricConductivity.value()));
+
+            // If it's an expression, create function coefficient
+            if (mat->hasMatrixExpression("electricconductivity"))
+            {
+                auto coef = std::make_unique<MatrixFunctionCoefficient>(
+                    [mat, &problem](ElementTransform &trans, Matrix3 &result, Real) {
+                        std::map<std::string, double> vars;
+                        // Get temperature if heat transfer is available
+                        if (problem.heatTransfer)
+                        {
+                            const auto &T_field = problem.heatTransfer->field();
+                            const auto &ip = trans.integrationPoint();
+                            vars["T"] = T_field.eval(trans.elementIndex(), &ip.xi);
+                        }
+                        result = mat->evaluateMatrix("electricconductivity", vars).value_or(Matrix3::Identity());
+                    });
+                problem.setMatrixCoef(key, std::move(coef));
+            }
+            else
+            {
+                // Constant matrix
+                auto sigma = mat->getMatrixProperty("electricconductivity");
+                if (sigma.has_value())
+                {
+                    problem.setMatrixCoef(key, constantMatrixCoefficient(sigma.value()));
+                }
+            }
+
             problem.electrostatics->setElectricalConductivity({domId}, problem.getMatrixCoef(key));
         }
 
@@ -220,10 +251,36 @@ namespace mpfem
             if (!mat)
                 continue;
 
-            if (mat->thermalConductivity.has_value())
+            // Thermal conductivity - check for expression first
+            if (mat->hasMatrix("thermalconductivity"))
             {
                 std::string key = "thermal_conductivity_" + std::to_string(domId);
-                problem.setMatrixCoef(key, constantMatrixCoefficient(mat->thermalConductivity.value()));
+                
+                if (mat->hasMatrixExpression("thermalconductivity"))
+                {
+                    // Expression-based thermal conductivity
+                    auto coef = std::make_unique<MatrixFunctionCoefficient>(
+                        [mat, &problem](ElementTransform &trans, Matrix3 &result, Real) {
+                            std::map<std::string, double> vars;
+                            if (problem.heatTransfer)
+                            {
+                                const auto &T_field = problem.heatTransfer->field();
+                                const auto &ip = trans.integrationPoint();
+                                vars["T"] = T_field.eval(trans.elementIndex(), &ip.xi);
+                            }
+                            result = mat->evaluateMatrix("thermalconductivity", vars).value_or(Matrix3::Identity());
+                        });
+                    problem.setMatrixCoef(key, std::move(coef));
+                }
+                else
+                {
+                    // Constant matrix
+                    auto k = mat->getMatrixProperty("thermalconductivity");
+                    if (k.has_value())
+                    {
+                        problem.setMatrixCoef(key, constantMatrixCoefficient(k.value()));
+                    }
+                }
                 problem.heatTransfer->setThermalConductivity({domId}, problem.getMatrixCoef(key));
             }
 
@@ -311,51 +368,8 @@ namespace mpfem
 
     void setupCoupling(Problem &problem)
     {
-        // Storage for coupling coefficients - kept alive in problem.coefficients
-        DomainMappedMatrixCoefficient tempDepSigmaMap;
-
-        // Build temperature-dependent conductivity map (matrix form)
-        for (const auto &[domId, matTag] : problem.domainMaterial)
-        {
-            const auto *mat = problem.materials.getMaterial(matTag);
-            if (!mat)
-                continue;
-
-            if (hasValidValue(mat->rho0))
-            {
-                Real rho0 = mat->rho0.value();
-                Real alpha = mat->alpha.value_or(0.0);
-                Real tref = mat->tref.value_or(298.0);
-                const GridFunction *T_field = &problem.heatTransfer->field();
-
-                auto coef = std::make_unique<MatrixFunctionCoefficient>(
-                    [T_field, rho0, alpha, tref](ElementTransform &trans, Matrix3 &result, Real)
-                    {
-                        Real temp = tref;
-                        if (T_field)
-                        {
-                            const auto &ip = trans.integrationPoint();
-                            temp = T_field->eval(trans.elementIndex(), &ip.xi);
-                        }
-                        Real factor = 1.0 + alpha * (temp - tref);
-                        Real sigma = 1.0 / (rho0 * (factor > 0 ? factor : 1e-10));
-                        result = Matrix3::Identity() * sigma;
-                    });
-                tempDepSigmaMap.set(domId, coef.get());
-                std::string key = "tempDepSigma_" + std::to_string(domId);
-                problem.setMatrixCoef(key, std::move(coef));
-                continue;
-            }
-
-            if (auto *c = problem.getMatrixCoef("conductivity_" + std::to_string(domId)))
-                tempDepSigmaMap.set(domId, c);
-        }
-
-        auto tempDepSigmaMapPtr = std::make_unique<DomainMappedMatrixCoefficient>(std::move(tempDepSigmaMap));
-        problem.setMatrixCoef("tempDepSigmaMap", std::move(tempDepSigmaMapPtr));
-        problem.electrostatics->setElectricalConductivity(problem.getMatrixCoef("tempDepSigmaMap"));
-
-        // Setup coupled physics
+        // Setup coupled physics - conductivity is now handled via expressions in buildElectrostatics
+        
         for (const auto &cp : problem.caseDef.coupledPhysicsDefinitions)
         {
             if (cp.kind == "joule_heating")
