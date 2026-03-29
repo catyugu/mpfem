@@ -2,6 +2,7 @@
 #define MPFEM_MATERIAL_DATABASE_HPP
 
 #include "core/types.hpp"
+#include "core/exception.hpp"
 #include "io/exprtk_expression_parser.hpp"
 #include "fe/element_transform.hpp"
 #include "fe/coefficient.hpp"
@@ -20,63 +21,133 @@ namespace mpfem {
  * - Properties can be either constants or expressions (evaluated at runtime)
  * - Expressions support variables like T (temperature), V (voltage), u (displacement)
  * - Evaluation is deferred to runtime using ExpressionParser
+ * - Single unified access API: getScalar() / getMatrix() throw if not found
  */
 struct MaterialPropertyModel {
     std::string tag;
     std::string label;
 
     // =======================================================================
-    // Scalar properties (constants)
+    // Storage (private detail - use access methods)
     // =======================================================================
+    
+    /// Scalar properties (constants)
     std::map<std::string, double> scalarProperties;
 
-    // =======================================================================
-    // Matrix properties (constants)  
-    // =======================================================================
+    /// Matrix properties (constants)  
     std::map<std::string, Matrix3> matrixProperties;
 
-    // =======================================================================
-    // Scalar expressions (evaluated at runtime with variables)
-    // =======================================================================
+    /// Scalar expressions (evaluated at runtime with variables)
     std::map<std::string, std::string> scalarExpressions;
 
-    // =======================================================================
-    // Matrix expressions (evaluated at runtime with variables)
-    // =======================================================================
+    /// Matrix expressions (evaluated at runtime with variables)
     std::map<std::string, std::string> matrixExpressions;
 
     // =======================================================================
-    // Generic property access
+    // Unified property access (THROWS if not found)
+    // Expression takes precedence over constant.
     // =======================================================================
     
-    std::optional<double> getScalarProperty(const std::string& name) const {
-        auto it = scalarProperties.find(name);
-        return it != scalarProperties.end() ? std::optional<double>{it->second} : std::nullopt;
+    /**
+     * @brief Get scalar property value (constant or expression).
+     * @param name Property name
+     * @param variables Variable values for expression evaluation
+     * @return Evaluated scalar value
+     * @throws ArgumentException if property not found (neither expression nor constant)
+     */
+    double getScalar(const std::string& name,
+                     const std::map<std::string, double>& variables = {}) const {
+        // Check expressions first
+        auto exprIt = scalarExpressions.find(name);
+        if (exprIt != scalarExpressions.end()) {
+            return ExpressionParser::instance().evaluateScalar(exprIt->second, variables);
+        }
+        // Fall back to constant
+        auto constIt = scalarProperties.find(name);
+        if (constIt != scalarProperties.end()) {
+            return constIt->second;
+        }
+        MPFEM_THROW(ArgumentException, "Scalar property '" + name + "' not found in material '" + tag + "'");
     }
 
+    /**
+     * @brief Get matrix property value (constant or expression).
+     * @param name Property name
+     * @param variables Variable values for expression evaluation
+     * @return Evaluated matrix value
+     * @throws ArgumentException if property not found (neither expression nor constant)
+     */
+    Matrix3 getMatrix(const std::string& name,
+                      const std::map<std::string, double>& variables = {}) const {
+        // Check expressions first
+        auto exprIt = matrixExpressions.find(name);
+        if (exprIt != matrixExpressions.end()) {
+            return ExpressionParser::instance().evaluateMatrix(exprIt->second, variables);
+        }
+        // Fall back to constant
+        auto constIt = matrixProperties.find(name);
+        if (constIt != matrixProperties.end()) {
+            return constIt->second;
+        }
+        MPFEM_THROW(ArgumentException, "Matrix property '" + name + "' not found in material '" + tag + "'");
+    }
+
+    // =======================================================================
+    // Property existence queries (for optional properties)
+    // =======================================================================
+    
+    bool hasScalar(const std::string& name) const {
+        return scalarExpressions.count(name) > 0 || scalarProperties.count(name) > 0;
+    }
+
+    bool hasMatrix(const std::string& name) const {
+        return matrixExpressions.count(name) > 0 || matrixProperties.count(name) > 0;
+    }
+
+    // =======================================================================
+    // Factory methods for creating coefficients (for optional properties)
+    // Returns nullptr if property not found.
+    // Expression takes precedence if both exist.
+    // =======================================================================
+    
+    /// Create a scalar coefficient from expression or constant property
+    /// Returns nullptr if property not found (expression or constant)
+    template<typename Func>
+    std::unique_ptr<Coefficient> createScalarCoefficient(const std::string& name, Func&& getVars) const {
+        if (hasScalar(name)) {
+            return std::make_unique<ScalarCoefficient>(
+                [this, name, getVars](ElementTransform& trans, Real& result, Real) {
+                    auto vars = getVars(trans);
+                    result = this->getScalar(name, vars);
+                });
+        }
+        return nullptr;
+    }
+
+    /// Create a matrix coefficient from expression or constant property
+    /// Returns nullptr if property not found (expression or constant)
+    template<typename Func>
+    std::unique_ptr<MatrixCoefficient> createMatrixCoefficient(const std::string& name, Func&& getVars) const {
+        if (hasMatrix(name)) {
+            return std::make_unique<MatrixFunctionCoefficient>(
+                [this, name, getVars](ElementTransform& trans, Matrix3& result, Real) {
+                    auto vars = getVars(trans);
+                    result = this->getMatrix(name, vars);
+                });
+        }
+        return nullptr;
+    }
+
+    // =======================================================================
+    // Legacy setters (for testing/manual material construction)
+    // =======================================================================
+    
     void setScalarProperty(const std::string& name, double value) {
         scalarProperties[name] = value;
     }
     
-    std::optional<Matrix3> getMatrixProperty(const std::string& name) const {
-        auto it = matrixProperties.find(name);
-        return it != matrixProperties.end() ? std::optional<Matrix3>{it->second} : std::nullopt;
-    }
-    
     void setMatrixProperty(const std::string& name, const Matrix3& mat) {
         matrixProperties[name] = mat;
-    }
-
-    // =======================================================================
-    // Expression access
-    // =======================================================================
-    
-    bool hasScalarExpression(const std::string& name) const {
-        return scalarExpressions.find(name) != scalarExpressions.end();
-    }
-
-    bool hasMatrixExpression(const std::string& name) const {
-        return matrixExpressions.find(name) != matrixExpressions.end();
     }
 
     void setScalarExpression(const std::string& name, const std::string& expr) {
@@ -85,89 +156,6 @@ struct MaterialPropertyModel {
 
     void setMatrixExpression(const std::string& name, const std::string& expr) {
         matrixExpressions[name] = expr;
-    }
-
-    // =======================================================================
-    // Property evaluation with variables
-    // Returns evaluated value for the given variables map
-    // =======================================================================
-    
-    /// Evaluate a scalar property (constant or expression)
-    /// Returns nullopt if property not found
-    std::optional<double> evaluateScalar(const std::string& name,
-                                        const std::map<std::string, double>& variables = {}) const {
-        // Check expressions first
-        auto exprIt = scalarExpressions.find(name);
-        if (exprIt != scalarExpressions.end()) {
-            double result = ExpressionParser::instance().evaluateScalar(exprIt->second, variables);
-            return result;
-        }
-        // Fall back to constant
-        return getScalarProperty(name);
-    }
-
-    /// Evaluate a matrix property (constant or expression)
-    /// Returns nullopt if property not found
-    std::optional<Matrix3> evaluateMatrix(const std::string& name,
-                                        const std::map<std::string, double>& variables = {}) const {
-        // Check expressions first
-        auto exprIt = matrixExpressions.find(name);
-        if (exprIt != matrixExpressions.end()) {
-            Matrix3 result = ExpressionParser::instance().evaluateMatrix(exprIt->second, variables);
-            return result;
-        }
-        // Fall back to constant
-        return getMatrixProperty(name);
-    }
-
-    /// Check if a property exists (either constant or expression)
-    bool hasScalar(const std::string& name) const {
-        return hasScalarExpression(name) || scalarProperties.count(name) > 0;
-    }
-
-    bool hasMatrix(const std::string& name) const {
-        return hasMatrixExpression(name) || matrixProperties.count(name) > 0;
-    }
-
-    // =======================================================================
-    // Factory methods for creating coefficients
-    // The getVars callback takes ElementTransform& and returns variables map
-    // =======================================================================
-    
-    /// Create a scalar coefficient from expression or constant property
-    /// Expression takes precedence if both exist
-    template<typename Func>
-    std::unique_ptr<Coefficient> createScalarCoefficient(const std::string& name, Func&& getVars) const {
-        if (hasScalarExpression(name)) {
-            return std::make_unique<ScalarCoefficient>(
-                [this, name, getVars](ElementTransform& trans, Real& result, Real) {
-                    auto vars = getVars(trans);
-                    result = evaluateScalar(name, vars).value_or(0.0);
-                });
-        }
-        auto value = getScalarProperty(name);
-        if (value.has_value()) {
-            return constantCoefficient(value.value());
-        }
-        return nullptr;
-    }
-
-    /// Create a matrix coefficient from expression or constant property
-    /// Expression takes precedence if both exist
-    template<typename Func>
-    std::unique_ptr<MatrixCoefficient> createMatrixCoefficient(const std::string& name, Func&& getVars) const {
-        if (hasMatrixExpression(name)) {
-            return std::make_unique<MatrixFunctionCoefficient>(
-                [this, name, getVars](ElementTransform& trans, Matrix3& result, Real) {
-                    auto vars = getVars(trans);
-                    result = evaluateMatrix(name, vars).value_or(Matrix3::Identity());
-                });
-        }
-        auto value = getMatrixProperty(name);
-        if (value.has_value()) {
-            return constantMatrixCoefficient(value.value());
-        }
-        return nullptr;
     }
 };
 

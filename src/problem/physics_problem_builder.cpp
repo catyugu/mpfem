@@ -257,23 +257,25 @@ namespace mpfem
                 problem.heatTransfer->setThermalConductivity({domId}, problem.getMatrixCoef(key));
             }
 
-            if (mat->getScalarProperty("density").has_value())
-            {
-                if (mat->getScalarProperty("density").value() <= 0.0) {
+            // Density is optional - only set if present
+            if (mat->hasScalar("density")) {
+                double density = mat->getScalar("density");
+                if (density <= 0.0) {
                     throw ArgumentException("Density must be positive for material: " + matTag);
                 }
                 std::string key = "density_" + std::to_string(domId);
-                problem.setScalarCoef(key, constantCoefficient(mat->getScalarProperty("density").value()));
+                problem.setScalarCoef(key, constantCoefficient(density));
                 problem.heatTransfer->setDensity({domId}, problem.getScalarCoef(key));
             }
 
-            if (mat->getScalarProperty("heatcapacity").has_value())
-            {
-                if (mat->getScalarProperty("heatcapacity").value() <= 0.0) {
+            // Heat capacity is optional - only set if present
+            if (mat->hasScalar("heatcapacity")) {
+                double Cp = mat->getScalar("heatcapacity");
+                if (Cp <= 0.0) {
                     throw ArgumentException("Heat capacity must be positive for material: " + matTag);
                 }
                 std::string key = "heat_capacity_" + std::to_string(domId);
-                problem.setScalarCoef(key, constantCoefficient(mat->getScalarProperty("heatcapacity").value()));
+                problem.setScalarCoef(key, constantCoefficient(Cp));
                 problem.heatTransfer->setSpecificHeat({domId}, problem.getScalarCoef(key));
             }
         }
@@ -323,16 +325,9 @@ namespace mpfem
             if (!mat)
                 continue;
 
-            // E and nu are required for structural analysis - throw if missing
-            if (!mat->getScalarProperty("E").has_value()) {
-                throw ArgumentException("Young's modulus (E) not defined for material: " + matTag);
-            }
-            if (!mat->getScalarProperty("nu").has_value()) {
-                throw ArgumentException("Poisson's ratio (nu) not defined for material: " + matTag);
-            }
-            
-            Real E = mat->getScalarProperty("E").value();
-            Real nu = mat->getScalarProperty("nu").value();
+            // E and nu are required for structural analysis - getScalar() throws if missing
+            Real E = mat->getScalar("E");
+            Real nu = mat->getScalar("nu");
 
             std::string eKey = "young_" + std::to_string(domId);
             std::string nuKey = "poisson_" + std::to_string(domId);
@@ -403,10 +398,11 @@ namespace mpfem
                         continue;
 
                     const auto *mat = problem.materials.getMaterial(domIt->second);
-                    if (!mat || !mat->getMatrixProperty("thermalexpansioncoefficient").has_value())
+                    // Thermal expansion coefficient is optional - skip if not present
+                    if (!mat || !mat->hasMatrix("thermalexpansioncoefficient"))
                         continue;
 
-                    Matrix3 alpha_T = mat->getMatrixProperty("thermalexpansioncoefficient").value();
+                    Matrix3 alpha_T = mat->getMatrix("thermalexpansioncoefficient");
                     const GridFunction *T_field = &problem.heatTransfer->field();
 
                     std::string key = "thermalExp_" + std::to_string(domId);

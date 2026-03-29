@@ -30,6 +30,12 @@ protected:
         // Use new coefficient helper functions
         k1_ = constantCoefficient(1.0);
         k2_ = constantCoefficient(2.0);
+        
+        // Initialize matrix coefficients for diffusion tests
+        Matrix3 D1 = Matrix3::Identity() * 1.0;
+        Matrix3 D2 = Matrix3::Identity() * 2.0;
+        mat1_ = constantMatrixCoefficient(D1);
+        mat2_ = constantMatrixCoefficient(D2);
     }
     
     Mesh mesh_;
