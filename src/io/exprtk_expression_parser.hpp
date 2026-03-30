@@ -66,7 +66,7 @@ private:
     };
 
     // Cache: expression string -> compiled expression
-    using ExpressionCache = std::map<std::string, CachedExpression>;
+    using ExpressionCache = std::unordered_map<std::string, CachedExpression>;
 
     // Separate caches for scalar and matrix expressions
     ExpressionCache scalarCache_;
