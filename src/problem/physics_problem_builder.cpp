@@ -11,16 +11,9 @@
 #include "io/case_xml_reader.hpp"
 #include "io/material_xml_reader.hpp"
 #include "io/mphtxt_reader.hpp"
-#include "io/exprtk_expression_parser.hpp"
+#include "io/compiled_expression_coefficient.hpp"
 #include "core/exception.hpp"
 #include "core/logger.hpp"
-#include "core/string_utils.hpp"
-#include <atomic>
-#include <cctype>
-#include <functional>
-#include <optional>
-#include <unordered_map>
-#include <unordered_set>
 
 namespace mpfem
 {
@@ -53,404 +46,48 @@ namespace mpfem
             return it->second;
         }
 
-        bool isIdentifierStart(char c)
+        ExpressionFieldAccessors makeExpressionFieldAccessors(Problem &problem)
         {
-            return std::isalpha(static_cast<unsigned char>(c)) != 0 || c == '_';
-        }
-
-        bool isIdentifierChar(char c)
-        {
-            return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '_';
-        }
-
-        bool isExponentIdentifier(std::string_view text, size_t index)
-        {
-            if (index == 0 || index + 1 >= text.size())
+            ExpressionFieldAccessors accessors;
+            accessors.sampleTemperature = [&problem](ElementTransform &trans, Real, Real &value)
             {
-                return false;
-            }
-            const char c = text[index];
-            if (c != 'e' && c != 'E')
-            {
-                return false;
-            }
-
-            const char prev = text[index - 1];
-            if (std::isdigit(static_cast<unsigned char>(prev)) == 0 && prev != '.')
-            {
-                return false;
-            }
-
-            const char next = text[index + 1];
-            return std::isdigit(static_cast<unsigned char>(next)) != 0 || next == '+' || next == '-';
-        }
-
-        std::unordered_set<std::string> collectIdentifiers(std::string_view expr)
-        {
-            std::unordered_set<std::string> identifiers;
-            size_t index = 0;
-            while (index < expr.size())
-            {
-                const char c = expr[index];
-                if (!isIdentifierStart(c) || isExponentIdentifier(expr, index))
+                if (!problem.heatTransfer)
                 {
-                    ++index;
-                    continue;
+                    return false;
                 }
-
-                const size_t begin = index;
-                ++index;
-                while (index < expr.size() && isIdentifierChar(expr[index]))
-                {
-                    ++index;
-                }
-
-                size_t probe = index;
-                while (probe < expr.size() && std::isspace(static_cast<unsigned char>(expr[probe])) != 0)
-                {
-                    ++probe;
-                }
-                if (probe < expr.size() && expr[probe] == '(')
-                {
-                    continue;
-                }
-
-                identifiers.emplace(expr.substr(begin, index - begin));
-            }
-
-            return identifiers;
-        }
-
-        struct ExpressionSymbolUsage
-        {
-            bool useTime = false;
-            bool useSpace = false;
-            bool useTemperature = false;
-            bool usePotential = false;
-            std::vector<std::string> caseVariables;
-        };
-
-        ExpressionSymbolUsage detectExpressionSymbolUsage(
-            const std::string &expr,
-            const CaseDefinition &caseDef)
-        {
-            const auto ids = collectIdentifiers(expr);
-
-            ExpressionSymbolUsage usage;
-            usage.useTime = ids.count("t") > 0;
-            const bool useX = ids.count("x") > 0;
-            const bool useY = ids.count("y") > 0;
-            const bool useZ = ids.count("z") > 0;
-            usage.useSpace = useX || useY || useZ;
-            usage.useTemperature = ids.count("T") > 0;
-            usage.usePotential = ids.count("V") > 0;
-
-            usage.caseVariables.reserve(caseDef.variableMap_.size());
-            for (const auto &[name, _] : caseDef.variableMap_)
-            {
-                if (ids.count(name) > 0)
-                {
-                    usage.caseVariables.push_back(name);
-                }
-            }
-            return usage;
-        }
-
-        class RuntimeExpressionContext
-        {
-        public:
-            RuntimeExpressionContext(const CaseDefinition &caseDef, const ExpressionSymbolUsage &usage)
-            {
-                const size_t runtimeSymbolCount =
-                    static_cast<size_t>(usage.useTime) +
-                    (usage.useSpace ? 3u : 0u) +
-                    static_cast<size_t>(usage.useTemperature) +
-                    static_cast<size_t>(usage.usePotential);
-                values_.reserve(usage.caseVariables.size() + runtimeSymbolCount);
-
-                for (const std::string &name : usage.caseVariables)
-                {
-                    const auto it = caseDef.variableMap_.find(name);
-                    if (it != caseDef.variableMap_.end())
-                    {
-                        addSymbol(it->first, it->second);
-                    }
-                }
-
-                if (usage.useTime)
-                {
-                    t_ = addSymbol("t", 0.0);
-                }
-                if (usage.useSpace)
-                {
-                    x_ = addSymbol("x", 0.0);
-                    y_ = addSymbol("y", 0.0);
-                    z_ = addSymbol("z", 0.0);
-                }
-                if (usage.useTemperature)
-                {
-                    T_ = addSymbol("T", 293.15);
-                }
-                if (usage.usePotential)
-                {
-                    V_ = addSymbol("V", 0.0);
-                }
-
-                bindings_.reserve(values_.size());
-                for (NamedValue &entry : values_)
-                {
-                    bindings_.push_back(ExpressionParser::VariableBinding{entry.name, &entry.value});
-                }
-            }
-
-            void updateTime(Real time)
-            {
-                if (t_)
-                {
-                    *t_ = time;
-                }
-            }
-
-            void updateSpace(ElementTransform &trans)
-            {
-                if (!x_ || !y_ || !z_)
-                {
-                    return;
-                }
-                Vector3 pos;
-                trans.transform(trans.integrationPoint(), pos);
-                *x_ = pos.x();
-                *y_ = pos.y();
-                *z_ = pos.z();
-            }
-
-            void updateTemperature(Real value)
-            {
-                if (T_)
-                {
-                    *T_ = value;
-                }
-            }
-
-            void updatePotential(Real value)
-            {
-                if (V_)
-                {
-                    *V_ = value;
-                }
-            }
-
-            const std::vector<ExpressionParser::VariableBinding> &bindings() const
-            {
-                return bindings_;
-            }
-
-        private:
-            struct NamedValue
-            {
-                std::string name;
-                double value = 0.0;
+                const auto &ip = trans.integrationPoint();
+                value = problem.heatTransfer->field().eval(trans.elementIndex(), &ip.xi);
+                return true;
             };
-
-            double *addSymbol(std::string name, double value)
+            accessors.samplePotential = [&problem](ElementTransform &trans, Real, Real &value)
             {
-                for (NamedValue &entry : values_)
+                if (!problem.electrostatics)
                 {
-                    if (entry.name == name)
-                    {
-                        return &entry.value;
-                    }
+                    return false;
                 }
-
-                values_.push_back(NamedValue{std::move(name), value});
-                return &values_.back().value;
-            }
-
-            std::vector<NamedValue> values_;
-            std::vector<ExpressionParser::VariableBinding> bindings_;
-            double *t_ = nullptr;
-            double *x_ = nullptr;
-            double *y_ = nullptr;
-            double *z_ = nullptr;
-            double *T_ = nullptr;
-            double *V_ = nullptr;
-        };
-
-        class CompiledScalarExpressionCoefficient : public Coefficient
-        {
-        public:
-            using Updater = std::function<void(ElementTransform &, Real, RuntimeExpressionContext &)>;
-
-            CompiledScalarExpressionCoefficient(std::string expression,
-                                               const CaseDefinition *caseDef,
-                                               ExpressionSymbolUsage usage,
-                                               Updater updater)
-                : id_(nextId()),
-                  expression_(std::move(expression)),
-                  caseDef_(caseDef),
-                  usage_(std::move(usage)),
-                  updater_(std::move(updater))
-            {
-                MPFEM_ASSERT(caseDef_ != nullptr, "Case definition is required for expression coefficient.");
-            }
-
-            void eval(ElementTransform &trans, Real &result, Real t = 0.0) const override
-            {
-                ThreadState &state = getThreadState();
-                updater_(trans, t, *state.context);
-                result = state.program.evaluate();
-            }
-
-        private:
-            struct ThreadState
-            {
-                ExpressionParser::ScalarProgram program;
-                std::unique_ptr<RuntimeExpressionContext> context;
+                const auto &ip = trans.integrationPoint();
+                value = problem.electrostatics->field().eval(trans.elementIndex(), &ip.xi);
+                return true;
             };
-
-            static uint64_t nextId()
-            {
-                static std::atomic<uint64_t> counter{1};
-                return counter.fetch_add(1, std::memory_order_relaxed);
-            }
-
-            ThreadState &getThreadState() const
-            {
-                static thread_local std::unordered_map<uint64_t, ThreadState> cache;
-                auto it = cache.find(id_);
-                if (it != cache.end())
-                {
-                    return it->second;
-                }
-
-                auto context = std::make_unique<RuntimeExpressionContext>(*caseDef_, usage_);
-                auto program = ExpressionParser::instance().compileScalar(expression_, context->bindings());
-
-                ThreadState state;
-                state.program = std::move(program);
-                state.context = std::move(context);
-
-                auto inserted = cache.emplace(id_, std::move(state));
-                return inserted.first->second;
-            }
-
-            uint64_t id_;
-            std::string expression_;
-            const CaseDefinition *caseDef_;
-            ExpressionSymbolUsage usage_;
-            Updater updater_;
-        };
-
-        class CompiledMatrixExpressionCoefficient : public MatrixCoefficient
-        {
-        public:
-            using Updater = std::function<void(ElementTransform &, Real, RuntimeExpressionContext &)>;
-
-            CompiledMatrixExpressionCoefficient(std::string expression,
-                                               const CaseDefinition *caseDef,
-                                               ExpressionSymbolUsage usage,
-                                               Updater updater)
-                : id_(nextId()),
-                  expression_(std::move(expression)),
-                  caseDef_(caseDef),
-                  usage_(std::move(usage)),
-                  updater_(std::move(updater))
-            {
-                MPFEM_ASSERT(caseDef_ != nullptr, "Case definition is required for expression coefficient.");
-            }
-
-            void eval(ElementTransform &trans, Matrix3 &result, Real t = 0.0) const override
-            {
-                ThreadState &state = getThreadState();
-                updater_(trans, t, *state.context);
-                result = state.program.evaluate();
-            }
-
-        private:
-            struct ThreadState
-            {
-                ExpressionParser::MatrixProgram program;
-                std::unique_ptr<RuntimeExpressionContext> context;
-            };
-
-            static uint64_t nextId()
-            {
-                static std::atomic<uint64_t> counter{1};
-                return counter.fetch_add(1, std::memory_order_relaxed);
-            }
-
-            ThreadState &getThreadState() const
-            {
-                static thread_local std::unordered_map<uint64_t, ThreadState> cache;
-                auto it = cache.find(id_);
-                if (it != cache.end())
-                {
-                    return it->second;
-                }
-
-                auto context = std::make_unique<RuntimeExpressionContext>(*caseDef_, usage_);
-                auto program = ExpressionParser::instance().compileMatrix(expression_, context->bindings());
-
-                ThreadState state;
-                state.program = std::move(program);
-                state.context = std::move(context);
-
-                auto inserted = cache.emplace(id_, std::move(state));
-                return inserted.first->second;
-            }
-
-            uint64_t id_;
-            std::string expression_;
-            const CaseDefinition *caseDef_;
-            ExpressionSymbolUsage usage_;
-            Updater updater_;
-        };
-
-        std::function<void(ElementTransform &, Real, RuntimeExpressionContext &)> makeUpdater(
-            Problem &problem,
-            const ExpressionSymbolUsage &usage)
-        {
-            return [&problem, usage](ElementTransform &trans, Real t, RuntimeExpressionContext &context)
-            {
-                if (usage.useTime)
-                {
-                    context.updateTime(t);
-                }
-                if (usage.useSpace)
-                {
-                    context.updateSpace(trans);
-                }
-                if (usage.useTemperature && problem.heatTransfer)
-                {
-                    const auto &ip = trans.integrationPoint();
-                    const Real T = problem.heatTransfer->field().eval(trans.elementIndex(), &ip.xi);
-                    context.updateTemperature(T);
-                }
-                if (usage.usePotential && problem.electrostatics)
-                {
-                    const auto &ip = trans.integrationPoint();
-                    const Real V = problem.electrostatics->field().eval(trans.elementIndex(), &ip.xi);
-                    context.updatePotential(V);
-                }
-            };
+            return accessors;
         }
 
         std::unique_ptr<Coefficient> makeScalarExpressionCoefficient(Problem &problem,
                                                                       const std::string &expression)
         {
-            const auto usage = detectExpressionSymbolUsage(expression, problem.caseDef);
-            auto updater = makeUpdater(problem, usage);
-            return std::make_unique<CompiledScalarExpressionCoefficient>(
-                expression, &problem.caseDef, usage, std::move(updater));
+            return createCompiledScalarExpressionCoefficient(
+                expression,
+                problem.caseDef,
+                makeExpressionFieldAccessors(problem));
         }
 
         std::unique_ptr<MatrixCoefficient> makeMatrixExpressionCoefficient(Problem &problem,
                                                                             const std::string &expression)
         {
-            const auto usage = detectExpressionSymbolUsage(expression, problem.caseDef);
-            auto updater = makeUpdater(problem, usage);
-            return std::make_unique<CompiledMatrixExpressionCoefficient>(
-                expression, &problem.caseDef, usage, std::move(updater));
+            return createCompiledMatrixExpressionCoefficient(
+                expression,
+                problem.caseDef,
+                makeExpressionFieldAccessors(problem));
         }
 
     } // namespace
