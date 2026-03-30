@@ -83,27 +83,6 @@ private:
 };
 
 /**
- * @brief Check if a string is a simple number (not an expression).
- */
-inline bool isNumberString(const std::string& s) {
-    if (s.empty()) return false;
-    size_t i = 0;
-    if (s[0] == '+' || s[0] == '-') {
-        if (s.length() == 1) return false;
-        i = 1;
-    }
-    if (!std::isdigit(static_cast<unsigned char>(s[i])) && s[i] != '.') return false;
-    for (; i < s.length(); ++i) {
-        char c = s[i];
-        if (!std::isdigit(static_cast<unsigned char>(c)) && c != '.' && 
-            c != 'e' && c != 'E' && c != '+' && c != '-') {
-            return false;
-        }
-    }
-    return true;
-}
-
-/**
  * @brief Check if value contains operators indicating it's an expression.
  */
 inline bool isExpression(const std::string& value) {

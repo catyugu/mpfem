@@ -179,6 +179,44 @@ void ConvectionLFIntegrator::assembleFaceVector(const ReferenceElement& ref,
 // Elasticity integrators
 // =============================================================================
 
+namespace {
+// Helper function to compute strain-displacement B matrix from shape function gradients
+template <typename BMatrix>
+inline void computeStrainDispMatrix(
+    BMatrix& B,
+    const ReferenceElement& ref,
+    ElementTransform& trans,
+    int nd,
+    int vdim,
+    int q)
+{
+    const Vector3* refGrads = ref.shapeGradientsAtQuad(q);
+    for (int a = 0; a < nd; ++a) {
+        Vector3 physGrad;
+        trans.transformGradient(refGrads[a].data(), physGrad.data());
+        int col = a * vdim;
+        B(0, col + 0) = physGrad[0];
+        B(1, col + 1) = physGrad[1];
+        B(2, col + 2) = physGrad[2];
+        B(3, col + 1) = physGrad[2];
+        B(3, col + 2) = physGrad[1];
+        B(4, col + 0) = physGrad[2];
+        B(4, col + 2) = physGrad[0];
+        B(5, col + 0) = physGrad[1];
+        B(5, col + 1) = physGrad[0];
+    }
+}
+
+// Helper function to fill elasticity tensor C from Lamé parameters
+inline void fillElasticityTensorC(Eigen::Matrix<Real, 6, 6>& C, Real lambda, Real mu) {
+    C.setZero();
+    C(0, 0) = C(1, 1) = C(2, 2) = lambda + 2.0 * mu;
+    C(0, 1) = C(0, 2) = C(1, 0) = C(1, 2) = C(2, 0) = C(2, 1) = lambda;
+    C(3, 3) = C(4, 4) = C(5, 5) = mu;
+}
+
+} // anonymous namespace
+
 void ElasticityIntegrator::assembleElementMatrix(const ReferenceElement& ref,
                                                   ElementTransform& trans,
                                                   Matrix& elmat,
@@ -197,10 +235,7 @@ void ElasticityIntegrator::assembleElementMatrix(const ReferenceElement& ref,
     Real mu = E_val / (2.0 * (1.0 + nu_val));
     
     Eigen::Matrix<Real, 6, 6> C;
-    C.setZero();
-    C(0, 0) = C(1, 1) = C(2, 2) = lambda + 2.0 * mu;
-    C(0, 1) = C(0, 2) = C(1, 0) = C(1, 2) = C(2, 0) = C(2, 1) = lambda;
-    C(3, 3) = C(4, 4) = C(5, 5) = mu;
+    fillElasticityTensorC(C, lambda, mu);
     
     Eigen::Matrix<Real, MaxStrainComponents, MaxVectorDofsPerElement> B_full;
     Eigen::Matrix<Real, MaxStrainComponents, MaxVectorDofsPerElement> CB_full;
@@ -214,25 +249,10 @@ void ElasticityIntegrator::assembleElementMatrix(const ReferenceElement& ref,
         trans.setIntegrationPoint(xi);
         
         const Real w = ip.weight * trans.weight();
-        const Vector3* refGrads = ref.shapeGradientsAtQuad(q);
         
         B.setZero();
         
-        for (int a = 0; a < nd; ++a) {
-            Vector3 physGrad;
-            trans.transformGradient(refGrads[a].data(), physGrad.data());
-            
-            int col = a * vdim;
-            B(0, col + 0) = physGrad[0];
-            B(1, col + 1) = physGrad[1];
-            B(2, col + 2) = physGrad[2];
-            B(3, col + 1) = physGrad[2];
-            B(3, col + 2) = physGrad[1];
-            B(4, col + 0) = physGrad[2];
-            B(4, col + 2) = physGrad[0];
-            B(5, col + 0) = physGrad[1];
-            B(5, col + 1) = physGrad[0];
-        }
+        computeStrainDispMatrix(B, ref, trans, nd, vdim, q);
         
         CB.noalias() = C * B;
         elmat.noalias() += w * (B.transpose() * CB);
@@ -270,10 +290,7 @@ void ThermalLoadIntegrator::assembleElementVector(const ReferenceElement& ref,
         Real lambda = E_val * nu_val / ((1.0 + nu_val) * (1.0 - 2.0 * nu_val));
         Real mu = E_val / (2.0 * (1.0 + nu_val));
         
-        C.setZero();
-        C(0, 0) = C(1, 1) = C(2, 2) = lambda + 2.0 * mu;
-        C(0, 1) = C(0, 2) = C(1, 0) = C(1, 2) = C(2, 0) = C(2, 1) = lambda;
-        C(3, 3) = C(4, 4) = C(5, 5) = mu;
+        fillElasticityTensorC(C, lambda, mu);
         
         // Get thermal expansion tensor (Matrix3) and compute thermal strain
         Matrix3 alpha_mat;
@@ -295,25 +312,9 @@ void ThermalLoadIntegrator::assembleElementVector(const ReferenceElement& ref,
         // Compute thermal stress: σ_thermal = C : ε_thermal
         sigmaThermal = C * epsilonThermal;
         
-        const Vector3* refGrads = ref.shapeGradientsAtQuad(q);
-        
         B.setZero();
         
-        for (int a = 0; a < nd; ++a) {
-            Vector3 physGrad;
-            trans.transformGradient(refGrads[a].data(), physGrad.data());
-            
-            int col = a * vdim;
-            B(0, col + 0) = physGrad[0];
-            B(1, col + 1) = physGrad[1];
-            B(2, col + 2) = physGrad[2];
-            B(3, col + 1) = physGrad[2];
-            B(3, col + 2) = physGrad[1];
-            B(4, col + 0) = physGrad[2];
-            B(4, col + 2) = physGrad[0];
-            B(5, col + 0) = physGrad[1];
-            B(5, col + 1) = physGrad[0];
-        }
+        computeStrainDispMatrix(B, ref, trans, nd, vdim, q);
         
         // F_thermal += B^T · σ_thermal · w
         elvec.noalias() += w * (B.transpose() * sigmaThermal);
