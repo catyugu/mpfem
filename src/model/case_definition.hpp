@@ -1,7 +1,6 @@
 #ifndef MPFEM_CASE_DEFINITION_HPP
 #define MPFEM_CASE_DEFINITION_HPP
 
-#include "model/field_kind.hpp"
 #include "solver/solver_config.hpp"
 #include "core/exception.hpp"
 #include <string>
