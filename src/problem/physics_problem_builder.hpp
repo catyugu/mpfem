@@ -1,6 +1,7 @@
 #ifndef MPFEM_PHYSICS_PROBLEM_BUILDER_HPP
 #define MPFEM_PHYSICS_PROBLEM_BUILDER_HPP
 
+#include "io/problem_input_loader.hpp"
 #include "problem.hpp"
 #include <memory>
 #include <string>

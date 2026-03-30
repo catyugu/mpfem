@@ -33,8 +33,8 @@ int main(int argc, char* argv[]) {
 
             // Export results
             std::filesystem::create_directories("results");
-            ResultExporter::exportVtu(result, *setup->mesh, "results/busbar_transient.vtu");
-            ResultExporter::exportComsolText(result, *setup->mesh, "results/mpfem_result.txt");
+            ResultExporter::exportVtu(result.snapshots, *setup->mesh, "results/busbar_transient.vtu");
+            ResultExporter::exportComsolText(result.snapshots, result.times, *setup->mesh, "results/mpfem_result.txt");
             LOG_INFO << "Exported results";
         } else {
             LOG_INFO << "Running coupled electro-thermal solve...";
@@ -74,8 +74,8 @@ int main(int argc, char* argv[]) {
 
             // Export results
             std::filesystem::create_directories("results");
-            ResultExporter::exportVtu(result, *setup->mesh, "results/busbar_steady.vtu");
-            ResultExporter::exportComsolText(result, *setup->mesh, "results/mpfem_result.txt");
+            ResultExporter::exportVtu(result.fields, *setup->mesh, "results/busbar_steady.vtu");
+            ResultExporter::exportComsolText(result.fields, *setup->mesh, "results/mpfem_result.txt");
             LOG_INFO << "Exported results";
         }
         

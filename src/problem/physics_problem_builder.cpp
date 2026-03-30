@@ -6,12 +6,10 @@
 #include "physics/electrostatics_solver.hpp"
 #include "physics/heat_transfer_solver.hpp"
 #include "physics/structural_solver.hpp"
+#include "problem/expression_coefficient_factory.hpp"
 #include "fe/element_transform.hpp"
 #include "fe/grid_function.hpp"
-#include "io/case_xml_reader.hpp"
-#include "io/material_xml_reader.hpp"
-#include "io/mphtxt_reader.hpp"
-#include "problem/expression_coefficient_factory.hpp"
+#include "io/problem_input_loader.hpp"
 #include "core/exception.hpp"
 #include "core/logger.hpp"
 
@@ -107,18 +105,15 @@ namespace mpfem
         void buildHeatTransfer(Problem &problem, const CaseDefinition::Physics &physics);
         void buildStructural(Problem &problem, const CaseDefinition::Physics &physics);
 
-        std::unique_ptr<Problem> build(const std::string &caseDir)
+        std::unique_ptr<Problem> build(const std::string &caseDir,
+                                       const ProblemInputLoader &inputLoader)
         {
-            std::string casePath = caseDir + "/case.xml";
-            LOG_INFO << "Reading case from " << casePath;
-
-            CaseDefinition caseDef;
-            CaseXmlReader::readFromFile(casePath, caseDef);
+            ProblemInputData input = inputLoader.load(caseDir);
 
             std::unique_ptr<Problem> problem;
 
             // Determine problem type based on study type
-            const bool isTransient = (caseDef.studyType == "transient");
+            const bool isTransient = (input.caseDefinition.studyType == "transient");
 
             TransientProblem *transientProblem = nullptr;
 
@@ -128,12 +123,12 @@ namespace mpfem
                 transientProblem = transientProb.get();
 
                 // Configure time stepping parameters
-                transientProb->startTime = caseDef.timeConfig.start;
-                transientProb->endTime = caseDef.timeConfig.end;
-                transientProb->timeStep = caseDef.timeConfig.step;
+                transientProb->startTime = input.caseDefinition.timeConfig.start;
+                transientProb->endTime = input.caseDefinition.timeConfig.end;
+                transientProb->timeStep = input.caseDefinition.timeConfig.step;
 
                 // Parse time scheme
-                if (caseDef.timeConfig.scheme == "BDF2")
+                if (input.caseDefinition.timeConfig.scheme == "BDF2")
                 {
                     transientProb->scheme = TimeScheme::BDF2;
                 }
@@ -150,27 +145,16 @@ namespace mpfem
                 problem = std::make_unique<SteadyProblem>();
             }
 
-            if (caseDef.couplingConfig.maxIterations > 0)
+            if (input.caseDefinition.couplingConfig.maxIterations > 0)
             {
-                problem->couplingMaxIter = caseDef.couplingConfig.maxIterations;
-                problem->couplingTol = caseDef.couplingConfig.tolerance;
+                problem->couplingMaxIter = input.caseDefinition.couplingConfig.maxIterations;
+                problem->couplingTol = input.caseDefinition.couplingConfig.tolerance;
             }
 
-            // Set common problem properties
-            problem->caseName = caseDef.caseName;
-            problem->caseDef = caseDef;
-
-            std::string meshPath = caseDir + "/" + caseDef.meshPath;
-            LOG_INFO << "Reading mesh from " << meshPath;
-
-            problem->mesh = std::make_unique<Mesh>(MphtxtReader::read(meshPath));
-            LOG_INFO << "Mesh loaded: " << problem->mesh->numVertices() << " vertices, "
-                     << problem->mesh->numElements() << " elements";
-
-            std::string matPath = caseDir + "/" + caseDef.materialsPath;
-            LOG_INFO << "Reading materials from " << matPath;
-
-            MaterialXmlReader::readFromFile(matPath, problem->materials);
+            problem->caseName = input.caseDefinition.caseName;
+            problem->caseDef = std::move(input.caseDefinition);
+            problem->mesh = std::move(input.mesh);
+            problem->materials = std::move(input.materials);
 
             buildSolvers(*problem);
 
@@ -184,6 +168,12 @@ namespace mpfem
             }
 
             return problem;
+        }
+
+        std::unique_ptr<Problem> build(const std::string &caseDir)
+        {
+            std::unique_ptr<ProblemInputLoader> inputLoader = createXmlProblemInputLoader();
+            return build(caseDir, *inputLoader);
         }
 
         void buildSolvers(Problem &problem)

@@ -66,8 +66,8 @@ public:
     RuntimeScalarExpressionCoefficient(std::string expression,
                                        const CaseDefinition& caseDef,
                                        ExternalRuntimeSymbolResolver externalResolver)
-    : program_(expression, buildSymbolConfig(expression, caseDef)),
-                    externalResolver_(std::move(externalResolver)) {
+        : program_(expression, buildSymbolConfig(expression, caseDef)),
+          externalResolver_(std::move(externalResolver)) {
     }
 
     void eval(ElementTransform& transform, Real& result, Real t = 0.0) const override {
@@ -98,8 +98,8 @@ public:
     RuntimeMatrixExpressionCoefficient(std::string expression,
                                        const CaseDefinition& caseDef,
                                        ExternalRuntimeSymbolResolver externalResolver)
-    : program_(expression, buildSymbolConfig(expression, caseDef)),
-                    externalResolver_(std::move(externalResolver)) {
+        : program_(expression, buildSymbolConfig(expression, caseDef)),
+          externalResolver_(std::move(externalResolver)) {
     }
 
     void eval(ElementTransform& transform, Matrix3& result, Real t = 0.0) const override {

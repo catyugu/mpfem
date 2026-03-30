@@ -10,10 +10,6 @@
 
 namespace mpfem {
 
-// Forward declarations
-struct SteadyResult;
-struct TransientResult;
-
 /**
  * @brief Unified result exporter.
  * 
@@ -22,16 +18,18 @@ struct TransientResult;
 class ResultExporter {
 public:
     // COMSOL text format
-    static void exportComsolText(const SteadyResult& result, const Mesh& mesh, 
-                                 const std::string& filename);
-    static void exportComsolText(const TransientResult& result, const Mesh& mesh,
+    static void exportComsolText(const FieldValues& fields, const Mesh& mesh,
+                                 const std::string& filename, Real time = -1);
+    static void exportComsolText(const std::vector<FieldValues>& snapshots,
+                                 const std::vector<Real>& times,
+                                 const Mesh& mesh,
                                  const std::string& filename);
     
     // VTU format
-    static void exportVtu(const SteadyResult& result, const Mesh& mesh,
-                           const std::string& filename);
-    static void exportVtu(const TransientResult& result, const Mesh& mesh,
-                           const std::string& filename);
+    static void exportVtu(const FieldValues& fields, const Mesh& mesh,
+                          const std::string& filename);
+    static void exportVtu(const std::vector<FieldValues>& snapshots, const Mesh& mesh,
+                          const std::string& filename);
 
 private:
     static std::string getCurrentTimestamp();

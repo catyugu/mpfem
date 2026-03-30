@@ -159,6 +159,7 @@ mpfem_add_library(mpfem_io
         src/io/case_xml_reader.cpp
         src/io/material_xml_reader.cpp
         src/model/material_database.cpp
+        src/io/problem_input_loader.cpp
         src/io/result_exporter.cpp
         src/io/mphtxt_reader.cpp
     PUBLIC_LINK
