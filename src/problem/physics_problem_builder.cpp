@@ -391,9 +391,9 @@ namespace mpfem
                 {
                     // Get reference temperature from solid_mechanics physics block
                     auto physicsIt = problem.caseDef.physics.find("solid_mechanics");
-                    Real T_ref = (physicsIt != problem.caseDef.physics.end())
-                                     ? physicsIt->second.referenceTemperature
-                                     : 293.15;
+                    MPFEM_ASSERT(physicsIt != problem.caseDef.physics.end(),
+                                  "solid_mechanics physics block not found for thermal expansion coupling");
+                    Real T_ref = physicsIt->second.referenceTemperature;
 
                     for (int domId : cp.domainIds)
                     {
