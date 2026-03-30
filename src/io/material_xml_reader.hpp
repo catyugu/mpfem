@@ -10,7 +10,8 @@ namespace mpfem {
  * @brief Reads material properties from material XML.
  * 
  * Parses the material.xml file and populates a MaterialDatabase.
- * Supports both constant values and expressions (with operators like +, -, *, /, ^).
+ * All values are stored as expressions (strings) for unified evaluation.
+ * Unit handling is deferred to ExpressionParser::evaluate().
  */
 class MaterialXmlReader {
 public:

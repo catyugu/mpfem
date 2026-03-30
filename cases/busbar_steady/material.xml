@@ -12,7 +12,7 @@
         <set name="relpermeability" value="{'1','0','0','0','1','0','0','0','1'}"/>
         <!-- Temperature-dependent conductivity: sigma = 1/(rho0*(1+alpha*(T-Tref))) -->
         <!-- rho0 = 1.72e-8 ohm*m, alpha = 0.0039 1/K, Tref = 298 K -->
-        <set name="electricconductivity" value="1/(1.72e-8*(1+0.0039*(T-298)))"/>
+        <set name="electricconductivity" value="{'1/(1.72e-8*(1+0.0039*(T-298)))','0','0','0','1/(1.72e-8*(1+0.0039*(T-298)))','0','0','0','1/(1.72e-8*(1+0.0039*(T-298)))'}"/>
         <set name="thermalexpansioncoefficient" value="{'17e-6[1/K]','0','0','0','17e-6[1/K]','0','0','0','17e-6[1/K]'}"/>
         <set name="heatcapacity" value="385[J/(kg*K)]"/>
         <set name="relpermittivity" value="{'1','0','0','0','1','0','0','0','1'}"/>

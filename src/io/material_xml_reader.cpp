@@ -1,68 +1,10 @@
 #include "io/material_xml_reader.hpp"
-#include "io/exprtk_expression_parser.hpp"
 #include "core/logger.hpp"
 #include "core/exception.hpp"
 #include "core/string_utils.hpp"
 #include <tinyxml2.h>
 
 namespace mpfem {
-
-namespace {
-
-// Parse matrix format {'a','b',...} - returns nullopt if not matrix format
-std::optional<Matrix3> parseMatrixConstant(const std::string& value) {
-    std::string trimmed = strings::trim(value);
-    
-    if (trimmed.size() < 2 || trimmed[0] != '{') {
-        return std::nullopt;
-    }
-    
-    std::vector<double> values;
-    std::string token;
-    bool inQuote = false;
-    
-    for (size_t i = 1; i < trimmed.size(); ++i) {
-        char c = trimmed[i];
-        if (c == '\'') {
-            inQuote = !inQuote;
-            if (!inQuote && !token.empty()) {
-                try {
-                    values.push_back(std::stod(strings::stripUnits(token)));
-                } catch (...) {
-                    token.clear();
-                    continue;
-                }
-                token.clear();
-            }
-        } else if (inQuote) {
-            token.push_back(c);
-        }
-    }
-    
-    if (values.size() == 9) {
-        Matrix3 m;
-        m << values[0], values[3], values[6],
-             values[1], values[4], values[7],
-             values[2], values[5], values[8];
-        return m;
-    } else if (values.size() == 1) {
-        return Matrix3::Identity() * values[0];
-    }
-    
-    return std::nullopt;
-}
-
-// Parse scalar constant from value string
-std::optional<double> parseScalarConstant(const std::string& value) {
-    std::string stripped = strings::stripUnits(value);
-    try {
-        return std::stod(stripped);
-    } catch (...) {
-        return std::nullopt;
-    }
-}
-
-}  // anonymous namespace
 
 void MaterialXmlReader::readFromFile(const std::string& filePath, MaterialDatabase& database) {
     database.clear();
@@ -108,25 +50,11 @@ void MaterialXmlReader::readFromFile(const std::string& filePath, MaterialDataba
             std::string value = valueAttr;
             
             // Check if it's a matrix format {'a','b',...}
-            auto matConst = parseMatrixConstant(value);
-            if (matConst.has_value()) {
-                material.matrixProperties[name] = matConst.value();
-                return;
-            }
-            
-            // Check if it's an expression (contains operators)
-            // IMPORTANT: Strip units first because unit strings like [kg/m^3] contain
-            // '^' which would incorrectly trigger isExpression to return true
-            std::string strippedValue = strings::stripUnits(value);
-            if (isExpression(strippedValue)) {
-                material.matrixExpressions[name] = strippedValue;
-                return;
-            }
-            
-            // Otherwise it's a scalar constant
-            auto scalarConst = parseScalarConstant(value);
-            if (scalarConst.has_value()) {
-                material.scalarProperties[name] = scalarConst.value();
+            std::string trimmed = strings::trim(value);
+            if (trimmed.size() >= 2 && trimmed[0] == '{') {
+                material.setMatrix(name, value);
+            } else {
+                material.setScalar(name, value);
             }
         };
 
@@ -157,4 +85,4 @@ void MaterialXmlReader::readFromFile(const std::string& filePath, MaterialDataba
     LOG_INFO << "Loaded " << database.size() << " materials from " << filePath;
 }
 
-}  // namespace mpfem
+} // namespace mpfem
