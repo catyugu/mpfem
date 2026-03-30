@@ -19,7 +19,7 @@ class StructuralSolver;
 
 class Problem {
 public:
-    virtual ~Problem() = default;
+    virtual ~Problem();
     virtual bool isTransient() const { return false; }
 
     // Physics presence queries

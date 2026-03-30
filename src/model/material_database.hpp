@@ -8,6 +8,7 @@
 #include <map>
 #include <memory>
 #include <unordered_map>
+#include <utility>
 
 namespace mpfem {
 
@@ -17,13 +18,14 @@ namespace mpfem {
  * All properties stored as expression strings. Constants like "0.35" are just
  * expressions with no variables. Unit handling is automatic via ExpressionParser.
  */
-struct MaterialPropertyModel {
-    std::string tag;
-    std::string label;
+class MaterialPropertyModel {
+public:
+    MaterialPropertyModel() = default;
 
-    // Unified storage - ALL properties as expression strings
-    std::unordered_map<std::string, std::string> scalarExpressions_;
-    std::unordered_map<std::string, std::string> matrixExpressions_;
+    const std::string& tag() const { return tag_; }
+    const std::string& label() const { return label_; }
+    void setTag(std::string tag) { tag_ = std::move(tag); }
+    void setLabel(std::string label) { label_ = std::move(label); }
 
     // Get scalar value - evaluates expression with optional variables
     double getScalar(const std::string& name,
@@ -68,6 +70,12 @@ struct MaterialPropertyModel {
     void setMatrix(const std::string& name, const std::string& expr) {
         matrixExpressions_[name] = expr;
     }
+
+private:
+    std::string tag_;
+    std::string label_;
+    std::unordered_map<std::string, std::string> scalarExpressions_;
+    std::unordered_map<std::string, std::string> matrixExpressions_;
 };
 
 /**
@@ -76,7 +84,7 @@ struct MaterialPropertyModel {
 class MaterialDatabase {
 public:
     void addMaterial(const MaterialPropertyModel& material) {
-        materials_[material.tag] = material;
+        materials_[material.tag()] = material;
     }
 
     const MaterialPropertyModel* getMaterial(const std::string& tag) const {

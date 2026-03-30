@@ -1,9 +1,19 @@
 #include "physics_problem_builder.hpp"
+#include "problem.hpp"
+#include "steady_problem.hpp"
+#include "transient_problem.hpp"
 #include "physics/field_values.hpp"
+#include "physics/electrostatics_solver.hpp"
+#include "physics/heat_transfer_solver.hpp"
+#include "physics/structural_solver.hpp"
 #include "fe/element_transform.hpp"
 #include "fe/grid_function.hpp"
+#include "io/case_xml_reader.hpp"
+#include "io/material_xml_reader.hpp"
+#include "io/mphtxt_reader.hpp"
 #include "io/exprtk_expression_parser.hpp"
 #include "core/exception.hpp"
+#include "core/logger.hpp"
 #include "core/string_utils.hpp"
 #include <cctype>
 #include <functional>
@@ -284,6 +294,11 @@ namespace mpfem
 
     namespace PhysicsProblemBuilder
     {
+        void buildSolvers(Problem &problem);
+        void setupCoupling(Problem &problem);
+        void buildElectrostatics(Problem &problem, const CaseDefinition::Physics &physics);
+        void buildHeatTransfer(Problem &problem, const CaseDefinition::Physics &physics);
+        void buildStructural(Problem &problem, const CaseDefinition::Physics &physics);
 
         std::unique_ptr<Problem> build(const std::string &caseDir)
         {

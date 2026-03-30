@@ -217,6 +217,7 @@ mpfem_add_library(mpfem_coupling
 
 mpfem_add_library(mpfem_problem
     SOURCES
+        src/problem/problem.cpp
         src/problem/physics_problem_builder.cpp
     PUBLIC_LINK
         Eigen3::Eigen

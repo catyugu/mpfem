@@ -31,12 +31,12 @@ void MaterialXmlReader::readFromFile(const std::string& filePath, MaterialDataba
         MaterialPropertyModel material;
 
         if (const char* tagAttr = materialElement->Attribute("tag")) {
-            material.tag = tagAttr;
+            material.setTag(tagAttr);
         }
 
         if (const tinyxml2::XMLElement* labelElement = materialElement->FirstChildElement("label")) {
             if (const char* labelText = labelElement->Attribute("label")) {
-                material.label = labelText;
+                material.setLabel(labelText);
             }
         }
 
@@ -75,7 +75,7 @@ void MaterialXmlReader::readFromFile(const std::string& filePath, MaterialDataba
         }
 
         database.addMaterial(material);
-        LOG_DEBUG << "Loaded material: " << material.tag;
+        LOG_DEBUG << "Loaded material: " << material.tag();
     }
 
     if (database.size() == 0) {
