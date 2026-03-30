@@ -3,6 +3,7 @@
 #include "fe/element_transform.hpp"
 #include "fe/grid_function.hpp"
 #include "core/exception.hpp"
+#include "core/string_utils.hpp"
 #include <optional>
 
 namespace mpfem
@@ -38,9 +39,7 @@ namespace mpfem
             {
                 throw ArgumentException("Missing required parameter: " + key);
             }
-            std::string numStr = it->second;
-            if (auto pos = numStr.find('['); pos != std::string::npos)
-                numStr = numStr.substr(0, pos);
+            std::string numStr = strings::stripUnits(it->second);
             try
             {
                 return std::stod(numStr);

@@ -24,6 +24,16 @@ inline std::string trim(const std::string& str) {
     return str.substr(first, last - first);
 }
 
+/// Remove unit brackets like [S/m], [K], etc. from value string
+inline std::string stripUnits(const std::string& value) {
+    std::string result = value;
+    size_t bracketPos = result.find('[');
+    if (bracketPos != std::string::npos) {
+        result = result.substr(0, bracketPos);
+    }
+    return trim(result);
+}
+
 }  // namespace strings
 
 }  // namespace mpfem

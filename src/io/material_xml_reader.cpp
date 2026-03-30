@@ -9,17 +9,6 @@ namespace mpfem {
 
 namespace {
 
-// Remove unit brackets like [S/m], [K], etc. from value string
-std::string stripUnits(const std::string& value) {
-    std::string result = value;
-    size_t bracketPos = result.find('[');
-    if (bracketPos != std::string::npos) {
-        result = result.substr(0, bracketPos);
-    }
-    // Trim whitespace using strings::trim()
-    return strings::trim(result);
-}
-
 // Parse matrix format {'a','b',...} - returns nullopt if not matrix format
 std::optional<Matrix3> parseMatrixConstant(const std::string& value) {
     std::string trimmed = strings::trim(value);
@@ -38,7 +27,7 @@ std::optional<Matrix3> parseMatrixConstant(const std::string& value) {
             inQuote = !inQuote;
             if (!inQuote && !token.empty()) {
                 try {
-                    values.push_back(std::stod(stripUnits(token)));
+                    values.push_back(std::stod(strings::stripUnits(token)));
                 } catch (...) {
                     token.clear();
                     continue;
@@ -65,7 +54,7 @@ std::optional<Matrix3> parseMatrixConstant(const std::string& value) {
 
 // Parse scalar constant from value string
 std::optional<double> parseScalarConstant(const std::string& value) {
-    std::string stripped = stripUnits(value);
+    std::string stripped = strings::stripUnits(value);
     try {
         return std::stod(stripped);
     } catch (...) {
@@ -128,7 +117,7 @@ void MaterialXmlReader::readFromFile(const std::string& filePath, MaterialDataba
             // Check if it's an expression (contains operators)
             // IMPORTANT: Strip units first because unit strings like [kg/m^3] contain
             // '^' which would incorrectly trigger isExpression to return true
-            std::string strippedValue = stripUnits(value);
+            std::string strippedValue = strings::stripUnits(value);
             if (isExpression(strippedValue)) {
                 material.matrixExpressions[name] = strippedValue;
                 return;
