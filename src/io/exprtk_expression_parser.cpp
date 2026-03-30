@@ -15,66 +15,11 @@ namespace mpfem
         const std::string &expr,
         const std::map<std::string, double> &variables)
     {
-        // Find unit bracket [ ... ]
-        size_t start = expr.find('[');
-        size_t end = expr.find(']', start);
-
-        std::string exprStr = expr;
-        double multiplier = 1.0;
-
-        if (start != std::string::npos && end != std::string::npos && end > start)
-        {
-            std::string unit = expr.substr(start + 1, end - start - 1);
-            exprStr = expr.substr(0, start);
-
-            // Parse unit multiplier
-            if (unit == "GPa")
-                multiplier = 1e9;
-            else if (unit == "MPa")
-                multiplier = 1e6;
-            else if (unit == "kPa")
-                multiplier = 1e3;
-            else if (unit == "Pa")
-                multiplier = 1.0;
-            else if (unit == "W/(m*K)" || unit == "W m^-1 K^-1")
-                multiplier = 1.0;
-            else if (unit == "J/(kg*K)")
-                multiplier = 1.0;
-            else if (unit == "J")
-                multiplier = 1.0;
-            else if (unit == "kJ")
-                multiplier = 1e3;
-            else if (unit == "W")
-                multiplier = 1.0;
-            else if (unit == "K")
-                multiplier = 1.0;
-            else if (unit == "kg")
-                multiplier = 1.0;
-            else if (unit == "g")
-                multiplier = 1e-3;
-            else if (unit == "m")
-                multiplier = 1.0;
-            else if (unit == "cm")
-                multiplier = 1e-2;
-            else if (unit == "mm")
-                multiplier = 1e-3;
-            else if (unit == "s")
-                multiplier = 1.0;
-            else if (unit == "S/m")
-                multiplier = 1.0;
-            else if (unit == "1/K")
-                multiplier = 1.0;
-            else if (unit == "1/m")
-                multiplier = 1.0;
-            // kg/m^3, etc. - compound units have multiplier 1.0
-
-            // Trim whitespace from expression
-            while (!exprStr.empty() && std::isspace(static_cast<unsigned char>(exprStr.back())))
-            {
-                exprStr.pop_back();
-            }
-        }
-
+        // Use UnitRegistry for unit parsing - two phase
+        auto unitResult = UnitRegistry::instance().stripUnit(expr);
+        std::string exprStr(unitResult.expression);
+        double multiplier = unitResult.multiplier;
+        // No more manual bracket finding or if-else chain
         return evaluateImpl(exprStr, multiplier, variables);
     }
 
