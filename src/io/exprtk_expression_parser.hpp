@@ -76,19 +76,14 @@ public:
                                const std::vector<VariableBinding>& bindings) const;
 
     // Evaluate scalar expression
-    // Unit handling: "110[GPa]" → 1.1e11
+    // Convenience one-shot API for configuration parsing.
+    // Runtime hot paths should prefer compileScalar()/compileMatrix().
     double evaluate(const std::string& expr,
                    const std::map<std::string, double>& variables = {});
 
     // Evaluate matrix expression: {'a','b',...} format or scalar→diagonal
     Matrix3 evaluateMatrix(const std::string& expr,
                           const std::map<std::string, double>& variables = {});
-
-    void clearCache();
-
-private:
-    struct Impl;
-    std::unique_ptr<Impl> impl_;
 };
 
 } // namespace mpfem

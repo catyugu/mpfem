@@ -18,6 +18,7 @@
 #include <cctype>
 #include <functional>
 #include <optional>
+#include <unordered_set>
 
 namespace mpfem
 {
@@ -50,87 +51,153 @@ namespace mpfem
             return it->second;
         }
 
-        bool containsIdentifier(std::string_view text, std::string_view id)
+        bool isIdentifierStart(char c)
         {
-            if (id.empty())
+            return std::isalpha(static_cast<unsigned char>(c)) != 0 || c == '_';
+        }
+
+        bool isIdentifierChar(char c)
+        {
+            return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '_';
+        }
+
+        bool isExponentIdentifier(std::string_view text, size_t index)
+        {
+            if (index == 0 || index + 1 >= text.size())
+            {
+                return false;
+            }
+            const char c = text[index];
+            if (c != 'e' && c != 'E')
             {
                 return false;
             }
 
-            const auto isIdentifierChar = [](char c)
+            const char prev = text[index - 1];
+            if (std::isdigit(static_cast<unsigned char>(prev)) == 0 && prev != '.')
             {
-                return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '_';
-            };
-
-            size_t pos = text.find(id);
-            while (pos != std::string_view::npos)
-            {
-                const bool leftOk = (pos == 0) || !isIdentifierChar(text[pos - 1]);
-                const size_t right = pos + id.size();
-                const bool rightOk = (right >= text.size()) || !isIdentifierChar(text[right]);
-                if (leftOk && rightOk)
-                {
-                    return true;
-                }
-                pos = text.find(id, pos + 1);
+                return false;
             }
-            return false;
+
+            const char next = text[index + 1];
+            return std::isdigit(static_cast<unsigned char>(next)) != 0 || next == '+' || next == '-';
         }
 
-        struct RuntimeSymbolUsage
+        std::unordered_set<std::string> collectIdentifiers(std::string_view expr)
+        {
+            std::unordered_set<std::string> identifiers;
+            size_t index = 0;
+            while (index < expr.size())
+            {
+                const char c = expr[index];
+                if (!isIdentifierStart(c) || isExponentIdentifier(expr, index))
+                {
+                    ++index;
+                    continue;
+                }
+
+                const size_t begin = index;
+                ++index;
+                while (index < expr.size() && isIdentifierChar(expr[index]))
+                {
+                    ++index;
+                }
+
+                size_t probe = index;
+                while (probe < expr.size() && std::isspace(static_cast<unsigned char>(expr[probe])) != 0)
+                {
+                    ++probe;
+                }
+                if (probe < expr.size() && expr[probe] == '(')
+                {
+                    continue;
+                }
+
+                identifiers.emplace(expr.substr(begin, index - begin));
+            }
+
+            return identifiers;
+        }
+
+        struct ExpressionSymbolUsage
         {
             bool useTime = false;
             bool useSpace = false;
             bool useTemperature = false;
             bool usePotential = false;
+            std::vector<std::string> caseVariables;
         };
 
-        RuntimeSymbolUsage detectRuntimeSymbolUsage(const std::string &expr)
+        ExpressionSymbolUsage detectExpressionSymbolUsage(
+            const std::string &expr,
+            const CaseDefinition &caseDef)
         {
-            RuntimeSymbolUsage usage;
-            usage.useTime = containsIdentifier(expr, "t");
-            const bool useX = containsIdentifier(expr, "x");
-            const bool useY = containsIdentifier(expr, "y");
-            const bool useZ = containsIdentifier(expr, "z");
+            const auto ids = collectIdentifiers(expr);
+
+            ExpressionSymbolUsage usage;
+            usage.useTime = ids.count("t") > 0;
+            const bool useX = ids.count("x") > 0;
+            const bool useY = ids.count("y") > 0;
+            const bool useZ = ids.count("z") > 0;
             usage.useSpace = useX || useY || useZ;
-            usage.useTemperature = containsIdentifier(expr, "T");
-            usage.usePotential = containsIdentifier(expr, "V");
+            usage.useTemperature = ids.count("T") > 0;
+            usage.usePotential = ids.count("V") > 0;
+
+            usage.caseVariables.reserve(caseDef.variableMap_.size());
+            for (const auto &[name, _] : caseDef.variableMap_)
+            {
+                if (ids.count(name) > 0)
+                {
+                    usage.caseVariables.push_back(name);
+                }
+            }
             return usage;
         }
 
         class RuntimeExpressionContext
         {
         public:
-            RuntimeExpressionContext(const CaseDefinition &caseDef, RuntimeSymbolUsage usage)
+            RuntimeExpressionContext(const CaseDefinition &caseDef, const ExpressionSymbolUsage &usage)
             {
-                for (const auto &[name, value] : caseDef.variableMap_)
+                const size_t runtimeSymbolCount =
+                    static_cast<size_t>(usage.useTime) +
+                    (usage.useSpace ? 3u : 0u) +
+                    static_cast<size_t>(usage.useTemperature) +
+                    static_cast<size_t>(usage.usePotential);
+                values_.reserve(usage.caseVariables.size() + runtimeSymbolCount);
+
+                for (const std::string &name : usage.caseVariables)
                 {
-                    values_.emplace(name, value);
+                    const auto it = caseDef.variableMap_.find(name);
+                    if (it != caseDef.variableMap_.end())
+                    {
+                        addSymbol(it->first, it->second);
+                    }
                 }
 
                 if (usage.useTime)
                 {
-                    t_ = &values_.emplace("t", 0.0).first->second;
+                    t_ = addSymbol("t", 0.0);
                 }
                 if (usage.useSpace)
                 {
-                    x_ = &values_.emplace("x", 0.0).first->second;
-                    y_ = &values_.emplace("y", 0.0).first->second;
-                    z_ = &values_.emplace("z", 0.0).first->second;
+                    x_ = addSymbol("x", 0.0);
+                    y_ = addSymbol("y", 0.0);
+                    z_ = addSymbol("z", 0.0);
                 }
                 if (usage.useTemperature)
                 {
-                    T_ = &values_.emplace("T", 293.15).first->second;
+                    T_ = addSymbol("T", 293.15);
                 }
                 if (usage.usePotential)
                 {
-                    V_ = &values_.emplace("V", 0.0).first->second;
+                    V_ = addSymbol("V", 0.0);
                 }
 
                 bindings_.reserve(values_.size());
-                for (auto &[name, value] : values_)
+                for (NamedValue &entry : values_)
                 {
-                    bindings_.push_back(ExpressionParser::VariableBinding{name, &value});
+                    bindings_.push_back(ExpressionParser::VariableBinding{entry.name, &entry.value});
                 }
             }
 
@@ -177,7 +244,27 @@ namespace mpfem
             }
 
         private:
-            std::map<std::string, double> values_;
+            struct NamedValue
+            {
+                std::string name;
+                double value = 0.0;
+            };
+
+            double *addSymbol(std::string name, double value)
+            {
+                for (NamedValue &entry : values_)
+                {
+                    if (entry.name == name)
+                    {
+                        return &entry.value;
+                    }
+                }
+
+                values_.push_back(NamedValue{std::move(name), value});
+                return &values_.back().value;
+            }
+
+            std::vector<NamedValue> values_;
             std::vector<ExpressionParser::VariableBinding> bindings_;
             double *t_ = nullptr;
             double *x_ = nullptr;
@@ -241,7 +328,7 @@ namespace mpfem
 
         std::function<void(ElementTransform &, Real, RuntimeExpressionContext &)> makeUpdater(
             Problem &problem,
-            RuntimeSymbolUsage usage)
+            const ExpressionSymbolUsage &usage)
         {
             return [&problem, usage](ElementTransform &trans, Real t, RuntimeExpressionContext &context)
             {
@@ -271,7 +358,7 @@ namespace mpfem
         std::unique_ptr<Coefficient> makeScalarExpressionCoefficient(Problem &problem,
                                                                       const std::string &expression)
         {
-            const auto usage = detectRuntimeSymbolUsage(expression);
+            const auto usage = detectExpressionSymbolUsage(expression, problem.caseDef);
             auto context = std::make_unique<RuntimeExpressionContext>(problem.caseDef, usage);
             auto updater = makeUpdater(problem, usage);
             auto program = ExpressionParser::instance().compileScalar(expression, context->bindings());
@@ -282,7 +369,7 @@ namespace mpfem
         std::unique_ptr<MatrixCoefficient> makeMatrixExpressionCoefficient(Problem &problem,
                                                                             const std::string &expression)
         {
-            const auto usage = detectRuntimeSymbolUsage(expression);
+            const auto usage = detectExpressionSymbolUsage(expression, problem.caseDef);
             auto context = std::make_unique<RuntimeExpressionContext>(problem.caseDef, usage);
             auto updater = makeUpdater(problem, usage);
             auto program = ExpressionParser::instance().compileMatrix(expression, context->bindings());

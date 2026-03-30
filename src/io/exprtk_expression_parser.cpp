@@ -3,11 +3,10 @@
 #include "core/string_utils.hpp"
 #include "io/unit_parser.hpp"
 #include <exprtk.hpp>
-#include <algorithm>
 #include <array>
 #include <cctype>
 #include <string_view>
-#include <unordered_map>
+#include <utility>
 
 namespace mpfem
 {
@@ -15,71 +14,42 @@ namespace mpfem
     namespace
     {
 
-        bool isSeparator(const char c)
-        {
-            return std::isspace(static_cast<unsigned char>(c)) != 0 || c == ',';
-        }
-
-    } // namespace
-
-    struct ExpressionParser::ScalarProgram::Impl
-    {
-        double multiplier = 1.0;
-        std::unique_ptr<exprtk::symbol_table<double>> symbolTable;
-        std::unique_ptr<exprtk::expression<double>> expression;
-    };
-
-    struct ExpressionParser::MatrixProgram::Impl
-    {
-        bool literalMatrix = false;
-        std::vector<ExpressionParser::ScalarProgram> components;
-    };
-
-    struct ExpressionParser::Impl
-    {
-        struct CachedExpression
-        {
-            std::unique_ptr<exprtk::symbol_table<double>> symbolTable;
-            std::unique_ptr<exprtk::expression<double>> expression;
-            std::unique_ptr<exprtk::parser<double>> parser;
-            std::vector<double> varStorage;
-            std::vector<std::string> varNames;
-            std::unordered_map<std::string, size_t> varIndex;
-            bool compiled = false;
-        };
-
         struct MatrixTemplate
         {
             bool literalMatrix = false;
             std::vector<std::string> components;
         };
 
-        std::unordered_map<std::string, size_t> cacheIndex;
-        std::vector<CachedExpression> compiled;
-        std::unordered_map<std::string, MatrixTemplate> matrixTemplateCache;
+        using VariableStorage = std::vector<std::pair<std::string, double>>;
 
-        static bool hasSameVariableSignature(
-            const CachedExpression &cached,
-            const std::map<std::string, double> &variables)
+        VariableStorage copyVariables(const std::map<std::string, double> &variables)
         {
-            if (cached.varNames.size() != variables.size())
+            VariableStorage storage;
+            storage.reserve(variables.size());
+            for (const auto &[name, value] : variables)
             {
-                return false;
+                storage.emplace_back(name, value);
             }
-
-            auto variableIt = variables.begin();
-            for (const std::string &cachedName : cached.varNames)
-            {
-                if (variableIt == variables.end() || cachedName != variableIt->first)
-                {
-                    return false;
-                }
-                ++variableIt;
-            }
-            return true;
+            return storage;
         }
 
-        static MatrixTemplate parseMatrixTemplate(std::string_view expr)
+        std::vector<ExpressionParser::VariableBinding> makeBindings(VariableStorage &storage)
+        {
+            std::vector<ExpressionParser::VariableBinding> bindings;
+            bindings.reserve(storage.size());
+            for (auto &[name, value] : storage)
+            {
+                bindings.push_back(ExpressionParser::VariableBinding{name, &value});
+            }
+            return bindings;
+        }
+
+        bool isSeparator(const char c)
+        {
+            return std::isspace(static_cast<unsigned char>(c)) != 0 || c == ',';
+        }
+
+        MatrixTemplate parseMatrixTemplate(std::string_view expr)
         {
             MatrixTemplate tmpl;
             const std::string trimmed = strings::trim(std::string(expr));
@@ -135,86 +105,19 @@ namespace mpfem
             return tmpl;
         }
 
-        const MatrixTemplate &matrixTemplateFor(const std::string &expr)
-        {
-            auto cacheIt = matrixTemplateCache.find(expr);
-            if (cacheIt != matrixTemplateCache.end())
-            {
-                return cacheIt->second;
-            }
+    } // namespace
 
-            auto [it, _] = matrixTemplateCache.emplace(expr, parseMatrixTemplate(expr));
-            return it->second;
-        }
+    struct ExpressionParser::ScalarProgram::Impl
+    {
+        double multiplier = 1.0;
+        std::unique_ptr<exprtk::symbol_table<double>> symbolTable;
+        std::unique_ptr<exprtk::expression<double>> expression;
+    };
 
-        double evaluateImpl(
-            const std::string &exprStripped,
-            double unitMultiplier,
-            const std::map<std::string, double> &variables)
-        {
-            auto it = cacheIndex.find(exprStripped);
-            if (it == cacheIndex.end())
-            {
-                const size_t newIndex = compiled.size();
-                cacheIndex[exprStripped] = newIndex;
-                compiled.emplace_back();
-                compiled[newIndex].expression = std::make_unique<exprtk::expression<double>>();
-                compiled[newIndex].parser = std::make_unique<exprtk::parser<double>>();
-                it = cacheIndex.find(exprStripped);
-            }
-
-            CachedExpression &cached = compiled[it->second];
-
-            if (!cached.compiled || !hasSameVariableSignature(cached, variables))
-            {
-                cached.varNames.clear();
-                cached.varNames.reserve(variables.size());
-                cached.varStorage.assign(variables.size(), 0.0);
-                cached.varIndex.clear();
-                cached.varIndex.reserve(variables.size());
-
-                cached.symbolTable = std::make_unique<exprtk::symbol_table<double>>();
-
-                size_t index = 0;
-                for (const auto &[name, value] : variables)
-                {
-                    cached.varNames.push_back(name);
-                    cached.varStorage[index] = value;
-                    cached.varIndex[name] = index;
-                    if (!cached.symbolTable->add_variable(name, cached.varStorage[index]))
-                    {
-                        MPFEM_THROW(ArgumentException,
-                                    "Failed to bind variable for expression compilation: " + name);
-                    }
-                    ++index;
-                }
-                cached.symbolTable->add_constants();
-
-                cached.expression = std::make_unique<exprtk::expression<double>>();
-                cached.expression->register_symbol_table(*cached.symbolTable);
-
-                cached.parser = std::make_unique<exprtk::parser<double>>();
-
-                if (!cached.parser->compile(exprStripped, *cached.expression))
-                {
-                    MPFEM_THROW(ArgumentException,
-                                "Expression compilation failed: " + exprStripped +
-                                    " | error: " + cached.parser->error());
-                }
-                cached.compiled = true;
-            }
-
-            for (const auto &[name, value] : variables)
-            {
-                auto indexIt = cached.varIndex.find(name);
-                if (indexIt != cached.varIndex.end())
-                {
-                    cached.varStorage[indexIt->second] = value;
-                }
-            }
-
-            return cached.expression->value() * unitMultiplier;
-        }
+    struct ExpressionParser::MatrixProgram::Impl
+    {
+        bool literalMatrix = false;
+        std::vector<ExpressionParser::ScalarProgram> components;
     };
 
     ExpressionParser::ScalarProgram::ScalarProgram()
@@ -277,10 +180,7 @@ namespace mpfem
         return matrix;
     }
 
-    ExpressionParser::ExpressionParser()
-        : impl_(std::make_unique<Impl>())
-    {
-    }
+    ExpressionParser::ExpressionParser() = default;
 
     ExpressionParser::~ExpressionParser() = default;
 
@@ -335,7 +235,7 @@ namespace mpfem
         const std::string &expr,
         const std::vector<VariableBinding> &bindings) const
     {
-        Impl::MatrixTemplate tmpl = Impl::parseMatrixTemplate(expr);
+        MatrixTemplate tmpl = parseMatrixTemplate(expr);
 
         MatrixProgram program;
         program.impl_->literalMatrix = tmpl.literalMatrix;
@@ -358,51 +258,20 @@ namespace mpfem
         const std::string &expr,
         const std::map<std::string, double> &variables)
     {
-        // Use UnitRegistry for unit parsing - two phase
-        auto unitResult = UnitRegistry::instance().stripUnit(expr);
-        std::string exprStr = strings::trim(std::string(unitResult.expression));
-        double multiplier = unitResult.multiplier;
-        return impl_->evaluateImpl(exprStr, multiplier, variables);
+        VariableStorage storage = copyVariables(variables);
+        auto bindings = makeBindings(storage);
+        ScalarProgram program = compileScalar(expr, bindings);
+        return program.evaluate();
     }
 
     Matrix3 ExpressionParser::evaluateMatrix(
         const std::string &expr,
         const std::map<std::string, double> &variables)
     {
-        const Impl::MatrixTemplate &tmpl = impl_->matrixTemplateFor(expr);
-        if (!tmpl.literalMatrix)
-        {
-            const double scalar = evaluate(expr, variables);
-            return Matrix3::Identity() * scalar;
-        }
-
-        if (tmpl.components.size() == 1)
-        {
-            const double scalar = evaluate(tmpl.components.front(), variables);
-            return Matrix3::Identity() * scalar;
-        }
-
-        MPFEM_ASSERT(tmpl.components.size() == 9,
-                     "Invalid matrix expression template: expected 1 or 9 components.");
-
-        std::array<double, 9> values{};
-        for (size_t i = 0; i < values.size(); ++i)
-        {
-            values[i] = evaluate(tmpl.components[i], variables);
-        }
-
-        Matrix3 matrix;
-        matrix << values[0], values[3], values[6],
-            values[1], values[4], values[7],
-            values[2], values[5], values[8];
-        return matrix;
-    }
-
-    void ExpressionParser::clearCache()
-    {
-        impl_->cacheIndex.clear();
-        impl_->compiled.clear();
-        impl_->matrixTemplateCache.clear();
+        VariableStorage storage = copyVariables(variables);
+        auto bindings = makeBindings(storage);
+        MatrixProgram program = compileMatrix(expr, bindings);
+        return program.evaluate();
     }
 
 } // namespace mpfem
