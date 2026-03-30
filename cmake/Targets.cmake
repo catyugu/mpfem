@@ -139,8 +139,10 @@ mpfem_add_library(mpfem_mesh
 mpfem_add_library(mpfem_io
     SOURCES
         src/io/exprtk_expression_parser.cpp
+        src/io/unit_parser.cpp
         src/io/case_xml_reader.cpp
         src/io/material_xml_reader.cpp
+        src/model/material_database.cpp
         src/io/result_exporter.cpp
         src/io/mphtxt_reader.cpp
     PUBLIC_LINK
