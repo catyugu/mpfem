@@ -1,5 +1,6 @@
 #include "io/exprtk_expression_parser.hpp"
 #include "core/exception.hpp"
+#include "core/string_utils.hpp"
 #include <cctype>
 
 namespace mpfem
@@ -90,15 +91,7 @@ namespace mpfem
         const std::string &expr,
         const std::map<std::string, double> &variables)
     {
-        std::string trimmed = expr;
-        while (!trimmed.empty() && std::isspace(static_cast<unsigned char>(trimmed.front())))
-        {
-            trimmed.erase(trimmed.begin());
-        }
-        while (!trimmed.empty() && std::isspace(static_cast<unsigned char>(trimmed.back())))
-        {
-            trimmed.pop_back();
-        }
+        std::string trimmed = strings::trim(expr);
 
         // Matrix format {'a','b',...}
         if (trimmed.size() >= 2 && trimmed[0] == '{')

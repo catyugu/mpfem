@@ -23,8 +23,8 @@ struct MaterialPropertyModel {
     std::string label;
 
     // Unified storage - ALL properties as expression strings
-    std::map<std::string, std::string> scalarExpressions_;
-    std::map<std::string, std::string> matrixExpressions_;
+    std::unordered_map<std::string, std::string> scalarExpressions_;
+    std::unordered_map<std::string, std::string> matrixExpressions_;
 
     // Get scalar value - evaluates expression with optional variables
     double getScalar(const std::string& name,
@@ -113,7 +113,7 @@ public:
     auto end() const { return materials_.end(); }
 
 private:
-    std::map<std::string, MaterialPropertyModel> materials_;
+    std::unordered_map<std::string, MaterialPropertyModel> materials_;
 };
 
 } // namespace mpfem
