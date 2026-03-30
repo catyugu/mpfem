@@ -1,4 +1,5 @@
 #include "io/case_xml_reader.hpp"
+#include "io/exprtk_expression_parser.hpp"
 #include "core/logger.hpp"
 #include "core/exception.hpp"
 #include "core/string_utils.hpp"
@@ -7,33 +8,11 @@
 
 #include <sstream>
 #include <cstdlib>
-#include <cctype>
+#include <cmath>
 
 namespace mpfem {
 
 using strings::trim;
-
-// Helper function to parse first number from text (e.g., "20[mV]" -> 20.0)
-static bool parseFirstNumber(const char* text, double& value) {
-    value = 0.0;
-    if (!text) return false;
-    std::string token;
-    for (size_t i = 0; i < std::strlen(text); ++i) {
-        char current = text[i];
-        bool isNumeric = std::isdigit(static_cast<unsigned char>(current)) != 0
-                       || current == '+' || current == '-'
-                       || current == '.' || current == 'e' || current == 'E';
-        if (isNumeric) {
-            token.push_back(current);
-            continue;
-        }
-        if (!token.empty()) break;
-    }
-    if (token.empty()) return false;
-    char* endPtr = nullptr;
-    value = std::strtod(token.c_str(), &endPtr);
-    return endPtr != token.c_str();
-}
 
 void CaseXmlReader::parseIds(const std::string& text, std::set<int>& ids) {
     ids.clear();
@@ -87,6 +66,43 @@ void CaseXmlReader::readFromFile(const std::string& filePath, CaseDefinition& ca
         caseDefinition.caseName = nameAttr;
     }
 
+    std::map<std::string, double> variableValues;
+    auto evalExpr = [&variableValues](const char* text, double defaultValue) -> double {
+        if (!text) {
+            return defaultValue;
+        }
+        return ExpressionParser::instance().evaluate(text, variableValues);
+    };
+
+    // Variables are parsed first so all following numeric attributes can use
+    // a single expression pipeline with variable substitution.
+    if (const tinyxml2::XMLElement* variablesElement = caseElement->FirstChildElement("variables")) {
+        for (const tinyxml2::XMLElement* varElement = variablesElement->FirstChildElement("var");
+             varElement != nullptr;
+             varElement = varElement->NextSiblingElement("var")) {
+
+            const char* nameAttr = varElement->Attribute("name");
+            if (!nameAttr) {
+                continue;
+            }
+
+            VariableEntry entry;
+            entry.name = nameAttr;
+
+            const char* valueAttr = varElement->Attribute("value");
+            if (valueAttr) {
+                entry.valueText = valueAttr;
+            }
+
+            const char* siAttr = varElement->Attribute("si");
+            const char* evalText = siAttr ? siAttr : valueAttr;
+            entry.siValue = evalExpr(evalText, 0.0);
+
+            variableValues[entry.name] = entry.siValue;
+            caseDefinition.variables.push_back(entry);
+        }
+    }
+
     // Study type
     if (const tinyxml2::XMLElement* studyElement = caseElement->FirstChildElement("study")) {
         if (const char* typeAttr = studyElement->Attribute("type")) {
@@ -95,9 +111,9 @@ void CaseXmlReader::readFromFile(const std::string& filePath, CaseDefinition& ca
 
         // Parse <time start="0" end="100" step="10" scheme="BDF1"/>
         if (const tinyxml2::XMLElement* timeElement = studyElement->FirstChildElement("time")) {
-            caseDefinition.timeConfig.start = timeElement->DoubleAttribute("start", 0.0);
-            caseDefinition.timeConfig.end = timeElement->DoubleAttribute("end", 1.0);
-            caseDefinition.timeConfig.step = timeElement->DoubleAttribute("step", 0.01);
+            caseDefinition.timeConfig.start = evalExpr(timeElement->Attribute("start"), 0.0);
+            caseDefinition.timeConfig.end = evalExpr(timeElement->Attribute("end"), 1.0);
+            caseDefinition.timeConfig.step = evalExpr(timeElement->Attribute("step"), 0.01);
             if (const char* schemeAttr = timeElement->Attribute("scheme")) {
                 caseDefinition.timeConfig.scheme = schemeAttr;
             }
@@ -111,7 +127,11 @@ void CaseXmlReader::readFromFile(const std::string& filePath, CaseDefinition& ca
                 if (const char* kindAttr = fieldElement->Attribute("kind")) {
                     ic.fieldKind = kindAttr;
                 }
-                ic.value = fieldElement->DoubleAttribute("value", 0.0);
+                const char* valueAttr = fieldElement->Attribute("value");
+                if (!valueAttr) {
+                    valueAttr = fieldElement->Attribute("displacement");
+                }
+                ic.value = evalExpr(valueAttr, 0.0);
                 caseDefinition.initialConditions.push_back(ic);
             }
         }
@@ -127,26 +147,6 @@ void CaseXmlReader::readFromFile(const std::string& filePath, CaseDefinition& ca
         }
         if (const char* comsolResultAttr = pathsElement->Attribute("comsol_result")) {
             caseDefinition.comsolResultPath = comsolResultAttr;
-        }
-    }
-
-    // Variables
-    if (const tinyxml2::XMLElement* variablesElement = caseElement->FirstChildElement("variables")) {
-        for (const tinyxml2::XMLElement* varElement = variablesElement->FirstChildElement("var");
-             varElement != nullptr;
-             varElement = varElement->NextSiblingElement("var")) {
-            
-            VariableEntry entry;
-            if (const char* nameAttr = varElement->Attribute("name")) {
-                entry.name = nameAttr;
-            }
-            if (const char* valueAttr = varElement->Attribute("value")) {
-                entry.valueText = valueAttr;
-            }
-            if (const char* siAttr = varElement->Attribute("si")) {
-                parseFirstNumber(siAttr, entry.siValue);
-            }
-            caseDefinition.variables.push_back(entry);
         }
     }
 
@@ -178,12 +178,12 @@ void CaseXmlReader::readFromFile(const std::string& filePath, CaseDefinition& ca
             physics.kind = kindAttr;
         }
         if (const char* orderAttr = physicsElement->Attribute("order")) {
-            physics.order = std::atoi(orderAttr);
+            physics.order = static_cast<int>(std::lround(evalExpr(orderAttr, 1.0)));
             if (physics.order < 1) physics.order = 1;
         }
         // Reference temperature for thermal expansion [K]
         if (const tinyxml2::XMLElement* refTempElement = physicsElement->FirstChildElement("referenceTemperature")) {
-            physics.referenceTemperature = refTempElement->DoubleAttribute("value", 293.15);
+            physics.referenceTemperature = evalExpr(refTempElement->Attribute("value"), 293.15);
         }
 
         // Solver configuration
@@ -192,19 +192,22 @@ void CaseXmlReader::readFromFile(const std::string& filePath, CaseDefinition& ca
                 physics.solver.type = solverTypeFromName(typeAttr);
             }
             if (const char* maxIterAttr = solverElement->Attribute("max_iter")) {
-                physics.solver.maxIterations = std::atoi(maxIterAttr);
+                physics.solver.maxIterations =
+                    static_cast<int>(std::lround(evalExpr(maxIterAttr, physics.solver.maxIterations)));
             }
             if (const char* tolAttr = solverElement->Attribute("tolerance")) {
-                physics.solver.relativeTolerance = std::atof(tolAttr);
+                physics.solver.relativeTolerance = evalExpr(tolAttr, physics.solver.relativeTolerance);
             }
             if (const char* printLevelAttr = solverElement->Attribute("print_level")) {
-                physics.solver.printLevel = std::atoi(printLevelAttr);
+                physics.solver.printLevel =
+                    static_cast<int>(std::lround(evalExpr(printLevelAttr, physics.solver.printLevel)));
             }
             if (const char* dropTolAttr = solverElement->Attribute("drop_tol")) {
-                physics.solver.dropTolerance = std::atof(dropTolAttr);
+                physics.solver.dropTolerance = evalExpr(dropTolAttr, physics.solver.dropTolerance);
             }
             if (const char* fillFactorAttr = solverElement->Attribute("fill_factor")) {
-                physics.solver.fillFactor = std::atoi(fillFactorAttr);
+                physics.solver.fillFactor =
+                    static_cast<int>(std::lround(evalExpr(fillFactorAttr, physics.solver.fillFactor)));
             }
         }
 
@@ -290,10 +293,12 @@ void CaseXmlReader::readFromFile(const std::string& filePath, CaseDefinition& ca
     // Coupling configuration
     if (const tinyxml2::XMLElement* couplingConfigElement = caseElement->FirstChildElement("coupling")) {
         if (const char* maxIterAttr = couplingConfigElement->Attribute("max_iter")) {
-            caseDefinition.couplingConfig.maxIterations = std::atoi(maxIterAttr);
+            caseDefinition.couplingConfig.maxIterations =
+                static_cast<int>(std::lround(evalExpr(maxIterAttr, caseDefinition.couplingConfig.maxIterations)));
         }
         if (const char* tolAttr = couplingConfigElement->Attribute("tolerance")) {
-            caseDefinition.couplingConfig.tolerance = std::atof(tolAttr);
+            caseDefinition.couplingConfig.tolerance =
+                evalExpr(tolAttr, caseDefinition.couplingConfig.tolerance);
         }
     }
 

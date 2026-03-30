@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <stdexcept>
 #include <cmath>
+#include <cctype>
 
 struct UnitParseResult {
     std::string_view expression;
@@ -21,29 +22,81 @@ public:
 
     UnitParseResult stripUnit(std::string_view input) const {
         auto start = input.find('[');
-        auto end = input.find(']');
+        auto end = input.rfind(']');
 
         if (start == std::string_view::npos || end == std::string_view::npos || end <= start) {
             return {input, 1.0};
         }
 
-        std::string_view expr = input.substr(0, start);
-        std::string_view unit = input.substr(start + 1, end - start - 1);
+        std::string_view expr = trimView(input.substr(0, start));
+        std::string_view unit = trimView(input.substr(start + 1, end - start - 1));
 
         return {expr, getMultiplier(unit)};
     }
 
     double getMultiplier(std::string_view unit) const {
-        std::string unitStr(unit);
-        auto it = units.find(unitStr);
+        unit = trimView(unit);
+        if (unit.empty()) {
+            return 1.0;
+        }
+
+        const std::string unitKey(unit);
+
+        auto it = units.find(unitKey);
         if (it != units.end()) {
             return it->second;
         }
-        return parseCompoundUnit(unit);
+
+        thread_local std::unordered_map<std::string, double> compiledCache;
+        auto cacheIt = compiledCache.find(unitKey);
+        if (cacheIt != compiledCache.end()) {
+            return cacheIt->second;
+        }
+
+        const double parsed = parseCompoundUnit(unit);
+        compiledCache.emplace(unitKey, parsed);
+        return parsed;
     }
 
 private:
     std::unordered_map<std::string, double> units;
+
+    static std::string_view trimView(std::string_view text) {
+        size_t first = 0;
+        while (first < text.size() && std::isspace(static_cast<unsigned char>(text[first])) != 0) {
+            ++first;
+        }
+        size_t last = text.size();
+        while (last > first && std::isspace(static_cast<unsigned char>(text[last - 1])) != 0) {
+            --last;
+        }
+        return text.substr(first, last - first);
+    }
+
+    static std::string_view stripOuterParens(std::string_view text) {
+        text = trimView(text);
+        while (text.size() >= 2 && text.front() == '(' && text.back() == ')') {
+            int depth = 0;
+            bool wrapsAll = true;
+            for (size_t i = 0; i < text.size(); ++i) {
+                const char c = text[i];
+                if (c == '(') {
+                    ++depth;
+                } else if (c == ')') {
+                    --depth;
+                    if (depth == 0 && i + 1 < text.size()) {
+                        wrapsAll = false;
+                        break;
+                    }
+                }
+            }
+            if (!wrapsAll || depth != 0) {
+                break;
+            }
+            text = trimView(text.substr(1, text.size() - 2));
+        }
+        return text;
+    }
 
     UnitRegistry() {
         units.reserve(40);
@@ -76,6 +129,11 @@ private:
     }
 
     double parseCompoundUnit(std::string_view unit) const {
+        unit = stripOuterParens(unit);
+        if (unit.empty()) {
+            return 1.0;
+        }
+
         size_t divPos = std::string_view::npos;
         int depth = 0;
 
@@ -89,15 +147,20 @@ private:
         }
 
         if (divPos != std::string_view::npos) {
-            std::string_view num = unit.substr(0, divPos);
-            std::string_view den = unit.substr(divPos + 1);
-            return parseCompoundUnit(num) / parseCompoundUnit(den);
+            const std::string_view numerator = unit.substr(0, divPos);
+            const std::string_view denominator = unit.substr(divPos + 1);
+            return parseCompoundUnit(numerator) / parseCompoundUnit(denominator);
         }
 
         return parseUnitTerms(unit);
     }
 
     double parseUnitTerms(std::string_view unit) const {
+        unit = stripOuterParens(unit);
+        if (unit.empty()) {
+            return 1.0;
+        }
+
         size_t multPos = std::string_view::npos;
         int depth = 0;
 
@@ -111,8 +174,8 @@ private:
         }
 
         if (multPos != std::string_view::npos) {
-            std::string_view left = unit.substr(0, multPos);
-            std::string_view right = unit.substr(multPos + 1);
+            const std::string_view left = unit.substr(0, multPos);
+            const std::string_view right = unit.substr(multPos + 1);
             return parseUnitTerms(left) * parseUnitTerms(right);
         }
 
@@ -120,10 +183,14 @@ private:
     }
 
     double parseUnitElement(std::string_view elem) const {
+        elem = stripOuterParens(elem);
         auto caretPos = elem.find('^');
         if (caretPos != std::string_view::npos) {
-            std::string_view base = elem.substr(0, caretPos);
-            std::string_view expStr = elem.substr(caretPos + 1);
+            std::string_view base = trimView(elem.substr(0, caretPos));
+            std::string_view expStr = trimView(elem.substr(caretPos + 1));
+            if (expStr.empty()) {
+                throw std::invalid_argument("Missing unit exponent in: " + std::string(elem));
+            }
             double exp = std::stod(std::string(expStr));
             return std::pow(getBaseMultiplier(base), exp);
         }
@@ -131,6 +198,7 @@ private:
     }
 
     double getBaseMultiplier(std::string_view baseUnit) const {
+        baseUnit = trimView(baseUnit);
         std::string unitStr(baseUnit);
         auto it = units.find(unitStr);
         if (it != units.end()) {

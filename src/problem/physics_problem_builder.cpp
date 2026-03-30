@@ -2,8 +2,11 @@
 #include "physics/field_values.hpp"
 #include "fe/element_transform.hpp"
 #include "fe/grid_function.hpp"
+#include "io/exprtk_expression_parser.hpp"
 #include "core/exception.hpp"
 #include "core/string_utils.hpp"
+#include <cctype>
+#include <functional>
 #include <optional>
 
 namespace mpfem
@@ -26,25 +29,255 @@ namespace mpfem
             return defaultVal;
         }
 
-        /**
-         * @brief Parse a required parameter value from BC params.
-         * @throws ArgumentException if parameter is missing.
-         */
-        Real parseRequiredValue(const std::map<std::string, std::string> &params,
-                                const std::string &key,
-                                const CaseDefinition &caseDef)
+        const std::string &requireParam(const std::map<std::string, std::string> &params,
+                                        const std::string &key)
         {
             auto it = params.find(key);
             if (it == params.end())
             {
                 throw ArgumentException("Missing required parameter: " + key);
             }
-            // Use ExpressionParser::evaluate() for full unit support (all config standardized)
-            std::map<std::string, double> vars;
-            for (const auto& v : caseDef.variables) {
-                vars[v.name] = v.siValue;
+            return it->second;
+        }
+
+        bool containsIdentifier(std::string_view text, std::string_view id)
+        {
+            if (id.empty())
+            {
+                return false;
             }
-            return ExpressionParser::instance().evaluate(it->second, vars);
+
+            const auto isIdentifierChar = [](char c)
+            {
+                return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '_';
+            };
+
+            size_t pos = text.find(id);
+            while (pos != std::string_view::npos)
+            {
+                const bool leftOk = (pos == 0) || !isIdentifierChar(text[pos - 1]);
+                const size_t right = pos + id.size();
+                const bool rightOk = (right >= text.size()) || !isIdentifierChar(text[right]);
+                if (leftOk && rightOk)
+                {
+                    return true;
+                }
+                pos = text.find(id, pos + 1);
+            }
+            return false;
+        }
+
+        struct RuntimeSymbolUsage
+        {
+            bool useTime = false;
+            bool useSpace = false;
+            bool useTemperature = false;
+            bool usePotential = false;
+        };
+
+        RuntimeSymbolUsage detectRuntimeSymbolUsage(const std::string &expr)
+        {
+            RuntimeSymbolUsage usage;
+            usage.useTime = containsIdentifier(expr, "t");
+            const bool useX = containsIdentifier(expr, "x");
+            const bool useY = containsIdentifier(expr, "y");
+            const bool useZ = containsIdentifier(expr, "z");
+            usage.useSpace = useX || useY || useZ;
+            usage.useTemperature = containsIdentifier(expr, "T");
+            usage.usePotential = containsIdentifier(expr, "V");
+            return usage;
+        }
+
+        class RuntimeExpressionContext
+        {
+        public:
+            RuntimeExpressionContext(const CaseDefinition &caseDef, RuntimeSymbolUsage usage)
+            {
+                for (const auto &[name, value] : caseDef.variableMap_)
+                {
+                    values_.emplace(name, value);
+                }
+
+                if (usage.useTime)
+                {
+                    t_ = &values_.emplace("t", 0.0).first->second;
+                }
+                if (usage.useSpace)
+                {
+                    x_ = &values_.emplace("x", 0.0).first->second;
+                    y_ = &values_.emplace("y", 0.0).first->second;
+                    z_ = &values_.emplace("z", 0.0).first->second;
+                }
+                if (usage.useTemperature)
+                {
+                    T_ = &values_.emplace("T", 293.15).first->second;
+                }
+                if (usage.usePotential)
+                {
+                    V_ = &values_.emplace("V", 0.0).first->second;
+                }
+
+                bindings_.reserve(values_.size());
+                for (auto &[name, value] : values_)
+                {
+                    bindings_.push_back(ExpressionParser::VariableBinding{name, &value});
+                }
+            }
+
+            void updateTime(Real time)
+            {
+                if (t_)
+                {
+                    *t_ = time;
+                }
+            }
+
+            void updateSpace(ElementTransform &trans)
+            {
+                if (!x_ || !y_ || !z_)
+                {
+                    return;
+                }
+                Vector3 pos;
+                trans.transform(trans.integrationPoint(), pos);
+                *x_ = pos.x();
+                *y_ = pos.y();
+                *z_ = pos.z();
+            }
+
+            void updateTemperature(Real value)
+            {
+                if (T_)
+                {
+                    *T_ = value;
+                }
+            }
+
+            void updatePotential(Real value)
+            {
+                if (V_)
+                {
+                    *V_ = value;
+                }
+            }
+
+            const std::vector<ExpressionParser::VariableBinding> &bindings() const
+            {
+                return bindings_;
+            }
+
+        private:
+            std::map<std::string, double> values_;
+            std::vector<ExpressionParser::VariableBinding> bindings_;
+            double *t_ = nullptr;
+            double *x_ = nullptr;
+            double *y_ = nullptr;
+            double *z_ = nullptr;
+            double *T_ = nullptr;
+            double *V_ = nullptr;
+        };
+
+        class CompiledScalarExpressionCoefficient : public Coefficient
+        {
+        public:
+            using Updater = std::function<void(ElementTransform &, Real, RuntimeExpressionContext &)>;
+
+            CompiledScalarExpressionCoefficient(ExpressionParser::ScalarProgram program,
+                                               std::unique_ptr<RuntimeExpressionContext> context,
+                                               Updater updater)
+                : program_(std::move(program)),
+                  context_(std::move(context)),
+                  updater_(std::move(updater))
+            {
+            }
+
+            void eval(ElementTransform &trans, Real &result, Real t = 0.0) const override
+            {
+                updater_(trans, t, *context_);
+                result = program_.evaluate();
+            }
+
+        private:
+            ExpressionParser::ScalarProgram program_;
+            std::unique_ptr<RuntimeExpressionContext> context_;
+            Updater updater_;
+        };
+
+        class CompiledMatrixExpressionCoefficient : public MatrixCoefficient
+        {
+        public:
+            using Updater = std::function<void(ElementTransform &, Real, RuntimeExpressionContext &)>;
+
+            CompiledMatrixExpressionCoefficient(ExpressionParser::MatrixProgram program,
+                                               std::unique_ptr<RuntimeExpressionContext> context,
+                                               Updater updater)
+                : program_(std::move(program)),
+                  context_(std::move(context)),
+                  updater_(std::move(updater))
+            {
+            }
+
+            void eval(ElementTransform &trans, Matrix3 &result, Real t = 0.0) const override
+            {
+                updater_(trans, t, *context_);
+                result = program_.evaluate();
+            }
+
+        private:
+            ExpressionParser::MatrixProgram program_;
+            std::unique_ptr<RuntimeExpressionContext> context_;
+            Updater updater_;
+        };
+
+        std::function<void(ElementTransform &, Real, RuntimeExpressionContext &)> makeUpdater(
+            Problem &problem,
+            RuntimeSymbolUsage usage)
+        {
+            return [&problem, usage](ElementTransform &trans, Real t, RuntimeExpressionContext &context)
+            {
+                if (usage.useTime)
+                {
+                    context.updateTime(t);
+                }
+                if (usage.useSpace)
+                {
+                    context.updateSpace(trans);
+                }
+                if (usage.useTemperature && problem.heatTransfer)
+                {
+                    const auto &ip = trans.integrationPoint();
+                    const Real T = problem.heatTransfer->field().eval(trans.elementIndex(), &ip.xi);
+                    context.updateTemperature(T);
+                }
+                if (usage.usePotential && problem.electrostatics)
+                {
+                    const auto &ip = trans.integrationPoint();
+                    const Real V = problem.electrostatics->field().eval(trans.elementIndex(), &ip.xi);
+                    context.updatePotential(V);
+                }
+            };
+        }
+
+        std::unique_ptr<Coefficient> makeScalarExpressionCoefficient(Problem &problem,
+                                                                      const std::string &expression)
+        {
+            const auto usage = detectRuntimeSymbolUsage(expression);
+            auto context = std::make_unique<RuntimeExpressionContext>(problem.caseDef, usage);
+            auto updater = makeUpdater(problem, usage);
+            auto program = ExpressionParser::instance().compileScalar(expression, context->bindings());
+            return std::make_unique<CompiledScalarExpressionCoefficient>(
+                std::move(program), std::move(context), std::move(updater));
+        }
+
+        std::unique_ptr<MatrixCoefficient> makeMatrixExpressionCoefficient(Problem &problem,
+                                                                            const std::string &expression)
+        {
+            const auto usage = detectRuntimeSymbolUsage(expression);
+            auto context = std::make_unique<RuntimeExpressionContext>(problem.caseDef, usage);
+            auto updater = makeUpdater(problem, usage);
+            auto program = ExpressionParser::instance().compileMatrix(expression, context->bindings());
+            return std::make_unique<CompiledMatrixExpressionCoefficient>(
+                std::move(program), std::move(context), std::move(updater));
         }
 
     } // namespace
@@ -179,30 +412,13 @@ namespace mpfem
                 if (!mat)
                     continue;
 
-                // Check if material has electric conductivity (expression or constant)
                 if (!mat->hasMatrix("electricconductivity"))
                     continue;
 
                 std::string key = "conductivity_" + std::to_string(domId);
-
-                // Create coefficient for electric conductivity (expression or constant)
-                auto coef = mat->createMatrixCoefficient("electricconductivity",
-                                                         [&problem](ElementTransform &trans)
-                                                         {
-                                                             std::map<std::string, double> vars;
-                                                             // Get temperature if heat transfer is available
-                                                             if (problem.heatTransfer)
-                                                             {
-                                                                 const auto &T_field = problem.heatTransfer->field();
-                                                                 const auto &ip = trans.integrationPoint();
-                                                                 vars["T"] = T_field.eval(trans.elementIndex(), &ip.xi);
-                                                             }
-                                                             return vars;
-                                                         });
-                if (coef)
-                {
-                    problem.setMatrixCoef(key, std::move(coef));
-                }
+                problem.setMatrixCoef(
+                    key,
+                    makeMatrixExpressionCoefficient(problem, mat->matrixExpression("electricconductivity")));
 
                 problem.electrostatics->setElectricalConductivity({domId}, problem.getMatrixCoef(key));
             }
@@ -212,9 +428,8 @@ namespace mpfem
                 if (bc.kind != "voltage" || bc.ids.empty())
                     continue;
 
-                Real voltage = parseRequiredValue(bc.params, "value", problem.caseDef);
                 std::string key = "voltage_bc_" + std::to_string(*bc.ids.begin());
-                problem.setScalarCoef(key, constantCoefficient(voltage));
+                problem.setScalarCoef(key, makeScalarExpressionCoefficient(problem, requireParam(bc.params, "value")));
                 problem.electrostatics->addVoltageBC({bc.ids.begin(), bc.ids.end()}, problem.getScalarCoef(key));
             }
         }
@@ -234,51 +449,30 @@ namespace mpfem
                 if (!mat)
                     continue;
 
-                // Thermal conductivity - check for expression first
                 if (mat->hasMatrix("thermalconductivity"))
                 {
                     std::string key = "thermal_conductivity_" + std::to_string(domId);
-
-                    // Create coefficient for thermal conductivity (expression or constant)
-                    auto coef = mat->createMatrixCoefficient("thermalconductivity",
-                                                             [&problem](ElementTransform &trans)
-                                                             {
-                                                                 std::map<std::string, double> vars;
-                                                                 const auto &T_field = problem.heatTransfer->field();
-                                                                 const auto &ip = trans.integrationPoint();
-                                                                 vars["T"] = T_field.eval(trans.elementIndex(), &ip.xi);
-                                                                 return vars;
-                                                             });
-                    if (coef)
-                    {
-                        problem.setMatrixCoef(key, std::move(coef));
-                    }
+                    problem.setMatrixCoef(
+                        key,
+                        makeMatrixExpressionCoefficient(problem, mat->matrixExpression("thermalconductivity")));
                     problem.heatTransfer->setThermalConductivity({domId}, problem.getMatrixCoef(key));
                 }
 
-                // Density is optional - only set if present
                 if (mat->hasScalar("density"))
                 {
-                    double density = mat->getScalar("density");
-                    if (density <= 0.0)
-                    {
-                        throw ArgumentException("Density must be positive for material: " + matTag);
-                    }
                     std::string key = "density_" + std::to_string(domId);
-                    problem.setScalarCoef(key, constantCoefficient(density));
+                    problem.setScalarCoef(
+                        key,
+                        makeScalarExpressionCoefficient(problem, mat->scalarExpression("density")));
                     problem.heatTransfer->setDensity({domId}, problem.getScalarCoef(key));
                 }
 
-                // Heat capacity is optional - only set if present
                 if (mat->hasScalar("heatcapacity"))
                 {
-                    double Cp = mat->getScalar("heatcapacity");
-                    if (Cp <= 0.0)
-                    {
-                        throw ArgumentException("Heat capacity must be positive for material: " + matTag);
-                    }
                     std::string key = "heat_capacity_" + std::to_string(domId);
-                    problem.setScalarCoef(key, constantCoefficient(Cp));
+                    problem.setScalarCoef(
+                        key,
+                        makeScalarExpressionCoefficient(problem, mat->scalarExpression("heatcapacity")));
                     problem.heatTransfer->setSpecificHeat({domId}, problem.getScalarCoef(key));
                 }
             }
@@ -290,22 +484,18 @@ namespace mpfem
 
                 if (bc.kind == "temperature")
                 {
-                    Real temp = parseRequiredValue(bc.params, "value", problem.caseDef);
                     std::string key = "temp_bc_" + std::to_string(*bc.ids.begin());
-                    problem.setScalarCoef(key, constantCoefficient(temp));
+                    problem.setScalarCoef(key, makeScalarExpressionCoefficient(problem, requireParam(bc.params, "value")));
                     problem.heatTransfer->addTemperatureBC({bc.ids.begin(), bc.ids.end()}, problem.getScalarCoef(key));
                     continue;
                 }
 
                 if (bc.kind == "convection")
                 {
-                    // h and T_inf are required for convection BC
-                    Real h = parseRequiredValue(bc.params, "h", problem.caseDef);
-                    Real tinf = parseRequiredValue(bc.params, "T_inf", problem.caseDef);
                     std::string hKey = "conv_h_" + std::to_string(*bc.ids.begin());
                     std::string tinfKey = "conv_tinf_" + std::to_string(*bc.ids.begin());
-                    problem.setScalarCoef(hKey, constantCoefficient(h));
-                    problem.setScalarCoef(tinfKey, constantCoefficient(tinf));
+                    problem.setScalarCoef(hKey, makeScalarExpressionCoefficient(problem, requireParam(bc.params, "h")));
+                    problem.setScalarCoef(tinfKey, makeScalarExpressionCoefficient(problem, requireParam(bc.params, "T_inf")));
                     problem.heatTransfer->addConvectionBC({bc.ids.begin(), bc.ids.end()},
                                                           problem.getScalarCoef(hKey),
                                                           problem.getScalarCoef(tinfKey));
@@ -328,14 +518,15 @@ namespace mpfem
                 if (!mat)
                     continue;
 
-                // E and nu are required for structural analysis - getScalar() throws if missing
-                Real E = mat->getScalar("E");
-                Real nu = mat->getScalar("nu");
+                if (!mat->hasScalar("E") || !mat->hasScalar("nu"))
+                {
+                    throw ArgumentException("Material missing required structural properties E/nu: " + matTag);
+                }
 
                 std::string eKey = "young_" + std::to_string(domId);
                 std::string nuKey = "poisson_" + std::to_string(domId);
-                problem.setScalarCoef(eKey, constantCoefficient(E));
-                problem.setScalarCoef(nuKey, constantCoefficient(nu));
+                problem.setScalarCoef(eKey, makeScalarExpressionCoefficient(problem, mat->scalarExpression("E")));
+                problem.setScalarCoef(nuKey, makeScalarExpressionCoefficient(problem, mat->scalarExpression("nu")));
                 problem.structural->setYoungModulus({domId}, problem.getScalarCoef(eKey));
                 problem.structural->setPoissonRatio({domId}, problem.getScalarCoef(nuKey));
             }
@@ -404,19 +595,28 @@ namespace mpfem
                             continue;
                         }
 
-                        Matrix3 alpha_T = mat->getMatrix("thermalexpansioncoefficient");
-                        const GridFunction *T_field = &problem.heatTransfer->field();
+                        std::string alphaKey = "alphaThermal_" + std::to_string(domId);
+                        problem.setMatrixCoef(
+                            alphaKey,
+                            makeMatrixExpressionCoefficient(problem, mat->matrixExpression("thermalexpansioncoefficient")));
+
+                        const MatrixCoefficient *alphaCoef = problem.getMatrixCoef(alphaKey);
+                        MPFEM_ASSERT(alphaCoef != nullptr, "Failed to build thermal expansion base coefficient.");
 
                         std::string key = "thermalExp_" + std::to_string(domId);
                         auto coef = std::make_unique<MatrixFunctionCoefficient>(
-                            [T_field, alpha_T, T_ref](ElementTransform &trans, Matrix3 &result, Real)
+                            [&problem, alphaCoef, T_ref](ElementTransform &trans, Matrix3 &result, Real t)
                             {
+                                Matrix3 alpha;
+                                alphaCoef->eval(trans, alpha, t);
+
                                 Real T = T_ref;
-                                const auto &ip = trans.integrationPoint();
-                                T = T_field->eval(trans.elementIndex(), &ip.xi);
-                                // alpha_T is now Matrix3 (diagonal for isotropic: alpha*Identity)
-                                // Result = alpha_tensor * (T - T_ref) = thermal strain matrix
-                                result = alpha_T * (T - T_ref);
+                                if (problem.heatTransfer)
+                                {
+                                    const auto &ip = trans.integrationPoint();
+                                    T = problem.heatTransfer->field().eval(trans.elementIndex(), &ip.xi);
+                                }
+                                result = alpha * (T - T_ref);
                             });
                         problem.structural->setThermalExpansion({domId}, coef.get());
                         problem.setMatrixCoef(key, std::move(coef));

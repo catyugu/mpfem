@@ -4,11 +4,10 @@
 #include "core/types.hpp"
 #include "core/exception.hpp"
 #include "io/exprtk_expression_parser.hpp"
-#include "fe/element_transform.hpp"
-#include "fe/coefficient.hpp"
 #include <string>
 #include <map>
 #include <memory>
+#include <unordered_map>
 
 namespace mpfem {
 
@@ -29,19 +28,27 @@ struct MaterialPropertyModel {
     // Get scalar value - evaluates expression with optional variables
     double getScalar(const std::string& name,
                     const std::map<std::string, double>& variables = {}) const {
-        auto it = scalarExpressions_.find(name);
-        if (it != scalarExpressions_.end()) {
-            return ExpressionParser::instance().evaluate(it->second, variables);
-        }
-        MPFEM_THROW(ArgumentException, "Scalar property '" + name + "' not found");
+        return ExpressionParser::instance().evaluate(scalarExpression(name), variables);
     }
 
     // Get matrix value - evaluates expression with optional variables
     Matrix3 getMatrix(const std::string& name,
                     const std::map<std::string, double>& variables = {}) const {
+        return ExpressionParser::instance().evaluateMatrix(matrixExpression(name), variables);
+    }
+
+    const std::string& scalarExpression(const std::string& name) const {
+        auto it = scalarExpressions_.find(name);
+        if (it != scalarExpressions_.end()) {
+            return it->second;
+        }
+        MPFEM_THROW(ArgumentException, "Scalar property '" + name + "' not found");
+    }
+
+    const std::string& matrixExpression(const std::string& name) const {
         auto it = matrixExpressions_.find(name);
         if (it != matrixExpressions_.end()) {
-            return ExpressionParser::instance().evaluateMatrix(it->second, variables);
+            return it->second;
         }
         MPFEM_THROW(ArgumentException, "Matrix property '" + name + "' not found");
     }
@@ -52,25 +59,6 @@ struct MaterialPropertyModel {
 
     bool hasMatrix(const std::string& name) const {
         return matrixExpressions_.count(name) > 0;
-    }
-
-    // Factory methods for creating coefficients
-    template<typename Func>
-    std::unique_ptr<Coefficient> createScalarCoefficient(const std::string& name, Func&& getVars) const {
-        if (!hasScalar(name)) return nullptr;
-        return std::make_unique<ScalarCoefficient>(
-            [this, name, getVars](ElementTransform& trans, Real& result, Real) {
-                result = this->getScalar(name, getVars(trans));
-            });
-    }
-
-    template<typename Func>
-    std::unique_ptr<MatrixCoefficient> createMatrixCoefficient(const std::string& name, Func&& getVars) const {
-        if (!hasMatrix(name)) return nullptr;
-        return std::make_unique<MatrixFunctionCoefficient>(
-            [this, name, getVars](ElementTransform& trans, Matrix3& result, Real) {
-                result = this->getMatrix(name, getVars(trans));
-            });
     }
 
     void setScalar(const std::string& name, const std::string& expr) {
