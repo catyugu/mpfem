@@ -1,8 +1,7 @@
 #include "io/exprtk_expression_parser.hpp"
 #include "core/logger.hpp"
+#include "core/exception.hpp"
 #include <cctype>
-#include <thread>
-#include <chrono>
 
 namespace mpfem {
 
@@ -25,9 +24,6 @@ double ExpressionParser::compileAndEvaluate(
         }
     }
 
-    // Lock for thread safety
-    std::lock_guard<std::mutex> lock(mutex_);
-    
     // Check cache
     auto it = cache.find(expr);
     if (it == cache.end()) {
@@ -57,8 +53,9 @@ double ExpressionParser::compileAndEvaluate(
         cached.expression.register_symbol_table(symbolTable);
         
         if (!cached.parser.compile(expr, cached.expression)) {
-            LOG_WARN << "Expression compilation failed: " << expr;
-            return 0.0;
+            MPFEM_THROW(ArgumentException,
+                        "Expression compilation failed: " + expr +
+                        " | error: " + cached.parser.error());
         }
         cached.compiled = true;
     }
@@ -66,9 +63,12 @@ double ExpressionParser::compileAndEvaluate(
     // Update variable values
     for (size_t i = 0; i < currentVarNames.size(); ++i) {
         auto varIt = variables.find(currentVarNames[i]);
-        if (varIt != variables.end()) {
-            cached.varStorage[i] = varIt->second;
+        if (varIt == variables.end()) {
+            MPFEM_THROW(ArgumentException,
+                        "Missing variable '" + currentVarNames[i] +
+                        "' for expression: " + expr);
         }
+        cached.varStorage[i] = varIt->second;
     }
     
     return cached.expression.value();
@@ -115,12 +115,7 @@ Matrix3 ExpressionParser::parseMatrixWithExpressions(
                     if (isExpression(token)) {
                         values.push_back(evaluateScalar(token, variables));
                     } else {
-                        try {
-                            values.push_back(std::stod(token));
-                        } catch (...) {
-                            token.clear();
-                            continue;
-                        }
+                        values.push_back(std::stod(token));
                     }
                     token.clear();
                 }
@@ -137,6 +132,9 @@ Matrix3 ExpressionParser::parseMatrixWithExpressions(
             return m;
         } else if (values.size() == 1) {
             return Matrix3::Identity() * values[0];
+        } else {
+            MPFEM_THROW(ArgumentException,
+                        "Invalid matrix expression component count: " + expr);
         }
     }
     
@@ -146,7 +144,6 @@ Matrix3 ExpressionParser::parseMatrixWithExpressions(
 }
 
 void ExpressionParser::clearCache() {
-    std::lock_guard<std::mutex> lock(mutex_);
     scalarCache_.clear();
     matrixCache_.clear();
 }

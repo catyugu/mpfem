@@ -192,18 +192,18 @@ namespace mpfem
 
                 // Create coefficient for electric conductivity (expression or constant)
                 auto coef = mat->createMatrixCoefficient("electricconductivity",
-                    [&problem](ElementTransform &trans)
-                    {
-                        std::map<std::string, double> vars;
-                        // Get temperature if heat transfer is available
-                        if (problem.heatTransfer)
-                        {
-                            const auto &T_field = problem.heatTransfer->field();
-                            const auto &ip = trans.integrationPoint();
-                            vars["T"] = T_field.eval(trans.elementIndex(), &ip.xi);
-                        }
-                        return vars;
-                    });
+                                                         [&problem](ElementTransform &trans)
+                                                         {
+                                                             std::map<std::string, double> vars;
+                                                             // Get temperature if heat transfer is available
+                                                             if (problem.heatTransfer)
+                                                             {
+                                                                 const auto &T_field = problem.heatTransfer->field();
+                                                                 const auto &ip = trans.integrationPoint();
+                                                                 vars["T"] = T_field.eval(trans.elementIndex(), &ip.xi);
+                                                             }
+                                                             return vars;
+                                                         });
                 if (coef)
                 {
                     problem.setMatrixCoef(key, std::move(coef));
@@ -392,7 +392,7 @@ namespace mpfem
                     // Get reference temperature from solid_mechanics physics block
                     auto physicsIt = problem.caseDef.physics.find("solid_mechanics");
                     MPFEM_ASSERT(physicsIt != problem.caseDef.physics.end(),
-                                  "solid_mechanics physics block not found for thermal expansion coupling");
+                                 "solid_mechanics physics block not found for thermal expansion coupling");
                     Real T_ref = physicsIt->second.referenceTemperature;
 
                     for (int domId : cp.domainIds)

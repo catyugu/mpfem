@@ -2,10 +2,10 @@
 #define MPFEM_EXPRTK_EXPRESSION_PARSER_HPP
 
 #include "core/types.hpp"
+#include "core/exception.hpp"
 #include <string>
 #include <map>
 #include <vector>
-#include <mutex>
 
 // ExprTk header - single file library
 #include <exprtk.hpp>
@@ -18,7 +18,7 @@ namespace mpfem {
  * Provides evaluation of scalar and matrix expressions with support for
  * variables T (temperature), V (voltage), and u (displacement vector).
  * 
- * Thread-safe through mutex protection on cache access.
+ * Thread-safe by design through thread-local singleton instance.
  */
 class ExpressionParser {
 public:
@@ -67,9 +67,6 @@ private:
 
     // Cache: expression string -> compiled expression
     using ExpressionCache = std::map<std::string, CachedExpression>;
-
-    // Mutex for thread safety
-    std::mutex mutex_;
 
     // Separate caches for scalar and matrix expressions
     ExpressionCache scalarCache_;
