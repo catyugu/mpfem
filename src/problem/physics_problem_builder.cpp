@@ -15,9 +15,11 @@
 #include "core/exception.hpp"
 #include "core/logger.hpp"
 #include "core/string_utils.hpp"
+#include <atomic>
 #include <cctype>
 #include <functional>
 #include <optional>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace mpfem
@@ -279,24 +281,63 @@ namespace mpfem
         public:
             using Updater = std::function<void(ElementTransform &, Real, RuntimeExpressionContext &)>;
 
-            CompiledScalarExpressionCoefficient(ExpressionParser::ScalarProgram program,
-                                               std::unique_ptr<RuntimeExpressionContext> context,
+            CompiledScalarExpressionCoefficient(std::string expression,
+                                               const CaseDefinition *caseDef,
+                                               ExpressionSymbolUsage usage,
                                                Updater updater)
-                : program_(std::move(program)),
-                  context_(std::move(context)),
+                : id_(nextId()),
+                  expression_(std::move(expression)),
+                  caseDef_(caseDef),
+                  usage_(std::move(usage)),
                   updater_(std::move(updater))
             {
+                MPFEM_ASSERT(caseDef_ != nullptr, "Case definition is required for expression coefficient.");
             }
 
             void eval(ElementTransform &trans, Real &result, Real t = 0.0) const override
             {
-                updater_(trans, t, *context_);
-                result = program_.evaluate();
+                ThreadState &state = getThreadState();
+                updater_(trans, t, *state.context);
+                result = state.program.evaluate();
             }
 
         private:
-            ExpressionParser::ScalarProgram program_;
-            std::unique_ptr<RuntimeExpressionContext> context_;
+            struct ThreadState
+            {
+                ExpressionParser::ScalarProgram program;
+                std::unique_ptr<RuntimeExpressionContext> context;
+            };
+
+            static uint64_t nextId()
+            {
+                static std::atomic<uint64_t> counter{1};
+                return counter.fetch_add(1, std::memory_order_relaxed);
+            }
+
+            ThreadState &getThreadState() const
+            {
+                static thread_local std::unordered_map<uint64_t, ThreadState> cache;
+                auto it = cache.find(id_);
+                if (it != cache.end())
+                {
+                    return it->second;
+                }
+
+                auto context = std::make_unique<RuntimeExpressionContext>(*caseDef_, usage_);
+                auto program = ExpressionParser::instance().compileScalar(expression_, context->bindings());
+
+                ThreadState state;
+                state.program = std::move(program);
+                state.context = std::move(context);
+
+                auto inserted = cache.emplace(id_, std::move(state));
+                return inserted.first->second;
+            }
+
+            uint64_t id_;
+            std::string expression_;
+            const CaseDefinition *caseDef_;
+            ExpressionSymbolUsage usage_;
             Updater updater_;
         };
 
@@ -305,24 +346,63 @@ namespace mpfem
         public:
             using Updater = std::function<void(ElementTransform &, Real, RuntimeExpressionContext &)>;
 
-            CompiledMatrixExpressionCoefficient(ExpressionParser::MatrixProgram program,
-                                               std::unique_ptr<RuntimeExpressionContext> context,
+            CompiledMatrixExpressionCoefficient(std::string expression,
+                                               const CaseDefinition *caseDef,
+                                               ExpressionSymbolUsage usage,
                                                Updater updater)
-                : program_(std::move(program)),
-                  context_(std::move(context)),
+                : id_(nextId()),
+                  expression_(std::move(expression)),
+                  caseDef_(caseDef),
+                  usage_(std::move(usage)),
                   updater_(std::move(updater))
             {
+                MPFEM_ASSERT(caseDef_ != nullptr, "Case definition is required for expression coefficient.");
             }
 
             void eval(ElementTransform &trans, Matrix3 &result, Real t = 0.0) const override
             {
-                updater_(trans, t, *context_);
-                result = program_.evaluate();
+                ThreadState &state = getThreadState();
+                updater_(trans, t, *state.context);
+                result = state.program.evaluate();
             }
 
         private:
-            ExpressionParser::MatrixProgram program_;
-            std::unique_ptr<RuntimeExpressionContext> context_;
+            struct ThreadState
+            {
+                ExpressionParser::MatrixProgram program;
+                std::unique_ptr<RuntimeExpressionContext> context;
+            };
+
+            static uint64_t nextId()
+            {
+                static std::atomic<uint64_t> counter{1};
+                return counter.fetch_add(1, std::memory_order_relaxed);
+            }
+
+            ThreadState &getThreadState() const
+            {
+                static thread_local std::unordered_map<uint64_t, ThreadState> cache;
+                auto it = cache.find(id_);
+                if (it != cache.end())
+                {
+                    return it->second;
+                }
+
+                auto context = std::make_unique<RuntimeExpressionContext>(*caseDef_, usage_);
+                auto program = ExpressionParser::instance().compileMatrix(expression_, context->bindings());
+
+                ThreadState state;
+                state.program = std::move(program);
+                state.context = std::move(context);
+
+                auto inserted = cache.emplace(id_, std::move(state));
+                return inserted.first->second;
+            }
+
+            uint64_t id_;
+            std::string expression_;
+            const CaseDefinition *caseDef_;
+            ExpressionSymbolUsage usage_;
             Updater updater_;
         };
 
@@ -359,22 +439,18 @@ namespace mpfem
                                                                       const std::string &expression)
         {
             const auto usage = detectExpressionSymbolUsage(expression, problem.caseDef);
-            auto context = std::make_unique<RuntimeExpressionContext>(problem.caseDef, usage);
             auto updater = makeUpdater(problem, usage);
-            auto program = ExpressionParser::instance().compileScalar(expression, context->bindings());
             return std::make_unique<CompiledScalarExpressionCoefficient>(
-                std::move(program), std::move(context), std::move(updater));
+                expression, &problem.caseDef, usage, std::move(updater));
         }
 
         std::unique_ptr<MatrixCoefficient> makeMatrixExpressionCoefficient(Problem &problem,
                                                                             const std::string &expression)
         {
             const auto usage = detectExpressionSymbolUsage(expression, problem.caseDef);
-            auto context = std::make_unique<RuntimeExpressionContext>(problem.caseDef, usage);
             auto updater = makeUpdater(problem, usage);
-            auto program = ExpressionParser::instance().compileMatrix(expression, context->bindings());
             return std::make_unique<CompiledMatrixExpressionCoefficient>(
-                std::move(program), std::move(context), std::move(updater));
+                expression, &problem.caseDef, usage, std::move(updater));
         }
 
     } // namespace
