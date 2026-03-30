@@ -1,7 +1,6 @@
 #ifndef MPFEM_PHYSICS_FIELD_SOLVER_HPP
 #define MPFEM_PHYSICS_FIELD_SOLVER_HPP
 
-#include "model/field_kind.hpp"
 #include "fe/fe_space.hpp"
 #include "fe/grid_function.hpp"
 #include "fe/coefficient.hpp"
@@ -19,7 +18,6 @@ class PhysicsFieldSolver {
 public:
     virtual ~PhysicsFieldSolver() = default;
     
-    virtual FieldKind fieldKind() const = 0;
     virtual std::string fieldName() const = 0;
     virtual FieldId fieldId() const = 0;
     virtual void assemble() = 0;

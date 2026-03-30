@@ -1,7 +1,6 @@
 #ifndef MPFEM_CASE_DEFINITION_HPP
 #define MPFEM_CASE_DEFINITION_HPP
 
-#include "model/field_kind.hpp"
 #include "solver/solver_config.hpp"
 #include "core/exception.hpp"
 #include <string>
@@ -160,17 +159,6 @@ struct CaseDefinition {
         return variableMap_.find(name) != variableMap_.end();
     }
     
-    /**
-     * @brief Get variable value by name, or default if not found.
-     */
-    double getVariableOrDefault(const std::string& name, double defaultValue) const {
-        auto it = variableMap_.find(name);
-        if (it != variableMap_.end()) {
-            return it->second;
-        }
-        return defaultValue;
-    }
-
 };
 
 }  // namespace mpfem

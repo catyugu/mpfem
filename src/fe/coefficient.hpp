@@ -14,12 +14,6 @@ class ElementTransform;
 class GridFunction;
 
 // =============================================================================
-// Coefficient type tags
-// =============================================================================
-
-enum class CoefficientKind { Scalar, Vector, Matrix };
-
-// =============================================================================
 // Base classes
 // =============================================================================
 
@@ -27,23 +21,19 @@ class Coefficient {
 public:
     virtual ~Coefficient() = default;
     virtual void eval(ElementTransform& trans, Real& result, Real t = 0.0) const = 0;
-    static constexpr CoefficientKind kind = CoefficientKind::Scalar;
 };
 
 class VectorCoefficient {
 public:
     virtual ~VectorCoefficient() = default;
     virtual void eval(ElementTransform& trans, Vector3& result, Real t = 0.0) const = 0;
-    static constexpr CoefficientKind kind = CoefficientKind::Vector;
 };
 
 class MatrixCoefficient {
 public:
     virtual ~MatrixCoefficient() = default;
     virtual void eval(ElementTransform& trans, Matrix3& result, Real t = 0.0) const = 0;
-    static constexpr CoefficientKind kind = CoefficientKind::Matrix;
 };
-
 // =============================================================================
 // Lambda-based coefficients
 // =============================================================================

@@ -4,6 +4,7 @@
 #include "integrator.hpp"
 #include "fe/facet_element_transform.hpp"
 #include "fe/grid_function.hpp"
+#include "core/exception.hpp"
 
 namespace mpfem {
 
@@ -18,7 +19,9 @@ namespace mpfem {
  */
 class DiffusionIntegrator : public DomainBilinearIntegratorBase {
 public:
-    explicit DiffusionIntegrator(const MatrixCoefficient* c) : coef_(c) {}
+    explicit DiffusionIntegrator(const MatrixCoefficient* c) : coef_(c) {
+        if (!coef_) MPFEM_THROW(ArgumentException, "DiffusionIntegrator requires non-null MatrixCoefficient");
+    }
     
     void assembleElementMatrix(const ReferenceElement& ref,
                                ElementTransform& trans,
@@ -36,7 +39,9 @@ private:
  */
 class MassIntegrator : public DomainBilinearIntegratorBase {
 public:
-    explicit MassIntegrator(const Coefficient* c) : coef_(c) {}
+    explicit MassIntegrator(const Coefficient* c) : coef_(c) {
+        if (!coef_) MPFEM_THROW(ArgumentException, "MassIntegrator requires non-null Coefficient");
+    }
     
     void assembleElementMatrix(const ReferenceElement& ref,
                                ElementTransform& trans,
@@ -54,7 +59,9 @@ private:
  */
 class DomainLFIntegrator : public DomainLinearIntegratorBase {
 public:
-    explicit DomainLFIntegrator(const Coefficient* c) : coef_(c) {}
+    explicit DomainLFIntegrator(const Coefficient* c) : coef_(c) {
+        if (!coef_) MPFEM_THROW(ArgumentException, "DomainLFIntegrator requires non-null Coefficient");
+    }
     
     void assembleElementVector(const ReferenceElement& ref,
                                ElementTransform& trans,
@@ -72,7 +79,9 @@ private:
  */
 class BoundaryLFIntegrator : public FaceLinearIntegratorBase {
 public:
-    explicit BoundaryLFIntegrator(const Coefficient* c) : coef_(c) {}
+    explicit BoundaryLFIntegrator(const Coefficient* c) : coef_(c) {
+        if (!coef_) MPFEM_THROW(ArgumentException, "BoundaryLFIntegrator requires non-null Coefficient");
+    }
     
     void assembleFaceVector(const ReferenceElement& ref,
                             FacetElementTransform& trans,
@@ -90,7 +99,9 @@ private:
  */
 class ConvectionMassIntegrator : public FaceBilinearIntegratorBase {
 public:
-    explicit ConvectionMassIntegrator(const Coefficient* c) : coef_(c) {}
+    explicit ConvectionMassIntegrator(const Coefficient* c) : coef_(c) {
+        if (!coef_) MPFEM_THROW(ArgumentException, "ConvectionMassIntegrator requires non-null Coefficient");
+    }
     
     void assembleFaceMatrix(const ReferenceElement& ref,
                             FacetElementTransform& trans,
@@ -105,9 +116,15 @@ private:
 class ConvectionLFIntegrator : public FaceLinearIntegratorBase {
 public:
     ConvectionLFIntegrator(const Coefficient* h, const Coefficient* Tinf)
-        : coef_(h), Tinf_(Tinf) {}
+        : coef_(h), Tinf_(Tinf) {
+        if (!coef_) MPFEM_THROW(ArgumentException, "ConvectionLFIntegrator requires non-null h Coefficient");
+        if (!Tinf_) MPFEM_THROW(ArgumentException, "ConvectionLFIntegrator requires non-null Tinf Coefficient");
+    }
     
-    void setAmbientTemperature(const Coefficient* Tinf) { Tinf_ = Tinf; }
+    void setAmbientTemperature(const Coefficient* Tinf) {
+        if (!Tinf_) MPFEM_THROW(ArgumentException, "ConvectionLFIntegrator::setAmbientTemperature requires non-null Coefficient");
+        Tinf_ = Tinf;
+    }
     
     void assembleFaceVector(const ReferenceElement& ref,
                             FacetElementTransform& trans,
@@ -128,7 +145,10 @@ private:
 class ElasticityIntegrator : public VectorDomainBilinearIntegrator {
 public:
     ElasticityIntegrator(const Coefficient* E, const Coefficient* nu)
-        : E_(E), nu_(nu) {}
+        : E_(E), nu_(nu) {
+        if (!E_) MPFEM_THROW(ArgumentException, "ElasticityIntegrator requires non-null E Coefficient");
+        if (!nu_) MPFEM_THROW(ArgumentException, "ElasticityIntegrator requires non-null nu Coefficient");
+    }
     
     void assembleElementMatrix(const ReferenceElement& ref,
                                ElementTransform& trans,
@@ -153,7 +173,11 @@ public:
     ThermalLoadIntegrator(const Coefficient* E,
                           const Coefficient* nu,
                           const MatrixCoefficient* alphaT)
-        : E_(E), nu_(nu), alphaT_(alphaT) {}
+        : E_(E), nu_(nu), alphaT_(alphaT) {
+        if (!E_) MPFEM_THROW(ArgumentException, "ThermalLoadIntegrator requires non-null E Coefficient");
+        if (!nu_) MPFEM_THROW(ArgumentException, "ThermalLoadIntegrator requires non-null nu Coefficient");
+        if (!alphaT_) MPFEM_THROW(ArgumentException, "ThermalLoadIntegrator requires non-null alphaT MatrixCoefficient");
+    }
     
     void assembleElementVector(const ReferenceElement& ref,
                                ElementTransform& trans,

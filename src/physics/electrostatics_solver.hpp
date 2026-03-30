@@ -19,7 +19,6 @@ public:
     ElectrostaticsSolver() = default;
     explicit ElectrostaticsSolver(int order) { order_ = order; }
     
-    FieldKind fieldKind() const override { return FieldKind::ElectricPotential; }
     std::string fieldName() const override { return "Electrostatics"; }
     FieldId fieldId() const override { return FieldId::ElectricPotential; }
     

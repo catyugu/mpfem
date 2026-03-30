@@ -19,7 +19,6 @@ public:
     StructuralSolver() = default;
     explicit StructuralSolver(int order) { order_ = order; }
     
-    FieldKind fieldKind() const override { return FieldKind::Displacement; }
     std::string fieldName() const override { return "Structural"; }
     FieldId fieldId() const override { return FieldId::Displacement; }
     

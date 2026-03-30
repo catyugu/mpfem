@@ -18,8 +18,6 @@ class HeatTransferSolver : public PhysicsFieldSolver {
 public:
     HeatTransferSolver() = default;
     explicit HeatTransferSolver(int order) { order_ = order; }
-    
-    FieldKind fieldKind() const override { return FieldKind::Temperature; }
     std::string fieldName() const override { return "HeatTransfer"; }
     FieldId fieldId() const override { return FieldId::Temperature; }
     
