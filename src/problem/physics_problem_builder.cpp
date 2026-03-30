@@ -11,7 +11,7 @@
 #include "io/case_xml_reader.hpp"
 #include "io/material_xml_reader.hpp"
 #include "io/mphtxt_reader.hpp"
-#include "io/compiled_expression_coefficient.hpp"
+#include "problem/expression_coefficient_factory.hpp"
 #include "core/exception.hpp"
 #include "core/logger.hpp"
 
@@ -46,48 +46,55 @@ namespace mpfem
             return it->second;
         }
 
-        ExpressionFieldAccessors makeExpressionFieldAccessors(Problem &problem)
+        ExternalRuntimeSymbolResolver makeExternalRuntimeResolver(Problem &problem)
         {
-            ExpressionFieldAccessors accessors;
-            accessors.sampleTemperature = [&problem](ElementTransform &trans, Real, Real &value)
+            return [&problem](std::string_view symbol,
+                              ElementTransform &trans,
+                              Real,
+                              double &value)
             {
-                if (!problem.heatTransfer)
+                if (symbol == "T")
                 {
-                    return false;
+                    if (!problem.heatTransfer)
+                    {
+                        return false;
+                    }
+                    const auto &ip = trans.integrationPoint();
+                    value = problem.heatTransfer->field().eval(trans.elementIndex(), &ip.xi);
+                    return true;
                 }
-                const auto &ip = trans.integrationPoint();
-                value = problem.heatTransfer->field().eval(trans.elementIndex(), &ip.xi);
-                return true;
-            };
-            accessors.samplePotential = [&problem](ElementTransform &trans, Real, Real &value)
-            {
-                if (!problem.electrostatics)
+
+                if (symbol == "V")
                 {
-                    return false;
+                    if (!problem.electrostatics)
+                    {
+                        return false;
+                    }
+                    const auto &ip = trans.integrationPoint();
+                    value = problem.electrostatics->field().eval(trans.elementIndex(), &ip.xi);
+                    return true;
                 }
-                const auto &ip = trans.integrationPoint();
-                value = problem.electrostatics->field().eval(trans.elementIndex(), &ip.xi);
-                return true;
+
+                return false;
             };
-            return accessors;
         }
 
         std::unique_ptr<Coefficient> makeScalarExpressionCoefficient(Problem &problem,
                                                                       const std::string &expression)
         {
-            return createCompiledScalarExpressionCoefficient(
+            return createRuntimeScalarExpressionCoefficient(
                 expression,
                 problem.caseDef,
-                makeExpressionFieldAccessors(problem));
+                makeExternalRuntimeResolver(problem));
         }
 
         std::unique_ptr<MatrixCoefficient> makeMatrixExpressionCoefficient(Problem &problem,
                                                                             const std::string &expression)
         {
-            return createCompiledMatrixExpressionCoefficient(
+            return createRuntimeMatrixExpressionCoefficient(
                 expression,
                 problem.caseDef,
-                makeExpressionFieldAccessors(problem));
+                makeExternalRuntimeResolver(problem));
         }
 
     } // namespace

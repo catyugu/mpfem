@@ -1,8 +1,10 @@
-#ifndef SRC_IO_UNIT_PARSER_HPP
-#define SRC_IO_UNIT_PARSER_HPP
+#ifndef MPFEM_EXPR_UNIT_PARSER_HPP
+#define MPFEM_EXPR_UNIT_PARSER_HPP
 
-#include <string_view>
 #include <memory>
+#include <string_view>
+
+namespace mpfem {
 
 struct UnitParseResult {
     std::string_view expression;
@@ -31,4 +33,6 @@ private:
 
 double parseSI(std::string_view input);
 
-#endif
+}  // namespace mpfem
+
+#endif  // MPFEM_EXPR_UNIT_PARSER_HPP

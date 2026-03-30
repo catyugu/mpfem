@@ -1,7 +1,7 @@
 #include "model/material_database.hpp"
 
 #include "core/exception.hpp"
-#include "io/exprtk_expression_parser.hpp"
+#include "expr/expression_parser.hpp"
 
 #include <unordered_map>
 #include <utility>

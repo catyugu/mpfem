@@ -1,23 +1,15 @@
-#ifndef MPFEM_EXPRTK_EXPRESSION_PARSER_HPP
-#define MPFEM_EXPRTK_EXPRESSION_PARSER_HPP
+#ifndef MPFEM_EXPR_EXPRESSION_PARSER_HPP
+#define MPFEM_EXPR_EXPRESSION_PARSER_HPP
 
 #include "core/types.hpp"
-#include <string>
-#include <vector>
+
 #include <map>
 #include <memory>
+#include <string>
+#include <vector>
 
 namespace mpfem {
 
-/**
- * @brief Expression parser using ExprTk with unit-aware evaluation.
- * 
- * Design:
- * - Variables bound by reference via pointer storage
- * - Unit handling: "110[GPa]" → 1.1e11
- * - Unified expression cache
- * - Thread-safe via thread-local singleton
- */
 class ExpressionParser {
 public:
     struct VariableBinding {
@@ -64,28 +56,25 @@ public:
     };
 
     static ExpressionParser& instance();
+
     ExpressionParser(const ExpressionParser&) = delete;
     ExpressionParser& operator=(const ExpressionParser&) = delete;
 
     ExpressionParser();
     ~ExpressionParser();
 
-    ScalarProgram compileScalar(const std::string& expr,
-                               const std::vector<VariableBinding>& bindings) const;
-    MatrixProgram compileMatrix(const std::string& expr,
-                               const std::vector<VariableBinding>& bindings) const;
+    ScalarProgram compileScalar(const std::string& expression,
+                                const std::vector<VariableBinding>& bindings) const;
+    MatrixProgram compileMatrix(const std::string& expression,
+                                const std::vector<VariableBinding>& bindings) const;
 
-    // Evaluate scalar expression
-    // Convenience one-shot API for configuration parsing.
-    // Runtime hot paths should prefer compileScalar()/compileMatrix().
-    double evaluate(const std::string& expr,
-                   const std::map<std::string, double>& variables = {});
-
-    // Evaluate matrix expression: {'a','b',...} format or scalar→diagonal
-    Matrix3 evaluateMatrix(const std::string& expr,
-                          const std::map<std::string, double>& variables = {});
+    // Convenience one-shot APIs for configuration parsing.
+    double evaluate(const std::string& expression,
+                    const std::map<std::string, double>& variables = {});
+    Matrix3 evaluateMatrix(const std::string& expression,
+                           const std::map<std::string, double>& variables = {});
 };
 
-} // namespace mpfem
+}  // namespace mpfem
 
-#endif
+#endif  // MPFEM_EXPR_EXPRESSION_PARSER_HPP
