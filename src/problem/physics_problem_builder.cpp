@@ -39,16 +39,12 @@ namespace mpfem
             {
                 throw ArgumentException("Missing required parameter: " + key);
             }
-            std::string numStr = strings::stripUnits(it->second);
-            try
-            {
-                return std::stod(numStr);
+            // Use ExpressionParser::evaluate() for full unit support (all config standardized)
+            std::map<std::string, double> vars;
+            for (const auto& v : caseDef.variables) {
+                vars[v.name] = v.siValue;
             }
-            catch (...)
-            {
-                // Try variable lookup
-                return caseDef.getVariable(numStr);
-            }
+            return ExpressionParser::instance().evaluate(it->second, vars);
         }
 
     } // namespace

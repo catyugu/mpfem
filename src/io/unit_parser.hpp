@@ -1,6 +1,7 @@
 #ifndef SRC_IO_UNIT_PARSER_HPP
 #define SRC_IO_UNIT_PARSER_HPP
 
+#include <string>
 #include <string_view>
 #include <unordered_map>
 #include <stdexcept>
@@ -45,13 +46,16 @@ private:
     std::unordered_map<std::string, double> units;
 
     UnitRegistry() {
-        units.reserve(32);
+        units.reserve(40);
         units["GPa"] = 1e9;
         units["MPa"] = 1e6;
         units["kPa"] = 1e3;
         units["Pa"] = 1.0;
+        units["V"] = 1.0;
+        units["mV"] = 1e-3;
         units["W/(m*K)"] = 1.0;
         units["W m^-1 K^-1"] = 1.0;
+        units["W/m^2/K"] = 1.0;
         units["J/(kg*K)"] = 1.0;
         units["J"] = 1.0;
         units["kJ"] = 1e3;
