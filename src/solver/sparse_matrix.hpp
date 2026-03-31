@@ -6,9 +6,6 @@
 #include <Eigen/Sparse>
 #include <vector>
 #include <fstream>
-#include <iostream>
-#include <map>
-#include <unordered_set>
 
 namespace mpfem
 {
@@ -213,6 +210,52 @@ namespace mpfem
         SparseMatrix& operator*=(Real alpha) {
             mat_ *= alpha;
             return *this;
+        }
+
+        /// SparseMatrix + SparseMatrix
+        SparseMatrix operator+(const SparseMatrix& B) const {
+            MPFEM_ASSERT(rows() == B.rows() && cols() == B.cols(),
+                "SparseMatrix size mismatch in +");
+            SparseMatrix C(rows(), cols());
+            C.mat_ = mat_ + B.mat_;
+            return C;
+        }
+
+        /// SparseMatrix - SparseMatrix
+        SparseMatrix operator-(const SparseMatrix& B) const {
+            MPFEM_ASSERT(rows() == B.rows() && cols() == B.cols(),
+                "SparseMatrix size mismatch in -");
+            SparseMatrix C(rows(), cols());
+            C.mat_ = mat_ - B.mat_;
+            return C;
+        }
+
+        /// SparseMatrix * Scalar
+        SparseMatrix operator*(Real alpha) const {
+            SparseMatrix C(rows(), cols());
+            C.mat_ = mat_ * alpha;
+            return C;
+        }
+
+        /// Scalar * SparseMatrix
+        friend SparseMatrix operator*(Real alpha, const SparseMatrix& A) {
+            return A * alpha;
+        }
+
+        /// SparseMatrix * SparseMatrix
+        SparseMatrix operator*(const SparseMatrix& B) const {
+            MPFEM_ASSERT(cols() == B.rows(),
+                "SparseMatrix size mismatch in matrix multiplication");
+            SparseMatrix C(rows(), B.cols());
+            C.mat_ = mat_ * B.mat_;
+            return C;
+        }
+
+        /// SparseMatrix * Vector
+        Vector operator*(const Vector& v) const {
+            MPFEM_ASSERT(cols() == v.size(),
+                "SparseMatrix size mismatch in matrix-vector multiplication");
+            return mat_ * v;
         }
 
     private:

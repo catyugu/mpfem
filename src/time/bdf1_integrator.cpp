@@ -42,14 +42,11 @@ bool BDF1Integrator::step(TransientProblem& problem) {
     // Build effective stiffness matrix: A = M + dt * K
     // For BDF1 (Backward Euler), the implicit system is:
     // (M + dt*K) * T^{n+1} = M * T^n + dt * Q
-    // Use pre-allocated A_ with in-place operations
-    A_.setZero();
-    A_.eigen() = M.eigen() + dt * K.eigen();
+    A_ = M + (dt * K);
     A_.makeCompressed();
     
     // Compute RHS: rhs = M * T^n + dt * Q
-    // Use pre-allocated rhs_ with in-place operations
-    rhs_ = M.eigen() * T_prev.values() + dt * Q;
+    rhs_ = M * T_prev.values() + dt * Q;
     
     // Solve A * T^{n+1} = rhs with boundary conditions applied to the combined system
     bool ok = heatSolver->solveLinearSystem(A_, T_curr.values(), rhs_);
