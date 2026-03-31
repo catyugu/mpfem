@@ -6,7 +6,6 @@
 #include <set>
 #include <map>
 #include <memory>
-#include <variant>
 
 namespace mpfem {
 
@@ -81,68 +80,6 @@ public:
 private:
     Func func_;
 };
-
-// =============================================================================
-// DomainMappedCoefficient - Template implementation
-// =============================================================================
-
-// Type traits for result types
-template<typename CoefBase> struct CoefTraits;
-template<> struct CoefTraits<Coefficient> { using ResultType = Real; };
-template<> struct CoefTraits<VectorCoefficient> { using ResultType = Vector3; };
-template<> struct CoefTraits<MatrixCoefficient> { using ResultType = Matrix3; };
-
-/**
- * @brief Domain-mapped coefficient supporting different coefficients per domain
- * 
- * Single template implementation handles scalar, vector, and matrix types.
- */
-template<typename CoefBase>
-class DomainMappedCoefficient : public CoefBase {
-    using ResultType = typename CoefTraits<CoefBase>::ResultType;
-    
-public:
-    DomainMappedCoefficient() = default;
-    
-    DomainMappedCoefficient(DomainMappedCoefficient&& o) noexcept
-        : coefs_(std::move(o.coefs_)), defaultCoef_(o.defaultCoef_) {
-        o.defaultCoef_ = nullptr;
-        o.coefs_.clear();
-    }
-    
-    DomainMappedCoefficient& operator=(DomainMappedCoefficient&& o) noexcept {
-        if (this != &o) { 
-            coefs_ = std::move(o.coefs_); 
-            defaultCoef_ = o.defaultCoef_; 
-            o.defaultCoef_ = nullptr; 
-        }
-        return *this;
-    }
-    
-    void set(int domainId, const CoefBase* coef) { coefs_[domainId] = coef; }
-    void set(const std::set<int>& domainIds, const CoefBase* coef) { 
-        for (int id : domainIds) coefs_[id] = coef; 
-    }
-    void setAll(const CoefBase* coef) { defaultCoef_ = coef; coefs_.clear(); }
-    
-    const CoefBase* get(int domainId) const { 
-        auto it = coefs_.find(domainId); 
-        return it != coefs_.end() ? it->second : defaultCoef_; 
-    }
-    
-    bool empty() const { return coefs_.empty() && !defaultCoef_; }
-    
-    void eval(ElementTransform& trans, ResultType& result, Real t = 0.0) const override;
-
-private:
-    std::unordered_map<int, const CoefBase*> coefs_;
-    const CoefBase* defaultCoef_ = nullptr;
-};
-
-// Type aliases
-using DomainMappedScalarCoefficient = DomainMappedCoefficient<Coefficient>;
-using DomainMappedVectorCoefficient = DomainMappedCoefficient<VectorCoefficient>;
-using DomainMappedMatrixCoefficient = DomainMappedCoefficient<MatrixCoefficient>;
 
 // =============================================================================
 // Convenience functions for creating constant coefficients

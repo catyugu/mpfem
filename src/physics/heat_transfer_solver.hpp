@@ -5,6 +5,7 @@
 #include "fe/coefficient.hpp"
 #include <map>
 #include <set>
+#include <vector>
 
 namespace mpfem {
 
@@ -23,23 +24,11 @@ public:
     
     bool initialize(const Mesh& mesh, FieldValues& fieldValues, int order, double initialTemperature = 293.15);
     
-    // Material coefficients - matrix form for anisotropic thermal conductivity
+    // Material bindings
     void setThermalConductivity(const std::set<int>& domains, const MatrixCoefficient* k);
-    void setThermalConductivity(const MatrixCoefficient* k) { conductivity_.setAll(k); }
-    const DomainMappedMatrixCoefficient& thermalConductivity() const { return conductivity_; }
     
     void setHeatSource(const std::set<int>& domains, const Coefficient* Q);
-    void setHeatSource(const Coefficient* Q) { heatSource_.setAll(Q); }
-    const DomainMappedScalarCoefficient& heatSource() const { return heatSource_; }
-    
-    // Material properties for transient analysis (rho * Cp)
-    void setDensity(const std::set<int>& domains, const Coefficient* rho);
-    void setDensity(const Coefficient* rho) { density_.setAll(rho); }
-    const DomainMappedScalarCoefficient& density() const { return density_; }
-    
-    void setSpecificHeat(const std::set<int>& domains, const Coefficient* Cp);
-    void setSpecificHeat(const Coefficient* Cp) { specificHeat_.setAll(Cp); }
-    const DomainMappedScalarCoefficient& specificHeat() const { return specificHeat_; }
+    void setMassProperties(const std::set<int>& domains, const Coefficient* rho, const Coefficient* Cp);
     
     // Mass matrix for transient terms: M = ∫ ρCp φᵢ φⱼ dΩ
     void assembleMassMatrix();
@@ -88,12 +77,25 @@ public:
 
 private:
     struct ConvBC { const Coefficient* h; const Coefficient* Tinf; };
-    
-    DomainMappedMatrixCoefficient conductivity_;
-    DomainMappedScalarCoefficient heatSource_;
-    DomainMappedScalarCoefficient density_;
-    DomainMappedScalarCoefficient specificHeat_;
-    std::unique_ptr<ProductCoefficient> rhoCp_;  ///< Product coefficient for mass matrix (rho*Cp), stored as member to avoid dangling pointer
+
+    struct ConductivityBinding {
+        std::set<int> domains;
+        const MatrixCoefficient* conductivity = nullptr;
+    };
+    struct HeatSourceBinding {
+        std::set<int> domains;
+        const Coefficient* source = nullptr;
+    };
+    struct MassBinding {
+        std::set<int> domains;
+        const Coefficient* density = nullptr;
+        const Coefficient* specificHeat = nullptr;
+        std::unique_ptr<ProductCoefficient> rhoCp;
+    };
+
+    std::vector<ConductivityBinding> conductivityBindings_;
+    std::vector<HeatSourceBinding> heatSourceBindings_;
+    std::vector<MassBinding> massBindings_;
     SparseMatrix massMatrix_;
     bool massMatrixAssembled_ = false;
     std::map<int, const Coefficient*> temperatureBCs_;

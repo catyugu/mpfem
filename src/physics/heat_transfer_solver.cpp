@@ -23,7 +23,7 @@ bool HeatTransferSolver::initialize(const Mesh& mesh, FieldValues& fieldValues, 
     LOG_INFO << "HeatTransferSolver: " << fes_->numDofs() << " DOFs";
     
     // Assemble mass matrix if density and specific heat are set
-    if (!density_.empty() && !specificHeat_.empty()) {
+    if (!massBindings_.empty()) {
         assembleMassMatrix();
     }
     
@@ -31,33 +31,37 @@ bool HeatTransferSolver::initialize(const Mesh& mesh, FieldValues& fieldValues, 
 }
 
 void HeatTransferSolver::setThermalConductivity(const std::set<int>& domains, const MatrixCoefficient* k) {
-    conductivity_.set(domains, k);
+    conductivityBindings_.push_back({domains, k});
 }
 
 void HeatTransferSolver::setHeatSource(const std::set<int>& domains, const Coefficient* Q) {
-    heatSource_.set(domains, Q);
+    heatSourceBindings_.push_back({domains, Q});
 }
 
-void HeatTransferSolver::setDensity(const std::set<int>& domains, const Coefficient* rho) {
-    density_.set(domains, rho);
-}
-
-void HeatTransferSolver::setSpecificHeat(const std::set<int>& domains, const Coefficient* Cp) {
-    specificHeat_.set(domains, Cp);
+void HeatTransferSolver::setMassProperties(const std::set<int>& domains,
+                                           const Coefficient* rho,
+                                           const Coefficient* Cp) {
+    MassBinding binding;
+    binding.domains = domains;
+    binding.density = rho;
+    binding.specificHeat = Cp;
+    binding.rhoCp = std::make_unique<ProductCoefficient>(rho, Cp);
+    massBindings_.push_back(std::move(binding));
+    massMatrixAssembled_ = false;
 }
 
 void HeatTransferSolver::assembleMassMatrix() {
-    if (density_.empty() || specificHeat_.empty()) {
-        LOG_ERROR << "HeatTransferSolver: density or specific heat not set for mass matrix";
+    if (massBindings_.empty()) {
+        LOG_ERROR << "HeatTransferSolver: mass properties not set for mass matrix";
         return;
     }
-    
-    // Create rho*Cp product coefficient as member to avoid dangling pointer
-    // The MassIntegrator stores a raw pointer to this coefficient, so it must outlive the assembler
-    rhoCp_ = std::make_unique<ProductCoefficient>(&density_, &specificHeat_);
-    
+
     auto massAsm = std::make_unique<BilinearFormAssembler>(fes_.get());
-    massAsm->addDomainIntegrator(std::make_unique<MassIntegrator>(rhoCp_.get()));
+    for (const auto& binding : massBindings_) {
+        massAsm->addDomainIntegrator(
+            std::make_unique<MassIntegrator>(binding.rhoCp.get()),
+            binding.domains);
+    }
     massAsm->assemble();
     
     massMatrix_ = std::move(massAsm->matrix());
@@ -77,19 +81,23 @@ void HeatTransferSolver::addConvectionBC(const std::set<int>& boundaryIds, const
 void HeatTransferSolver::assemble() {
     ScopedTimer timer("HeatTransfer assemble");
     
-    if (conductivity_.empty()) {
+    if (conductivityBindings_.empty()) {
         LOG_ERROR << "HeatTransferSolver: conductivity not set";
         return;
     }
     
     // Lazy mass matrix assembly - assemble if needed but not yet assembled
-    if (!massMatrixAssembled_ && !density_.empty() && !specificHeat_.empty()) {
+    if (!massMatrixAssembled_ && !massBindings_.empty()) {
         assembleMassMatrix();
     }
     
     clearAssemblers();
     
-    matAsm_->addDomainIntegrator(std::make_unique<DiffusionIntegrator>(&conductivity_));
+    for (const auto& binding : conductivityBindings_) {
+        matAsm_->addDomainIntegrator(
+            std::make_unique<DiffusionIntegrator>(binding.conductivity),
+            binding.domains);
+    }
     
     for (const auto& [bid, bc] : convBCs_) {
         matAsm_->addBoundaryIntegrator(std::make_unique<ConvectionMassIntegrator>(bc.h), bid);
@@ -101,8 +109,10 @@ void HeatTransferSolver::assemble() {
     // Cache stiffness matrix before BC application (needed for transient time integrators like BDF1)
     stiffnessMatrixBeforeBC_ = matAsm_->matrix();
     
-    if (!heatSource_.empty()) {
-        vecAsm_->addDomainIntegrator(std::make_unique<DomainLFIntegrator>(&heatSource_));
+    for (const auto& binding : heatSourceBindings_) {
+        vecAsm_->addDomainIntegrator(
+            std::make_unique<DomainLFIntegrator>(binding.source),
+            binding.domains);
     }
     vecAsm_->assemble();
     

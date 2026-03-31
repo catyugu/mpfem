@@ -29,19 +29,16 @@ namespace mpfem
         return true;
     }
 
-    void StructuralSolver::setYoungModulus(const std::set<int> &domains, const Coefficient *E)
+    void StructuralSolver::addElasticity(const std::set<int> &domains,
+                                         const Coefficient *E,
+                                         const Coefficient *nu)
     {
-        youngModulus_.set(domains, E);
-    }
-
-    void StructuralSolver::setPoissonRatio(const std::set<int> &domains, const Coefficient *nu)
-    {
-        poissonRatio_.set(domains, nu);
+        elasticityBindings_.push_back({domains, E, nu});
     }
 
     void StructuralSolver::setStrainLoad(const std::set<int> &domains, const MatrixCoefficient *stress)
     {
-        strainLoad_.set(domains, stress);
+        strainLoadBindings_.push_back({domains, stress});
     }
 
     void StructuralSolver::addFixedDisplacementBC(const std::set<int> &boundaryIds, const VectorCoefficient *displacement)
@@ -57,7 +54,7 @@ namespace mpfem
         if (!fes_)
             return;
 
-        if (youngModulus_.empty() || poissonRatio_.empty())
+        if (elasticityBindings_.empty())
         {
             LOG_ERROR << "StructuralSolver: material not set";
             return;
@@ -65,13 +62,19 @@ namespace mpfem
 
         clearAssemblers();
 
-        matAsm_->addDomainIntegrator(std::make_unique<ElasticityIntegrator>(&youngModulus_, &poissonRatio_, fes_->vdim()));
+        for (const auto &binding : elasticityBindings_)
+        {
+            matAsm_->addDomainIntegrator(
+            std::make_unique<ElasticityIntegrator>(binding.E, binding.nu, fes_->vdim()),
+            binding.domains);
+        }
         matAsm_->assemble();
 
-        if (!strainLoad_.empty())
+        for (const auto &binding : strainLoadBindings_)
         {
             vecAsm_->addDomainIntegrator(std::make_unique<StrainLoadIntegrator>(
-                &strainLoad_, fes_->vdim()));
+            binding.stress, fes_->vdim()),
+            binding.domains);
         }
         vecAsm_->assemble();
 

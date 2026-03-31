@@ -50,50 +50,12 @@ TEST_F(CoefficientTest, MatrixCoefficient_Full) {
     EXPECT_NE(coef.get(), nullptr);
 }
 
-// DomainMappedScalarCoefficient tests
-TEST_F(CoefficientTest, DomainMappedScalarCoefficient_SetAll) {
-    DomainMappedScalarCoefficient coef;
-    auto c = constantCoefficient(5.0);
-    
-    coef.setAll(c.get());
-    EXPECT_FALSE(coef.empty());
-    EXPECT_EQ(coef.get(1), c.get());
-    EXPECT_EQ(coef.get(99), c.get());  // Default for any domain
-}
-
-TEST_F(CoefficientTest, DomainMappedScalarCoefficient_DomainSpecific) {
-    DomainMappedScalarCoefficient coef;
-    auto c1 = constantCoefficient(10.0);
-    auto c2 = constantCoefficient(20.0);
-    
-    coef.set(1, c1.get());
-    coef.set(2, c2.get());
-    
-    EXPECT_EQ(coef.get(1), c1.get());
-    EXPECT_EQ(coef.get(2), c2.get());
-    EXPECT_EQ(coef.get(99), nullptr);  // No default set
-}
-
-TEST_F(CoefficientTest, DomainMappedScalarCoefficient_BatchSet) {
-    DomainMappedScalarCoefficient coef;
-    auto c = constantCoefficient(15.0);
-    
-    coef.set({1, 2, 3}, c.get());
-    
-    EXPECT_EQ(coef.get(1), c.get());
-    EXPECT_EQ(coef.get(2), c.get());
-    EXPECT_EQ(coef.get(3), c.get());
-}
-
-TEST_F(CoefficientTest, DomainMappedScalarCoefficient_Override) {
-    DomainMappedScalarCoefficient coef;
-    auto c1 = constantCoefficient(10.0);
-    auto c2 = constantCoefficient(20.0);
-    
-    coef.set(1, c1.get());
-    coef.set(1, c2.get());  // Override
-    
-    EXPECT_EQ(coef.get(1), c2.get());
+TEST_F(CoefficientTest, ProductCoefficient_Create) {
+    auto c1 = constantCoefficient(2.0);
+    auto c2 = constantCoefficient(3.0);
+    ProductCoefficient coef(c1.get(), c2.get());
+    EXPECT_NE(c1.get(), nullptr);
+    EXPECT_NE(c2.get(), nullptr);
 }
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);

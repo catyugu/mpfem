@@ -12,6 +12,7 @@
 #include "io/problem_input_loader.hpp"
 #include "core/exception.hpp"
 #include "core/logger.hpp"
+#include <unordered_map>
 
 namespace mpfem
 {
@@ -218,21 +219,27 @@ namespace mpfem
             double icValue = getInitialCondition(problem.caseDef, "electrostatics", 0.0);
             problem.electrostatics->initialize(*problem.mesh, problem.fieldValues, physics.order, icValue);
 
-            for (const auto &[domId, matTag] : problem.domainMaterial)
+            for (const auto &assign : problem.caseDef.materialAssignments)
             {
-                const auto *mat = problem.materials.getMaterial(matTag);
+                const auto *mat = problem.materials.getMaterial(assign.materialTag);
                 if (!mat)
                     continue;
 
                 if (!mat->hasMatrix("electricconductivity"))
                     continue;
 
-                std::string key = "conductivity_" + std::to_string(domId);
+                const int keyDomain = assign.domainIds.empty() ? -1 : *assign.domainIds.begin();
+                std::string key = "conductivity_" + assign.materialTag + "_" + std::to_string(keyDomain);
                 problem.setMatrixCoef(
                     key,
                     makeMatrixExpressionCoefficient(problem, mat->matrixExpression("electricconductivity")));
 
-                problem.electrostatics->setElectricalConductivity({domId}, problem.getMatrixCoef(key));
+                const MatrixCoefficient *sigma = problem.getMatrixCoef(key);
+                problem.electrostatics->setElectricalConductivity(assign.domainIds, sigma);
+                for (int domId : assign.domainIds)
+                {
+                    problem.conductivityByDomain[domId] = sigma;
+                }
             }
 
             for (const auto &bc : physics.boundaries)
@@ -255,37 +262,32 @@ namespace mpfem
             double icValue = getInitialCondition(problem.caseDef, "heat_transfer", 293.15);
             problem.heatTransfer->initialize(*problem.mesh, problem.fieldValues, physics.order, icValue);
 
-            for (const auto &[domId, matTag] : problem.domainMaterial)
+            for (const auto &assign : problem.caseDef.materialAssignments)
             {
-                const auto *mat = problem.materials.getMaterial(matTag);
+                const auto *mat = problem.materials.getMaterial(assign.materialTag);
                 if (!mat)
                     continue;
 
+                const int keyDomain = assign.domainIds.empty() ? -1 : *assign.domainIds.begin();
+
                 if (mat->hasMatrix("thermalconductivity"))
                 {
-                    std::string key = "thermal_conductivity_" + std::to_string(domId);
+                    std::string key = "thermal_conductivity_" + assign.materialTag + "_" + std::to_string(keyDomain);
                     problem.setMatrixCoef(
                         key,
                         makeMatrixExpressionCoefficient(problem, mat->matrixExpression("thermalconductivity")));
-                    problem.heatTransfer->setThermalConductivity({domId}, problem.getMatrixCoef(key));
+                    problem.heatTransfer->setThermalConductivity(assign.domainIds, problem.getMatrixCoef(key));
                 }
 
-                if (mat->hasScalar("density"))
+                if (mat->hasScalar("density") && mat->hasScalar("heatcapacity"))
                 {
-                    std::string key = "density_" + std::to_string(domId);
-                    problem.setScalarCoef(
-                        key,
-                        makeScalarExpressionCoefficient(problem, mat->scalarExpression("density")));
-                    problem.heatTransfer->setDensity({domId}, problem.getScalarCoef(key));
-                }
-
-                if (mat->hasScalar("heatcapacity"))
-                {
-                    std::string key = "heat_capacity_" + std::to_string(domId);
-                    problem.setScalarCoef(
-                        key,
-                        makeScalarExpressionCoefficient(problem, mat->scalarExpression("heatcapacity")));
-                    problem.heatTransfer->setSpecificHeat({domId}, problem.getScalarCoef(key));
+                    std::string rhoKey = "density_" + assign.materialTag + "_" + std::to_string(keyDomain);
+                    std::string cpKey = "heat_capacity_" + assign.materialTag + "_" + std::to_string(keyDomain);
+                    problem.setScalarCoef(rhoKey, makeScalarExpressionCoefficient(problem, mat->scalarExpression("density")));
+                    problem.setScalarCoef(cpKey, makeScalarExpressionCoefficient(problem, mat->scalarExpression("heatcapacity")));
+                    problem.heatTransfer->setMassProperties(assign.domainIds,
+                                                            problem.getScalarCoef(rhoKey),
+                                                            problem.getScalarCoef(cpKey));
                 }
             }
 
@@ -324,23 +326,30 @@ namespace mpfem
             double icValue = getInitialCondition(problem.caseDef, "solid_mechanics", 0.0);
             problem.structural->initialize(*problem.mesh, problem.fieldValues, physics.order, icValue);
 
-            for (const auto &[domId, matTag] : problem.domainMaterial)
+            for (const auto &assign : problem.caseDef.materialAssignments)
             {
-                const auto *mat = problem.materials.getMaterial(matTag);
+                const auto *mat = problem.materials.getMaterial(assign.materialTag);
                 if (!mat)
                     continue;
 
                 if (!mat->hasScalar("E") || !mat->hasScalar("nu"))
                 {
-                    throw ArgumentException("Material missing required structural properties E/nu: " + matTag);
+                    throw ArgumentException("Material missing required structural properties E/nu: " + assign.materialTag);
                 }
 
-                std::string eKey = "young_" + std::to_string(domId);
-                std::string nuKey = "poisson_" + std::to_string(domId);
+                const int keyDomain = assign.domainIds.empty() ? -1 : *assign.domainIds.begin();
+                std::string eKey = "young_" + assign.materialTag + "_" + std::to_string(keyDomain);
+                std::string nuKey = "poisson_" + assign.materialTag + "_" + std::to_string(keyDomain);
                 problem.setScalarCoef(eKey, makeScalarExpressionCoefficient(problem, mat->scalarExpression("E")));
                 problem.setScalarCoef(nuKey, makeScalarExpressionCoefficient(problem, mat->scalarExpression("nu")));
-                problem.structural->setYoungModulus({domId}, problem.getScalarCoef(eKey));
-                problem.structural->setPoissonRatio({domId}, problem.getScalarCoef(nuKey));
+                const Coefficient *E = problem.getScalarCoef(eKey);
+                const Coefficient *nu = problem.getScalarCoef(nuKey);
+                problem.structural->addElasticity(assign.domainIds, E, nu);
+                for (int domId : assign.domainIds)
+                {
+                    problem.youngModulusByDomain[domId] = E;
+                    problem.poissonRatioByDomain[domId] = nu;
+                }
             }
 
             for (const auto &bc : physics.boundaries)
@@ -363,27 +372,50 @@ namespace mpfem
             {
                 if (cp.kind == "joule_heating")
                 {
-                    // Create Joule heat coefficient using lambda
                     const GridFunction *V_field = &problem.electrostatics->field();
-                    const MatrixCoefficient *sigma_coef = &problem.electrostatics->electricalConductivity();
+
+                    std::unordered_map<int, const MatrixCoefficient *> sigmaByDomain;
+                    std::set<int> activeDomains;
+                    for (int domId : cp.domainIds)
+                    {
+                        auto sigmaIt = problem.conductivityByDomain.find(domId);
+                        if (sigmaIt == problem.conductivityByDomain.end())
+                        {
+                            LOG_WARN << "No conductivity for domain " << domId << " in joule heating coupling, skipping domain";
+                            continue;
+                        }
+                        sigmaByDomain[domId] = sigmaIt->second;
+                        activeDomains.insert(domId);
+                    }
+
+                    if (activeDomains.empty())
+                    {
+                        LOG_WARN << "No valid domains for joule heating coupling";
+                        continue;
+                    }
 
                     auto jouleHeat = std::make_unique<ScalarCoefficient>(
-                        [V_field, sigma_coef](ElementTransform &trans, Real &result, Real t)
+                        [V_field, sigmaByDomain = std::move(sigmaByDomain)](ElementTransform &trans, Real &result, Real t)
                         {
+                            const int domId = static_cast<int>(trans.attribute());
+                            auto it = sigmaByDomain.find(domId);
+                            if (it == sigmaByDomain.end())
+                            {
+                                result = 0.0;
+                                return;
+                            }
+
                             Matrix3 sigma_mat;
-                            sigma_coef->eval(trans, sigma_mat, t);
+                            it->second->eval(trans, sigma_mat, t);
                             Vector3 g = V_field->gradient(trans.elementIndex(), &trans.integrationPoint().xi, trans);
                             // For anisotropic: Q = g^T * sigma * g
                             result = g.transpose() * sigma_mat * g;
                         });
 
-                    DomainMappedScalarCoefficient jouleHeatMap;
-                    jouleHeatMap.set({cp.domainIds.begin(), cp.domainIds.end()}, jouleHeat.get());
-                    problem.setScalarCoef("jouleHeat", std::move(jouleHeat));
-                    auto jouleHeatMapPtr = std::make_unique<DomainMappedScalarCoefficient>(std::move(jouleHeatMap));
-                    problem.setScalarCoef("jouleHeatMap", std::move(jouleHeatMapPtr));
-                    problem.heatTransfer->setHeatSource(problem.getScalarCoef("jouleHeatMap"));
-                    LOG_INFO << "Joule heating domains: " << cp.domainIds.size() << " domains";
+                    std::string jouleKey = "jouleHeat_" + cp.name;
+                    problem.setScalarCoef(jouleKey, std::move(jouleHeat));
+                    problem.heatTransfer->setHeatSource(activeDomains, problem.getScalarCoef(jouleKey));
+                    LOG_INFO << "Joule heating domains: " << activeDomains.size() << " domains";
                 }
                 else if (cp.kind == "thermal_expansion")
                 {
@@ -393,6 +425,8 @@ namespace mpfem
                                  "solid_mechanics physics block not found for thermal expansion coupling");
                     Real T_ref = physicsIt->second.referenceTemperature;
 
+                    std::unordered_map<int, const MatrixCoefficient *> alphaByDomain;
+                    std::set<int> activeDomains;
                     for (int domId : cp.domainIds)
                     {
                         const auto domIt = problem.domainMaterial.find(domId);
@@ -415,44 +449,68 @@ namespace mpfem
                         const MatrixCoefficient *alphaCoef = problem.getMatrixCoef(alphaKey);
                         MPFEM_ASSERT(alphaCoef != nullptr, "Failed to build thermal expansion base coefficient.");
 
-                        std::string eKey = "young_" + std::to_string(domId);
-                        std::string nuKey = "poisson_" + std::to_string(domId);
-                        const Coefficient *E_coef = problem.getScalarCoef(eKey);
-                        const Coefficient *nu_coef = problem.getScalarCoef(nuKey);
-                        MPFEM_ASSERT(E_coef != nullptr, "Missing Young's modulus coefficient for thermal expansion coupling.");
-                        MPFEM_ASSERT(nu_coef != nullptr, "Missing Poisson ratio coefficient for thermal expansion coupling.");
+                        auto eIt = problem.youngModulusByDomain.find(domId);
+                        auto nuIt = problem.poissonRatioByDomain.find(domId);
+                        if (eIt == problem.youngModulusByDomain.end() || nuIt == problem.poissonRatioByDomain.end())
+                        {
+                            LOG_WARN << "Missing structural material coefficients for domain " << domId << " in thermal expansion coupling";
+                            continue;
+                        }
 
-                        std::string key = "thermalStress_" + std::to_string(domId);
-                        auto coef = std::make_unique<MatrixFunctionCoefficient>(
-                            [&problem, alphaCoef, E_coef, nu_coef, T_ref](ElementTransform &trans, Matrix3 &result, Real t)
-                            {
-                                Matrix3 alpha;
-                                alphaCoef->eval(trans, alpha, t);
-
-                                Real T = T_ref;
-                                if (problem.heatTransfer)
-                                {
-                                    const auto &ip = trans.integrationPoint();
-                                    T = problem.heatTransfer->field().eval(trans.elementIndex(), &ip.xi);
-                                }
-
-                                Real E_val = 0.0;
-                                Real nu_val = 0.0;
-                                E_coef->eval(trans, E_val, t);
-                                nu_coef->eval(trans, nu_val, t);
-
-                                const Real lambda = E_val * nu_val / ((1.0 + nu_val) * (1.0 - 2.0 * nu_val));
-                                const Real mu = E_val / (2.0 * (1.0 + nu_val));
-
-                                const Matrix3 eps = alpha * (T - T_ref);
-                                const Matrix3 epsSym = 0.5 * (eps + eps.transpose());
-
-                                result = 2.0 * mu * epsSym;
-                                result.diagonal().array() += lambda * epsSym.trace();
-                            });
-                        problem.structural->setStrainLoad({domId}, coef.get());
-                        problem.setMatrixCoef(key, std::move(coef));
+                        alphaByDomain[domId] = alphaCoef;
+                        activeDomains.insert(domId);
                     }
+
+                    if (activeDomains.empty())
+                    {
+                        LOG_WARN << "No valid domains for thermal expansion coupling";
+                        continue;
+                    }
+
+                    std::string key = "thermalStress_" + cp.name;
+                    auto coef = std::make_unique<MatrixFunctionCoefficient>(
+                        [&problem,
+                         alphaByDomain = std::move(alphaByDomain),
+                         T_ref](ElementTransform &trans, Matrix3 &result, Real t)
+                        {
+                            const int domId = static_cast<int>(trans.attribute());
+                            auto alphaIt = alphaByDomain.find(domId);
+                            auto eIt = problem.youngModulusByDomain.find(domId);
+                            auto nuIt = problem.poissonRatioByDomain.find(domId);
+                            if (alphaIt == alphaByDomain.end() ||
+                                eIt == problem.youngModulusByDomain.end() ||
+                                nuIt == problem.poissonRatioByDomain.end())
+                            {
+                                result.setZero();
+                                return;
+                            }
+
+                            Matrix3 alpha;
+                            alphaIt->second->eval(trans, alpha, t);
+
+                            Real T = T_ref;
+                            if (problem.heatTransfer)
+                            {
+                                const auto &ip = trans.integrationPoint();
+                                T = problem.heatTransfer->field().eval(trans.elementIndex(), &ip.xi);
+                            }
+
+                            Real E_val = 0.0;
+                            Real nu_val = 0.0;
+                            eIt->second->eval(trans, E_val, t);
+                            nuIt->second->eval(trans, nu_val, t);
+
+                            const Real lambda = E_val * nu_val / ((1.0 + nu_val) * (1.0 - 2.0 * nu_val));
+                            const Real mu = E_val / (2.0 * (1.0 + nu_val));
+
+                            const Matrix3 eps = alpha * (T - T_ref);
+                            const Matrix3 epsSym = 0.5 * (eps + eps.transpose());
+
+                            result = 2.0 * mu * epsSym;
+                            result.diagonal().array() += lambda * epsSym.trace();
+                        });
+                    problem.structural->setStrainLoad(activeDomains, coef.get());
+                    problem.setMatrixCoef(key, std::move(coef));
                     LOG_INFO << "Thermal expansion coupling enabled (T_ref = " << T_ref << " K)";
                 }
             }

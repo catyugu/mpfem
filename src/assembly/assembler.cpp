@@ -82,9 +82,8 @@ void BilinearFormAssembler::assemble() {
             buf.elmatVector.setZero();
             
             for (size_t ki = 0; ki < domainIntegs_.size(); ++ki) {
-                // Skip integrator if it doesn't match this element's domain
-                // domainIds_[ki] == -1 means integrator applies to all domains
-                if (domainIds_[ki] >= 0 && domainIds_[ki] != static_cast<int>(elemAttr)) continue;
+                const auto& domains = domainSets_[ki];
+                if (!domains.empty() && !domains.contains(static_cast<int>(elemAttr))) continue;
                 
                 const auto& integ = domainIntegs_[ki];
                 int ivdim = integ->vdim();
@@ -253,9 +252,8 @@ void LinearFormAssembler::assemble() {
                 buf.elvecVector.setZero();
                 
                 for (size_t ki = 0; ki < domainIntegs_.size(); ++ki) {
-                    // Skip integrator if it doesn't match this element's domain
-                    // domainIds_[ki] == -1 means integrator applies to all domains
-                    if (domainIds_[ki] >= 0 && domainIds_[ki] != static_cast<int>(elemAttr)) continue;
+                    const auto& domains = domainSets_[ki];
+                    if (!domains.empty() && !domains.contains(static_cast<int>(elemAttr))) continue;
                     
                     const auto& integ = domainIntegs_[ki];
                     int ivdim = integ->vdim();

@@ -5,6 +5,7 @@
 #include "fe/coefficient.hpp"
 #include <map>
 #include <set>
+#include <vector>
 
 namespace mpfem {
 
@@ -24,12 +25,8 @@ public:
     
     bool initialize(const Mesh& mesh, FieldValues& fieldValues, int order, double initialDisplacement = 0.0);
     
-    // Material coefficients
-    void setYoungModulus(const std::set<int>& domains, const Coefficient* E);
-    void setYoungModulus(const Coefficient* E) { youngModulus_.setAll(E); }
-    
-    void setPoissonRatio(const std::set<int>& domains, const Coefficient* nu);
-    void setPoissonRatio(const Coefficient* nu) { poissonRatio_.setAll(nu); }
+    // Material bindings
+    void addElasticity(const std::set<int>& domains, const Coefficient* E, const Coefficient* nu);
     
     // Boundary conditions
     void addFixedDisplacementBC(const std::set<int>& boundaryIds, const VectorCoefficient* displacement);
@@ -37,14 +34,23 @@ public:
     
     // Generic stress load term assembled as ∫ sigma : epsilon(v) dΩ
     void setStrainLoad(const std::set<int>& domains, const MatrixCoefficient* stress);
-    bool hasStrainLoad() const { return !strainLoad_.empty(); }
+    bool hasStrainLoad() const { return !strainLoadBindings_.empty(); }
     
     void assemble() override;
 
 private:
-    DomainMappedScalarCoefficient youngModulus_;
-    DomainMappedScalarCoefficient poissonRatio_;
-    DomainMappedMatrixCoefficient strainLoad_;
+    struct ElasticityBinding {
+        std::set<int> domains;
+        const Coefficient* E = nullptr;
+        const Coefficient* nu = nullptr;
+    };
+    struct StrainLoadBinding {
+        std::set<int> domains;
+        const MatrixCoefficient* stress = nullptr;
+    };
+
+    std::vector<ElasticityBinding> elasticityBindings_;
+    std::vector<StrainLoadBinding> strainLoadBindings_;
     std::map<int, const VectorCoefficient*> displacementBCs_;
 };
 

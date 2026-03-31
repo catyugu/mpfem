@@ -25,7 +25,7 @@ bool ElectrostaticsSolver::initialize(const Mesh& mesh, FieldValues& fieldValues
 }
 
 void ElectrostaticsSolver::setElectricalConductivity(const std::set<int>& domains, const MatrixCoefficient* sigma) {
-    conductivity_.set(domains, sigma);
+    conductivityBindings_.push_back({domains, sigma});
 }
 
 void ElectrostaticsSolver::addVoltageBC(const std::set<int>& boundaryIds, const Coefficient* voltage) {
@@ -35,14 +35,16 @@ void ElectrostaticsSolver::addVoltageBC(const std::set<int>& boundaryIds, const 
 void ElectrostaticsSolver::assemble() {
     ScopedTimer timer("Electrostatics assemble");
     
-    if (conductivity_.empty()) {
+    if (conductivityBindings_.empty()) {
         LOG_ERROR << "ElectrostaticsSolver: conductivity not set";
         return;
     }
     
     clearAssemblers();
     
-    matAsm_->addDomainIntegrator(std::make_unique<DiffusionIntegrator>(&conductivity_));
+    for (const auto& binding : conductivityBindings_) {
+        matAsm_->addDomainIntegrator(std::make_unique<DiffusionIntegrator>(binding.sigma), binding.domains);
+    }
     matAsm_->assemble();
     vecAsm_->assemble();
     

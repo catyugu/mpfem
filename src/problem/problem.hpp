@@ -50,6 +50,9 @@ namespace mpfem
         MaterialDatabase materials;
         CaseDefinition caseDef;
         std::map<int, std::string> domainMaterial;
+        std::map<int, const MatrixCoefficient*> conductivityByDomain;
+        std::map<int, const Coefficient*> youngModulusByDomain;
+        std::map<int, const Coefficient*> poissonRatioByDomain;
         FieldValues fieldValues;
 
         // Scalar coefficients

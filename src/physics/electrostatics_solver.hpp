@@ -5,6 +5,7 @@
 #include "fe/coefficient.hpp"
 #include <map>
 #include <set>
+#include <vector>
 
 namespace mpfem {
 
@@ -24,10 +25,8 @@ public:
     
     bool initialize(const Mesh& mesh, FieldValues& fieldValues, int order, double initialPotential = 0.0);
     
-    // Material coefficients - matrix form for anisotropic electrical conductivity
+    // Material bindings
     void setElectricalConductivity(const std::set<int>& domains, const MatrixCoefficient* sigma);
-    void setElectricalConductivity(const MatrixCoefficient* sigma) { conductivity_.setAll(sigma); }
-    const DomainMappedMatrixCoefficient& electricalConductivity() const { return conductivity_; }
     
     // Boundary conditions
     void addVoltageBC(const std::set<int>& boundaryIds, const Coefficient* voltage);
@@ -36,7 +35,12 @@ public:
     void assemble() override;
 
 private:
-    DomainMappedMatrixCoefficient conductivity_;
+    struct ConductivityBinding {
+        std::set<int> domains;
+        const MatrixCoefficient* sigma = nullptr;
+    };
+
+    std::vector<ConductivityBinding> conductivityBindings_;
     std::map<int, const Coefficient*> voltageBCs_;
 };
 
