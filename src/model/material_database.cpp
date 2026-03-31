@@ -145,24 +145,6 @@ void MaterialDatabase::addMaterial(const MaterialPropertyModel& material) {
     impl_->materials[material.tag()] = material;
 }
 
-const MaterialPropertyModel* MaterialDatabase::getMaterial(const std::string& tag) const {
-    auto it = impl_->materials.find(tag);
-    return it != impl_->materials.end() ? &it->second : nullptr;
-}
-
-bool MaterialDatabase::hasMaterial(const std::string& tag) const {
-    return impl_->materials.find(tag) != impl_->materials.end();
-}
-
-std::vector<std::string> MaterialDatabase::getMaterialTags() const {
-    std::vector<std::string> tags;
-    tags.reserve(impl_->materials.size());
-    for (const auto& [tag, _] : impl_->materials) {
-        tags.push_back(tag);
-    }
-    return tags;
-}
-
 void MaterialDatabase::buildDomainIndex(const std::vector<MaterialAssignment>& assignments) {
     impl_->materialTagByDomain.clear();
     impl_->orderedDomainIds.clear();

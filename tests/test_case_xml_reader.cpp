@@ -130,10 +130,10 @@ TEST_F(CaseXmlReaderTest, BoundaryConditionParsing) {
         const auto& physics = caseDef.physics.at("electrostatics");
         bool foundVoltage43 = false;
         for (const auto& bc : physics.boundaries) {
-            if (bc.kind == "voltage" && bc.ids.count(43) > 0) {
+            if (const auto* voltage = std::get_if<VoltageBoundaryCondition>(&bc);
+                voltage && voltage->ids.count(43) > 0) {
                 foundVoltage43 = true;
-                // Check that value parameter exists
-                EXPECT_TRUE(bc.params.count("value") > 0);
+                EXPECT_FALSE(voltage->value.empty());
             }
         }
         EXPECT_TRUE(foundVoltage43);

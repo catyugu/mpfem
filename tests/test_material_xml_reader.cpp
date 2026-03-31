@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
+
 #include "io/material_xml_reader.hpp"
+#include "expr/expression_parser.hpp"
 #include "core/logger.hpp"
 
 using namespace mpfem;
@@ -9,8 +11,7 @@ protected:
     void SetUp() override {
         Logger::setLevel(LogLevel::Warning);
     }
-    
-    // Helper to get test data path
+
     static std::string dataPath(const std::string& relativePath) {
 #ifdef MPFEM_PROJECT_ROOT
         return std::string(MPFEM_PROJECT_ROOT) + "/" + relativePath;
@@ -18,146 +19,112 @@ protected:
         return relativePath;
 #endif
     }
+
+    static void buildSimpleDomainIndex(MaterialDatabase& database) {
+        std::vector<MaterialAssignment> assignments;
+        assignments.push_back(MaterialAssignment{std::set<int>{1}, "mat1"});
+        assignments.push_back(MaterialAssignment{std::set<int>{2}, "mat2"});
+        database.buildDomainIndex(assignments);
+    }
 };
 
 TEST_F(MaterialXmlReaderTest, ReadBusbarMaterials) {
     MaterialDatabase database;
-    
+
     ASSERT_NO_THROW({
         MaterialXmlReader::readFromFile(dataPath("cases/busbar_steady/material.xml"), database);
     });
 
-    // Should have 2 materials
     EXPECT_EQ(database.size(), 2);
 
-    // Check mat1 (Copper)
-    const MaterialPropertyModel* copper = database.getMaterial("mat1");
-    ASSERT_NE(copper, nullptr);
-    
-    // Check key properties for Copper
-    // Electric conductivity is an expression (temperature-dependent)
-    EXPECT_TRUE(copper->hasMatrix("electricconductivity"));
-    
-    // Thermal conductivity is a constant matrix
-    EXPECT_TRUE(copper->hasMatrix("thermalconductivity"));
-    // Note: hasMatrix() returns true for both expressions and constants
+    buildSimpleDomainIndex(database);
+    ASSERT_EQ(database.domainIds().size(), 2);
+    EXPECT_EQ(database.domainIds()[0], 1);
+    EXPECT_EQ(database.domainIds()[1], 2);
 
-    // Check mat2 (Titanium)
-    const MaterialPropertyModel* titanium = database.getMaterial("mat2");
-    ASSERT_NE(titanium, nullptr);
-    
-    // Titanium has constant electric conductivity (no expression)
-    EXPECT_TRUE(titanium->hasMatrix("electricconductivity"));
-    EXPECT_TRUE(titanium->hasMatrix("thermalconductivity"));
+    EXPECT_NO_THROW({
+        static_cast<void>(database.matrixExpressionByDomain(1, "electricconductivity"));
+        static_cast<void>(database.matrixExpressionByDomain(1, "thermalconductivity"));
+        static_cast<void>(database.matrixExpressionByDomain(2, "electricconductivity"));
+        static_cast<void>(database.matrixExpressionByDomain(2, "thermalconductivity"));
+    });
 }
 
-TEST_F(MaterialXmlReaderTest, MaterialPropertyAccess) {
+TEST_F(MaterialXmlReaderTest, DomainScalarPropertyAccess) {
     MaterialDatabase database;
     MaterialXmlReader::readFromFile(dataPath("cases/busbar_steady/material.xml"), database);
+    buildSimpleDomainIndex(database);
 
-    const MaterialPropertyModel* copper = database.getMaterial("mat1");
-    ASSERT_NE(copper, nullptr);
+    const std::string& eExpr = database.scalarExpressionByDomain(1, "E");
+    const std::string& nuExpr = database.scalarExpressionByDomain(1, "nu");
 
-    // Test getScalar - returns value directly, throws if not found
-    double E = copper->getScalar("E");
+    const double E = ExpressionParser::instance().evaluate(eExpr, {});
+    const double nu = ExpressionParser::instance().evaluate(nuExpr, {});
+
     EXPECT_GT(E, 0.0);
-
-    double nu = copper->getScalar("nu");
     EXPECT_GT(nu, 0.0);
-    EXPECT_LT(nu, 1.0);  // Poisson ratio should be between 0 and 1
+    EXPECT_LT(nu, 1.0);
 
-    // Test non-existent property throws
-    EXPECT_THROW(copper->getScalar("nonexistent_property"), ArgumentException);
+    EXPECT_THROW(static_cast<void>(database.scalarExpressionByDomain(1, "nonexistent_property")), ArgumentException);
 }
 
-TEST_F(MaterialXmlReaderTest, TemperatureDependentConductivity) {
+TEST_F(MaterialXmlReaderTest, TemperatureDependentConductivityByDomain) {
     MaterialDatabase database;
     MaterialXmlReader::readFromFile(dataPath("cases/busbar_steady/material.xml"), database);
+    buildSimpleDomainIndex(database);
 
-    const MaterialPropertyModel* copper = database.getMaterial("mat1");
-    ASSERT_NE(copper, nullptr);
+    const std::string& sigmaExpr = database.matrixExpressionByDomain(1, "electricconductivity");
 
-    // Copper has temperature-dependent conductivity (expression)
-    EXPECT_TRUE(copper->hasMatrix("electricconductivity"));
-
-    // Evaluate at different temperatures
     std::map<std::string, double> vars;
-    
     vars["T"] = 293.15;
-    Matrix3 sigma_293 = copper->getMatrix("electricconductivity", vars);
-    
+    Matrix3 sigma293 = ExpressionParser::instance().evaluateMatrix(sigmaExpr, vars);
+
     vars["T"] = 373.15;
-    Matrix3 sigma_373 = copper->getMatrix("electricconductivity", vars);
-    
-    // Check that matrices are diagonal (isotropic case)
-    EXPECT_GT(sigma_293(0, 0), 0.0);
-    EXPECT_GT(sigma_293(1, 1), 0.0);
-    EXPECT_GT(sigma_293(2, 2), 0.0);
-    EXPECT_NEAR(sigma_293(0, 0), sigma_293(1, 1), 1e-10);
-    EXPECT_NEAR(sigma_293(0, 0), sigma_293(2, 2), 1e-10);
-    
-    // Conductivity should decrease with temperature for metals
-    EXPECT_GT(sigma_373(0, 0), 0.0);
-    EXPECT_GT(sigma_293(0, 0), sigma_373(0, 0));
+    Matrix3 sigma373 = ExpressionParser::instance().evaluateMatrix(sigmaExpr, vars);
+
+    EXPECT_GT(sigma293(0, 0), 0.0);
+    EXPECT_GT(sigma293(1, 1), 0.0);
+    EXPECT_GT(sigma293(2, 2), 0.0);
+    EXPECT_NEAR(sigma293(0, 0), sigma293(1, 1), 1e-10);
+    EXPECT_NEAR(sigma293(0, 0), sigma293(2, 2), 1e-10);
+
+    EXPECT_GT(sigma373(0, 0), 0.0);
+    EXPECT_GT(sigma293(0, 0), sigma373(0, 0));
 }
 
-TEST_F(MaterialXmlReaderTest, MaterialNotFound) {
+TEST_F(MaterialXmlReaderTest, InvalidDomainOrPropertyThrows) {
     MaterialDatabase database;
     MaterialXmlReader::readFromFile(dataPath("cases/busbar_steady/material.xml"), database);
+    buildSimpleDomainIndex(database);
 
-    const MaterialPropertyModel* notFound = database.getMaterial("nonexistent");
-    EXPECT_EQ(notFound, nullptr);
-
-    EXPECT_FALSE(database.hasMaterial("nonexistent"));
-    EXPECT_TRUE(database.hasMaterial("mat1"));
-    EXPECT_TRUE(database.hasMaterial("mat2"));
-}
-
-TEST_F(MaterialXmlReaderTest, MaterialTags) {
-    MaterialDatabase database;
-    MaterialXmlReader::readFromFile(dataPath("cases/busbar_steady/material.xml"), database);
-
-    auto tags = database.getMaterialTags();
-    EXPECT_EQ(tags.size(), 2);
-    
-    // Check that both tags are present
-    bool hasMat1 = false, hasMat2 = false;
-    for (const auto& tag : tags) {
-        if (tag == "mat1") hasMat1 = true;
-        if (tag == "mat2") hasMat2 = true;
-    }
-    EXPECT_TRUE(hasMat1);
-    EXPECT_TRUE(hasMat2);
+    EXPECT_THROW(static_cast<void>(database.scalarExpressionByDomain(999, "E")), ArgumentException);
+    EXPECT_THROW(static_cast<void>(database.matrixExpressionByDomain(999, "electricconductivity")), ArgumentException);
+    EXPECT_THROW(static_cast<void>(database.matrixExpressionByDomain(2, "nonexistent_matrix")), ArgumentException);
 }
 
 TEST_F(MaterialXmlReaderTest, ReadOrder2Materials) {
     MaterialDatabase database;
-    
+
     ASSERT_NO_THROW({
         MaterialXmlReader::readFromFile(dataPath("cases/busbar_steady_order2/material.xml"), database);
     });
 
-    // Should have same materials as order 1 case
     EXPECT_EQ(database.size(), 2);
-    EXPECT_TRUE(database.hasMaterial("mat1"));
-    EXPECT_TRUE(database.hasMaterial("mat2"));
+
+    buildSimpleDomainIndex(database);
+    EXPECT_NO_THROW(static_cast<void>(database.matrixExpressionByDomain(1, "electricconductivity")));
+    EXPECT_NO_THROW(static_cast<void>(database.matrixExpressionByDomain(2, "thermalconductivity")));
 }
 
-TEST_F(MaterialXmlReaderTest, ConstantConductivity) {
+TEST_F(MaterialXmlReaderTest, ConstantConductivityByDomain) {
     MaterialDatabase database;
     MaterialXmlReader::readFromFile(dataPath("cases/busbar_steady/material.xml"), database);
+    buildSimpleDomainIndex(database);
 
-    // Titanium has constant (non-temperature-dependent) conductivity
-    const MaterialPropertyModel* titanium = database.getMaterial("mat2");
-    ASSERT_NE(titanium, nullptr);
+    const std::string& sigmaExpr = database.matrixExpressionByDomain(2, "electricconductivity");
 
-    EXPECT_TRUE(titanium->hasMatrix("electricconductivity"));
-    
-    // Evaluate without temperature variable (should still work for constant)
-    std::map<std::string, double> emptyVars;
-    Matrix3 sigma = titanium->getMatrix("electricconductivity", emptyVars);
-    
-    // Check diagonal matrix
+    Matrix3 sigma = ExpressionParser::instance().evaluateMatrix(sigmaExpr, {});
+
     EXPECT_GT(sigma(0, 0), 0.0);
     EXPECT_NEAR(sigma(0, 0), sigma(1, 1), 1e-10);
     EXPECT_NEAR(sigma(0, 0), sigma(2, 2), 1e-10);

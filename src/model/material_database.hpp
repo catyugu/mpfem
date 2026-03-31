@@ -64,9 +64,6 @@ public:
     MaterialDatabase& operator=(MaterialDatabase&& other) noexcept;
 
     void addMaterial(const MaterialPropertyModel& material);
-    const MaterialPropertyModel* getMaterial(const std::string& tag) const;
-    bool hasMaterial(const std::string& tag) const;
-    std::vector<std::string> getMaterialTags() const;
 
     void buildDomainIndex(const std::vector<MaterialAssignment>& assignments);
     const std::vector<int>& domainIds() const;

@@ -13,6 +13,80 @@ namespace mpfem {
 
 using strings::trim;
 
+namespace {
+
+const std::string& requireBoundaryParam(const std::map<std::string, std::string>& params,
+                                        const std::string& key,
+                                        const std::string& physicsKind,
+                                        const std::string& boundaryKind) {
+    auto it = params.find(key);
+    if (it != params.end()) {
+        return it->second;
+    }
+    throw FileException("Missing boundary parameter '" + key +
+                        "' for boundary kind '" + boundaryKind +
+                        "' in physics '" + physicsKind + "'");
+}
+
+std::map<std::string, std::string> parseBoundaryParams(const tinyxml2::XMLElement* boundaryElement) {
+    std::map<std::string, std::string> params;
+    for (const tinyxml2::XMLElement* paramElement = boundaryElement->FirstChildElement("param");
+         paramElement != nullptr;
+         paramElement = paramElement->NextSiblingElement("param")) {
+        const char* nameAttr = paramElement->Attribute("name");
+        const char* valueAttr = paramElement->Attribute("value");
+        if (nameAttr && valueAttr) {
+            params[nameAttr] = valueAttr;
+        }
+    }
+    return params;
+}
+
+BoundaryCondition buildBoundaryCondition(const std::string& physicsKind,
+                                         const std::string& boundaryKind,
+                                         std::set<int> ids,
+                                         const std::map<std::string, std::string>& params) {
+    if (physicsKind == "electrostatics") {
+        if (boundaryKind == "voltage") {
+            return VoltageBoundaryCondition{std::move(ids),
+                requireBoundaryParam(params, "value", physicsKind, boundaryKind)};
+        }
+        if (boundaryKind == "electric_insulation") {
+            return ElectricInsulationBoundaryCondition{std::move(ids)};
+        }
+    }
+
+    if (physicsKind == "heat_transfer") {
+        if (boundaryKind == "temperature") {
+            return TemperatureBoundaryCondition{std::move(ids),
+                requireBoundaryParam(params, "value", physicsKind, boundaryKind)};
+        }
+        if (boundaryKind == "convection") {
+            return ConvectionBoundaryCondition{
+                std::move(ids),
+                requireBoundaryParam(params, "h", physicsKind, boundaryKind),
+                requireBoundaryParam(params, "T_inf", physicsKind, boundaryKind)};
+        }
+        if (boundaryKind == "thermal_insulation") {
+            return ThermalInsulationBoundaryCondition{std::move(ids)};
+        }
+    }
+
+    if (physicsKind == "solid_mechanics") {
+        if (boundaryKind == "fixed_constraint") {
+            return FixedConstraintBoundaryCondition{std::move(ids)};
+        }
+        if (boundaryKind == "free_boundary") {
+            return FreeBoundaryCondition{std::move(ids)};
+        }
+    }
+
+    throw FileException("Unsupported boundary kind '" + boundaryKind +
+                        "' for physics '" + physicsKind + "'");
+}
+
+} // namespace
+
 void CaseXmlReader::parseIds(const std::string& text, std::set<int>& ids) {
     ids.clear();
 
@@ -214,28 +288,23 @@ void CaseXmlReader::readFromFile(const std::string& filePath, CaseDefinition& ca
         for (const tinyxml2::XMLElement* boundaryElement = physicsElement->FirstChildElement("boundary");
              boundaryElement != nullptr;
              boundaryElement = boundaryElement->NextSiblingElement("boundary")) {
-            
-            BoundaryCondition boundary;
+
+            std::string boundaryKind;
             if (const char* kindAttr = boundaryElement->Attribute("kind")) {
-                boundary.kind = kindAttr;
+                boundaryKind = kindAttr;
             }
             if (const char* idsAttr = boundaryElement->Attribute("ids")) {
-                parseIds(idsAttr, boundary.ids);
-            }
+                std::set<int> ids;
+                parseIds(idsAttr, ids);
 
-            // Parameters
-            for (const tinyxml2::XMLElement* paramElement = boundaryElement->FirstChildElement("param");
-                 paramElement != nullptr;
-                 paramElement = paramElement->NextSiblingElement("param")) {
-                
-                const char* nameAttr = paramElement->Attribute("name");
-                const char* valueAttr = paramElement->Attribute("value");
-                if (nameAttr && valueAttr) {
-                    boundary.params[nameAttr] = valueAttr;
+                if (ids.empty()) {
+                    throw FileException("Boundary ids cannot be empty for kind '" + boundaryKind + "'");
                 }
-            }
 
-            physics.boundaries.push_back(boundary);
+                const auto params = parseBoundaryParams(boundaryElement);
+                physics.boundaries.push_back(
+                    buildBoundaryCondition(physics.kind, boundaryKind, std::move(ids), params));
+            }
         }
 
         // Sources

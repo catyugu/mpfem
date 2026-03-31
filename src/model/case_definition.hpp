@@ -7,6 +7,7 @@
 #include <vector>
 #include <set>
 #include <map>
+#include <variant>
 
 namespace mpfem {
 
@@ -27,17 +28,46 @@ struct MaterialAssignment {
     std::string materialTag;
 };
 
-/**
- * @brief Boundary condition definition for one physics block.
- * 
- * Parameters are stored as key-value pairs. Different boundary condition types
- * require different parameters.
- */
-struct BoundaryCondition {
-    std::string kind;
+struct VoltageBoundaryCondition {
     std::set<int> ids;
-    std::map<std::string, std::string> params;  // param name -> value expression
+    std::string value;
 };
+
+struct ElectricInsulationBoundaryCondition {
+    std::set<int> ids;
+};
+
+struct TemperatureBoundaryCondition {
+    std::set<int> ids;
+    std::string value;
+};
+
+struct ConvectionBoundaryCondition {
+    std::set<int> ids;
+    std::string h;
+    std::string tInf;
+};
+
+struct ThermalInsulationBoundaryCondition {
+    std::set<int> ids;
+};
+
+struct FixedConstraintBoundaryCondition {
+    std::set<int> ids;
+};
+
+struct FreeBoundaryCondition {
+    std::set<int> ids;
+};
+
+using BoundaryCondition = std::variant<
+    VoltageBoundaryCondition,
+    ElectricInsulationBoundaryCondition,
+    TemperatureBoundaryCondition,
+    ConvectionBoundaryCondition,
+    ThermalInsulationBoundaryCondition,
+    FixedConstraintBoundaryCondition,
+    FreeBoundaryCondition>;
 
 /**
  * @brief Volumetric or surface source definition.
@@ -46,17 +76,6 @@ struct SourceDefinition {
     std::string kind;
     std::set<int> domainIds;
     std::string valueText;
-};
-
-/**
- * @brief Physics block extracted from case XML.
- */
-struct PhysicsDefinition {
-    std::string kind;
-    int order = 1;  // Polynomial order for this physics field
-    SolverConfig solver;  // Use SolverConfig from solver/solver_config.hpp
-    std::vector<BoundaryCondition> boundaries;
-    std::vector<SourceDefinition> sources;
 };
 
 /**
