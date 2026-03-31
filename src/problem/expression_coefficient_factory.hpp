@@ -9,21 +9,30 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <cstdint>
 
 namespace mpfem {
 
 using ExternalRuntimeSymbolResolver =
     std::function<bool(std::string_view, ElementTransform&, Real, double&)>;
 
+using ExternalRuntimeStateTagResolver =
+    std::function<std::uint64_t(std::string_view)>;
+
+struct RuntimeExpressionResolvers {
+    ExternalRuntimeSymbolResolver symbolResolver;
+    ExternalRuntimeStateTagResolver stateTagResolver;
+};
+
 std::unique_ptr<Coefficient> createRuntimeScalarExpressionCoefficient(
     std::string expression,
     const CaseDefinition& caseDef,
-    ExternalRuntimeSymbolResolver externalResolver);
+    RuntimeExpressionResolvers resolvers = {});
 
 std::unique_ptr<MatrixCoefficient> createRuntimeMatrixExpressionCoefficient(
     std::string expression,
     const CaseDefinition& caseDef,
-    ExternalRuntimeSymbolResolver externalResolver);
+    RuntimeExpressionResolvers resolvers = {});
 
 }  // namespace mpfem
 

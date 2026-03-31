@@ -42,7 +42,7 @@ namespace mpfem
         fieldValues.advanceTime();
         result.addSnapshot(currentTime, fieldValues);
 
-        std::unique_ptr<TimeIntegrator> integrator(createTimeIntegrator(scheme));
+        std::unique_ptr<TimeIntegrator> integrator = createTimeIntegrator(scheme);
         if (!integrator)
         {
             LOG_ERROR << "TransientProblem::solve: Failed to create time integrator for scheme";

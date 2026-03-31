@@ -12,6 +12,7 @@
 #include "io/problem_input_loader.hpp"
 #include "core/exception.hpp"
 #include "core/logger.hpp"
+#include <cstdint>
 
 namespace mpfem
 {
@@ -44,55 +45,95 @@ namespace mpfem
             return it->second;
         }
 
-        ExternalRuntimeSymbolResolver makeExternalRuntimeResolver(Problem &problem)
+        constexpr std::uint64_t kLocalTagSeed = 1469598103934665603ull;
+
+        const GridFunction *resolveRuntimeField(const Problem &problem, std::string_view symbol)
         {
-            return [&problem](std::string_view symbol,
-                              ElementTransform &trans,
-                              Real,
-                              double &value)
+            if (symbol == "T")
             {
-                if (symbol == "T")
+                return problem.heatTransfer ? &problem.heatTransfer->field() : nullptr;
+            }
+            if (symbol == "V")
+            {
+                return problem.electrostatics ? &problem.electrostatics->field() : nullptr;
+            }
+            return nullptr;
+        }
+
+        template <typename PointerRange>
+        std::uint64_t combinePointerStateTags(std::uint64_t seed, const PointerRange &pointers)
+        {
+            std::uint64_t tag = seed;
+            for (const auto *ptr : pointers)
+            {
+                if (ptr)
                 {
-                    if (!problem.heatTransfer)
-                    {
-                        return false;
-                    }
-                    const auto &ip = trans.integrationPoint();
-                    value = problem.heatTransfer->field().eval(trans.elementIndex(), &ip.xi);
-                    return true;
+                    tag = combineTag(tag, ptr->stateTag());
+                }
+            }
+            return tag;
+        }
+
+        std::uint64_t combineFieldRevisionTag(std::uint64_t seed, const GridFunction *field)
+        {
+            if (!field)
+            {
+                return seed;
+            }
+            return combineTag(seed, field->revision());
+        }
+
+        RuntimeExpressionResolvers makeRuntimeExpressionResolvers(Problem &problem)
+        {
+            RuntimeExpressionResolvers resolvers;
+
+            resolvers.symbolResolver =
+                [&problem](std::string_view symbol,
+                           ElementTransform &trans,
+                           Real,
+                           double &value)
+            {
+                const GridFunction *field = resolveRuntimeField(problem, symbol);
+                if (!field)
+                {
+                    return false;
                 }
 
-                if (symbol == "V")
-                {
-                    if (!problem.electrostatics)
-                    {
-                        return false;
-                    }
-                    const auto &ip = trans.integrationPoint();
-                    value = problem.electrostatics->field().eval(trans.elementIndex(), &ip.xi);
-                    return true;
-                }
-
-                return false;
+                const auto &ip = trans.integrationPoint();
+                value = field->eval(trans.elementIndex(), &ip.xi);
+                return true;
             };
+
+            resolvers.stateTagResolver =
+                [&problem](std::string_view symbol) -> std::uint64_t
+            {
+                const GridFunction *field = resolveRuntimeField(problem, symbol);
+                if (!field)
+                {
+                    return DynamicCoefficientTag;
+                }
+                return field->revision();
+            };
+
+            return resolvers;
         }
 
         std::unique_ptr<Coefficient> makeScalarExpressionCoefficient(Problem &problem,
-                                                                      const std::string &expression)
+                                                                     const std::string &expression)
         {
             return createRuntimeScalarExpressionCoefficient(
                 expression,
                 problem.caseDef,
-                makeExternalRuntimeResolver(problem));
+                makeRuntimeExpressionResolvers(problem));
         }
 
         std::unique_ptr<MatrixCoefficient> makeMatrixExpressionCoefficient(Problem &problem,
-                                                                            const std::string &expression)
+                                                                           const std::string &expression)
         {
             return createRuntimeMatrixExpressionCoefficient(
                 expression,
                 problem.caseDef,
-                makeExternalRuntimeResolver(problem));
+                makeRuntimeExpressionResolvers(problem));
         }
 
     } // namespace
@@ -395,7 +436,7 @@ namespace mpfem
                     }
 
                     auto jouleHeat = std::make_unique<ScalarCoefficient>(
-                        [V_field, sigmaByDomain = std::move(sigmaByDomain)](ElementTransform &trans, Real &result, Real t)
+                        [V_field, sigmaByDomain](ElementTransform &trans, Real &result, Real t)
                         {
                             const int domId = static_cast<int>(trans.attribute());
                             if (domId < 0 || static_cast<size_t>(domId) >= sigmaByDomain.size())
@@ -415,6 +456,13 @@ namespace mpfem
                             Vector3 g = V_field->gradient(trans.elementIndex(), &trans.integrationPoint().xi, trans);
                             // For anisotropic: Q = g^T * sigma * g
                             result = g.transpose() * sigma_mat * g;
+                        },
+                        [&problem, sigmaByDomain]() -> std::uint64_t
+                        {
+                            std::uint64_t tag = combineFieldRevisionTag(
+                                kLocalTagSeed,
+                                problem.electrostatics ? &problem.electrostatics->field() : nullptr);
+                            return combinePointerStateTags(tag, sigmaByDomain);
                         });
 
                     std::string jouleKey = "jouleHeat_" + cp.name;
@@ -480,9 +528,9 @@ namespace mpfem
                     std::string key = "thermalStress_" + cp.name;
                     auto coef = std::make_unique<MatrixFunctionCoefficient>(
                         [&problem,
-                         alphaByDomain = std::move(alphaByDomain),
-                         youngByDomain = std::move(youngByDomain),
-                         nuByDomain = std::move(nuByDomain),
+                         alphaByDomain,
+                         youngByDomain,
+                         nuByDomain,
                          T_ref](ElementTransform &trans, Matrix3 &result, Real t)
                         {
                             const int domId = static_cast<int>(trans.attribute());
@@ -523,6 +571,15 @@ namespace mpfem
 
                             result = 2.0 * mu * epsSym;
                             result.diagonal().array() += lambda * epsSym.trace();
+                        },
+                        [&problem, alphaByDomain, youngByDomain, nuByDomain]() -> std::uint64_t
+                        {
+                            std::uint64_t tag = combineFieldRevisionTag(
+                                kLocalTagSeed,
+                                problem.heatTransfer ? &problem.heatTransfer->field() : nullptr);
+                            tag = combinePointerStateTags(tag, alphaByDomain);
+                            tag = combinePointerStateTags(tag, youngByDomain);
+                            return combinePointerStateTags(tag, nuByDomain);
                         });
                     problem.structural->setStrainLoad(activeDomains, coef.get());
                     problem.setMatrixCoef(key, std::move(coef));

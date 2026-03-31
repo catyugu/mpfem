@@ -4,6 +4,7 @@
 #include "fe/fe_space.hpp"
 #include "mesh/mesh.hpp"
 #include <Eigen/Dense>
+#include <cstdint>
 
 namespace mpfem {
 
@@ -35,9 +36,12 @@ public:
     Real operator()(Index i) const { return values_[i]; }
     Real& operator()(Index i) { return values_[i]; }
     
-    void setZero() { values_.setZero(); }
-    void setConstant(Real c) { values_.setConstant(c); }
-    void setValues(const Eigen::VectorXd& v) { values_ = v; }
+    void setZero() { values_.setZero(); ++revision_; }
+    void setConstant(Real c) { values_.setConstant(c); ++revision_; }
+    void setValues(const Eigen::VectorXd& v) { values_ = v; ++revision_; }
+
+    void markUpdated() { ++revision_; }
+    std::uint64_t revision() const { return revision_; }
     
     Real l2Norm() const { return values_.norm(); }
     Real maxNorm() const { return values_.cwiseAbs().maxCoeff(); }
@@ -61,6 +65,7 @@ public:
 private:
     const FESpace* fes_ = nullptr;
     Eigen::VectorXd values_;
+    std::uint64_t revision_ = 0;
 };
 
 }  // namespace mpfem
