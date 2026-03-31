@@ -219,11 +219,10 @@ inline void fillElasticityTensorC(Eigen::Matrix<Real, 6, 6>& C, Real lambda, Rea
 
 void ElasticityIntegrator::assembleElementMatrix(const ReferenceElement& ref,
                                                   ElementTransform& trans,
-                                                  Matrix& elmat,
-                                                  int vdim) const {
+                                                  Matrix& elmat) const {
     const int nd = ref.numDofs();
     const int nq = ref.numQuadraturePoints();
-    const int totalDofs = nd * vdim;
+    const int totalDofs = nd * vdim_;
     
     elmat.setZero(totalDofs, totalDofs);
     
@@ -252,7 +251,7 @@ void ElasticityIntegrator::assembleElementMatrix(const ReferenceElement& ref,
         
         B.setZero();
         
-        computeStrainDispMatrix(B, ref, trans, nd, vdim, q);
+        computeStrainDispMatrix(B, ref, trans, nd, vdim_, q);
         
         CB.noalias() = C * B;
         elmat.noalias() += w * (B.transpose() * CB);
@@ -261,11 +260,10 @@ void ElasticityIntegrator::assembleElementMatrix(const ReferenceElement& ref,
 
 void ThermalLoadIntegrator::assembleElementVector(const ReferenceElement& ref,
                                                    ElementTransform& trans,
-                                                   Vector& elvec,
-                                                   int vdim) const {
+                                                   Vector& elvec) const {
     const int nd = ref.numDofs();
     const int nq = ref.numQuadraturePoints();
-    const int totalDofs = nd * vdim;
+    const int totalDofs = nd * vdim_;
     
     elvec.setZero(totalDofs);
     
@@ -314,7 +312,7 @@ void ThermalLoadIntegrator::assembleElementVector(const ReferenceElement& ref,
         
         B.setZero();
         
-        computeStrainDispMatrix(B, ref, trans, nd, vdim, q);
+        computeStrainDispMatrix(B, ref, trans, nd, vdim_, q);
         
         // F_thermal += B^T · σ_thermal · w
         elvec.noalias() += w * (B.transpose() * sigmaThermal);
