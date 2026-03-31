@@ -39,9 +39,9 @@ namespace mpfem
         poissonRatio_.set(domains, nu);
     }
 
-    void StructuralSolver::setThermalExpansion(const std::set<int> &domains, const MatrixCoefficient *alphaT)
+    void StructuralSolver::setStrainLoad(const std::set<int> &domains, const MatrixCoefficient *stress)
     {
-        thermalExpansion_.set(domains, alphaT);
+        strainLoad_.set(domains, stress);
     }
 
     void StructuralSolver::addFixedDisplacementBC(const std::set<int> &boundaryIds, const VectorCoefficient *displacement)
@@ -68,10 +68,10 @@ namespace mpfem
         matAsm_->addDomainIntegrator(std::make_unique<ElasticityIntegrator>(&youngModulus_, &poissonRatio_, fes_->vdim()));
         matAsm_->assemble();
 
-        if (!thermalExpansion_.empty())
+        if (!strainLoad_.empty())
         {
-            vecAsm_->addDomainIntegrator(std::make_unique<ThermalLoadIntegrator>(
-                &youngModulus_, &poissonRatio_, &thermalExpansion_, fes_->vdim()));
+            vecAsm_->addDomainIntegrator(std::make_unique<StrainLoadIntegrator>(
+                &strainLoad_, fes_->vdim()));
         }
         vecAsm_->assemble();
 

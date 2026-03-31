@@ -415,9 +415,16 @@ namespace mpfem
                         const MatrixCoefficient *alphaCoef = problem.getMatrixCoef(alphaKey);
                         MPFEM_ASSERT(alphaCoef != nullptr, "Failed to build thermal expansion base coefficient.");
 
-                        std::string key = "thermalExp_" + std::to_string(domId);
+                        std::string eKey = "young_" + std::to_string(domId);
+                        std::string nuKey = "poisson_" + std::to_string(domId);
+                        const Coefficient *E_coef = problem.getScalarCoef(eKey);
+                        const Coefficient *nu_coef = problem.getScalarCoef(nuKey);
+                        MPFEM_ASSERT(E_coef != nullptr, "Missing Young's modulus coefficient for thermal expansion coupling.");
+                        MPFEM_ASSERT(nu_coef != nullptr, "Missing Poisson ratio coefficient for thermal expansion coupling.");
+
+                        std::string key = "thermalStress_" + std::to_string(domId);
                         auto coef = std::make_unique<MatrixFunctionCoefficient>(
-                            [&problem, alphaCoef, T_ref](ElementTransform &trans, Matrix3 &result, Real t)
+                            [&problem, alphaCoef, E_coef, nu_coef, T_ref](ElementTransform &trans, Matrix3 &result, Real t)
                             {
                                 Matrix3 alpha;
                                 alphaCoef->eval(trans, alpha, t);
@@ -428,9 +435,22 @@ namespace mpfem
                                     const auto &ip = trans.integrationPoint();
                                     T = problem.heatTransfer->field().eval(trans.elementIndex(), &ip.xi);
                                 }
-                                result = alpha * (T - T_ref);
+
+                                Real E_val = 0.0;
+                                Real nu_val = 0.0;
+                                E_coef->eval(trans, E_val, t);
+                                nu_coef->eval(trans, nu_val, t);
+
+                                const Real lambda = E_val * nu_val / ((1.0 + nu_val) * (1.0 - 2.0 * nu_val));
+                                const Real mu = E_val / (2.0 * (1.0 + nu_val));
+
+                                const Matrix3 eps = alpha * (T - T_ref);
+                                const Matrix3 epsSym = 0.5 * (eps + eps.transpose());
+
+                                result = 2.0 * mu * epsSym;
+                                result.diagonal().array() += lambda * epsSym.trace();
                             });
-                        problem.structural->setThermalExpansion({domId}, coef.get());
+                        problem.structural->setStrainLoad({domId}, coef.get());
                         problem.setMatrixCoef(key, std::move(coef));
                     }
                     LOG_INFO << "Thermal expansion coupling enabled (T_ref = " << T_ref << " K)";

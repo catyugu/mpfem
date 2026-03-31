@@ -155,6 +155,36 @@ TEST_F(IntegratorTest, DomainLoadVector) {
     EXPECT_GT(elvec.sum(), 0.0);
 }
 
+TEST_F(IntegratorTest, StrainLoadVectorScaling) {
+    ElementTransform trans(&mesh_, 0);
+    const ReferenceElement* refElem = fes_->elementRefElement(0);
+
+    Matrix3 sigma1 = Matrix3::Zero();
+    sigma1(0, 0) = 1.0;
+    sigma1(1, 1) = 2.0;
+    sigma1(2, 2) = 3.0;
+    sigma1(0, 1) = sigma1(1, 0) = 0.5;
+    auto stress1 = constantMatrixCoefficient(sigma1);
+
+    Matrix3 sigma2 = 2.0 * sigma1;
+    auto stress2 = constantMatrixCoefficient(sigma2);
+
+    StrainLoadIntegrator integ1(stress1.get(), 3);
+    StrainLoadIntegrator integ2(stress2.get(), 3);
+
+    Vector elvec1, elvec2;
+    integ1.assembleElementVector(*refElem, trans, elvec1);
+    integ2.assembleElementVector(*refElem, trans, elvec2);
+
+    EXPECT_EQ(elvec1.size(), 12);
+    EXPECT_EQ(elvec2.size(), 12);
+    EXPECT_GT(elvec1.norm(), 0.0);
+
+    for (int i = 0; i < elvec1.size(); ++i) {
+        EXPECT_NEAR(elvec2(i), 2.0 * elvec1(i), 1e-12);
+    }
+}
+
 TEST_F(IntegratorTest, BilinearFormAssembler) {
     BilinearFormAssembler assembler(fes_.get());
     

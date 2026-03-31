@@ -31,24 +31,20 @@ public:
     void setPoissonRatio(const std::set<int>& domains, const Coefficient* nu);
     void setPoissonRatio(const Coefficient* nu) { poissonRatio_.setAll(nu); }
     
-    const DomainMappedScalarCoefficient& youngModulus() const { return youngModulus_; }
-    const DomainMappedScalarCoefficient& poissonRatio() const { return poissonRatio_; }
-    
     // Boundary conditions
     void addFixedDisplacementBC(const std::set<int>& boundaryIds, const VectorCoefficient* displacement);
     void clearBoundaryConditions() { displacementBCs_.clear(); }
     
-    // Thermal expansion
-    void setThermalExpansion(const std::set<int>& domains, const MatrixCoefficient* alphaT);
-    const DomainMappedMatrixCoefficient& thermalExpansion() const { return thermalExpansion_; }
-    bool hasThermalExpansion() const { return !thermalExpansion_.empty(); }
+    // Generic stress load term assembled as ∫ sigma : epsilon(v) dΩ
+    void setStrainLoad(const std::set<int>& domains, const MatrixCoefficient* stress);
+    bool hasStrainLoad() const { return !strainLoad_.empty(); }
     
     void assemble() override;
 
 private:
     DomainMappedScalarCoefficient youngModulus_;
     DomainMappedScalarCoefficient poissonRatio_;
-    DomainMappedMatrixCoefficient thermalExpansion_;
+    DomainMappedMatrixCoefficient strainLoad_;
     std::map<int, const VectorCoefficient*> displacementBCs_;
 };
 
