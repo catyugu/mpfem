@@ -89,17 +89,18 @@ void BilinearFormAssembler::assemble() {
                 const auto& integ = domainIntegs_[ki];
                 int ivdim = integ->vdim();
                 int iTotalDofs = nd * ivdim;
-                Matrix temp(iTotalDofs, iTotalDofs);
-                integ->assembleElementMatrix(*ref, trans, temp);
+                buf.tempMatrix.topLeftCorner(iTotalDofs, iTotalDofs).setZero();
+                Matrix tempView = buf.tempMatrix.topLeftCorner(iTotalDofs, iTotalDofs);
+                integ->assembleElementMatrix(*ref, trans, tempView);
                 
                 if (ivdim == 1) {
                     // Scalar integrator: expand to vector field diagonal blocks
                     for (int c = 0; c < vdim; ++c) {
-                        buf.elmatVector.block(c * nd, c * nd, nd, nd) += temp;
+                        buf.elmatVector.block(c * nd, c * nd, nd, nd) += tempView;
                     }
                 } else {
                     // Vector integrator: add directly
-                    buf.elmatVector.topLeftCorner(iTotalDofs, iTotalDofs) += temp;
+                    buf.elmatVector.topLeftCorner(iTotalDofs, iTotalDofs) += tempView;
                 }
             }
             
