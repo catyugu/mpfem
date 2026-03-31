@@ -45,7 +45,6 @@ void HeatTransferSolver::setMassProperties(const std::set<int>& domains,
     binding.domains = domains;
     binding.density = rho;
     binding.specificHeat = Cp;
-    binding.rhoCp = std::make_unique<ProductCoefficient>(rho, Cp);
     massBindings_.push_back(std::move(binding));
     massMatrixAssembled_ = false;
 }
@@ -58,8 +57,18 @@ void HeatTransferSolver::assembleMassMatrix() {
 
     auto massAsm = std::make_unique<BilinearFormAssembler>(fes_.get());
     for (const auto& binding : massBindings_) {
+        // Create composite rho*Cp coefficient using lambda
+        auto rhoCpCoef = std::make_unique<ScalarCoefficient>(
+            [&binding](ElementTransform& trans, Real& result, Real t) {
+                Real rho = 1.0, Cp = 1.0;
+                if (binding.density) binding.density->eval(trans, rho, t);
+                if (binding.specificHeat) binding.specificHeat->eval(trans, Cp, t);
+                result = rho * Cp;
+            },
+            binding.stateTag());
+        
         massAsm->addDomainIntegrator(
-            std::make_unique<MassIntegrator>(binding.rhoCp.get()),
+            std::make_unique<MassIntegrator>(rhoCpCoef.get()),
             binding.domains);
     }
     massAsm->assemble();

@@ -404,186 +404,165 @@ namespace mpfem
             }
         }
 
+        void setupJouleHeating(Problem &problem, const CoupledPhysicsDefinition &cp)
+        {
+            const GridFunction *V_field = &problem.electrostatics->field();
+            const int maxDomainId = cp.domainIds.empty() ? 0 : *cp.domainIds.rbegin();
+            
+            std::vector<const MatrixCoefficient *> sigmaByDomain(static_cast<size_t>(maxDomainId + 1), nullptr);
+            std::set<int> activeDomains;
+            
+            for (int domId : cp.domainIds) {
+                auto sigmaIt = problem.conductivityByDomain.find(domId);
+                if (sigmaIt == problem.conductivityByDomain.end()) {
+                    LOG_WARN << "No conductivity for domain " << domId << " in joule heating coupling, skipping";
+                    continue;
+                }
+                sigmaByDomain[static_cast<size_t>(domId)] = sigmaIt->second;
+                activeDomains.insert(domId);
+            }
+
+            if (activeDomains.empty()) {
+                LOG_WARN << "No valid domains for joule heating coupling";
+                return;
+            }
+
+            auto jouleHeat = std::make_unique<ScalarCoefficient>(
+                [V_field, sigmaByDomain](ElementTransform &trans, Real &result, Real t) {
+                    const int domId = static_cast<int>(trans.attribute());
+                    if (domId < 0 || static_cast<size_t>(domId) >= sigmaByDomain.size()) {
+                        result = 0.0;
+                        return;
+                    }
+                    const MatrixCoefficient *sigmaCoef = sigmaByDomain[static_cast<size_t>(domId)];
+                    if (!sigmaCoef) {
+                        result = 0.0;
+                        return;
+                    }
+                    Matrix3 sigma_mat;
+                    sigmaCoef->eval(trans, sigma_mat, t);
+                    Vector3 g = V_field->gradient(trans.elementIndex(), &trans.integrationPoint().xi, trans);
+                    result = g.transpose() * sigma_mat * g;
+                },
+                [&problem, sigmaByDomain]() -> std::uint64_t {
+                    std::uint64_t tag = combineFieldRevisionTag(kLocalTagSeed,
+                        problem.electrostatics ? &problem.electrostatics->field() : nullptr);
+                    return combinePointerStateTags(tag, sigmaByDomain);
+                });
+
+            std::string jouleKey = "jouleHeat_" + cp.name;
+            problem.setScalarCoef(jouleKey, std::move(jouleHeat));
+            problem.heatTransfer->setHeatSource(activeDomains, problem.getScalarCoef(jouleKey));
+            LOG_INFO << "Joule heating domains: " << activeDomains.size() << " domains";
+        }
+
+        void setupThermalExpansion(Problem &problem, const CoupledPhysicsDefinition &cp)
+        {
+            auto physicsIt = problem.caseDef.physics.find("solid_mechanics");
+            MPFEM_ASSERT(physicsIt != problem.caseDef.physics.end(),
+                         "solid_mechanics physics block not found for thermal expansion coupling");
+            Real T_ref = physicsIt->second.referenceTemperature;
+
+            const int maxDomainId = cp.domainIds.empty() ? 0 : *cp.domainIds.rbegin();
+            std::vector<const MatrixCoefficient *> alphaByDomain(static_cast<size_t>(maxDomainId + 1), nullptr);
+            std::vector<const Coefficient *> youngByDomain(static_cast<size_t>(maxDomainId + 1), nullptr);
+            std::vector<const Coefficient *> nuByDomain(static_cast<size_t>(maxDomainId + 1), nullptr);
+            std::set<int> activeDomains;
+            
+            for (int domId : cp.domainIds) {
+                const auto domIt = problem.domainMaterial.find(domId);
+                if (domIt == problem.domainMaterial.end())
+                    continue;
+
+                const auto *mat = problem.materials.getMaterial(domIt->second);
+                if (!mat || !mat->hasMatrix("thermalexpansioncoefficient")) {
+                    LOG_WARN << "Material lacks thermal expansion coefficient for domain " << domId;
+                    continue;
+                }
+
+                std::string alphaKey = "alphaThermal_" + std::to_string(domId);
+                problem.setMatrixCoef(alphaKey,
+                    makeMatrixExpressionCoefficient(problem, mat->matrixExpression("thermalexpansioncoefficient")));
+
+                const MatrixCoefficient *alphaCoef = problem.getMatrixCoef(alphaKey);
+                MPFEM_ASSERT(alphaCoef != nullptr, "Failed to build thermal expansion coefficient.");
+
+                auto eIt = problem.youngModulusByDomain.find(domId);
+                auto nuIt = problem.poissonRatioByDomain.find(domId);
+                if (eIt == problem.youngModulusByDomain.end() || nuIt == problem.poissonRatioByDomain.end()) {
+                    LOG_WARN << "Missing structural material coefficients for domain " << domId;
+                    continue;
+                }
+
+                alphaByDomain[static_cast<size_t>(domId)] = alphaCoef;
+                youngByDomain[static_cast<size_t>(domId)] = eIt->second;
+                nuByDomain[static_cast<size_t>(domId)] = nuIt->second;
+                activeDomains.insert(domId);
+            }
+
+            if (activeDomains.empty()) {
+                LOG_WARN << "No valid domains for thermal expansion coupling";
+                return;
+            }
+
+            std::string key = "thermalStress_" + cp.name;
+            auto coef = std::make_unique<MatrixFunctionCoefficient>(
+                [&problem, alphaByDomain, youngByDomain, nuByDomain, T_ref](ElementTransform &trans, Matrix3 &result, Real t) {
+                    const int domId = static_cast<int>(trans.attribute());
+                    if (domId < 0 || static_cast<size_t>(domId) >= alphaByDomain.size()) {
+                        result.setZero();
+                        return;
+                    }
+                    const MatrixCoefficient *alphaCoef = alphaByDomain[static_cast<size_t>(domId)];
+                    const Coefficient *eCoef = youngByDomain[static_cast<size_t>(domId)];
+                    const Coefficient *nuCoef = nuByDomain[static_cast<size_t>(domId)];
+                    if (!alphaCoef || !eCoef || !nuCoef) {
+                        result.setZero();
+                        return;
+                    }
+
+                    Matrix3 alpha;
+                    alphaCoef->eval(trans, alpha, t);
+
+                    Real T = T_ref;
+                    if (problem.heatTransfer) {
+                        const auto &ip = trans.integrationPoint();
+                        T = problem.heatTransfer->field().eval(trans.elementIndex(), &ip.xi);
+                    }
+
+                    Real E_val = 0.0, nu_val = 0.0;
+                    eCoef->eval(trans, E_val, t);
+                    nuCoef->eval(trans, nu_val, t);
+
+                    const Real lambda = E_val * nu_val / ((1.0 + nu_val) * (1.0 - 2.0 * nu_val));
+                    const Real mu = E_val / (2.0 * (1.0 + nu_val));
+
+                    const Matrix3 eps = alpha * (T - T_ref);
+                    const Matrix3 epsSym = 0.5 * (eps + eps.transpose());
+
+                    result = 2.0 * mu * epsSym;
+                    result.diagonal().array() += lambda * epsSym.trace();
+                },
+                [&problem, alphaByDomain, youngByDomain, nuByDomain]() -> std::uint64_t {
+                    std::uint64_t tag = combineFieldRevisionTag(kLocalTagSeed,
+                        problem.heatTransfer ? &problem.heatTransfer->field() : nullptr);
+                    tag = combinePointerStateTags(tag, alphaByDomain);
+                    tag = combinePointerStateTags(tag, youngByDomain);
+                    return combinePointerStateTags(tag, nuByDomain);
+                });
+            
+            problem.structural->setStrainLoad(activeDomains, coef.get());
+            problem.setMatrixCoef(key, std::move(coef));
+            LOG_INFO << "Thermal expansion coupling enabled (T_ref = " << T_ref << " K)";
+        }
+
         void setupCoupling(Problem &problem)
         {
-            // Setup coupled physics - conductivity is now handled via expressions in buildElectrostatics
-
-            for (const auto &cp : problem.caseDef.coupledPhysicsDefinitions)
-            {
-                if (cp.kind == "joule_heating")
-                {
-                    const GridFunction *V_field = &problem.electrostatics->field();
-
-                    const int maxDomainId = cp.domainIds.empty() ? 0 : *cp.domainIds.rbegin();
-                    std::vector<const MatrixCoefficient *> sigmaByDomain(static_cast<size_t>(maxDomainId + 1), nullptr);
-                    std::set<int> activeDomains;
-                    for (int domId : cp.domainIds)
-                    {
-                        auto sigmaIt = problem.conductivityByDomain.find(domId);
-                        if (sigmaIt == problem.conductivityByDomain.end())
-                        {
-                            LOG_WARN << "No conductivity for domain " << domId << " in joule heating coupling, skipping domain";
-                            continue;
-                        }
-                        sigmaByDomain[static_cast<size_t>(domId)] = sigmaIt->second;
-                        activeDomains.insert(domId);
-                    }
-
-                    if (activeDomains.empty())
-                    {
-                        LOG_WARN << "No valid domains for joule heating coupling";
-                        continue;
-                    }
-
-                    auto jouleHeat = std::make_unique<ScalarCoefficient>(
-                        [V_field, sigmaByDomain](ElementTransform &trans, Real &result, Real t)
-                        {
-                            const int domId = static_cast<int>(trans.attribute());
-                            if (domId < 0 || static_cast<size_t>(domId) >= sigmaByDomain.size())
-                            {
-                                result = 0.0;
-                                return;
-                            }
-                            const MatrixCoefficient *sigmaCoef = sigmaByDomain[static_cast<size_t>(domId)];
-                            if (!sigmaCoef)
-                            {
-                                result = 0.0;
-                                return;
-                            }
-
-                            Matrix3 sigma_mat;
-                            sigmaCoef->eval(trans, sigma_mat, t);
-                            Vector3 g = V_field->gradient(trans.elementIndex(), &trans.integrationPoint().xi, trans);
-                            // For anisotropic: Q = g^T * sigma * g
-                            result = g.transpose() * sigma_mat * g;
-                        },
-                        [&problem, sigmaByDomain]() -> std::uint64_t
-                        {
-                            std::uint64_t tag = combineFieldRevisionTag(
-                                kLocalTagSeed,
-                                problem.electrostatics ? &problem.electrostatics->field() : nullptr);
-                            return combinePointerStateTags(tag, sigmaByDomain);
-                        });
-
-                    std::string jouleKey = "jouleHeat_" + cp.name;
-                    problem.setScalarCoef(jouleKey, std::move(jouleHeat));
-                    problem.heatTransfer->setHeatSource(activeDomains, problem.getScalarCoef(jouleKey));
-                    LOG_INFO << "Joule heating domains: " << activeDomains.size() << " domains";
-                }
-                else if (cp.kind == "thermal_expansion")
-                {
-                    // Get reference temperature from solid_mechanics physics block
-                    auto physicsIt = problem.caseDef.physics.find("solid_mechanics");
-                    MPFEM_ASSERT(physicsIt != problem.caseDef.physics.end(),
-                                 "solid_mechanics physics block not found for thermal expansion coupling");
-                    Real T_ref = physicsIt->second.referenceTemperature;
-
-                    const int maxDomainId = cp.domainIds.empty() ? 0 : *cp.domainIds.rbegin();
-                    std::vector<const MatrixCoefficient *> alphaByDomain(static_cast<size_t>(maxDomainId + 1), nullptr);
-                    std::vector<const Coefficient *> youngByDomain(static_cast<size_t>(maxDomainId + 1), nullptr);
-                    std::vector<const Coefficient *> nuByDomain(static_cast<size_t>(maxDomainId + 1), nullptr);
-                    std::set<int> activeDomains;
-                    for (int domId : cp.domainIds)
-                    {
-                        const auto domIt = problem.domainMaterial.find(domId);
-                        if (domIt == problem.domainMaterial.end())
-                            continue;
-
-                        const auto *mat = problem.materials.getMaterial(domIt->second);
-                        // Thermal expansion coefficient is optional - skip if not present
-                        if (!mat || !mat->hasMatrix("thermalexpansioncoefficient"))
-                        {
-                            LOG_WARN << "Material for domain " << domId << " does not have thermal expansion coefficient, skipping coupling";
-                            continue;
-                        }
-
-                        std::string alphaKey = "alphaThermal_" + std::to_string(domId);
-                        problem.setMatrixCoef(
-                            alphaKey,
-                            makeMatrixExpressionCoefficient(problem, mat->matrixExpression("thermalexpansioncoefficient")));
-
-                        const MatrixCoefficient *alphaCoef = problem.getMatrixCoef(alphaKey);
-                        MPFEM_ASSERT(alphaCoef != nullptr, "Failed to build thermal expansion base coefficient.");
-
-                        auto eIt = problem.youngModulusByDomain.find(domId);
-                        auto nuIt = problem.poissonRatioByDomain.find(domId);
-                        if (eIt == problem.youngModulusByDomain.end() || nuIt == problem.poissonRatioByDomain.end())
-                        {
-                            LOG_WARN << "Missing structural material coefficients for domain " << domId << " in thermal expansion coupling";
-                            continue;
-                        }
-
-                        alphaByDomain[static_cast<size_t>(domId)] = alphaCoef;
-                        youngByDomain[static_cast<size_t>(domId)] = eIt->second;
-                        nuByDomain[static_cast<size_t>(domId)] = nuIt->second;
-                        activeDomains.insert(domId);
-                    }
-
-                    if (activeDomains.empty())
-                    {
-                        LOG_WARN << "No valid domains for thermal expansion coupling";
-                        continue;
-                    }
-
-                    std::string key = "thermalStress_" + cp.name;
-                    auto coef = std::make_unique<MatrixFunctionCoefficient>(
-                        [&problem,
-                         alphaByDomain,
-                         youngByDomain,
-                         nuByDomain,
-                         T_ref](ElementTransform &trans, Matrix3 &result, Real t)
-                        {
-                            const int domId = static_cast<int>(trans.attribute());
-                            if (domId < 0 || static_cast<size_t>(domId) >= alphaByDomain.size())
-                            {
-                                result.setZero();
-                                return;
-                            }
-                            const MatrixCoefficient *alphaCoef = alphaByDomain[static_cast<size_t>(domId)];
-                            const Coefficient *eCoef = youngByDomain[static_cast<size_t>(domId)];
-                            const Coefficient *nuCoef = nuByDomain[static_cast<size_t>(domId)];
-                            if (!alphaCoef || !eCoef || !nuCoef)
-                            {
-                                result.setZero();
-                                return;
-                            }
-
-                            Matrix3 alpha;
-                            alphaCoef->eval(trans, alpha, t);
-
-                            Real T = T_ref;
-                            if (problem.heatTransfer)
-                            {
-                                const auto &ip = trans.integrationPoint();
-                                T = problem.heatTransfer->field().eval(trans.elementIndex(), &ip.xi);
-                            }
-
-                            Real E_val = 0.0;
-                            Real nu_val = 0.0;
-                            eCoef->eval(trans, E_val, t);
-                            nuCoef->eval(trans, nu_val, t);
-
-                            const Real lambda = E_val * nu_val / ((1.0 + nu_val) * (1.0 - 2.0 * nu_val));
-                            const Real mu = E_val / (2.0 * (1.0 + nu_val));
-
-                            const Matrix3 eps = alpha * (T - T_ref);
-                            const Matrix3 epsSym = 0.5 * (eps + eps.transpose());
-
-                            result = 2.0 * mu * epsSym;
-                            result.diagonal().array() += lambda * epsSym.trace();
-                        },
-                        [&problem, alphaByDomain, youngByDomain, nuByDomain]() -> std::uint64_t
-                        {
-                            std::uint64_t tag = combineFieldRevisionTag(
-                                kLocalTagSeed,
-                                problem.heatTransfer ? &problem.heatTransfer->field() : nullptr);
-                            tag = combinePointerStateTags(tag, alphaByDomain);
-                            tag = combinePointerStateTags(tag, youngByDomain);
-                            return combinePointerStateTags(tag, nuByDomain);
-                        });
-                    problem.structural->setStrainLoad(activeDomains, coef.get());
-                    problem.setMatrixCoef(key, std::move(coef));
-                    LOG_INFO << "Thermal expansion coupling enabled (T_ref = " << T_ref << " K)";
+            for (const auto &cp : problem.caseDef.coupledPhysicsDefinitions) {
+                if (cp.kind == "joule_heating") {
+                    setupJouleHeating(problem, cp);
+                } else if (cp.kind == "thermal_expansion") {
+                    setupThermalExpansion(problem, cp);
                 }
             }
         }

@@ -30,7 +30,7 @@ inline std::uint64_t hashRealTag(Real value) {
 }
 
 // =============================================================================
-// Base classes
+// Base classes (kept for type safety in integrators)
 // =============================================================================
 
 class Coefficient {
@@ -55,19 +55,20 @@ public:
 };
 
 // =============================================================================
-// Lambda-based coefficients
+// Unified function-based coefficients (replaces ScalarCoefficient,
+// VectorFunctionCoefficient, MatrixFunctionCoefficient)
 // =============================================================================
 
-class ScalarCoefficient : public Coefficient {
+template<typename T>
+class FunctionCoefficient : public Coefficient {
 public:
     using Func = std::function<void(ElementTransform&, Real&, Real)>;
     using TagFunc = std::function<std::uint64_t()>;
 
-    explicit ScalarCoefficient(Func f,
-                               TagFunc tagFunc = [] { return DynamicCoefficientTag; })
+    explicit FunctionCoefficient(Func f, TagFunc tagFunc = [] { return DynamicCoefficientTag; })
         : func_(std::move(f)), tagFunc_(std::move(tagFunc)) {}
 
-    ScalarCoefficient(Func f, std::uint64_t fixedTag)
+    FunctionCoefficient(Func f, std::uint64_t fixedTag)
         : func_(std::move(f)), tagFunc_([fixedTag] { return fixedTag; }) {}
 
     void eval(ElementTransform& trans, Real& result, Real t) const override { func_(trans, result, t); }
@@ -78,43 +79,16 @@ private:
     TagFunc tagFunc_;
 };
 
-/**
- * @brief Product coefficient: (c1 * c2) at each evaluation point
- */
-class ProductCoefficient : public Coefficient {
-public:
-    ProductCoefficient(const Coefficient* c1, const Coefficient* c2) : c1_(c1), c2_(c2) {}
-
-    void eval(ElementTransform& trans, Real& result, Real t) const override {
-        Real v1 = 0.0;
-        Real v2 = 0.0;
-        c1_->eval(trans, v1, t);
-        c2_->eval(trans, v2, t);
-        result = v1 * v2;
-    }
-
-    std::uint64_t stateTag() const override {
-        if (!c1_ || !c2_) {
-            return DynamicCoefficientTag;
-        }
-        return combineTag(c1_->stateTag(), c2_->stateTag());
-    }
-
-private:
-    const Coefficient* c1_ = nullptr;
-    const Coefficient* c2_ = nullptr;
-};
-
-class VectorFunctionCoefficient : public VectorCoefficient {
+template<>
+class FunctionCoefficient<Vector3> : public VectorCoefficient {
 public:
     using Func = std::function<void(ElementTransform&, Vector3&, Real)>;
     using TagFunc = std::function<std::uint64_t()>;
 
-    explicit VectorFunctionCoefficient(Func f,
-                                       TagFunc tagFunc = [] { return DynamicCoefficientTag; })
+    explicit FunctionCoefficient(Func f, TagFunc tagFunc = [] { return DynamicCoefficientTag; })
         : func_(std::move(f)), tagFunc_(std::move(tagFunc)) {}
 
-    VectorFunctionCoefficient(Func f, std::uint64_t fixedTag)
+    FunctionCoefficient(Func f, std::uint64_t fixedTag)
         : func_(std::move(f)), tagFunc_([fixedTag] { return fixedTag; }) {}
 
     void eval(ElementTransform& trans, Vector3& result, Real t) const override { func_(trans, result, t); }
@@ -125,16 +99,16 @@ private:
     TagFunc tagFunc_;
 };
 
-class MatrixFunctionCoefficient : public MatrixCoefficient {
+template<>
+class FunctionCoefficient<Matrix3> : public MatrixCoefficient {
 public:
     using Func = std::function<void(ElementTransform&, Matrix3&, Real)>;
     using TagFunc = std::function<std::uint64_t()>;
 
-    explicit MatrixFunctionCoefficient(Func f,
-                                       TagFunc tagFunc = [] { return DynamicCoefficientTag; })
+    explicit FunctionCoefficient(Func f, TagFunc tagFunc = [] { return DynamicCoefficientTag; })
         : func_(std::move(f)), tagFunc_(std::move(tagFunc)) {}
 
-    MatrixFunctionCoefficient(Func f, std::uint64_t fixedTag)
+    FunctionCoefficient(Func f, std::uint64_t fixedTag)
         : func_(std::move(f)), tagFunc_([fixedTag] { return fixedTag; }) {}
 
     void eval(ElementTransform& trans, Matrix3& result, Real t) const override { func_(trans, result, t); }
@@ -145,8 +119,13 @@ private:
     TagFunc tagFunc_;
 };
 
+// Type aliases for backwards compatibility (deprecated - use FunctionCoefficient<T> directly)
+using ScalarCoefficient = FunctionCoefficient<Real>;
+using VectorFunctionCoefficient = FunctionCoefficient<Vector3>;
+using MatrixFunctionCoefficient = FunctionCoefficient<Matrix3>;
+
 // =============================================================================
-// Convenience functions for creating constant coefficients
+// Convenience functions for creating coefficients
 // =============================================================================
 
 inline std::unique_ptr<Coefficient> constantCoefficient(Real value) {

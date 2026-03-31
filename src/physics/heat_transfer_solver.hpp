@@ -115,10 +115,12 @@ private:
         std::set<int> domains;
         const Coefficient* density = nullptr;
         const Coefficient* specificHeat = nullptr;
-        std::unique_ptr<ProductCoefficient> rhoCp;
 
         std::uint64_t stateTag() const {
-            return combineTag(stateTagOf(domains), stateTagOf(rhoCp.get()));
+            auto tag = stateTagOf(domains);
+            tag = combineTag(tag, stateTagOf(density));
+            tag = combineTag(tag, stateTagOf(specificHeat));
+            return tag;
         }
     };
 
