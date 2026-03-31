@@ -180,7 +180,6 @@ mpfem_add_library(mpfem_fe
         src/fe/element_transform.cpp
         src/fe/facet_element_transform.cpp
         src/fe/grid_function.cpp
-        src/fe/coefficient.cpp
         src/fe/shape_function.cpp
     PUBLIC_LINK
         Eigen3::Eigen

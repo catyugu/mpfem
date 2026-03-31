@@ -4,6 +4,7 @@
 #include "core/types.hpp"
 #include "time/time_scheme.hpp"
 #include "solver/sparse_matrix.hpp"
+#include <memory>
 
 namespace mpfem {
 
@@ -31,7 +32,7 @@ protected:
     }
 };
 
-TimeIntegrator* createTimeIntegrator(TimeScheme scheme);
+std::unique_ptr<TimeIntegrator> createTimeIntegrator(TimeScheme scheme);
 
 }  // namespace mpfem
 

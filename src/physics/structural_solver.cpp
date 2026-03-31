@@ -29,19 +29,16 @@ namespace mpfem
         return true;
     }
 
-    void StructuralSolver::setYoungModulus(const std::set<int> &domains, const Coefficient *E)
+    void StructuralSolver::addElasticity(const std::set<int> &domains,
+                                         const Coefficient *E,
+                                         const Coefficient *nu)
     {
-        youngModulus_.set(domains, E);
+        elasticityBindings_.push_back({domains, E, nu});
     }
 
-    void StructuralSolver::setPoissonRatio(const std::set<int> &domains, const Coefficient *nu)
+    void StructuralSolver::setStrainLoad(const std::set<int> &domains, const MatrixCoefficient *stress)
     {
-        poissonRatio_.set(domains, nu);
-    }
-
-    void StructuralSolver::setThermalExpansion(const std::set<int> &domains, const MatrixCoefficient *alphaT)
-    {
-        thermalExpansion_.set(domains, alphaT);
+        strainLoadBindings_.push_back({domains, stress});
     }
 
     void StructuralSolver::addFixedDisplacementBC(const std::set<int> &boundaryIds, const VectorCoefficient *displacement)
@@ -57,26 +54,70 @@ namespace mpfem
         if (!fes_)
             return;
 
-        if (youngModulus_.empty() || poissonRatio_.empty())
+        if (elasticityBindings_.empty())
         {
             LOG_ERROR << "StructuralSolver: material not set";
             return;
         }
 
-        clearAssemblers();
+        const std::uint64_t currentStiffnessTag = stateTagOfRange(elasticityBindings_);
+        const std::uint64_t currentLoadTag = stateTagOfRange(strainLoadBindings_);
+        const std::uint64_t currentBcTag = stateTagOfRange(displacementBCs_);
 
-        matAsm_->addDomainIntegrator(std::make_unique<ElasticityIntegrator>(&youngModulus_, &poissonRatio_, fes_->vdim()));
-        matAsm_->assemble();
+        const bool rebuildStiffness = stiffnessAssemblyState_.needsRebuild(currentStiffnessTag);
+        const bool rebuildLoad = loadAssemblyState_.needsRebuild(currentLoadTag);
+        const bool bcChanged = bcAssemblyState_.needsRebuild(currentBcTag);
 
-        if (!thermalExpansion_.empty())
+        if (!rebuildStiffness && !rebuildLoad && !bcChanged)
         {
-            vecAsm_->addDomainIntegrator(std::make_unique<ThermalLoadIntegrator>(
-                &youngModulus_, &poissonRatio_, &thermalExpansion_, fes_->vdim()));
+            LOG_DEBUG << "Structural assemble skipped (coefficients unchanged)";
+            return;
         }
-        vecAsm_->assemble();
+
+        if (rebuildStiffness)
+        {
+            matAsm_->clear();
+            matAsm_->clearIntegrators();
+
+            for (const auto &binding : elasticityBindings_)
+            {
+                matAsm_->addDomainIntegrator(
+                std::make_unique<ElasticityIntegrator>(binding.E, binding.nu, fes_->vdim()),
+                binding.domains);
+            }
+            matAsm_->assemble();
+            stiffnessMatrixBeforeBC_ = matAsm_->matrix();
+        }
+        else
+        {
+            matAsm_->matrix() = stiffnessMatrixBeforeBC_;
+        }
+
+        if (rebuildLoad)
+        {
+            vecAsm_->clear();
+            vecAsm_->clearIntegrators();
+
+            for (const auto &binding : strainLoadBindings_)
+            {
+                vecAsm_->addDomainIntegrator(std::make_unique<StrainLoadIntegrator>(
+                binding.stress, fes_->vdim()),
+                binding.domains);
+            }
+            vecAsm_->assemble();
+            rhsBeforeBC_ = vecAsm_->vector();
+        }
+        else
+        {
+            vecAsm_->vector() = rhsBeforeBC_;
+        }
 
         applyDirichletBC(matAsm_->matrix(), vecAsm_->vector(), field().values(), *fes_, *mesh_, displacementBCs_, 3);
         matAsm_->finalize();
+
+        stiffnessAssemblyState_.update(currentStiffnessTag);
+        loadAssemblyState_.update(currentLoadTag);
+        bcAssemblyState_.update(currentBcTag);
     }
 
 } // namespace mpfem

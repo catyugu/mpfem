@@ -39,11 +39,10 @@ bool BDF2Integrator::step(TransientProblem& problem) {
         // (M + dt*K) * T^{n+1} = M * T^n + dt * Q
         const GridFunction& T_prev = problem.history(FieldId::Temperature, 1);  // T^n
         
-        A_.setZero();
-        A_.eigen() = M.eigen() + dt * K.eigen();
+        A_ = M + (dt * K);
         A_.makeCompressed();
         
-        rhs_ = M.eigen() * T_prev.values() + dt * Q;
+        rhs_ = M * T_prev.values() + dt * Q;
         
         LOG_INFO << "BDF2Integrator: Step " << (problem.currentStep + 1)
                  << " (using BDF1 starter)";
@@ -53,13 +52,11 @@ bool BDF2Integrator::step(TransientProblem& problem) {
         const GridFunction& T_prev1 = problem.history(FieldId::Temperature, 1);  // T^n
         const GridFunction& T_prev2 = problem.history(FieldId::Temperature, 2); // T^{n-1}
         
-        A_.setZero();
-        A_.eigen() = 1.5 * M.eigen() + dt * K.eigen();
+        A_ = (1.5 * M) + (dt * K);
         A_.makeCompressed();
-        
-        rhs_ = 2.0 * M.eigen() * T_prev1.values() 
-             - 0.5 * M.eigen() * T_prev2.values() 
-             + dt * Q;
+
+        const Vector historyCombo = 2.0 * T_prev1.values() - 0.5 * T_prev2.values();
+        rhs_ = M * historyCombo + dt * Q;
         
         LOG_INFO << "BDF2Integrator: Step " << (problem.currentStep + 1) << " (using BDF2)";
     }

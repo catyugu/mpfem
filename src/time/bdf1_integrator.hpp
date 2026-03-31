@@ -2,7 +2,6 @@
 #define MPFEM_BDF1_INTEGRATOR_HPP
 
 #include "time_integrator.hpp"
-#include "solver/sparse_matrix.hpp"
 
 namespace mpfem {
 

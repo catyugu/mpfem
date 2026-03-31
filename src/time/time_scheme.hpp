@@ -7,8 +7,8 @@ namespace mpfem {
  * @brief Time integration scheme types
  */
 enum class TimeScheme {
-    BackwardEuler,  ///< BDF1 - first-order backward Euler
-    BDF2            ///< BDF2 - second-order backward differentiation
+    BDF1,  ///< first-order backward differentiation
+    BDF2   ///< second-order backward differentiation
 };
 
 }  // namespace mpfem

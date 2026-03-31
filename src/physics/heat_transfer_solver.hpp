@@ -2,9 +2,12 @@
 #define MPFEM_HEAT_TRANSFER_SOLVER_HPP
 
 #include "physics_field_solver.hpp"
+#include "assembly_change_tracker.hpp"
 #include "fe/coefficient.hpp"
+#include <cstdint>
 #include <map>
 #include <set>
+#include <vector>
 
 namespace mpfem {
 
@@ -23,23 +26,11 @@ public:
     
     bool initialize(const Mesh& mesh, FieldValues& fieldValues, int order, double initialTemperature = 293.15);
     
-    // Material coefficients - matrix form for anisotropic thermal conductivity
+    // Material bindings
     void setThermalConductivity(const std::set<int>& domains, const MatrixCoefficient* k);
-    void setThermalConductivity(const MatrixCoefficient* k) { conductivity_.setAll(k); }
-    const DomainMappedMatrixCoefficient& thermalConductivity() const { return conductivity_; }
     
     void setHeatSource(const std::set<int>& domains, const Coefficient* Q);
-    void setHeatSource(const Coefficient* Q) { heatSource_.setAll(Q); }
-    const DomainMappedScalarCoefficient& heatSource() const { return heatSource_; }
-    
-    // Material properties for transient analysis (rho * Cp)
-    void setDensity(const std::set<int>& domains, const Coefficient* rho);
-    void setDensity(const Coefficient* rho) { density_.setAll(rho); }
-    const DomainMappedScalarCoefficient& density() const { return density_; }
-    
-    void setSpecificHeat(const std::set<int>& domains, const Coefficient* Cp);
-    void setSpecificHeat(const Coefficient* Cp) { specificHeat_.setAll(Cp); }
-    const DomainMappedScalarCoefficient& specificHeat() const { return specificHeat_; }
+    void setMassProperties(const std::set<int>& domains, const Coefficient* rho, const Coefficient* Cp);
     
     // Mass matrix for transient terms: M = ∫ ρCp φᵢ φⱼ dΩ
     void assembleMassMatrix();
@@ -87,15 +78,58 @@ public:
     const Vector& rhsBeforeBC() const { return rhsBeforeBC_; }
 
 private:
-    struct ConvBC { const Coefficient* h; const Coefficient* Tinf; };
-    
-    DomainMappedMatrixCoefficient conductivity_;
-    DomainMappedScalarCoefficient heatSource_;
-    DomainMappedScalarCoefficient density_;
-    DomainMappedScalarCoefficient specificHeat_;
-    std::unique_ptr<ProductCoefficient> rhoCp_;  ///< Product coefficient for mass matrix (rho*Cp), stored as member to avoid dangling pointer
+    struct ConvBC {
+        const Coefficient* h = nullptr;
+        const Coefficient* Tinf = nullptr;
+
+        std::uint64_t stiffnessTag() const {
+            return stateTagOf(h);
+        }
+
+        std::uint64_t loadTag() const {
+            return combineTag(stateTagOf(h), stateTagOf(Tinf));
+        }
+
+        std::uint64_t stateTag() const {
+            return loadTag();
+        }
+    };
+
+    struct ConductivityBinding {
+        std::set<int> domains;
+        const MatrixCoefficient* conductivity = nullptr;
+
+        std::uint64_t stateTag() const {
+            return combineTag(stateTagOf(domains), stateTagOf(conductivity));
+        }
+    };
+    struct HeatSourceBinding {
+        std::set<int> domains;
+        const Coefficient* source = nullptr;
+
+        std::uint64_t stateTag() const {
+            return combineTag(stateTagOf(domains), stateTagOf(source));
+        }
+    };
+    struct MassBinding {
+        std::set<int> domains;
+        const Coefficient* density = nullptr;
+        const Coefficient* specificHeat = nullptr;
+
+        std::uint64_t stateTag() const {
+            auto tag = stateTagOf(domains);
+            tag = combineTag(tag, stateTagOf(density));
+            tag = combineTag(tag, stateTagOf(specificHeat));
+            return tag;
+        }
+    };
+
+    std::vector<ConductivityBinding> conductivityBindings_;
+    std::vector<HeatSourceBinding> heatSourceBindings_;
+    std::vector<MassBinding> massBindings_;
     SparseMatrix massMatrix_;
     bool massMatrixAssembled_ = false;
+    AssemblyTagCache massAssemblyState_;
     std::map<int, const Coefficient*> temperatureBCs_;
     std::map<int, ConvBC> convBCs_;
     
@@ -104,6 +138,14 @@ private:
     
     /// @brief RHS vector before BC application (for transient time integrators)
     Vector rhsBeforeBC_;
+
+    // Reusable buffers for transient linear systems after BC application.
+    SparseMatrix systemMatrix_;
+    Vector systemRhs_;
+
+    AssemblyTagCache stiffnessAssemblyState_;
+    AssemblyTagCache loadAssemblyState_;
+    AssemblyTagCache bcAssemblyState_;
 };
 
 }  // namespace mpfem

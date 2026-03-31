@@ -23,7 +23,7 @@ bool HeatTransferSolver::initialize(const Mesh& mesh, FieldValues& fieldValues, 
     LOG_INFO << "HeatTransferSolver: " << fes_->numDofs() << " DOFs";
     
     // Assemble mass matrix if density and specific heat are set
-    if (!density_.empty() && !specificHeat_.empty()) {
+    if (!massBindings_.empty()) {
         assembleMassMatrix();
     }
     
@@ -31,33 +31,49 @@ bool HeatTransferSolver::initialize(const Mesh& mesh, FieldValues& fieldValues, 
 }
 
 void HeatTransferSolver::setThermalConductivity(const std::set<int>& domains, const MatrixCoefficient* k) {
-    conductivity_.set(domains, k);
+    conductivityBindings_.push_back({domains, k});
 }
 
 void HeatTransferSolver::setHeatSource(const std::set<int>& domains, const Coefficient* Q) {
-    heatSource_.set(domains, Q);
+    heatSourceBindings_.push_back({domains, Q});
 }
 
-void HeatTransferSolver::setDensity(const std::set<int>& domains, const Coefficient* rho) {
-    density_.set(domains, rho);
-}
-
-void HeatTransferSolver::setSpecificHeat(const std::set<int>& domains, const Coefficient* Cp) {
-    specificHeat_.set(domains, Cp);
+void HeatTransferSolver::setMassProperties(const std::set<int>& domains,
+                                           const Coefficient* rho,
+                                           const Coefficient* Cp) {
+    MassBinding binding;
+    binding.domains = domains;
+    binding.density = rho;
+    binding.specificHeat = Cp;
+    massBindings_.push_back(std::move(binding));
+    massMatrixAssembled_ = false;
 }
 
 void HeatTransferSolver::assembleMassMatrix() {
-    if (density_.empty() || specificHeat_.empty()) {
-        LOG_ERROR << "HeatTransferSolver: density or specific heat not set for mass matrix";
+    if (massBindings_.empty()) {
+        LOG_ERROR << "HeatTransferSolver: mass properties not set for mass matrix";
         return;
     }
-    
-    // Create rho*Cp product coefficient as member to avoid dangling pointer
-    // The MassIntegrator stores a raw pointer to this coefficient, so it must outlive the assembler
-    rhoCp_ = std::make_unique<ProductCoefficient>(&density_, &specificHeat_);
-    
+
     auto massAsm = std::make_unique<BilinearFormAssembler>(fes_.get());
-    massAsm->addDomainIntegrator(std::make_unique<MassIntegrator>(rhoCp_.get()));
+    std::vector<std::unique_ptr<FunctionCoefficient>> rhoCpCoefficients;
+    rhoCpCoefficients.reserve(massBindings_.size());
+
+    for (const auto& binding : massBindings_) {
+        // Keep composite coefficients alive until matrix assembly completes.
+        rhoCpCoefficients.push_back(std::make_unique<FunctionCoefficient>(
+            [&binding](ElementTransform& trans, Real& result, Real t) {
+                Real rho = 1.0, Cp = 1.0;
+                if (binding.density) binding.density->eval(trans, rho, t);
+                if (binding.specificHeat) binding.specificHeat->eval(trans, Cp, t);
+                result = rho * Cp;
+            },
+            binding.stateTag()));
+        
+        massAsm->addDomainIntegrator(
+            std::make_unique<MassIntegrator>(rhoCpCoefficients.back().get()),
+            binding.domains);
+    }
     massAsm->assemble();
     
     massMatrix_ = std::move(massAsm->matrix());
@@ -77,40 +93,94 @@ void HeatTransferSolver::addConvectionBC(const std::set<int>& boundaryIds, const
 void HeatTransferSolver::assemble() {
     ScopedTimer timer("HeatTransfer assemble");
     
-    if (conductivity_.empty()) {
+    if (conductivityBindings_.empty()) {
         LOG_ERROR << "HeatTransferSolver: conductivity not set";
         return;
     }
+
+    const std::uint64_t currentMassTag = stateTagOfRange(massBindings_);
     
-    // Lazy mass matrix assembly - assemble if needed but not yet assembled
-    if (!massMatrixAssembled_ && !density_.empty() && !specificHeat_.empty()) {
+    // Rebuild mass matrix only when rho/cp dependent coefficients changed.
+    if (!massBindings_.empty() &&
+        (!massMatrixAssembled_ || massAssemblyState_.needsRebuild(currentMassTag))) {
         assembleMassMatrix();
+        massAssemblyState_.update(currentMassTag);
+    }
+
+    const std::uint64_t convectionStiffnessTag = stateTagOfRange(
+        convBCs_,
+        [](const auto& entry) {
+            return combineTag(stateTagOf(entry.first), entry.second.stiffnessTag());
+        });
+    const std::uint64_t currentStiffnessTag = combineTag(
+        stateTagOfRange(conductivityBindings_),
+        convectionStiffnessTag);
+
+    const std::uint64_t convectionLoadTag = stateTagOfRange(
+        convBCs_,
+        [](const auto& entry) {
+            return combineTag(stateTagOf(entry.first), entry.second.loadTag());
+        });
+    const std::uint64_t currentLoadTag = combineTag(
+        stateTagOfRange(heatSourceBindings_),
+        convectionLoadTag);
+
+    const std::uint64_t currentBcTag = stateTagOfRange(temperatureBCs_);
+
+    const bool rebuildStiffness = stiffnessAssemblyState_.needsRebuild(currentStiffnessTag);
+    const bool rebuildLoad = loadAssemblyState_.needsRebuild(currentLoadTag);
+    const bool bcChanged = bcAssemblyState_.needsRebuild(currentBcTag);
+
+    if (!rebuildStiffness && !rebuildLoad && !bcChanged) {
+        LOG_DEBUG << "HeatTransfer assemble skipped (coefficients unchanged)";
+        return;
     }
     
-    clearAssemblers();
-    
-    matAsm_->addDomainIntegrator(std::make_unique<DiffusionIntegrator>(&conductivity_));
-    
-    for (const auto& [bid, bc] : convBCs_) {
-        matAsm_->addBoundaryIntegrator(std::make_unique<ConvectionMassIntegrator>(bc.h), bid);
-        vecAsm_->addBoundaryIntegrator(std::make_unique<ConvectionLFIntegrator>(bc.h, bc.Tinf), bid);
+    if (rebuildStiffness) {
+        matAsm_->clear();
+        matAsm_->clearIntegrators();
+
+        for (const auto& binding : conductivityBindings_) {
+            matAsm_->addDomainIntegrator(
+                std::make_unique<DiffusionIntegrator>(binding.conductivity),
+                binding.domains);
+        }
+
+        for (const auto& [bid, bc] : convBCs_) {
+            matAsm_->addBoundaryIntegrator(std::make_unique<ConvectionMassIntegrator>(bc.h), bid);
+        }
+
+        matAsm_->assemble();
+        stiffnessMatrixBeforeBC_ = matAsm_->matrix();
+    } else {
+        matAsm_->matrix() = stiffnessMatrixBeforeBC_;
     }
-    
-    matAsm_->assemble();
-    
-    // Cache stiffness matrix before BC application (needed for transient time integrators like BDF1)
-    stiffnessMatrixBeforeBC_ = matAsm_->matrix();
-    
-    if (!heatSource_.empty()) {
-        vecAsm_->addDomainIntegrator(std::make_unique<DomainLFIntegrator>(&heatSource_));
+
+    if (rebuildLoad) {
+        vecAsm_->clear();
+        vecAsm_->clearIntegrators();
+
+        for (const auto& [bid, bc] : convBCs_) {
+            vecAsm_->addBoundaryIntegrator(std::make_unique<ConvectionLFIntegrator>(bc.h, bc.Tinf), bid);
+        }
+
+        for (const auto& binding : heatSourceBindings_) {
+            vecAsm_->addDomainIntegrator(
+                std::make_unique<DomainLFIntegrator>(binding.source),
+                binding.domains);
+        }
+        vecAsm_->assemble();
+        rhsBeforeBC_ = vecAsm_->vector();
+    } else {
+        vecAsm_->vector() = rhsBeforeBC_;
     }
-    vecAsm_->assemble();
-    
-    // Cache RHS before BC application (needed for transient time integrators like BDF1)
-    rhsBeforeBC_ = vecAsm_->vector();
     
     applyDirichletBC(matAsm_->matrix(), vecAsm_->vector(), field().values(), *fes_, *mesh_, temperatureBCs_);
     matAsm_->finalize();
+
+    stiffnessAssemblyState_.update(currentStiffnessTag);
+    loadAssemblyState_.update(currentLoadTag);
+    bcAssemblyState_.update(currentBcTag);
 }
 
 bool HeatTransferSolver::solveLinearSystem(const SparseMatrix& A, Vector& x, const Vector& b) {
@@ -119,18 +189,19 @@ bool HeatTransferSolver::solveLinearSystem(const SparseMatrix& A, Vector& x, con
         return false;
     }
     
-    // Make a copy since applyDirichletBC modifies the matrix
-    SparseMatrix A_copy = A;
-    Vector b_copy = b;
+    // Reuse persistent buffers to avoid repeated allocations.
+    systemMatrix_ = A;
+    systemRhs_ = b;
     
     // Apply boundary conditions to the combined system
-    applyDirichletBC(A_copy, b_copy, x, *fes_, *mesh_, temperatureBCs_);
-    A_copy.makeCompressed();
+    applyDirichletBC(systemMatrix_, systemRhs_, x, *fes_, *mesh_, temperatureBCs_);
+    systemMatrix_.makeCompressed();
     
     // Solve the system
-    bool ok = solver_->solve(A_copy, x, b_copy);
+    bool ok = solver_->solve(systemMatrix_, x, systemRhs_);
     
     if (ok) {
+        field().markUpdated();
         LOG_INFO << fieldName() << " linear solve converged in " << iterations() << " iterations";
     } else {
         LOG_ERROR << fieldName() << " linear solve failed, residual: " << residual();

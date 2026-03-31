@@ -125,11 +125,6 @@ public:
         if (!Tinf_) MPFEM_THROW(ArgumentException, "ConvectionLFIntegrator requires non-null Tinf Coefficient");
     }
     
-    void setAmbientTemperature(const Coefficient* Tinf) {
-        if (!Tinf_) MPFEM_THROW(ArgumentException, "ConvectionLFIntegrator::setAmbientTemperature requires non-null Coefficient");
-        Tinf_ = Tinf;
-    }
-    
     void assembleFaceVector(const ReferenceElement& ref,
                             FacetElementTransform& trans,
                             Vector& elvec) const override;
@@ -168,24 +163,17 @@ private:
 };
 
 /**
- * @brief Thermal load integrator: ∫ σ_thermal : ε(v) dΩ
- * 
- * Computes anisotropic thermal stress: σ_thermal = C : α_tensor : (T - T_ref)
- * - C is the 6×6 elasticity tensor (computed from E and nu)
- * - α_tensor is the 3×3 thermal expansion coefficient matrix
- * - ε_thermal in Voigt notation = {α₁₁, α₂₂, α₃₃, 2α₁₂, 2α₁₃, 2α₂₃} · (T - T_ref)
+ * @brief Strain load integrator: ∫ σ : ε(v) dΩ
+ *
+ * Accepts a 3x3 stress tensor coefficient and assembles B^T * sigma(Voigt).
+ * This integrator is independent from how stress is produced.
  */
-class ThermalLoadIntegrator : public DomainLinearIntegratorBase {
+class StrainLoadIntegrator : public DomainLinearIntegratorBase {
 public:
-    ThermalLoadIntegrator(const Coefficient* E,
-                          const Coefficient* nu,
-                          const MatrixCoefficient* alphaT,
-                          int vdim)
-        : E_(E), nu_(nu), alphaT_(alphaT), vdim_(vdim) {
-        if (!E_) MPFEM_THROW(ArgumentException, "ThermalLoadIntegrator requires non-null E Coefficient");
-        if (!nu_) MPFEM_THROW(ArgumentException, "ThermalLoadIntegrator requires non-null nu Coefficient");
-        if (!alphaT_) MPFEM_THROW(ArgumentException, "ThermalLoadIntegrator requires non-null alphaT MatrixCoefficient");
-        if (vdim_ <= 0) MPFEM_THROW(ArgumentException, "ThermalLoadIntegrator requires vdim > 0");
+    StrainLoadIntegrator(const MatrixCoefficient* stress, int vdim)
+        : stress_(stress), vdim_(vdim) {
+        if (!stress_) MPFEM_THROW(ArgumentException, "StrainLoadIntegrator requires non-null stress MatrixCoefficient");
+        if (vdim_ <= 0) MPFEM_THROW(ArgumentException, "StrainLoadIntegrator requires vdim > 0");
     }
     
     int vdim() const override { return vdim_; }
@@ -195,9 +183,7 @@ public:
                                Vector& elvec) const override;
     
 private:
-    const Coefficient* E_ = nullptr;
-    const Coefficient* nu_ = nullptr;
-    const MatrixCoefficient* alphaT_ = nullptr;
+    const MatrixCoefficient* stress_ = nullptr;
     int vdim_ = 1;
 };
 

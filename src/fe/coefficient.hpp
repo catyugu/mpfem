@@ -2,165 +2,149 @@
 #define MPFEM_COEFFICIENT_HPP
 
 #include "core/types.hpp"
+#include <cstdint>
+#include <cstring>
 #include <functional>
-#include <set>
-#include <map>
+#include <limits>
 #include <memory>
-#include <variant>
 
 namespace mpfem {
 
 class ElementTransform;
 class GridFunction;
 
+inline constexpr std::uint64_t DynamicCoefficientTag = std::numeric_limits<std::uint64_t>::max();
+
+inline std::uint64_t combineTag(std::uint64_t seed, std::uint64_t value) {
+    if (seed == DynamicCoefficientTag || value == DynamicCoefficientTag) {
+        return DynamicCoefficientTag;
+    }
+    return seed ^ (value + 0x9e3779b97f4a7c15ull + (seed << 6) + (seed >> 2));
+}
+
+inline std::uint64_t hashRealTag(Real value) {
+    std::uint64_t bits = 0;
+    static_assert(sizeof(bits) == sizeof(value), "Real size mismatch in hashRealTag");
+    std::memcpy(&bits, &value, sizeof(value));
+    return 1469598103934665603ull ^ bits;
+}
+
 // =============================================================================
-// Base classes
+// Base classes (kept for type safety in integrators)
 // =============================================================================
 
 class Coefficient {
 public:
     virtual ~Coefficient() = default;
     virtual void eval(ElementTransform& trans, Real& result, Real t = 0.0) const = 0;
+    virtual std::uint64_t stateTag() const { return DynamicCoefficientTag; }
 };
 
 class VectorCoefficient {
 public:
     virtual ~VectorCoefficient() = default;
     virtual void eval(ElementTransform& trans, Vector3& result, Real t = 0.0) const = 0;
+    virtual std::uint64_t stateTag() const { return DynamicCoefficientTag; }
 };
 
 class MatrixCoefficient {
 public:
     virtual ~MatrixCoefficient() = default;
     virtual void eval(ElementTransform& trans, Matrix3& result, Real t = 0.0) const = 0;
+    virtual std::uint64_t stateTag() const { return DynamicCoefficientTag; }
 };
+
 // =============================================================================
-// Lambda-based coefficients
+// Function-based coefficients (non-template)
 // =============================================================================
 
-class ScalarCoefficient : public Coefficient {
+class FunctionCoefficient : public Coefficient {
 public:
     using Func = std::function<void(ElementTransform&, Real&, Real)>;
-    explicit ScalarCoefficient(Func f) : func_(std::move(f)) {}
+    using TagFunc = std::function<std::uint64_t()>;
+
+    explicit FunctionCoefficient(Func f, TagFunc tagFunc = [] { return DynamicCoefficientTag; })
+        : func_(std::move(f)), tagFunc_(std::move(tagFunc)) {}
+
+    FunctionCoefficient(Func f, std::uint64_t fixedTag)
+        : func_(std::move(f)), tagFunc_([fixedTag] { return fixedTag; }) {}
+
     void eval(ElementTransform& trans, Real& result, Real t) const override { func_(trans, result, t); }
+    std::uint64_t stateTag() const override { return tagFunc_(); }
+
 private:
     Func func_;
-};
-
-/**
- * @brief Product coefficient: (c1 * c2) at each evaluation point
- */
-class ProductCoefficient : public Coefficient {
-public:
-    ProductCoefficient(const Coefficient* c1, const Coefficient* c2) : c1_(c1), c2_(c2) {}
-    void eval(ElementTransform& trans, Real& result, Real t) const override {
-        Real v1, v2;
-        c1_->eval(trans, v1, t);
-        c2_->eval(trans, v2, t);
-        result = v1 * v2;
-    }
-private:
-    const Coefficient* c1_ = nullptr;
-    const Coefficient* c2_ = nullptr;
+    TagFunc tagFunc_;
 };
 
 class VectorFunctionCoefficient : public VectorCoefficient {
 public:
     using Func = std::function<void(ElementTransform&, Vector3&, Real)>;
-    explicit VectorFunctionCoefficient(Func f) : func_(std::move(f)) {}
+    using TagFunc = std::function<std::uint64_t()>;
+
+    explicit VectorFunctionCoefficient(Func f, TagFunc tagFunc = [] { return DynamicCoefficientTag; })
+        : func_(std::move(f)), tagFunc_(std::move(tagFunc)) {}
+
+    VectorFunctionCoefficient(Func f, std::uint64_t fixedTag)
+        : func_(std::move(f)), tagFunc_([fixedTag] { return fixedTag; }) {}
+
     void eval(ElementTransform& trans, Vector3& result, Real t) const override { func_(trans, result, t); }
+    std::uint64_t stateTag() const override { return tagFunc_(); }
+
 private:
     Func func_;
+    TagFunc tagFunc_;
 };
 
 class MatrixFunctionCoefficient : public MatrixCoefficient {
 public:
     using Func = std::function<void(ElementTransform&, Matrix3&, Real)>;
-    explicit MatrixFunctionCoefficient(Func f) : func_(std::move(f)) {}
+    using TagFunc = std::function<std::uint64_t()>;
+
+    explicit MatrixFunctionCoefficient(Func f, TagFunc tagFunc = [] { return DynamicCoefficientTag; })
+        : func_(std::move(f)), tagFunc_(std::move(tagFunc)) {}
+
+    MatrixFunctionCoefficient(Func f, std::uint64_t fixedTag)
+        : func_(std::move(f)), tagFunc_([fixedTag] { return fixedTag; }) {}
+
     void eval(ElementTransform& trans, Matrix3& result, Real t) const override { func_(trans, result, t); }
+    std::uint64_t stateTag() const override { return tagFunc_(); }
+
 private:
     Func func_;
+    TagFunc tagFunc_;
 };
 
 // =============================================================================
-// DomainMappedCoefficient - Template implementation
-// =============================================================================
-
-// Type traits for result types
-template<typename CoefBase> struct CoefTraits;
-template<> struct CoefTraits<Coefficient> { using ResultType = Real; };
-template<> struct CoefTraits<VectorCoefficient> { using ResultType = Vector3; };
-template<> struct CoefTraits<MatrixCoefficient> { using ResultType = Matrix3; };
-
-/**
- * @brief Domain-mapped coefficient supporting different coefficients per domain
- * 
- * Single template implementation handles scalar, vector, and matrix types.
- */
-template<typename CoefBase>
-class DomainMappedCoefficient : public CoefBase {
-    using ResultType = typename CoefTraits<CoefBase>::ResultType;
-    
-public:
-    DomainMappedCoefficient() = default;
-    
-    DomainMappedCoefficient(DomainMappedCoefficient&& o) noexcept
-        : coefs_(std::move(o.coefs_)), defaultCoef_(o.defaultCoef_) {
-        o.defaultCoef_ = nullptr;
-        o.coefs_.clear();
-    }
-    
-    DomainMappedCoefficient& operator=(DomainMappedCoefficient&& o) noexcept {
-        if (this != &o) { 
-            coefs_ = std::move(o.coefs_); 
-            defaultCoef_ = o.defaultCoef_; 
-            o.defaultCoef_ = nullptr; 
-        }
-        return *this;
-    }
-    
-    void set(int domainId, const CoefBase* coef) { coefs_[domainId] = coef; }
-    void set(const std::set<int>& domainIds, const CoefBase* coef) { 
-        for (int id : domainIds) coefs_[id] = coef; 
-    }
-    void setAll(const CoefBase* coef) { defaultCoef_ = coef; coefs_.clear(); }
-    
-    const CoefBase* get(int domainId) const { 
-        auto it = coefs_.find(domainId); 
-        return it != coefs_.end() ? it->second : defaultCoef_; 
-    }
-    
-    bool empty() const { return coefs_.empty() && !defaultCoef_; }
-    
-    void eval(ElementTransform& trans, ResultType& result, Real t = 0.0) const override;
-
-private:
-    std::unordered_map<int, const CoefBase*> coefs_;
-    const CoefBase* defaultCoef_ = nullptr;
-};
-
-// Type aliases
-using DomainMappedScalarCoefficient = DomainMappedCoefficient<Coefficient>;
-using DomainMappedVectorCoefficient = DomainMappedCoefficient<VectorCoefficient>;
-using DomainMappedMatrixCoefficient = DomainMappedCoefficient<MatrixCoefficient>;
-
-// =============================================================================
-// Convenience functions for creating constant coefficients
+// Convenience functions for creating coefficients
 // =============================================================================
 
 inline std::unique_ptr<Coefficient> constantCoefficient(Real value) {
-    return std::make_unique<ScalarCoefficient>(
-        [value](ElementTransform&, Real& r, Real) { r = value; });
+    const std::uint64_t tag = hashRealTag(value);
+    return std::make_unique<FunctionCoefficient>(
+        [value](ElementTransform&, Real& r, Real) { r = value; },
+        tag);
 }
 
 inline std::unique_ptr<VectorCoefficient> constantVectorCoefficient(Real x, Real y, Real z) {
+    std::uint64_t tag = hashRealTag(x);
+    tag = combineTag(tag, hashRealTag(y));
+    tag = combineTag(tag, hashRealTag(z));
     return std::make_unique<VectorFunctionCoefficient>(
-        [x, y, z](ElementTransform&, Vector3& r, Real) { r << x, y, z; });
+        [x, y, z](ElementTransform&, Vector3& r, Real) { r << x, y, z; },
+        tag);
 }
 
 inline std::unique_ptr<MatrixCoefficient> constantMatrixCoefficient(const Matrix3& mat) {
+    std::uint64_t tag = 1469598103934665603ull;
+    for (int r = 0; r < mat.rows(); ++r) {
+        for (int c = 0; c < mat.cols(); ++c) {
+            tag = combineTag(tag, hashRealTag(mat(r, c)));
+        }
+    }
     return std::make_unique<MatrixFunctionCoefficient>(
-        [mat](ElementTransform&, Matrix3& r, Real) { r = mat; });
+        [mat](ElementTransform&, Matrix3& r, Real) { r = mat; },
+        tag);
 }
 
 }  // namespace mpfem

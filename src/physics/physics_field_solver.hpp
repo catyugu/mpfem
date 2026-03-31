@@ -26,6 +26,7 @@ public:
         if (!solver_ || !matAsm_ || !vecAsm_ || !fieldValues_) return false;
         bool ok = solver_->solve(matAsm_->matrix(), field().values(), vecAsm_->vector());
         if (ok) {
+            field().markUpdated();
             LOG_INFO << fieldName() << " solver converged!";
         }
         return ok;

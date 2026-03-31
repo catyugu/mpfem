@@ -1,12 +1,6 @@
 #include <gtest/gtest.h>
 #include "fe/coefficient.hpp"
-#include "fe/element_transform.hpp"
-#include "fe/fe_space.hpp"
-#include "fe/grid_function.hpp"
-#include "fe/fe_collection.hpp"
-#include "mesh/mesh.hpp"
 #include "core/logger.hpp"
-#include <cmath>
 
 using namespace mpfem;
 
@@ -17,16 +11,16 @@ protected:
     }
 };
 
-// ScalarCoefficient tests (using lambda)
-TEST_F(CoefficientTest, ScalarCoefficient_Constant) {
+// FunctionCoefficient tests (using lambda)
+TEST_F(CoefficientTest, FunctionCoefficient_Constant) {
     auto coef = constantCoefficient(3.14);
     
     // Simple test - verify construction
     EXPECT_NE(coef.get(), nullptr);
 }
 
-TEST_F(CoefficientTest, ScalarCoefficient_Function) {
-    auto coef = std::make_unique<ScalarCoefficient>(
+TEST_F(CoefficientTest, FunctionCoefficient_Function) {
+    auto coef = std::make_unique<FunctionCoefficient>(
         [](ElementTransform&, Real& result, Real t) {
             result = 1.0 + t;
         });
@@ -50,50 +44,23 @@ TEST_F(CoefficientTest, MatrixCoefficient_Full) {
     EXPECT_NE(coef.get(), nullptr);
 }
 
-// DomainMappedScalarCoefficient tests
-TEST_F(CoefficientTest, DomainMappedScalarCoefficient_SetAll) {
-    DomainMappedScalarCoefficient coef;
-    auto c = constantCoefficient(5.0);
+// Product coefficient functionality is now achieved via lambda composition
+TEST_F(CoefficientTest, ProductCoefficient_LambdaComposition) {
+    auto c1 = constantCoefficient(2.0);
+    auto c2 = constantCoefficient(3.0);
     
-    coef.setAll(c.get());
-    EXPECT_FALSE(coef.empty());
-    EXPECT_EQ(coef.get(1), c.get());
-    EXPECT_EQ(coef.get(99), c.get());  // Default for any domain
-}
-
-TEST_F(CoefficientTest, DomainMappedScalarCoefficient_DomainSpecific) {
-    DomainMappedScalarCoefficient coef;
-    auto c1 = constantCoefficient(10.0);
-    auto c2 = constantCoefficient(20.0);
+    // Lambda-based product coefficient
+    auto productCoef = std::make_unique<FunctionCoefficient>(
+        [&c1, &c2](ElementTransform& trans, Real& result, Real t) {
+            Real v1 = 0.0, v2 = 0.0;
+            c1->eval(trans, v1, t);
+            c2->eval(trans, v2, t);
+            result = v1 * v2;
+        });
     
-    coef.set(1, c1.get());
-    coef.set(2, c2.get());
-    
-    EXPECT_EQ(coef.get(1), c1.get());
-    EXPECT_EQ(coef.get(2), c2.get());
-    EXPECT_EQ(coef.get(99), nullptr);  // No default set
-}
-
-TEST_F(CoefficientTest, DomainMappedScalarCoefficient_BatchSet) {
-    DomainMappedScalarCoefficient coef;
-    auto c = constantCoefficient(15.0);
-    
-    coef.set({1, 2, 3}, c.get());
-    
-    EXPECT_EQ(coef.get(1), c.get());
-    EXPECT_EQ(coef.get(2), c.get());
-    EXPECT_EQ(coef.get(3), c.get());
-}
-
-TEST_F(CoefficientTest, DomainMappedScalarCoefficient_Override) {
-    DomainMappedScalarCoefficient coef;
-    auto c1 = constantCoefficient(10.0);
-    auto c2 = constantCoefficient(20.0);
-    
-    coef.set(1, c1.get());
-    coef.set(1, c2.get());  // Override
-    
-    EXPECT_EQ(coef.get(1), c2.get());
+    EXPECT_NE(c1.get(), nullptr);
+    EXPECT_NE(c2.get(), nullptr);
+    EXPECT_NE(productCoef.get(), nullptr);
 }
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);

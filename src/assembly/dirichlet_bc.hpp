@@ -21,6 +21,7 @@ inline void applyDirichletBC(SparseMatrix& mat, Vector& rhs, Vector& sol,
     
     std::vector<Real> dofVals(numDofs, 0.0);
     std::vector<char> hasVal(numDofs, 0);
+    std::vector<Index> eliminated;
     
     FacetElementTransform trans;
     trans.setMesh(&mesh);
@@ -30,20 +31,21 @@ inline void applyDirichletBC(SparseMatrix& mat, Vector& rhs, Vector& sol,
         
         for (Index b = 0; b < mesh.numBdrElements(); ++b) {
             if (mesh.bdrElement(b).attribute() != bid) continue;
-            
+
             const ReferenceElement* refElem = fes.bdrElementRefElement(b);
             if (!refElem) continue;
             
             const auto& dofCoords = refElem->dofCoords();
             const int nd = refElem->numDofs();
             const int totalDofs = nd * fes.vdim();
+            if (totalDofs > MaxVectorDofsPerBdrElement) continue;
             
-            std::vector<Index> dofs(totalDofs);
+            std::array<Index, MaxVectorDofsPerBdrElement> dofs{};
             fes.getBdrElementDofs(b, std::span<Index>{dofs.data(), static_cast<size_t>(totalDofs)});
             
             trans.setBoundaryElement(b);
             
-            for (int i = 0; i < nd && i < static_cast<int>(dofs.size()); ++i) {
+            for (int i = 0; i < nd; ++i) {
                 Index d = dofs[i];
                 if (d == InvalidIndex || hasVal[d]) continue;
                 
@@ -58,14 +60,9 @@ inline void applyDirichletBC(SparseMatrix& mat, Vector& rhs, Vector& sol,
                 
                 dofVals[d] = value;
                 hasVal[d] = 1;
+                eliminated.push_back(d);
             }
         }
-    }
-    
-    std::vector<Index> eliminated;
-    eliminated.reserve(numDofs);
-    for (Index d = 0; d < numDofs; ++d) {
-        if (hasVal[d]) eliminated.push_back(d);
     }
     
     mat.eliminateRows(eliminated, dofVals, rhs);
@@ -81,6 +78,7 @@ inline void applyDirichletBC(SparseMatrix& mat, Vector& rhs, Vector& sol,
     
     std::vector<Real> dofVals(numDofs, 0.0);
     std::vector<char> hasVal(numDofs, 0);
+    std::vector<Index> eliminated;
     
     FacetElementTransform trans;
     trans.setMesh(&mesh);
@@ -90,15 +88,16 @@ inline void applyDirichletBC(SparseMatrix& mat, Vector& rhs, Vector& sol,
         
         for (Index b = 0; b < mesh.numBdrElements(); ++b) {
             if (mesh.bdrElement(b).attribute() != bid) continue;
-            
+
             const ReferenceElement* refElem = fes.bdrElementRefElement(b);
             if (!refElem) continue;
             
             const auto& dofCoords = refElem->dofCoords();
             const int nd = refElem->numDofs();
             const int totalDofs = nd * vdim;
+            if (totalDofs > MaxVectorDofsPerBdrElement) continue;
             
-            std::vector<Index> dofs(totalDofs);
+            std::array<Index, MaxVectorDofsPerBdrElement> dofs{};
             fes.getBdrElementDofs(b, std::span<Index>{dofs.data(), static_cast<size_t>(totalDofs)});
             
             trans.setBoundaryElement(b);
@@ -118,16 +117,11 @@ inline void applyDirichletBC(SparseMatrix& mat, Vector& rhs, Vector& sol,
                     if (d != InvalidIndex && !hasVal[d]) {
                         dofVals[d] = disp[c];
                         hasVal[d] = 1;
+                        eliminated.push_back(d);
                     }
                 }
             }
         }
-    }
-    
-    std::vector<Index> eliminated;
-    eliminated.reserve(numDofs);
-    for (Index d = 0; d < numDofs; ++d) {
-        if (hasVal[d]) eliminated.push_back(d);
     }
     
     mat.eliminateRows(eliminated, dofVals, rhs);
@@ -143,6 +137,7 @@ inline void applyDirichletBCComponent(SparseMatrix& mat, Vector& rhs, Vector& so
     
     std::vector<Real> dofVals(numDofs, 0.0);
     std::vector<char> hasVal(numDofs, 0);
+    std::vector<Index> eliminated;
     
     for (const auto& [key, val] : componentBCs) {
         int bid = key / vdim;
@@ -152,14 +147,15 @@ inline void applyDirichletBCComponent(SparseMatrix& mat, Vector& rhs, Vector& so
         
         for (Index b = 0; b < mesh.numBdrElements(); ++b) {
             if (mesh.bdrElement(b).attribute() != bid) continue;
-            
+
             const ReferenceElement* refElem = fes.bdrElementRefElement(b);
             if (!refElem) continue;
             
             const int nd = refElem->numDofs();
             const int totalDofs = nd * vdim;
+            if (totalDofs > MaxVectorDofsPerBdrElement) continue;
             
-            std::vector<Index> dofs(totalDofs);
+            std::array<Index, MaxVectorDofsPerBdrElement> dofs{};
             fes.getBdrElementDofs(b, std::span<Index>{dofs.data(), static_cast<size_t>(totalDofs)});
             
             for (int i = 0; i < nd; ++i) {
@@ -167,15 +163,10 @@ inline void applyDirichletBCComponent(SparseMatrix& mat, Vector& rhs, Vector& so
                 if (d != InvalidIndex && !hasVal[d]) {
                     dofVals[d] = val;
                     hasVal[d] = 1;
+                    eliminated.push_back(d);
                 }
             }
         }
-    }
-    
-    std::vector<Index> eliminated;
-    eliminated.reserve(numDofs);
-    for (Index d = 0; d < numDofs; ++d) {
-        if (hasVal[d]) eliminated.push_back(d);
     }
     
     mat.eliminateRows(eliminated, dofVals, rhs);

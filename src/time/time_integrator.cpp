@@ -3,17 +3,19 @@
 #include "time/bdf2_integrator.hpp"
 #include "core/logger.hpp"
 
+#include <memory>
+
 namespace mpfem {
 
-TimeIntegrator* createTimeIntegrator(TimeScheme scheme) {
+std::unique_ptr<TimeIntegrator> createTimeIntegrator(TimeScheme scheme) {
     switch (scheme) {
-        case TimeScheme::BackwardEuler:
-            return new BDF1Integrator();
+        case TimeScheme::BDF1:
+            return std::make_unique<BDF1Integrator>();
         case TimeScheme::BDF2:
-            return new BDF2Integrator();
+            return std::make_unique<BDF2Integrator>();
     }
     LOG_ERROR << "Unknown time scheme";
-    return nullptr;
+    return {};
 }
 
 }  // namespace mpfem

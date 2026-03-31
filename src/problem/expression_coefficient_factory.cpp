@@ -4,7 +4,9 @@
 #include "expr/symbol_scanner.hpp"
 #include "fe/element_transform.hpp"
 
+#include <string>
 #include <utility>
+#include <vector>
 
 namespace mpfem {
 namespace {
@@ -61,16 +63,55 @@ bool resolveBuiltInSymbol(std::string_view symbol,
     return true;
 }
 
-class RuntimeScalarExpressionCoefficient final : public Coefficient {
+std::uint64_t hashStringTag(const std::string& text) {
+    constexpr std::uint64_t kFnvOffset = 1469598103934665603ull;
+    constexpr std::uint64_t kFnvPrime = 1099511628211ull;
+    std::uint64_t h = kFnvOffset;
+    for (unsigned char c : text) {
+        h ^= static_cast<std::uint64_t>(c);
+        h *= kFnvPrime;
+    }
+    return h;
+}
+
+std::uint64_t computeRuntimeTag(const std::vector<std::string>& dynamicSymbols,
+                                std::uint64_t baseTag,
+                                const ExternalRuntimeStateTagResolver& externalStateResolver) {
+    std::uint64_t tag = baseTag;
+    for (const std::string& symbol : dynamicSymbols) {
+        if (symbol == "x" || symbol == "y" || symbol == "z") {
+            continue;
+        }
+        if (symbol == "t") {
+            return DynamicCoefficientTag;
+        }
+        if (!externalStateResolver) {
+            return DynamicCoefficientTag;
+        }
+
+        const std::uint64_t depTag = externalStateResolver(symbol);
+        tag = combineTag(tag, depTag);
+        if (tag == DynamicCoefficientTag) {
+            return tag;
+        }
+    }
+    return tag;
+}
+
+template <typename BaseCoefficientT, typename ProgramT, typename ResultT>
+class RuntimeExpressionCoefficient final : public BaseCoefficientT {
 public:
-    RuntimeScalarExpressionCoefficient(std::string expression,
-                                       const CaseDefinition& caseDef,
-                                       ExternalRuntimeSymbolResolver externalResolver)
-        : program_(expression, buildSymbolConfig(expression, caseDef)),
-          externalResolver_(std::move(externalResolver)) {
+    RuntimeExpressionCoefficient(std::string expression,
+                                 const CaseDefinition& caseDef,
+                                 RuntimeExpressionResolvers resolvers)
+        : expressionTag_(hashStringTag(expression)),
+          resolvers_(std::move(resolvers)) {
+        RuntimeSymbolConfig config = buildSymbolConfig(expression, caseDef);
+        dynamicSymbols_ = config.dynamicSymbols;
+        program_ = ProgramT(expression, std::move(config));
     }
 
-    void eval(ElementTransform& transform, Real& result, Real t = 0.0) const override {
+    void eval(ElementTransform& transform, ResultT& result, Real t = 0.0) const override {
         bool positionCached = false;
         Vector3 position = Vector3::Zero();
 
@@ -79,8 +120,8 @@ public:
                 if (resolveBuiltInSymbol(symbol, transform, t, positionCached, position, value)) {
                     return true;
                 }
-                if (externalResolver_) {
-                    return externalResolver_(symbol, transform, t, value);
+                if (resolvers_.symbolResolver) {
+                    return resolvers_.symbolResolver(symbol, transform, t, value);
                 }
                 return false;
             };
@@ -88,63 +129,42 @@ public:
         result = program_.evaluate(resolver);
     }
 
-private:
-    CompiledScalarRuntimeProgram program_;
-    ExternalRuntimeSymbolResolver externalResolver_;
-};
-
-class RuntimeMatrixExpressionCoefficient final : public MatrixCoefficient {
-public:
-    RuntimeMatrixExpressionCoefficient(std::string expression,
-                                       const CaseDefinition& caseDef,
-                                       ExternalRuntimeSymbolResolver externalResolver)
-        : program_(expression, buildSymbolConfig(expression, caseDef)),
-          externalResolver_(std::move(externalResolver)) {
-    }
-
-    void eval(ElementTransform& transform, Matrix3& result, Real t = 0.0) const override {
-        bool positionCached = false;
-        Vector3 position = Vector3::Zero();
-
-        RuntimeSymbolResolver resolver =
-            [&](std::string_view symbol, double& value) {
-                if (resolveBuiltInSymbol(symbol, transform, t, positionCached, position, value)) {
-                    return true;
-                }
-                if (externalResolver_) {
-                    return externalResolver_(symbol, transform, t, value);
-                }
-                return false;
-            };
-
-        result = program_.evaluate(resolver);
+    std::uint64_t stateTag() const override {
+        return computeRuntimeTag(dynamicSymbols_, expressionTag_, resolvers_.stateTagResolver);
     }
 
 private:
-    CompiledMatrixRuntimeProgram program_;
-    ExternalRuntimeSymbolResolver externalResolver_;
+    ProgramT program_{"0", RuntimeSymbolConfig{}};
+    std::uint64_t expressionTag_ = DynamicCoefficientTag;
+    std::vector<std::string> dynamicSymbols_;
+    RuntimeExpressionResolvers resolvers_;
 };
+
+using RuntimeScalarExpressionCoefficient =
+    RuntimeExpressionCoefficient<Coefficient, CompiledScalarRuntimeProgram, Real>;
+using RuntimeMatrixExpressionCoefficient =
+    RuntimeExpressionCoefficient<MatrixCoefficient, CompiledMatrixRuntimeProgram, Matrix3>;
 
 }  // namespace
 
 std::unique_ptr<Coefficient> createRuntimeScalarExpressionCoefficient(
     std::string expression,
     const CaseDefinition& caseDef,
-    ExternalRuntimeSymbolResolver externalResolver) {
+    RuntimeExpressionResolvers resolvers) {
     return std::make_unique<RuntimeScalarExpressionCoefficient>(
         std::move(expression),
         caseDef,
-        std::move(externalResolver));
+        std::move(resolvers));
 }
 
 std::unique_ptr<MatrixCoefficient> createRuntimeMatrixExpressionCoefficient(
     std::string expression,
     const CaseDefinition& caseDef,
-    ExternalRuntimeSymbolResolver externalResolver) {
+    RuntimeExpressionResolvers resolvers) {
     return std::make_unique<RuntimeMatrixExpressionCoefficient>(
         std::move(expression),
         caseDef,
-        std::move(externalResolver));
+        std::move(resolvers));
 }
 
 }  // namespace mpfem

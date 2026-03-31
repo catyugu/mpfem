@@ -13,7 +13,10 @@ void DiffusionIntegrator::assembleElementMatrix(const ReferenceElement& ref,
     const int nq = ref.numQuadraturePoints();
     
     elmat.setZero(nd, nd);
-    Eigen::MatrixXd gradMat(nd, 3);
+    Eigen::Matrix<Real, MaxDofsPerElement, 3> gradMatFull;
+    Eigen::Matrix<Real, MaxDofsPerElement, 3> dGradMatFull;
+    auto gradMat = gradMatFull.topRows(nd);
+    auto dGradMat = dGradMatFull.topRows(nd);
     
     for (int q = 0; q < nq; ++q) {
         const IntegrationPoint& ip = ref.integrationPoint(q);
@@ -32,8 +35,8 @@ void DiffusionIntegrator::assembleElementMatrix(const ReferenceElement& ref,
             gradMat.row(i) = physGrad;
         }
         
-        Eigen::MatrixXd Dgrad = gradMat * D;
-        elmat.noalias() += w * (gradMat * Dgrad.transpose());
+        dGradMat.noalias() = gradMat * D;
+        elmat.noalias() += w * (gradMat * dGradMat.transpose());
     }
 }
 
@@ -258,9 +261,9 @@ void ElasticityIntegrator::assembleElementMatrix(const ReferenceElement& ref,
     }
 }
 
-void ThermalLoadIntegrator::assembleElementVector(const ReferenceElement& ref,
-                                                   ElementTransform& trans,
-                                                   Vector& elvec) const {
+void StrainLoadIntegrator::assembleElementVector(const ReferenceElement& ref,
+                                                  ElementTransform& trans,
+                                                  Vector& elvec) const {
     const int nd = ref.numDofs();
     const int nq = ref.numQuadraturePoints();
     const int totalDofs = nd * vdim_;
@@ -268,9 +271,8 @@ void ThermalLoadIntegrator::assembleElementVector(const ReferenceElement& ref,
     elvec.setZero(totalDofs);
     
     Eigen::Matrix<Real, MaxStrainComponents, MaxVectorDofsPerElement> B_full;
-    Eigen::Matrix<Real, 6, 6> C;
-    Eigen::Matrix<Real, 6, 1> epsilonThermal;
-    Eigen::Matrix<Real, 6, 1> sigmaThermal;
+    Eigen::Matrix<Real, 6, 1> sigmaVoigt;
+    Matrix3 stress;
     auto B = B_full.leftCols(totalDofs);
     
     for (int q = 0; q < nq; ++q) {
@@ -280,42 +282,22 @@ void ThermalLoadIntegrator::assembleElementVector(const ReferenceElement& ref,
         
         const Real w = ip.weight * trans.weight();
         
-        Real E_val, nu_val;
-        E_->eval(trans, E_val);
-        nu_->eval(trans, nu_val);
-        
-        // Compute elasticity tensor C from E and nu (Lamé parameters)
-        Real lambda = E_val * nu_val / ((1.0 + nu_val) * (1.0 - 2.0 * nu_val));
-        Real mu = E_val / (2.0 * (1.0 + nu_val));
-        
-        fillElasticityTensorC(C, lambda, mu);
-        
-        // Get thermal expansion tensor (Matrix3) and compute thermal strain
-        Matrix3 alpha_mat;
-        alphaT_->eval(trans, alpha_mat);
-        
-        // Skip if thermal expansion is zero
-        if (alpha_mat.norm() < 1e-20) continue;
-        
-        // Convert 3x3 thermal expansion tensor to Voigt 6-vector:
-        // ε_thermal = {α₁₁, α₂₂, α₃₃, 2α₁₂, 2α₁₃, 2α₂₃} * (T - T_ref)
-        // The alpha_mat already contains (T - T_ref) baked in from the coefficient evaluation
-        epsilonThermal(0) = alpha_mat(0, 0);  // α₁₁
-        epsilonThermal(1) = alpha_mat(1, 1);  // α₂₂
-        epsilonThermal(2) = alpha_mat(2, 2);  // α₃₃
-        epsilonThermal(3) = 2.0 * alpha_mat(0, 1);  // 2α₁₂
-        epsilonThermal(4) = 2.0 * alpha_mat(0, 2);  // 2α₁₃
-        epsilonThermal(5) = 2.0 * alpha_mat(1, 2);  // 2α₂₃
-        
-        // Compute thermal stress: σ_thermal = C : ε_thermal
-        sigmaThermal = C * epsilonThermal;
+        stress_->eval(trans, stress);
+
+        if (stress.norm() < 1e-20) continue;
+
+        sigmaVoigt(0) = stress(0, 0);
+        sigmaVoigt(1) = stress(1, 1);
+        sigmaVoigt(2) = stress(2, 2);
+        sigmaVoigt(3) = stress(1, 2);
+        sigmaVoigt(4) = stress(0, 2);
+        sigmaVoigt(5) = stress(0, 1);
         
         B.setZero();
         
         computeStrainDispMatrix(B, ref, trans, nd, vdim_, q);
         
-        // F_thermal += B^T · σ_thermal · w
-        elvec.noalias() += w * (B.transpose() * sigmaThermal);
+        elvec.noalias() += w * (B.transpose() * sigmaVoigt);
     }
 }
 
