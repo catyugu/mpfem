@@ -56,46 +56,6 @@ public:
         
         return solver;
     }
-    
-    /**
-     * @brief Create a solver by type.
-     * @throws std::runtime_error if solver is not available
-     */
-    static std::unique_ptr<LinearSolver> create(SolverType type) {
-        const auto& meta = getSolverMeta(type);
-        if (!meta.isAvailable) {
-            throw std::runtime_error(
-                "Solver '" + std::string(meta.name) + "' is not available. "
-                "Available solvers: " + joinSolverNames());
-        }
-        return createByType(type);
-    }
-    
-    /**
-     * @brief Create a solver by name.
-     * @throws std::runtime_error if solver is not available
-     */
-    static std::unique_ptr<LinearSolver> create(std::string_view name) {
-        return create(solverTypeFromName(name));
-    }
-    
-    /**
-     * @brief Get list of all available solver names.
-     */
-    static std::vector<std::string> availableSolvers() {
-        return availableSolverNames();
-    }
-    
-    /**
-     * @brief Check if a solver is available.
-     */
-    static bool isAvailable(SolverType type) {
-        return isSolverAvailable(type);
-    }
-    
-    static bool isAvailable(std::string_view name) {
-        return isSolverAvailable(name);
-    }
 
 private:
     static std::unique_ptr<LinearSolver> createByType(SolverType type) {

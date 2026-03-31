@@ -8,7 +8,6 @@
 
 #include <sstream>
 #include <cstdlib>
-#include <cmath>
 
 namespace mpfem {
 

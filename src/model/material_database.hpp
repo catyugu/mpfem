@@ -3,9 +3,11 @@
 
 #include "core/types.hpp"
 #include "core/exception.hpp"
+#include "model/case_definition.hpp"
 #include <map>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace mpfem {
@@ -65,6 +67,12 @@ public:
     const MaterialPropertyModel* getMaterial(const std::string& tag) const;
     bool hasMaterial(const std::string& tag) const;
     std::vector<std::string> getMaterialTags() const;
+
+    void buildDomainIndex(const std::vector<MaterialAssignment>& assignments);
+    const std::vector<int>& domainIds() const;
+    const std::string& scalarExpressionByDomain(int domainId, std::string_view property) const;
+    const std::string& matrixExpressionByDomain(int domainId, std::string_view property) const;
+
     size_t size() const;
     void clear();
 

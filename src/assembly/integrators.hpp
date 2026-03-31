@@ -125,11 +125,6 @@ public:
         if (!Tinf_) MPFEM_THROW(ArgumentException, "ConvectionLFIntegrator requires non-null Tinf Coefficient");
     }
     
-    void setAmbientTemperature(const Coefficient* Tinf) {
-        if (!Tinf_) MPFEM_THROW(ArgumentException, "ConvectionLFIntegrator::setAmbientTemperature requires non-null Coefficient");
-        Tinf_ = Tinf;
-    }
-    
     void assembleFaceVector(const ReferenceElement& ref,
                             FacetElementTransform& trans,
                             Vector& elvec) const override;

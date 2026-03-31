@@ -3,10 +3,32 @@
 #include "core/exception.hpp"
 #include "expr/expression_parser.hpp"
 
+#include <algorithm>
 #include <unordered_map>
 #include <utility>
 
 namespace mpfem {
+
+namespace {
+
+const MaterialPropertyModel& requireMaterialByDomain(
+    const std::unordered_map<int, std::string>& materialTagByDomain,
+    const std::unordered_map<std::string, MaterialPropertyModel>& materials,
+    int domainId) {
+    auto it = materialTagByDomain.find(domainId);
+    if (it == materialTagByDomain.end()) {
+        MPFEM_THROW(ArgumentException, "Material domain not found: " + std::to_string(domainId));
+    }
+
+    auto materialIt = materials.find(it->second);
+    if (materialIt == materials.end()) {
+        MPFEM_THROW(ArgumentException,
+            "Material tag not found for domain " + std::to_string(domainId) + ": " + it->second);
+    }
+    return materialIt->second;
+}
+
+} // namespace
 
 struct MaterialPropertyModel::Impl {
     std::string tag;
@@ -96,6 +118,8 @@ void MaterialPropertyModel::setMatrix(const std::string& name, const std::string
 
 struct MaterialDatabase::Impl {
     std::unordered_map<std::string, MaterialPropertyModel> materials;
+    std::unordered_map<int, std::string> materialTagByDomain;
+    std::vector<int> orderedDomainIds;
 };
 
 MaterialDatabase::MaterialDatabase()
@@ -139,12 +163,52 @@ std::vector<std::string> MaterialDatabase::getMaterialTags() const {
     return tags;
 }
 
+void MaterialDatabase::buildDomainIndex(const std::vector<MaterialAssignment>& assignments) {
+    impl_->materialTagByDomain.clear();
+    impl_->orderedDomainIds.clear();
+    for (const auto& assignment : assignments) {
+        for (int domainId : assignment.domainIds) {
+            impl_->materialTagByDomain[domainId] = assignment.materialTag;
+        }
+    }
+
+    impl_->orderedDomainIds.reserve(impl_->materialTagByDomain.size());
+    for (const auto& [domainId, _] : impl_->materialTagByDomain) {
+        impl_->orderedDomainIds.push_back(domainId);
+    }
+    std::sort(impl_->orderedDomainIds.begin(), impl_->orderedDomainIds.end());
+}
+
+const std::vector<int>& MaterialDatabase::domainIds() const {
+    return impl_->orderedDomainIds;
+}
+
+const std::string& MaterialDatabase::scalarExpressionByDomain(
+    int domainId,
+    std::string_view property) const {
+    return requireMaterialByDomain(
+        impl_->materialTagByDomain,
+        impl_->materials,
+        domainId).scalarExpression(std::string(property));
+}
+
+const std::string& MaterialDatabase::matrixExpressionByDomain(
+    int domainId,
+    std::string_view property) const {
+    return requireMaterialByDomain(
+        impl_->materialTagByDomain,
+        impl_->materials,
+        domainId).matrixExpression(std::string(property));
+}
+
 size_t MaterialDatabase::size() const {
     return impl_->materials.size();
 }
 
 void MaterialDatabase::clear() {
     impl_->materials.clear();
+    impl_->materialTagByDomain.clear();
+    impl_->orderedDomainIds.clear();
 }
 
 } // namespace mpfem

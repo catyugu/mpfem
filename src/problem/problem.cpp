@@ -2,37 +2,60 @@
 #include "physics/electrostatics_solver.hpp"
 #include "physics/heat_transfer_solver.hpp"
 #include "physics/structural_solver.hpp"
+#include <utility>
 
 namespace mpfem {
 
-Problem::~Problem() = default;
+    Problem::~Problem() = default;
 
+    const Coefficient* Problem::findDomainScalarCoef(std::string_view property, int domainId) const
+    {
+        DomainPropertyKey key {std::string(property), domainId};
+        auto it = domainScalarCoefficients.find(key);
+        return it != domainScalarCoefficients.end() ? it->second.get() : nullptr;
+    }
 
-    // Scalar coefficients
-    const Coefficient* Problem::getScalarCoef(const std::string& name) const {
-        auto it = scalarCoefficients.find(name);
-        return it != scalarCoefficients.end() ? it->second.get() : nullptr;
+    const MatrixCoefficient* Problem::findDomainMatrixCoef(std::string_view property, int domainId) const
+    {
+        DomainPropertyKey key {std::string(property), domainId};
+        auto it = domainMatrixCoefficients.find(key);
+        return it != domainMatrixCoefficients.end() ? it->second.get() : nullptr;
     }
-    void Problem::setScalarCoef(const std::string& name, std::unique_ptr<Coefficient> coef) {
-        scalarCoefficients[name] = std::move(coef);
+
+    const Coefficient* Problem::setDomainScalarCoef(std::string property,
+        int domainId,
+        std::unique_ptr<Coefficient> coef)
+    {
+        DomainPropertyKey key {std::move(property), domainId};
+        auto [it, _] = domainScalarCoefficients.insert_or_assign(std::move(key), std::move(coef));
+        return it->second.get();
     }
-    
-    // Vector coefficients
-    const VectorCoefficient* Problem::getVectorCoef(const std::string& name) const {
-        auto it = vectorCoefficients.find(name);
-        return it != vectorCoefficients.end() ? it->second.get() : nullptr;
+
+    const MatrixCoefficient* Problem::setDomainMatrixCoef(std::string property,
+        int domainId,
+        std::unique_ptr<MatrixCoefficient> coef)
+    {
+        DomainPropertyKey key {std::move(property), domainId};
+        auto [it, _] = domainMatrixCoefficients.insert_or_assign(std::move(key), std::move(coef));
+        return it->second.get();
     }
-    void Problem::setVectorCoef(const std::string& name, std::unique_ptr<VectorCoefficient> coef) {
-        vectorCoefficients[name] = std::move(coef);
+
+    const Coefficient* Problem::ownScalarCoef(std::unique_ptr<Coefficient> coef)
+    {
+        ownedScalarCoefficients.push_back(std::move(coef));
+        return ownedScalarCoefficients.back().get();
     }
-    
-    // Matrix coefficients
-    const MatrixCoefficient* Problem::getMatrixCoef(const std::string& name) const {
-        auto it = matrixCoefficients.find(name);
-        return it != matrixCoefficients.end() ? it->second.get() : nullptr;
+
+    const VectorCoefficient* Problem::ownVectorCoef(std::unique_ptr<VectorCoefficient> coef)
+    {
+        ownedVectorCoefficients.push_back(std::move(coef));
+        return ownedVectorCoefficients.back().get();
     }
-    void Problem::setMatrixCoef(const std::string& name, std::unique_ptr<MatrixCoefficient> coef) {
-        matrixCoefficients[name] = std::move(coef);
+
+    const MatrixCoefficient* Problem::ownMatrixCoef(std::unique_ptr<MatrixCoefficient> coef)
+    {
+        ownedMatrixCoefficients.push_back(std::move(coef));
+        return ownedMatrixCoefficients.back().get();
     }
 
 } // namespace mpfem

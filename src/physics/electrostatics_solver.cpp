@@ -39,6 +39,14 @@ void ElectrostaticsSolver::assemble() {
         LOG_ERROR << "ElectrostaticsSolver: conductivity not set";
         return;
     }
+
+    const std::uint64_t currentTag = combineTag(
+        stateTagOfRange(conductivityBindings_),
+        stateTagOfRange(voltageBCs_));
+    if (assembledSystemState_.isUnchanged(currentTag)) {
+        LOG_DEBUG << "Electrostatics assemble skipped (coefficients unchanged)";
+        return;
+    }
     
     clearAssemblers();
     
@@ -50,6 +58,8 @@ void ElectrostaticsSolver::assemble() {
     
     applyDirichletBC(matAsm_->matrix(), vecAsm_->vector(), field().values(), *fes_, *mesh_, voltageBCs_);
     matAsm_->finalize();
+
+    assembledSystemState_.update(currentTag);
 }
 
 } // namespace mpfem

@@ -40,7 +40,7 @@ public:
     Real currentTime = 0.0;
     int currentStep = 0;
     
-    TimeScheme scheme = TimeScheme::BackwardEuler;
+    TimeScheme scheme = TimeScheme::BDF1;
     
     void initializeTransient(int historyDepth = 2) {
         fieldValues.setMaxHistorySteps(historyDepth);
