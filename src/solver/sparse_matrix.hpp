@@ -6,6 +6,9 @@
 #include <Eigen/Sparse>
 #include <vector>
 #include <fstream>
+#include <cstdint>
+#include <cstring>
+#include <limits>
 
 namespace mpfem
 {
@@ -23,10 +26,35 @@ namespace mpfem
         using Storage = Eigen::SparseMatrix<Real, Eigen::ColMajor, Index>;
         using Triplet = Eigen::Triplet<Real, Index>;
 
+        static constexpr std::uint64_t DynamicTag = std::numeric_limits<std::uint64_t>::max();
+
         SparseMatrix() = default;
 
         explicit SparseMatrix(Index rows, Index cols)
             : mat_(rows, cols) {}
+
+        explicit SparseMatrix(const Storage& mat)
+            : mat_(mat) {}
+
+        explicit SparseMatrix(Storage&& mat)
+            : mat_(std::move(mat)) {}
+
+        SparseMatrix(const SparseMatrix&) = default;
+        SparseMatrix(SparseMatrix&&) noexcept = default;
+        SparseMatrix& operator=(const SparseMatrix&) = default;
+        SparseMatrix& operator=(SparseMatrix&&) noexcept = default;
+
+        SparseMatrix& operator=(const Storage& mat)
+        {
+            mat_ = mat;
+            return *this;
+        }
+
+        SparseMatrix& operator=(Storage&& mat)
+        {
+            mat_ = std::move(mat);
+            return *this;
+        }
 
         /// Get number of rows
         Index rows() const { return mat_.rows(); }
@@ -198,6 +226,16 @@ namespace mpfem
             return *this;
         }
 
+        /// SparseMatrix += alpha * SparseMatrix
+        SparseMatrix& addScaled(const SparseMatrix& B, Real alpha) {
+            MPFEM_ASSERT(rows() == B.rows() && cols() == B.cols(),
+                "SparseMatrix size mismatch in addScaled");
+            if (alpha != 0.0) {
+                mat_ += alpha * B.mat_;
+            }
+            return *this;
+        }
+
         /// SparseMatrix -= SparseMatrix
         SparseMatrix& operator-=(const SparseMatrix& B) {
             MPFEM_ASSERT(rows() == B.rows() && cols() == B.cols(),
@@ -256,6 +294,43 @@ namespace mpfem
             MPFEM_ASSERT(cols() == v.size(),
                 "SparseMatrix size mismatch in matrix-vector multiplication");
             return mat_ * v;
+        }
+
+        /// Fast fingerprint for matrix-identity based caches.
+        /// Requires compressed storage for deterministic index arrays.
+        std::uint64_t fingerprint() const {
+            MPFEM_ASSERT(mat_.isCompressed(), "SparseMatrix::fingerprint requires compressed matrix");
+
+            constexpr std::uint64_t kFnvOffset = 1469598103934665603ull;
+            constexpr std::uint64_t kFnvPrime = 1099511628211ull;
+
+            auto mixBytes = [](std::uint64_t seed, const void* data, std::size_t len) {
+                const auto* bytes = static_cast<const unsigned char*>(data);
+                for (std::size_t i = 0; i < len; ++i) {
+                    seed ^= static_cast<std::uint64_t>(bytes[i]);
+                    seed *= kFnvPrime;
+                }
+                return seed;
+            };
+
+            std::uint64_t h = kFnvOffset;
+            const Index r = rows();
+            const Index c = cols();
+            const Index nz = nonZeros();
+
+            h = mixBytes(h, &r, sizeof(r));
+            h = mixBytes(h, &c, sizeof(c));
+            h = mixBytes(h, &nz, sizeof(nz));
+
+            const auto* outer = mat_.outerIndexPtr();
+            const auto* inner = mat_.innerIndexPtr();
+            const auto* vals = mat_.valuePtr();
+
+            h = mixBytes(h, outer, static_cast<std::size_t>(mat_.outerSize() + 1) * sizeof(Index));
+            h = mixBytes(h, inner, static_cast<std::size_t>(nz) * sizeof(Index));
+            h = mixBytes(h, vals, static_cast<std::size_t>(nz) * sizeof(Real));
+
+            return h;
         }
 
     private:

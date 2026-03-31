@@ -6,6 +6,7 @@
 #include <vector>
 #include <stdexcept>
 #include <cstring>
+#include <cstdint>
 
 #ifdef MPFEM_USE_MKL
 #include <mkl_pardiso.h>
@@ -82,11 +83,13 @@ public:
         
         if (error_ != 0) {
             LOG_ERROR << "PARDISO symbolic analysis failed with error: " << error_;
+            hasFactorCache_ = false;
             return;
         }
         
         analyzed_ = true;
         initialized_ = true;
+        hasFactorCache_ = false;
         
         if (printLevel_ >= 1) {
             LOG_INFO << "[PARDISO] Symbolic analysis completed";
@@ -115,10 +118,13 @@ public:
         
         if (error_ != 0) {
             LOG_ERROR << "PARDISO factorization failed with error: " << error_;
+            hasFactorCache_ = false;
             return;
         }
         
         factorized_ = true;
+        hasFactorCache_ = true;
+        lastMatrixFingerprint_ = A.fingerprint();
         
         if (printLevel_ >= 1) {
             LOG_INFO << "[PARDISO] Factorization completed, peak memory: " 
@@ -131,20 +137,29 @@ public:
         
         const auto& mat = A.eigen();
         n_ = static_cast<MKL_INT>(mat.rows());
-        
-        // Convert to CSR format
-        convertToCSR(mat);
+        const std::uint64_t currentFingerprint = A.fingerprint();
+        const bool needRefactor = !hasFactorCache_ || (currentFingerprint != lastMatrixFingerprint_);
+
+        if (needRefactor) {
+            convertToCSR(mat);
+        }
         
         MKL_INT nrhs = 1;
-        
-        // IMPORTANT: Matrix values change between coupling iterations!
-        // Must re-factorize each time. Only symbolic analysis can be reused.
-        if (!analyzed_) {
-            // Phase 13: Analysis + Factorization + Solve (first time)
-            phase_ = 13;
+
+        if (needRefactor) {
+            if (!analyzed_) {
+                // Analysis + factorization + solve
+                phase_ = 13;
+            } else {
+                // Factorization + solve with reused symbolic pattern
+                phase_ = 23;
+            }
         } else {
-            // Phase 23: Factorization + Solve (reuse symbolic analysis)
-            phase_ = 23;
+            // Solve only with cached factors
+            phase_ = 33;
+            if (printLevel_ >= 1) {
+                LOG_INFO << "[PARDISO] Reusing cached factorization";
+            }
         }
         
         initialized_ = true;
@@ -162,11 +177,14 @@ public:
         
         if (error_ != 0) {
             LOG_ERROR << "PARDISO solve failed with error: " << error_;
+            hasFactorCache_ = false;
             return false;
         }
         
         analyzed_ = true;
         factorized_ = true;
+        hasFactorCache_ = true;
+        lastMatrixFingerprint_ = currentFingerprint;
         
         iterations_ = 1;
         residual_ = 0.0;
@@ -235,6 +253,8 @@ private:
     bool analyzed_ = false;
     bool factorized_ = false;
     bool initialized_ = false;
+    bool hasFactorCache_ = false;
+    std::uint64_t lastMatrixFingerprint_ = 0;
 };
 
 #else

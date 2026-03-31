@@ -6,6 +6,7 @@
 #include <Eigen/Sparse>
 #include <Eigen/IterativeLinearSolvers>
 #include <unsupported/Eigen/IterativeSolvers>
+#include <cstdint>
 
 namespace mpfem {
 
@@ -180,21 +181,42 @@ public:
     
     void analyzePattern(const SparseMatrix& A) override {
         solver_.analyzePattern(A.eigen());
+        analyzed_ = (solver_.info() == Eigen::Success);
     }
     
     void factorize(const SparseMatrix& A) override {
         solver_.factorize(A.eigen());
+        factorized_ = (solver_.info() == Eigen::Success);
+        if (factorized_) {
+            hasFactorCache_ = true;
+            lastMatrixFingerprint_ = A.fingerprint();
+        } else {
+            hasFactorCache_ = false;
+        }
     }
     
     bool solve(const SparseMatrix& A, Vector& x, const Vector& b) override {
         ScopedTimer timer("Linear solve (SparseLU)");
-        
-        solver_.compute(A.eigen());
-        
-        if (solver_.info() != Eigen::Success) {
-            LOG_ERROR << "[EigenSparseLU] Factorization failed";
-            x.setZero(b.size());
-            return false;
+
+        const std::uint64_t currentFingerprint = A.fingerprint();
+        const bool needRefactor = !hasFactorCache_ || (currentFingerprint != lastMatrixFingerprint_);
+
+        if (needRefactor) {
+            solver_.compute(A.eigen());
+
+            if (solver_.info() != Eigen::Success) {
+                LOG_ERROR << "[EigenSparseLU] Factorization failed";
+                x.setZero(b.size());
+                hasFactorCache_ = false;
+                return false;
+            }
+
+            analyzed_ = true;
+            factorized_ = true;
+            hasFactorCache_ = true;
+            lastMatrixFingerprint_ = currentFingerprint;
+        } else if (printLevel_ > 0) {
+            LOG_INFO << "[EigenSparseLU] Reusing cached factorization";
         }
         
         x = solver_.solve(b);
@@ -219,6 +241,10 @@ public:
     
 private:
     Eigen::SparseLU<Eigen::SparseMatrix<Real>> solver_;
+    bool analyzed_ = false;
+    bool factorized_ = false;
+    bool hasFactorCache_ = false;
+    std::uint64_t lastMatrixFingerprint_ = 0;
 };
 
 /**

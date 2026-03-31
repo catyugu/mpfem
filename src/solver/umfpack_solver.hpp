@@ -5,6 +5,7 @@
 #include "core/logger.hpp"
 #include <vector>
 #include <stdexcept>
+#include <cstdint>
 
 #ifdef MPFEM_USE_SUITESPARSE
 #include <Eigen/UmfPackSupport>
@@ -58,19 +59,35 @@ public:
         } else if (printLevel_ >= 1) {
             LOG_INFO << "[UMFPACK] Factorization completed";
         }
+
+        if (factorized_) {
+            hasFactorCache_ = true;
+            lastMatrixFingerprint_ = A.fingerprint();
+        } else {
+            hasFactorCache_ = false;
+        }
     }
     
     bool solve(const SparseMatrix& A, Vector& x, const Vector& b) override {
         ScopedTimer timer("Linear solve (UMFPACK)");
-        
-        // UMFPACK requires re-factorization when matrix values change
-        // (same pattern can be reused, but we need numerical factorization each time)
-        solver_.analyzePattern(A.eigen());
-        solver_.factorize(A.eigen());
-        
-        if (solver_.info() != Eigen::Success) {
-            LOG_ERROR << "UMFPACK factorization failed";
-            return false;
+
+        const std::uint64_t currentFingerprint = A.fingerprint();
+        const bool needRefactor = !hasFactorCache_ || (currentFingerprint != lastMatrixFingerprint_);
+
+        if (needRefactor) {
+            solver_.analyzePattern(A.eigen());
+            solver_.factorize(A.eigen());
+
+            if (solver_.info() != Eigen::Success) {
+                LOG_ERROR << "UMFPACK factorization failed";
+                hasFactorCache_ = false;
+                return false;
+            }
+
+            hasFactorCache_ = true;
+            lastMatrixFingerprint_ = currentFingerprint;
+        } else if (printLevel_ >= 1) {
+            LOG_INFO << "[UMFPACK] Reusing cached factorization";
         }
         
         x = solver_.solve(b);
@@ -93,6 +110,8 @@ private:
     Eigen::UmfPackLU<SparseMatrix::Storage> solver_;
     bool analyzed_ = false;
     bool factorized_ = false;
+    bool hasFactorCache_ = false;
+    std::uint64_t lastMatrixFingerprint_ = 0;
 };
 
 #else
