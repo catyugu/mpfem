@@ -11,6 +11,22 @@ namespace mpfem
         thread_local std::vector<Real> t_phiBuf;
         thread_local std::vector<Vector3> t_gradBuf;
         thread_local std::vector<Index> t_dofsBuf;
+
+        inline void ensureCapacity(int nShape, int nElemDofs)
+        {
+            if (static_cast<int>(t_phiBuf.size()) < nShape)
+            {
+                t_phiBuf.resize(nShape);
+            }
+            if (static_cast<int>(t_gradBuf.size()) < nShape)
+            {
+                t_gradBuf.resize(nShape);
+            }
+            if (static_cast<int>(t_dofsBuf.size()) < nElemDofs)
+            {
+                t_dofsBuf.resize(nElemDofs);
+            }
+        }
     } // namespace
 
     Real GridFunction::eval(Index elem, const Real *xi) const
@@ -23,25 +39,18 @@ namespace mpfem
             return 0.0;
 
         const ShapeFunction *sf = ref->shapeFunction();
-        int nd = sf->numDofs();
-
-        // Reuse thread-local buffer
-        if (static_cast<int>(t_phiBuf.size()) < nd)
-        {
-            t_phiBuf.resize(nd);
-        }
-        if (static_cast<int>(t_dofsBuf.size()) < nd * fes_->vdim())
-        {
-            t_dofsBuf.resize(nd * fes_->vdim());
-        }
+        const int nd = sf->numDofs();
+        const int vdim = fes_->vdim();
+        const int totalDofs = fes_->numElementDofs(elem);
+        ensureCapacity(nd, totalDofs);
 
         sf->evalValues(xi, t_phiBuf.data());
-        fes_->getElementDofs(elem, std::span<Index>{t_dofsBuf.data(), t_dofsBuf.size()});
+        fes_->getElementDofs(elem, std::span<Index>{t_dofsBuf.data(), static_cast<size_t>(totalDofs)});
 
         Real val = 0.0;
         for (int i = 0; i < nd; ++i)
         {
-            val += t_phiBuf[i] * values_[t_dofsBuf[i]];
+            val += t_phiBuf[i] * values_[t_dofsBuf[static_cast<size_t>(i) * vdim]];
         }
         return val;
     }
@@ -56,25 +65,18 @@ namespace mpfem
             return Vector3::Zero();
 
         const ShapeFunction *sf = ref->shapeFunction();
-        int nd = sf->numDofs();
-
-        // Reuse thread-local buffer
-        if (static_cast<int>(t_gradBuf.size()) < nd)
-        {
-            t_gradBuf.resize(nd);
-        }
-        if (static_cast<int>(t_dofsBuf.size()) < nd * fes_->vdim())
-        {
-            t_dofsBuf.resize(nd * fes_->vdim());
-        }
+        const int nd = sf->numDofs();
+        const int vdim = fes_->vdim();
+        const int totalDofs = fes_->numElementDofs(elem);
+        ensureCapacity(nd, totalDofs);
 
         sf->evalGrads(xi, t_gradBuf.data());
-        fes_->getElementDofs(elem, std::span<Index>{t_dofsBuf.data(), t_dofsBuf.size()});
+        fes_->getElementDofs(elem, std::span<Index>{t_dofsBuf.data(), static_cast<size_t>(totalDofs)});
 
         Vector3 gRef = Vector3::Zero();
         for (int i = 0; i < nd; ++i)
         {
-            gRef += t_gradBuf[i] * values_[t_dofsBuf[i]];
+            gRef += t_gradBuf[i] * values_[t_dofsBuf[static_cast<size_t>(i) * vdim]];
         }
 
         trans.setIntegrationPoint(xi);

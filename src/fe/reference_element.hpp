@@ -155,28 +155,8 @@ inline int ReferenceElement::numDofs() const {
 }
 
 inline void ReferenceElement::initialize() {
-    // Create shape function
-    switch (geometry_) {
-        case Geometry::Segment:
-            shapeFunc_ = std::make_unique<H1SegmentShape>(order_);
-            break;
-        case Geometry::Triangle:
-            shapeFunc_ = std::make_unique<H1TriangleShape>(order_);
-            break;
-        case Geometry::Square:
-            shapeFunc_ = std::make_unique<H1SquareShape>(order_);
-            break;
-        case Geometry::Tetrahedron:
-            shapeFunc_ = std::make_unique<H1TetrahedronShape>(order_);
-            break;
-        case Geometry::Cube:
-            shapeFunc_ = std::make_unique<H1CubeShape>(order_);
-            break;
-        default:
-            return;
-    }
+    shapeFunc_ = ShapeFunction::create(geometry_, order_);
     
-    // Cache numDofs
     numDofs_ = shapeFunc_->numDofs();
     
     // Create quadrature rule with order 2*order for exact integration
