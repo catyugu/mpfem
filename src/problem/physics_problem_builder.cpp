@@ -12,16 +12,28 @@
 #include "problem/expression_coefficient_factory.hpp"
 #include "steady_problem.hpp"
 #include "transient_problem.hpp"
+#include <array>
 #include <cstdint>
+#include <string_view>
 #include <unordered_map>
-
 
 namespace mpfem {
 
     namespace {
 
+        constexpr std::string_view kPhysicsElectrostatics = "electrostatics";
+        constexpr std::string_view kPhysicsHeatTransfer = "heat_transfer";
+        constexpr std::string_view kPhysicsSolidMechanics = "solid_mechanics";
+
+        constexpr std::string_view kPropElectricConductivity = "electricconductivity";
+        constexpr std::string_view kPropThermalConductivity = "thermalconductivity";
+        constexpr std::string_view kPropDensity = "density";
+        constexpr std::string_view kPropHeatCapacity = "heatcapacity";
+        constexpr std::string_view kPropYoungModulus = "E";
+        constexpr std::string_view kPropPoissonRatio = "nu";
+        constexpr std::string_view kPropThermalExpansion = "thermalexpansioncoefficient";
         double getInitialCondition(const CaseDefinition& caseDef,
-            const std::string& fieldKind,
+            std::string_view fieldKind,
             double defaultVal)
         {
             for (const auto& ic : caseDef.initialConditions) {
@@ -48,6 +60,18 @@ namespace mpfem {
 
         std::unique_ptr<MatrixCoefficient> makeMatrixExpressionCoefficient(Problem& problem,
             const std::string& expression);
+
+        template <typename CoefT, typename GetterFn>
+        std::unordered_map<int, const CoefT*> collectDomainCoefficients(const std::set<int>& domainIds,
+            GetterFn getter)
+        {
+            std::unordered_map<int, const CoefT*> byDomain;
+            byDomain.reserve(domainIds.size());
+            for (int domainId : domainIds) {
+                byDomain.emplace(domainId, getter(domainId));
+            }
+            return byDomain;
+        }
 
         const MatrixCoefficient* requireDomainMatrixCoefficient(Problem& problem,
             int domainId,
@@ -260,14 +284,14 @@ namespace mpfem {
             problem.electrostatics = std::make_unique<ElectrostaticsSolver>(physics.order);
             problem.electrostatics->setSolverConfig(physics.solver);
 
-            double icValue = getInitialCondition(problem.caseDef, "electrostatics", 0.0);
+            double icValue = getInitialCondition(problem.caseDef, kPhysicsElectrostatics, 0.0);
             problem.electrostatics->initialize(*problem.mesh, problem.fieldValues, physics.order, icValue);
 
             for (int domainId : problem.materials.domainIds()) {
                 const MatrixCoefficient* sigma = requireDomainMatrixCoefficient(
                     problem,
                     domainId,
-                    "electricconductivity");
+                    kPropElectricConductivity);
                 problem.electrostatics->setElectricalConductivity({domainId}, sigma);
             }
 
@@ -286,18 +310,18 @@ namespace mpfem {
             problem.heatTransfer = std::make_unique<HeatTransferSolver>(physics.order);
             problem.heatTransfer->setSolverConfig(physics.solver);
 
-            double icValue = getInitialCondition(problem.caseDef, "heat_transfer", 293.15);
+            double icValue = getInitialCondition(problem.caseDef, kPhysicsHeatTransfer, 293.15);
             problem.heatTransfer->initialize(*problem.mesh, problem.fieldValues, physics.order, icValue);
 
             for (int domainId : problem.materials.domainIds()) {
                 const MatrixCoefficient* k = requireDomainMatrixCoefficient(
                     problem,
                     domainId,
-                    "thermalconductivity");
+                    kPropThermalConductivity);
                 problem.heatTransfer->setThermalConductivity({domainId}, k);
 
-                const Coefficient* rho = requireDomainScalarCoefficient(problem, domainId, "density");
-                const Coefficient* cp = requireDomainScalarCoefficient(problem, domainId, "heatcapacity");
+                const Coefficient* rho = requireDomainScalarCoefficient(problem, domainId, kPropDensity);
+                const Coefficient* cp = requireDomainScalarCoefficient(problem, domainId, kPropHeatCapacity);
                 problem.heatTransfer->setMassProperties({domainId}, rho, cp);
             }
 
@@ -327,12 +351,12 @@ namespace mpfem {
             problem.structural = std::make_unique<StructuralSolver>(physics.order);
             problem.structural->setSolverConfig(physics.solver);
 
-            double icValue = getInitialCondition(problem.caseDef, "solid_mechanics", 0.0);
+            double icValue = getInitialCondition(problem.caseDef, kPhysicsSolidMechanics, 0.0);
             problem.structural->initialize(*problem.mesh, problem.fieldValues, physics.order, icValue);
 
             for (int domainId : problem.materials.domainIds()) {
-                const Coefficient* E = requireDomainScalarCoefficient(problem, domainId, "E");
-                const Coefficient* nu = requireDomainScalarCoefficient(problem, domainId, "nu");
+                const Coefficient* E = requireDomainScalarCoefficient(problem, domainId, kPropYoungModulus);
+                const Coefficient* nu = requireDomainScalarCoefficient(problem, domainId, kPropPoissonRatio);
                 problem.structural->addElasticity({domainId}, E, nu);
             }
 
@@ -349,16 +373,12 @@ namespace mpfem {
         void setupJouleHeating(Problem& problem, const CoupledPhysicsDefinition& cp)
         {
             const GridFunction* V_field = &problem.electrostatics->field();
-            std::unordered_map<int, const MatrixCoefficient*> sigmaByDomain;
-            std::set<int> activeDomains;
-
-            for (int domId : cp.domainIds) {
-                const MatrixCoefficient* sigma = requireDomainMatrixCoefficient(problem,
-                    domId,
-                    "electricconductivity");
-                sigmaByDomain[domId] = sigma;
-                activeDomains.insert(domId);
-            }
+            const std::set<int> activeDomains = cp.domainIds;
+            const auto sigmaByDomain = collectDomainCoefficients<MatrixCoefficient>(
+                activeDomains,
+                [&](int domainId) {
+                    return requireDomainMatrixCoefficient(problem, domainId, kPropElectricConductivity);
+                });
 
             auto jouleHeat = std::make_unique<FunctionCoefficient>(
                 [V_field, sigmaByDomain](ElementTransform& trans, Real& result, Real t) {
@@ -382,31 +402,27 @@ namespace mpfem {
 
         void setupThermalExpansion(Problem& problem, const CoupledPhysicsDefinition& cp)
         {
-            auto physicsIt = problem.caseDef.physics.find("solid_mechanics");
+            auto physicsIt = problem.caseDef.physics.find(std::string(kPhysicsSolidMechanics));
             MPFEM_ASSERT(physicsIt != problem.caseDef.physics.end(),
                 "solid_mechanics physics block not found for thermal expansion coupling");
             Real T_ref = physicsIt->second.referenceTemperature;
 
-            std::unordered_map<int, const MatrixCoefficient*> alphaByDomain;
-            std::unordered_map<int, const Coefficient*> youngByDomain;
-            std::unordered_map<int, const Coefficient*> nuByDomain;
-            std::set<int> activeDomains;
-
-            for (int domId : cp.domainIds) {
-                const MatrixCoefficient* alphaCoef = requireDomainMatrixCoefficient(problem,
-                    domId,
-                    "thermalexpansioncoefficient");
-                const Coefficient* eCoef = requireDomainScalarCoefficient(problem,
-                    domId,
-                    "E");
-                const Coefficient* nuCoef = requireDomainScalarCoefficient(problem,
-                    domId,
-                    "nu");
-                alphaByDomain[domId] = alphaCoef;
-                youngByDomain[domId] = eCoef;
-                nuByDomain[domId] = nuCoef;
-                activeDomains.insert(domId);
-            }
+            const std::set<int> activeDomains = cp.domainIds;
+            const auto alphaByDomain = collectDomainCoefficients<MatrixCoefficient>(
+                activeDomains,
+                [&](int domainId) {
+                    return requireDomainMatrixCoefficient(problem, domainId, kPropThermalExpansion);
+                });
+            const auto youngByDomain = collectDomainCoefficients<Coefficient>(
+                activeDomains,
+                [&](int domainId) {
+                    return requireDomainScalarCoefficient(problem, domainId, kPropYoungModulus);
+                });
+            const auto nuByDomain = collectDomainCoefficients<Coefficient>(
+                activeDomains,
+                [&](int domainId) {
+                    return requireDomainScalarCoefficient(problem, domainId, kPropPoissonRatio);
+                });
 
             auto coef = std::make_unique<MatrixFunctionCoefficient>(
                 [&problem, alphaByDomain, youngByDomain, nuByDomain, T_ref](ElementTransform& trans, Matrix3& result, Real t) {
