@@ -25,4 +25,4 @@
 
 * 依据以上原则，对代码进行清理与重构，使其尽可能简洁，并且便于扩展。 
 * 请进行破坏式重构，不需要考虑向后兼容性。
-* 指定要求：把Problem类里的conductivityByDomain，youngModulusByDomain, poissonRatioByDomain消除掉，这太反模式了。
+* physics_problem_builder.cpp 目前来说仍然过于庞大，我认为一部分原因是各种tag，哈希，字符串key混用，导致非常繁多的转换，请你仔细思考，然后彻底重新设计相关的所有类和接口。删除所有向后兼容的东西。我认为一个系数应该可以通过一个属性名+域序号查找，而不是现在这么麻烦的做法。
