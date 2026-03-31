@@ -56,19 +56,22 @@ void HeatTransferSolver::assembleMassMatrix() {
     }
 
     auto massAsm = std::make_unique<BilinearFormAssembler>(fes_.get());
+    std::vector<std::unique_ptr<FunctionCoefficient>> rhoCpCoefficients;
+    rhoCpCoefficients.reserve(massBindings_.size());
+
     for (const auto& binding : massBindings_) {
-        // Create composite rho*Cp coefficient using lambda
-        auto rhoCpCoef = std::make_unique<ScalarCoefficient>(
+        // Keep composite coefficients alive until matrix assembly completes.
+        rhoCpCoefficients.push_back(std::make_unique<FunctionCoefficient>(
             [&binding](ElementTransform& trans, Real& result, Real t) {
                 Real rho = 1.0, Cp = 1.0;
                 if (binding.density) binding.density->eval(trans, rho, t);
                 if (binding.specificHeat) binding.specificHeat->eval(trans, Cp, t);
                 result = rho * Cp;
             },
-            binding.stateTag());
+            binding.stateTag()));
         
         massAsm->addDomainIntegrator(
-            std::make_unique<MassIntegrator>(rhoCpCoef.get()),
+            std::make_unique<MassIntegrator>(rhoCpCoefficients.back().get()),
             binding.domains);
     }
     massAsm->assemble();

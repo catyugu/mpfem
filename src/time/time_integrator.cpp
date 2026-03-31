@@ -9,7 +9,7 @@ namespace mpfem {
 
 std::unique_ptr<TimeIntegrator> createTimeIntegrator(TimeScheme scheme) {
     switch (scheme) {
-        case TimeScheme::BackwardEuler:
+        case TimeScheme::BDF1:
             return std::make_unique<BDF1Integrator>();
         case TimeScheme::BDF2:
             return std::make_unique<BDF2Integrator>();

@@ -11,16 +11,16 @@ protected:
     }
 };
 
-// ScalarCoefficient tests (using lambda)
-TEST_F(CoefficientTest, ScalarCoefficient_Constant) {
+// FunctionCoefficient tests (using lambda)
+TEST_F(CoefficientTest, FunctionCoefficient_Constant) {
     auto coef = constantCoefficient(3.14);
     
     // Simple test - verify construction
     EXPECT_NE(coef.get(), nullptr);
 }
 
-TEST_F(CoefficientTest, ScalarCoefficient_Function) {
-    auto coef = std::make_unique<ScalarCoefficient>(
+TEST_F(CoefficientTest, FunctionCoefficient_Function) {
+    auto coef = std::make_unique<FunctionCoefficient>(
         [](ElementTransform&, Real& result, Real t) {
             result = 1.0 + t;
         });
@@ -50,7 +50,7 @@ TEST_F(CoefficientTest, ProductCoefficient_LambdaComposition) {
     auto c2 = constantCoefficient(3.0);
     
     // Lambda-based product coefficient
-    auto productCoef = std::make_unique<ScalarCoefficient>(
+    auto productCoef = std::make_unique<FunctionCoefficient>(
         [&c1, &c2](ElementTransform& trans, Real& result, Real t) {
             Real v1 = 0.0, v2 = 0.0;
             c1->eval(trans, v1, t);

@@ -45,6 +45,19 @@ namespace mpfem
             return it->second;
         }
 
+        TimeScheme parseTimeScheme(const std::string &scheme)
+        {
+            if (scheme == "BDF1")
+            {
+                return TimeScheme::BDF1;
+            }
+            if (scheme == "BDF2")
+            {
+                return TimeScheme::BDF2;
+            }
+            throw ArgumentException("Unsupported transient time scheme: " + scheme + ". Supported values: BDF1, BDF2.");
+        }
+
         constexpr std::uint64_t kLocalTagSeed = 1469598103934665603ull;
 
         const GridFunction *resolveRuntimeField(const Problem &problem, std::string_view symbol)
@@ -168,16 +181,7 @@ namespace mpfem
                 transientProb->endTime = input.caseDefinition.timeConfig.end;
                 transientProb->timeStep = input.caseDefinition.timeConfig.step;
 
-                // Parse time scheme
-                if (input.caseDefinition.timeConfig.scheme == "BDF2")
-                {
-                    transientProb->scheme = TimeScheme::BDF2;
-                }
-                else
-                {
-                    // Default to BDF1 / BackwardEuler
-                    transientProb->scheme = TimeScheme::BackwardEuler;
-                }
+                transientProb->scheme = parseTimeScheme(input.caseDefinition.timeConfig.scheme);
 
                 problem = std::move(transientProb);
             }
@@ -427,7 +431,7 @@ namespace mpfem
                 return;
             }
 
-            auto jouleHeat = std::make_unique<ScalarCoefficient>(
+            auto jouleHeat = std::make_unique<FunctionCoefficient>(
                 [V_field, sigmaByDomain](ElementTransform &trans, Real &result, Real t) {
                     const int domId = static_cast<int>(trans.attribute());
                     if (domId < 0 || static_cast<size_t>(domId) >= sigmaByDomain.size()) {
