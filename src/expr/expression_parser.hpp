@@ -19,7 +19,9 @@ public:
 
     class ScalarProgram {
     public:
+        struct Impl;
         ScalarProgram();
+        explicit ScalarProgram(std::unique_ptr<Impl> impl) noexcept;
         ~ScalarProgram();
         ScalarProgram(ScalarProgram&&) noexcept;
         ScalarProgram& operator=(ScalarProgram&&) noexcept;
@@ -30,15 +32,14 @@ public:
         [[nodiscard]] double evaluate() const;
 
     private:
-        friend class ExpressionParser;
-
-        struct Impl;
         std::unique_ptr<Impl> impl_;
     };
 
     class MatrixProgram {
     public:
+        struct Impl;
         MatrixProgram();
+        explicit MatrixProgram(std::unique_ptr<Impl> impl) noexcept;
         ~MatrixProgram();
         MatrixProgram(MatrixProgram&&) noexcept;
         MatrixProgram& operator=(MatrixProgram&&) noexcept;
@@ -49,9 +50,6 @@ public:
         [[nodiscard]] Matrix3 evaluate() const;
 
     private:
-        friend class ExpressionParser;
-
-        struct Impl;
         std::unique_ptr<Impl> impl_;
     };
 

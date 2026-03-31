@@ -109,6 +109,9 @@ ExpressionParser::ScalarProgram::ScalarProgram()
     : impl_(std::make_unique<Impl>()) {
 }
 
+ExpressionParser::ScalarProgram::ScalarProgram(std::unique_ptr<Impl> impl) noexcept
+    : impl_(std::move(impl)) {}
+
 ExpressionParser::ScalarProgram::~ScalarProgram() = default;
 ExpressionParser::ScalarProgram::ScalarProgram(ScalarProgram&&) noexcept = default;
 ExpressionParser::ScalarProgram& ExpressionParser::ScalarProgram::operator=(ScalarProgram&&) noexcept = default;
@@ -125,6 +128,9 @@ double ExpressionParser::ScalarProgram::evaluate() const {
 ExpressionParser::MatrixProgram::MatrixProgram()
     : impl_(std::make_unique<Impl>()) {
 }
+
+ExpressionParser::MatrixProgram::MatrixProgram(std::unique_ptr<Impl> impl) noexcept
+    : impl_(std::move(impl)) {}
 
 ExpressionParser::MatrixProgram::~MatrixProgram() = default;
 ExpressionParser::MatrixProgram::MatrixProgram(MatrixProgram&&) noexcept = default;
@@ -169,30 +175,30 @@ ExpressionParser::ScalarProgram ExpressionParser::compileScalar(
         MPFEM_THROW(ArgumentException, "Expression is empty after unit stripping: " + expression);
     }
 
-    ScalarProgram program;
-    program.impl_->multiplier = unitResult.multiplier;
-    program.impl_->symbolTable = std::make_unique<exprtk::symbol_table<double>>();
-    program.impl_->expression = std::make_unique<exprtk::expression<double>>();
+    auto impl = std::make_unique<ScalarProgram::Impl>();
+    impl->multiplier = unitResult.multiplier;
+    impl->symbolTable = std::make_unique<exprtk::symbol_table<double>>();
+    impl->expression = std::make_unique<exprtk::expression<double>>();
 
     for (const auto& binding : bindings) {
         if (binding.ref == nullptr) {
             MPFEM_THROW(ArgumentException, "Variable binding has null reference for variable: " + binding.name);
         }
-        if (!program.impl_->symbolTable->add_variable(binding.name, *binding.ref)) {
+        if (!impl->symbolTable->add_variable(binding.name, *binding.ref)) {
             MPFEM_THROW(ArgumentException, "Failed to bind variable for expression compilation: " + binding.name);
         }
     }
 
-    program.impl_->symbolTable->add_constants();
-    program.impl_->expression->register_symbol_table(*program.impl_->symbolTable);
+    impl->symbolTable->add_constants();
+    impl->expression->register_symbol_table(*impl->symbolTable);
 
     exprtk::parser<double> parser;
-    if (!parser.compile(expressionText, *program.impl_->expression)) {
+    if (!parser.compile(expressionText, *impl->expression)) {
         MPFEM_THROW(ArgumentException,
                     "Expression compilation failed: " + expressionText + " | error: " + parser.error());
     }
 
-    return program;
+    return ScalarProgram(std::move(impl));
 }
 
 ExpressionParser::MatrixProgram ExpressionParser::compileMatrix(
@@ -200,19 +206,19 @@ ExpressionParser::MatrixProgram ExpressionParser::compileMatrix(
     const std::vector<VariableBinding>& bindings) const {
     MatrixTemplate matrixTemplate = parseMatrixTemplate(expression);
 
-    MatrixProgram program;
-    program.impl_->literalMatrix = matrixTemplate.literalMatrix;
+    auto impl = std::make_unique<MatrixProgram::Impl>();
+    impl->literalMatrix = matrixTemplate.literalMatrix;
 
     if (!matrixTemplate.literalMatrix) {
-        program.impl_->components.push_back(compileScalar(expression, bindings));
-        return program;
+        impl->components.push_back(compileScalar(expression, bindings));
+        return MatrixProgram(std::move(impl));
     }
 
-    program.impl_->components.reserve(matrixTemplate.components.size());
+    impl->components.reserve(matrixTemplate.components.size());
     for (const std::string& componentExpression : matrixTemplate.components) {
-        program.impl_->components.push_back(compileScalar(componentExpression, bindings));
+        impl->components.push_back(compileScalar(componentExpression, bindings));
     }
-    return program;
+    return MatrixProgram(std::move(impl));
 }
 
 double ExpressionParser::evaluate(
