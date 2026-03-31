@@ -31,43 +31,6 @@ public:
         printLevel_ = level;
     }
     
-    void analyzePattern(const SparseMatrix& A) override {
-        ScopedTimer timer("UMFPACK symbolic analysis");
-        
-        solver_.analyzePattern(A.eigen());
-        analyzed_ = (solver_.info() == Eigen::Success);
-        
-        if (!analyzed_) {
-            LOG_ERROR << "UMFPACK symbolic analysis failed";
-        } else if (printLevel_ >= 1) {
-            LOG_INFO << "[UMFPACK] Symbolic analysis completed";
-        }
-    }
-    
-    void factorize(const SparseMatrix& A) override {
-        ScopedTimer timer("UMFPACK factorization");
-        
-        if (!analyzed_) {
-            analyzePattern(A);
-        }
-        
-        solver_.factorize(A.eigen());
-        factorized_ = (solver_.info() == Eigen::Success);
-        
-        if (!factorized_) {
-            LOG_ERROR << "UMFPACK factorization failed";
-        } else if (printLevel_ >= 1) {
-            LOG_INFO << "[UMFPACK] Factorization completed";
-        }
-
-        if (factorized_) {
-            hasFactorCache_ = true;
-            lastMatrixFingerprint_ = A.fingerprint();
-        } else {
-            hasFactorCache_ = false;
-        }
-    }
-    
     bool solve(const SparseMatrix& A, Vector& x, const Vector& b) override {
         ScopedTimer timer("Linear solve (UMFPACK)");
 
@@ -76,6 +39,12 @@ public:
 
         if (needRefactor) {
             solver_.analyzePattern(A.eigen());
+            if (solver_.info() != Eigen::Success) {
+                LOG_ERROR << "UMFPACK symbolic analysis failed";
+                hasFactorCache_ = false;
+                return false;
+            }
+
             solver_.factorize(A.eigen());
 
             if (solver_.info() != Eigen::Success) {
@@ -97,8 +66,6 @@ public:
             return false;
         }
         
-        analyzed_ = true;
-        factorized_ = true;
         iterations_ = 1;
         residual_ = 0.0;
         
@@ -108,8 +75,6 @@ public:
 
 private:
     Eigen::UmfPackLU<SparseMatrix::Storage> solver_;
-    bool analyzed_ = false;
-    bool factorized_ = false;
     bool hasFactorCache_ = false;
     std::uint64_t lastMatrixFingerprint_ = 0;
 };

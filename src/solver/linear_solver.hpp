@@ -29,18 +29,6 @@ public:
      */
     virtual bool solve(const SparseMatrix& A, Vector& x, const Vector& b) = 0;
     
-    /**
-     * @brief Analyze pattern (for direct solvers).
-     * Called once before multiple solves with same sparsity pattern.
-     */
-    virtual void analyzePattern(const SparseMatrix& /*A*/) {}
-    
-    /**
-     * @brief Factorize (for direct solvers).
-     * Called when matrix values change but pattern stays same.
-     */
-    virtual void factorize(const SparseMatrix& /*A*/) {}
-    
     /// Set maximum iterations (for iterative solvers)
     virtual void setMaxIterations(int iter) {
         maxIterations_ = iter;

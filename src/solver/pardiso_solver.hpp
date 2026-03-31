@@ -65,73 +65,6 @@ public:
         msglvl_ = (level >= 2) ? 1 : 0;
     }
     
-    void analyzePattern(const SparseMatrix& A) override {
-        ScopedTimer timer("PARDISO symbolic analysis");
-        
-        const auto& mat = A.eigen();
-        n_ = static_cast<MKL_INT>(mat.rows());
-        
-        // Convert to CSR format (1-based indexing for PARDISO)
-        convertToCSR(mat);
-        
-        // Phase 11: Analysis
-        phase_ = 11;
-        MKL_INT nrhs = 1;
-        pardiso(pt_, &maxfct_, &mnum_, &mtype_, &phase_,
-                &n_, a_.data(), ia_.data(), ja_.data(),
-                nullptr, &nrhs, iparm_, &msglvl_, nullptr, nullptr, &error_);
-        
-        if (error_ != 0) {
-            LOG_ERROR << "PARDISO symbolic analysis failed with error: " << error_;
-            hasFactorCache_ = false;
-            return;
-        }
-        
-        analyzed_ = true;
-        initialized_ = true;
-        hasFactorCache_ = false;
-        
-        if (printLevel_ >= 1) {
-            LOG_INFO << "[PARDISO] Symbolic analysis completed";
-        }
-    }
-    
-    void factorize(const SparseMatrix& A) override {
-        ScopedTimer timer("PARDISO factorization");
-        
-        if (!analyzed_) {
-            analyzePattern(A);
-        }
-        
-        const auto& mat = A.eigen();
-        n_ = static_cast<MKL_INT>(mat.rows());
-        
-        // Update values (CSR structure may have changed)
-        convertToCSR(mat);
-        
-        // Phase 22: Numerical factorization
-        phase_ = 22;
-        MKL_INT nrhs = 1;
-        pardiso(pt_, &maxfct_, &mnum_, &mtype_, &phase_,
-                &n_, a_.data(), ia_.data(), ja_.data(),
-                nullptr, &nrhs, iparm_, &msglvl_, nullptr, nullptr, &error_);
-        
-        if (error_ != 0) {
-            LOG_ERROR << "PARDISO factorization failed with error: " << error_;
-            hasFactorCache_ = false;
-            return;
-        }
-        
-        factorized_ = true;
-        hasFactorCache_ = true;
-        lastMatrixFingerprint_ = A.fingerprint();
-        
-        if (printLevel_ >= 1) {
-            LOG_INFO << "[PARDISO] Factorization completed, peak memory: " 
-                     << static_cast<double>(iparm_[16]) / 1024.0 << " MB";
-        }
-    }
-    
     bool solve(const SparseMatrix& A, Vector& x, const Vector& b) override {
         ScopedTimer timer("Linear solve (PARDISO)");
         
@@ -147,13 +80,8 @@ public:
         MKL_INT nrhs = 1;
 
         if (needRefactor) {
-            if (!analyzed_) {
-                // Analysis + factorization + solve
-                phase_ = 13;
-            } else {
-                // Factorization + solve with reused symbolic pattern
-                phase_ = 23;
-            }
+            // Analysis + factorization + solve
+            phase_ = 13;
         } else {
             // Solve only with cached factors
             phase_ = 33;
@@ -181,8 +109,6 @@ public:
             return false;
         }
         
-        analyzed_ = true;
-        factorized_ = true;
         hasFactorCache_ = true;
         lastMatrixFingerprint_ = currentFingerprint;
         
@@ -250,8 +176,6 @@ private:
     MKL_INT msglvl_ = 0;
     MKL_INT error_ = 0;
     
-    bool analyzed_ = false;
-    bool factorized_ = false;
     bool initialized_ = false;
     bool hasFactorCache_ = false;
     std::uint64_t lastMatrixFingerprint_ = 0;
