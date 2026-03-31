@@ -25,3 +25,4 @@
 
 * 依据以上原则，对代码进行清理与重构，使其尽可能简洁，并且便于扩展。 
 * 请进行破坏式重构，不需要考虑向后兼容性。
+* 指定要求：把Problem类里的conductivityByDomain，youngModulusByDomain, poissonRatioByDomain消除掉，这太反模式了。
