@@ -24,8 +24,9 @@ struct alignas(64) ThreadBuffer {
     Eigen::Matrix<Real, MaxVectorDofsPerElement, 1> elvecVector;
     std::array<Index, MaxVectorDofsPerElement> dofs;  // Fixed-size DOF buffer, no heap allocation
     Index numDofs = 0;  // Track actual number of DOFs
-    // Pre-allocated temp matrix to avoid heap allocation per element per integrator
-    Eigen::Matrix<Real, MaxVectorDofsPerElement, MaxVectorDofsPerElement, Eigen::RowMajor> tempMatrix;
+    // Reusable dynamic buffers for integrator APIs that take Matrix/Vector.
+    Matrix dynMatrix;
+    Vector dynVector;
     
     ThreadBuffer() = default;
 };

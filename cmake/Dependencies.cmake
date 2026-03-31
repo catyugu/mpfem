@@ -35,6 +35,13 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|AppleClang")
     set(MPFEM_USE_MKL OFF)
 endif()
 if(MPFEM_USE_MKL)
+    # Avoid loading two different OpenMP runtimes in one process.
+    # MKL's default intel_thread layer brings libiomp5, while clang-cl/OpenMP
+    # often links libomp, which causes OMP Error #15 at runtime.
+    set(MPFEM_MKL_THREADING "sequential" CACHE STRING "MKL threading layer (sequential|intel_thread|tbb_thread)")
+    set_property(CACHE MPFEM_MKL_THREADING PROPERTY STRINGS sequential intel_thread tbb_thread)
+    set(MKL_THREADING "${MPFEM_MKL_THREADING}" CACHE STRING "MKL threading layer" FORCE)
+
     # Set MKL_ROOT from environment if available
     if(DEFINED ENV{MKLROOT})
         set(MKL_ROOT "$ENV{MKLROOT}")
@@ -53,7 +60,7 @@ if(MPFEM_USE_MKL)
     
     if(MKL_FOUND)
         set(MPFEM_MKL_FOUND TRUE)
-        message(STATUS "Intel MKL found: ${MKL_ROOT}")
+        message(STATUS "Intel MKL found: ${MKL_ROOT} (threading=${MKL_THREADING})")
     else()
         message(STATUS "Intel MKL not found")
         set(MPFEM_MKL_FOUND FALSE)

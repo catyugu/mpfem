@@ -2,6 +2,50 @@
 #include "fe/element_transform.hpp"
 #include "fe/facet_element_transform.hpp"
 #include <algorithm>
+#include <cmath>
+#include <unordered_map>
+#include <unordered_set>
+
+namespace {
+
+using DomainIntegratorMap = std::unordered_map<int, std::vector<size_t>>;
+
+constexpr mpfem::Real kTripletDropTol = 1e-30;
+
+inline bool inDomainList(const std::vector<int>& domains, int attr) {
+    return domains.empty() || std::binary_search(domains.begin(), domains.end(), attr);
+}
+
+DomainIntegratorMap buildDomainIntegratorMap(const std::vector<std::vector<int>>& domainSets,
+                                             const mpfem::Mesh& mesh) {
+    std::unordered_set<int> uniqueAttrs;
+    uniqueAttrs.reserve(static_cast<size_t>(mesh.numElements()));
+
+    for (mpfem::Index e = 0; e < mesh.numElements(); ++e) {
+        uniqueAttrs.insert(mesh.element(e).attribute());
+    }
+
+    DomainIntegratorMap attrMap;
+    attrMap.reserve(uniqueAttrs.size());
+
+    for (int attr : uniqueAttrs) {
+        auto& indices = attrMap[attr];
+        indices.reserve(domainSets.size());
+        for (size_t k = 0; k < domainSets.size(); ++k) {
+            if (inDomainList(domainSets[k], attr)) {
+                indices.push_back(k);
+            }
+        }
+    }
+
+    return attrMap;
+}
+
+inline bool keepTriplet(mpfem::Real v) {
+    return std::abs(v) > kTripletDropTol;
+}
+
+}  // namespace
 
 namespace mpfem {
 
@@ -37,6 +81,7 @@ void BilinearFormAssembler::assemble() {
     
     const Index numElements = mesh->numElements();
     const int vdim = fes_->vdim();
+    const DomainIntegratorMap activeDomains = buildDomainIntegratorMap(domainSets_, *mesh);
     
     triplets_.clear();
     // 预估 triplet 数量：单元数 × 每单元DOF数² × 向量维度² / 2
@@ -71,7 +116,9 @@ void BilinearFormAssembler::assemble() {
             int nd = ref->numDofs();
             
             trans.setElement(e);
-            Index elemAttr = trans.attribute();  // Get element's domain ID
+            const int elemAttr = mesh->element(e).attribute();
+            const auto domainIt = activeDomains.find(elemAttr);
+            if (domainIt == activeDomains.end() || domainIt->second.empty()) continue;
             
             // Use pre-allocated DOF buffer
             buf.numDofs = nd * vdim;
@@ -79,28 +126,23 @@ void BilinearFormAssembler::assemble() {
             const auto& dofs = buf.dofs;
             
             int totalDofs = nd * vdim;
-            buf.elmatVector.setZero();
+            buf.elmatVector.topLeftCorner(totalDofs, totalDofs).setZero();
             
-            for (size_t ki = 0; ki < domainIntegs_.size(); ++ki) {
-                const auto& domains = domainSets_[ki];
-                if (!domains.empty() &&
-                    std::find(domains.begin(), domains.end(), static_cast<int>(elemAttr)) == domains.end()) continue;
-                
+            for (size_t ki : domainIt->second) {
                 const auto& integ = domainIntegs_[ki];
                 int ivdim = integ->vdim();
                 int iTotalDofs = nd * ivdim;
-                buf.tempMatrix.topLeftCorner(iTotalDofs, iTotalDofs).setZero();
-                Matrix tempView = buf.tempMatrix.topLeftCorner(iTotalDofs, iTotalDofs);
-                integ->assembleElementMatrix(*ref, trans, tempView);
+                buf.dynMatrix.resize(iTotalDofs, iTotalDofs);
+                integ->assembleElementMatrix(*ref, trans, buf.dynMatrix);
                 
                 if (ivdim == 1) {
                     // Scalar integrator: expand to vector field diagonal blocks
                     for (int c = 0; c < vdim; ++c) {
-                        buf.elmatVector.block(c * nd, c * nd, nd, nd) += tempView;
+                        buf.elmatVector.block(c * nd, c * nd, nd, nd) += buf.dynMatrix;
                     }
                 } else {
                     // Vector integrator: add directly
-                    buf.elmatVector.topLeftCorner(iTotalDofs, iTotalDofs) += tempView;
+                    buf.elmatVector.topLeftCorner(iTotalDofs, iTotalDofs) += buf.dynMatrix;
                 }
             }
             
@@ -110,6 +152,7 @@ void BilinearFormAssembler::assemble() {
                 for (int j = 0; j < totalDofs; ++j) {
                     if (dofs[j] == InvalidIndex) continue;
                     Real v = buf.elmatVector(i, j);
+                    if (!keepTriplet(v)) continue;
 #ifdef _OPENMP
                     localTriplets.emplace_back(dofs[i], dofs[j], v);
 #else
@@ -150,19 +193,19 @@ void BilinearFormAssembler::assemble() {
             const auto& dofs = bbuf.dofs;
             
             int totalDofs = nd * vdim;
-            bbuf.elmatVector.setZero();
+            bbuf.elmatVector.topLeftCorner(totalDofs, totalDofs).setZero();
             
             for (size_t k = 0; k < bdrIntegs_.size(); ++k) {
                 if (bdrIds_[k] >= 0 && bdrIds_[k] != attr) continue;
-                Matrix temp;
-                bdrIntegs_[k]->assembleFaceMatrix(*ref, btrans, temp);
+                bbuf.dynMatrix.resize(0, 0);
+                bdrIntegs_[k]->assembleFaceMatrix(*ref, btrans, bbuf.dynMatrix);
                 
-                if (temp.rows() == nd && temp.cols() == nd) {
+                if (bbuf.dynMatrix.rows() == nd && bbuf.dynMatrix.cols() == nd) {
                     for (int c = 0; c < vdim; ++c) {
-                        bbuf.elmatVector.block(c * nd, c * nd, nd, nd) += temp;
+                        bbuf.elmatVector.block(c * nd, c * nd, nd, nd) += bbuf.dynMatrix;
                     }
-                } else if (temp.rows() == totalDofs && temp.cols() == totalDofs) {
-                    bbuf.elmatVector.topLeftCorner(totalDofs, totalDofs) += temp;
+                } else if (bbuf.dynMatrix.rows() == totalDofs && bbuf.dynMatrix.cols() == totalDofs) {
+                    bbuf.elmatVector.topLeftCorner(totalDofs, totalDofs) += bbuf.dynMatrix;
                 }
             }
             
@@ -171,6 +214,7 @@ void BilinearFormAssembler::assemble() {
                 for (int j = 0; j < totalDofs; ++j) {
                     if (dofs[j] == InvalidIndex) continue;
                     Real v = bbuf.elmatVector(i, j);
+                    if (!keepTriplet(v)) continue;
                     triplets_.emplace_back(dofs[i], dofs[j], v);
                 }
             }
@@ -209,6 +253,7 @@ void LinearFormAssembler::assemble() {
     if (!mesh) return;
     
     const int vdim = fes_->vdim();
+    const DomainIntegratorMap activeDomains = buildDomainIntegratorMap(domainSets_, *mesh);
     
 #ifdef _OPENMP
     for (auto& v : threadVectors_) {
@@ -243,7 +288,9 @@ void LinearFormAssembler::assemble() {
                 int nd = ref->numDofs();
                 
                 trans.setElement(e);
-                Index elemAttr = trans.attribute();  // Get element's domain ID
+                const int elemAttr = mesh->element(e).attribute();
+                const auto domainIt = activeDomains.find(elemAttr);
+                if (domainIt == activeDomains.end() || domainIt->second.empty()) continue;
                 
                 // Use pre-allocated DOF buffer
                 buf.numDofs = nd * vdim;
@@ -251,27 +298,23 @@ void LinearFormAssembler::assemble() {
                 const auto& dofs = buf.dofs;
                 
                 int totalDofs = nd * vdim;
-                buf.elvecVector.setZero();
+                buf.elvecVector.head(totalDofs).setZero();
                 
-                for (size_t ki = 0; ki < domainIntegs_.size(); ++ki) {
-                    const auto& domains = domainSets_[ki];
-                    if (!domains.empty() &&
-                        std::find(domains.begin(), domains.end(), static_cast<int>(elemAttr)) == domains.end()) continue;
-                    
+                for (size_t ki : domainIt->second) {
                     const auto& integ = domainIntegs_[ki];
                     int ivdim = integ->vdim();
                     int iTotalDofs = nd * ivdim;
-                    Vector temp(iTotalDofs);
-                    integ->assembleElementVector(*ref, trans, temp);
+                    buf.dynVector.resize(iTotalDofs);
+                    integ->assembleElementVector(*ref, trans, buf.dynVector);
                     
                     if (ivdim == 1) {
                         // Scalar integrator: expand to vector field segments
                         for (int c = 0; c < vdim; ++c) {
-                            buf.elvecVector.segment(c * nd, nd) += temp;
+                            buf.elvecVector.segment(c * nd, nd) += buf.dynVector;
                         }
                     } else {
                         // Vector integrator: add directly
-                        buf.elvecVector.head(iTotalDofs) += temp;
+                        buf.elvecVector.head(iTotalDofs) += buf.dynVector;
                     }
                 }
                 
@@ -317,19 +360,19 @@ void LinearFormAssembler::assemble() {
             const auto& dofs = bbuf.dofs;
             
             int totalDofs = nd * vdim;
-            bbuf.elvecVector.setZero();
+            bbuf.elvecVector.head(totalDofs).setZero();
             
             for (size_t k = 0; k < bdrIntegs_.size(); ++k) {
                 if (bdrIds_[k] >= 0 && bdrIds_[k] != attr) continue;
-                Vector temp;
-                bdrIntegs_[k]->assembleFaceVector(*ref, btrans, temp);
+                bbuf.dynVector.resize(0);
+                bdrIntegs_[k]->assembleFaceVector(*ref, btrans, bbuf.dynVector);
                 
-                if (temp.size() == nd) {
+                if (bbuf.dynVector.size() == nd) {
                     for (int c = 0; c < vdim; ++c) {
-                        bbuf.elvecVector.segment(c * nd, nd) += temp;
+                        bbuf.elvecVector.segment(c * nd, nd) += bbuf.dynVector;
                     }
-                } else if (temp.size() == totalDofs) {
-                    bbuf.elvecVector.head(totalDofs) += temp;
+                } else if (bbuf.dynVector.size() == totalDofs) {
+                    bbuf.elvecVector.head(totalDofs) += bbuf.dynVector;
                 }
             }
             
