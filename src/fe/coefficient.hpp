@@ -3,8 +3,6 @@
 
 #include "core/types.hpp"
 #include <functional>
-#include <set>
-#include <map>
 #include <memory>
 
 namespace mpfem {

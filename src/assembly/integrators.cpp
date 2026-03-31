@@ -13,7 +13,10 @@ void DiffusionIntegrator::assembleElementMatrix(const ReferenceElement& ref,
     const int nq = ref.numQuadraturePoints();
     
     elmat.setZero(nd, nd);
-    Eigen::MatrixXd gradMat(nd, 3);
+    Eigen::Matrix<Real, MaxDofsPerElement, 3> gradMatFull;
+    Eigen::Matrix<Real, MaxDofsPerElement, 3> dGradMatFull;
+    auto gradMat = gradMatFull.topRows(nd);
+    auto dGradMat = dGradMatFull.topRows(nd);
     
     for (int q = 0; q < nq; ++q) {
         const IntegrationPoint& ip = ref.integrationPoint(q);
@@ -32,8 +35,8 @@ void DiffusionIntegrator::assembleElementMatrix(const ReferenceElement& ref,
             gradMat.row(i) = physGrad;
         }
         
-        Eigen::MatrixXd Dgrad = gradMat * D;
-        elmat.noalias() += w * (gradMat * Dgrad.transpose());
+        dGradMat.noalias() = gradMat * D;
+        elmat.noalias() += w * (gradMat * dGradMat.transpose());
     }
 }
 

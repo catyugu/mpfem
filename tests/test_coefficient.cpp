@@ -1,12 +1,6 @@
 #include <gtest/gtest.h>
 #include "fe/coefficient.hpp"
-#include "fe/element_transform.hpp"
-#include "fe/fe_space.hpp"
-#include "fe/grid_function.hpp"
-#include "fe/fe_collection.hpp"
-#include "mesh/mesh.hpp"
 #include "core/logger.hpp"
-#include <cmath>
 
 using namespace mpfem;
 

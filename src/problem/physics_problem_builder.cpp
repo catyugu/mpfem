@@ -12,7 +12,6 @@
 #include "io/problem_input_loader.hpp"
 #include "core/exception.hpp"
 #include "core/logger.hpp"
-#include <unordered_map>
 
 namespace mpfem
 {
@@ -374,7 +373,8 @@ namespace mpfem
                 {
                     const GridFunction *V_field = &problem.electrostatics->field();
 
-                    std::unordered_map<int, const MatrixCoefficient *> sigmaByDomain;
+                    const int maxDomainId = cp.domainIds.empty() ? 0 : *cp.domainIds.rbegin();
+                    std::vector<const MatrixCoefficient *> sigmaByDomain(static_cast<size_t>(maxDomainId + 1), nullptr);
                     std::set<int> activeDomains;
                     for (int domId : cp.domainIds)
                     {
@@ -384,7 +384,7 @@ namespace mpfem
                             LOG_WARN << "No conductivity for domain " << domId << " in joule heating coupling, skipping domain";
                             continue;
                         }
-                        sigmaByDomain[domId] = sigmaIt->second;
+                        sigmaByDomain[static_cast<size_t>(domId)] = sigmaIt->second;
                         activeDomains.insert(domId);
                     }
 
@@ -398,15 +398,20 @@ namespace mpfem
                         [V_field, sigmaByDomain = std::move(sigmaByDomain)](ElementTransform &trans, Real &result, Real t)
                         {
                             const int domId = static_cast<int>(trans.attribute());
-                            auto it = sigmaByDomain.find(domId);
-                            if (it == sigmaByDomain.end())
+                            if (domId < 0 || static_cast<size_t>(domId) >= sigmaByDomain.size())
+                            {
+                                result = 0.0;
+                                return;
+                            }
+                            const MatrixCoefficient *sigmaCoef = sigmaByDomain[static_cast<size_t>(domId)];
+                            if (!sigmaCoef)
                             {
                                 result = 0.0;
                                 return;
                             }
 
                             Matrix3 sigma_mat;
-                            it->second->eval(trans, sigma_mat, t);
+                            sigmaCoef->eval(trans, sigma_mat, t);
                             Vector3 g = V_field->gradient(trans.elementIndex(), &trans.integrationPoint().xi, trans);
                             // For anisotropic: Q = g^T * sigma * g
                             result = g.transpose() * sigma_mat * g;
@@ -425,7 +430,10 @@ namespace mpfem
                                  "solid_mechanics physics block not found for thermal expansion coupling");
                     Real T_ref = physicsIt->second.referenceTemperature;
 
-                    std::unordered_map<int, const MatrixCoefficient *> alphaByDomain;
+                    const int maxDomainId = cp.domainIds.empty() ? 0 : *cp.domainIds.rbegin();
+                    std::vector<const MatrixCoefficient *> alphaByDomain(static_cast<size_t>(maxDomainId + 1), nullptr);
+                    std::vector<const Coefficient *> youngByDomain(static_cast<size_t>(maxDomainId + 1), nullptr);
+                    std::vector<const Coefficient *> nuByDomain(static_cast<size_t>(maxDomainId + 1), nullptr);
                     std::set<int> activeDomains;
                     for (int domId : cp.domainIds)
                     {
@@ -457,7 +465,9 @@ namespace mpfem
                             continue;
                         }
 
-                        alphaByDomain[domId] = alphaCoef;
+                        alphaByDomain[static_cast<size_t>(domId)] = alphaCoef;
+                        youngByDomain[static_cast<size_t>(domId)] = eIt->second;
+                        nuByDomain[static_cast<size_t>(domId)] = nuIt->second;
                         activeDomains.insert(domId);
                     }
 
@@ -471,22 +481,27 @@ namespace mpfem
                     auto coef = std::make_unique<MatrixFunctionCoefficient>(
                         [&problem,
                          alphaByDomain = std::move(alphaByDomain),
+                         youngByDomain = std::move(youngByDomain),
+                         nuByDomain = std::move(nuByDomain),
                          T_ref](ElementTransform &trans, Matrix3 &result, Real t)
                         {
                             const int domId = static_cast<int>(trans.attribute());
-                            auto alphaIt = alphaByDomain.find(domId);
-                            auto eIt = problem.youngModulusByDomain.find(domId);
-                            auto nuIt = problem.poissonRatioByDomain.find(domId);
-                            if (alphaIt == alphaByDomain.end() ||
-                                eIt == problem.youngModulusByDomain.end() ||
-                                nuIt == problem.poissonRatioByDomain.end())
+                            if (domId < 0 || static_cast<size_t>(domId) >= alphaByDomain.size())
+                            {
+                                result.setZero();
+                                return;
+                            }
+                            const MatrixCoefficient *alphaCoef = alphaByDomain[static_cast<size_t>(domId)];
+                            const Coefficient *eCoef = youngByDomain[static_cast<size_t>(domId)];
+                            const Coefficient *nuCoef = nuByDomain[static_cast<size_t>(domId)];
+                            if (!alphaCoef || !eCoef || !nuCoef)
                             {
                                 result.setZero();
                                 return;
                             }
 
                             Matrix3 alpha;
-                            alphaIt->second->eval(trans, alpha, t);
+                            alphaCoef->eval(trans, alpha, t);
 
                             Real T = T_ref;
                             if (problem.heatTransfer)
@@ -497,8 +512,8 @@ namespace mpfem
 
                             Real E_val = 0.0;
                             Real nu_val = 0.0;
-                            eIt->second->eval(trans, E_val, t);
-                            nuIt->second->eval(trans, nu_val, t);
+                            eCoef->eval(trans, E_val, t);
+                            nuCoef->eval(trans, nu_val, t);
 
                             const Real lambda = E_val * nu_val / ((1.0 + nu_val) * (1.0 - 2.0 * nu_val));
                             const Real mu = E_val / (2.0 * (1.0 + nu_val));

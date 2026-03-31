@@ -4,6 +4,7 @@
 #include "assembly/integrator.hpp"
 #include "fe/fe_space.hpp"
 #include "solver/sparse_matrix.hpp"
+#include <algorithm>
 #include <vector>
 #include <memory>
 #include <set>
@@ -39,7 +40,7 @@ public:
     void addDomainIntegrator(std::unique_ptr<DomainBilinearIntegratorBase> integ,
                              const std::set<int>& domains = {}) {
         domainIntegs_.push_back(std::move(integ));
-        domainSets_.push_back(domains);
+        domainSets_.emplace_back(domains.begin(), domains.end());
     }
     void addBoundaryIntegrator(std::unique_ptr<FaceBilinearIntegratorBase> integ, int bid = -1) {
         bdrIntegs_.push_back(std::move(integ));
@@ -58,7 +59,7 @@ public:
 private:
     const FESpace* fes_;
     std::vector<std::unique_ptr<DomainBilinearIntegratorBase>> domainIntegs_;
-    std::vector<std::set<int>> domainSets_;
+    std::vector<std::vector<int>> domainSets_;
     std::vector<std::unique_ptr<FaceBilinearIntegratorBase>> bdrIntegs_;
     std::vector<int> bdrIds_;
     SparseMatrix mat_;
@@ -78,7 +79,7 @@ public:
     void addDomainIntegrator(std::unique_ptr<DomainLinearIntegratorBase> integ,
                              const std::set<int>& domains = {}) {
         domainIntegs_.push_back(std::move(integ));
-        domainSets_.push_back(domains);
+        domainSets_.emplace_back(domains.begin(), domains.end());
     }
     void addBoundaryIntegrator(std::unique_ptr<FaceLinearIntegratorBase> integ, int bid = -1) {
         bdrIntegs_.push_back(std::move(integ));
@@ -95,7 +96,7 @@ public:
 private:
     const FESpace* fes_;
     std::vector<std::unique_ptr<DomainLinearIntegratorBase>> domainIntegs_;
-    std::vector<std::set<int>> domainSets_;
+    std::vector<std::vector<int>> domainSets_;
     std::vector<std::unique_ptr<FaceLinearIntegratorBase>> bdrIntegs_;
     std::vector<int> bdrIds_;
     Vector vec_;

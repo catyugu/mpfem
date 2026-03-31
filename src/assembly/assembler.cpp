@@ -83,7 +83,8 @@ void BilinearFormAssembler::assemble() {
             
             for (size_t ki = 0; ki < domainIntegs_.size(); ++ki) {
                 const auto& domains = domainSets_[ki];
-                if (!domains.empty() && !domains.contains(static_cast<int>(elemAttr))) continue;
+                if (!domains.empty() &&
+                    std::find(domains.begin(), domains.end(), static_cast<int>(elemAttr)) == domains.end()) continue;
                 
                 const auto& integ = domainIntegs_[ki];
                 int ivdim = integ->vdim();
@@ -253,7 +254,8 @@ void LinearFormAssembler::assemble() {
                 
                 for (size_t ki = 0; ki < domainIntegs_.size(); ++ki) {
                     const auto& domains = domainSets_[ki];
-                    if (!domains.empty() && !domains.contains(static_cast<int>(elemAttr))) continue;
+                    if (!domains.empty() &&
+                        std::find(domains.begin(), domains.end(), static_cast<int>(elemAttr)) == domains.end()) continue;
                     
                     const auto& integ = domainIntegs_[ki];
                     int ivdim = integ->vdim();
