@@ -11,71 +11,60 @@
 #include <map>
 #include <string>
 
-namespace mpfem {
+namespace mpfem
+{
 
-class ElectrostaticsSolver;
-class HeatTransferSolver;
-class StructuralSolver;
+    class ElectrostaticsSolver;
+    class HeatTransferSolver;
+    class StructuralSolver;
 
-class Problem {
-public:
-    virtual ~Problem() = default;
-    virtual bool isTransient() const { return false; }
+    class Problem
+    {
+    protected:
+        std::map<std::string, std::unique_ptr<Coefficient>> scalarCoefficients;
+        std::map<std::string, std::unique_ptr<VectorCoefficient>> vectorCoefficients;
+        std::map<std::string, std::unique_ptr<MatrixCoefficient>> matrixCoefficients;
 
-    // Physics presence queries
-    bool hasElectrostatics() const { return electrostatics != nullptr; }
-    bool hasHeatTransfer() const { return heatTransfer != nullptr; }
-    bool hasStructural() const { return structural != nullptr; }
-    bool hasJouleHeating() const { return hasElectrostatics() && hasHeatTransfer(); }
-    bool hasThermalExpansion() const { return hasHeatTransfer() && hasStructural(); }
-    bool isCoupled() const { return hasJouleHeating() || hasThermalExpansion(); }
+    public:
+        virtual ~Problem();
+        virtual bool isTransient() const { return false; }
 
-    // Coupling parameters for coupled problems
-    int couplingMaxIter = 15;
-    Real couplingTol = 1e-4;
+        // Physics presence queries
+        bool hasElectrostatics() const { return electrostatics != nullptr; }
+        bool hasHeatTransfer() const { return heatTransfer != nullptr; }
+        bool hasStructural() const { return structural != nullptr; }
+        bool hasJouleHeating() const { return hasElectrostatics() && hasHeatTransfer(); }
+        bool hasThermalExpansion() const { return hasHeatTransfer() && hasStructural(); }
+        bool isCoupled() const { return hasJouleHeating() || hasThermalExpansion(); }
 
-    std::unique_ptr<ElectrostaticsSolver> electrostatics;
-    std::unique_ptr<HeatTransferSolver> heatTransfer;
-    std::unique_ptr<StructuralSolver> structural;
-    
-    std::string caseName;
-    std::unique_ptr<Mesh> mesh;
-    MaterialDatabase materials;
-    CaseDefinition caseDef;
-    std::map<int, std::string> domainMaterial;
-    FieldValues fieldValues;
-    std::map<std::string, std::unique_ptr<Coefficient>> scalarCoefficients;
-    std::map<std::string, std::unique_ptr<VectorCoefficient>> vectorCoefficients;
-    std::map<std::string, std::unique_ptr<MatrixCoefficient>> matrixCoefficients;
-    
-    // Scalar coefficients
-    const Coefficient* getScalarCoef(const std::string& name) const {
-        auto it = scalarCoefficients.find(name);
-        return it != scalarCoefficients.end() ? it->second.get() : nullptr;
-    }
-    void setScalarCoef(const std::string& name, std::unique_ptr<Coefficient> coef) {
-        scalarCoefficients[name] = std::move(coef);
-    }
-    
-    // Vector coefficients
-    const VectorCoefficient* getVectorCoef(const std::string& name) const {
-        auto it = vectorCoefficients.find(name);
-        return it != vectorCoefficients.end() ? it->second.get() : nullptr;
-    }
-    void setVectorCoef(const std::string& name, std::unique_ptr<VectorCoefficient> coef) {
-        vectorCoefficients[name] = std::move(coef);
-    }
-    
-    // Matrix coefficients
-    const MatrixCoefficient* getMatrixCoef(const std::string& name) const {
-        auto it = matrixCoefficients.find(name);
-        return it != matrixCoefficients.end() ? it->second.get() : nullptr;
-    }
-    void setMatrixCoef(const std::string& name, std::unique_ptr<MatrixCoefficient> coef) {
-        matrixCoefficients[name] = std::move(coef);
-    }
-};
+        // Coupling parameters for coupled problems
+        int couplingMaxIter = 15;
+        Real couplingTol = 1e-4;
 
-}  // namespace mpfem
+        std::unique_ptr<ElectrostaticsSolver> electrostatics;
+        std::unique_ptr<HeatTransferSolver> heatTransfer;
+        std::unique_ptr<StructuralSolver> structural;
 
-#endif  // MPFEM_PROBLEM_HPP
+        std::string caseName;
+        std::unique_ptr<Mesh> mesh;
+        MaterialDatabase materials;
+        CaseDefinition caseDef;
+        std::map<int, std::string> domainMaterial;
+        FieldValues fieldValues;
+
+        // Scalar coefficients
+        const Coefficient *getScalarCoef(const std::string &name) const;
+        void setScalarCoef(const std::string &name, std::unique_ptr<Coefficient> coef);
+
+        // Vector coefficients
+        const VectorCoefficient *getVectorCoef(const std::string &name) const;
+        void setVectorCoef(const std::string &name, std::unique_ptr<VectorCoefficient> coef);
+
+        // Matrix coefficients
+        const MatrixCoefficient *getMatrixCoef(const std::string &name) const;
+        void setMatrixCoef(const std::string &name, std::unique_ptr<MatrixCoefficient> coef);
+    };
+
+} // namespace mpfem
+
+#endif // MPFEM_PROBLEM_HPP

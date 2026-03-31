@@ -1,6 +1,4 @@
 #include "io/result_exporter.hpp"
-#include "problem/steady_problem.hpp"
-#include "problem/transient_problem.hpp"
 #include "core/logger.hpp"
 #include "core/exception.hpp"
 
@@ -25,15 +23,22 @@ namespace mpfem
     // -----------------------------------------------------------------------------
     // COMSOL text export implementation
     // -----------------------------------------------------------------------------
-    void ResultExporter::exportComsolText(const SteadyResult &result, const Mesh &mesh,
-                                          const std::string &filename)
+    void ResultExporter::exportComsolText(const FieldValues &fields, const Mesh &mesh,
+                                          const std::string &filename, Real time)
     {
-        exportComsolTextImpl(result.fields, mesh, filename, -1);
+        exportComsolTextImpl(fields, mesh, filename, time);
     }
 
-    void ResultExporter::exportComsolText(const TransientResult &result, const Mesh &mesh,
+    void ResultExporter::exportComsolText(const std::vector<FieldValues> &snapshots,
+                                          const std::vector<Real> &times,
+                                          const Mesh &mesh,
                                           const std::string &filename)
     {
+        if (snapshots.size() != times.size())
+        {
+            throw ArgumentException("ResultExporter::exportComsolText snapshots/times size mismatch");
+        }
+
         // Export all time steps to single file (COMSOL format)
         std::ofstream file(filename);
         if (!file.is_open())
@@ -52,26 +57,26 @@ namespace mpfem
         file << "% Date:               " << getCurrentTimestamp() << "\n";
         file << "% Dimension:          " << mesh.dim() << "\n";
         file << "% Nodes:              " << numExportPoints << "\n";
-        file << "% Expressions:        " << (result.numTimeSteps() * 3) << "\n";
+        file << "% Expressions:        " << (snapshots.size() * 3) << "\n";
         file << "% Description:        Electric potential, Temperature, Displacement magnitude\n";
         file << "% Length unit:        m\n";
 
         // Field names header: x y z V@t0 T@t0 disp@t0 V@t1 T@t1 disp@t1 ...
         file << "x                       y                        z";
-        for (int i = 0; i < result.numTimeSteps(); ++i)
+        for (size_t i = 0; i < snapshots.size(); ++i)
         {
-            file << "                        V (V) @ t=" << result.times[i]
-                 << "              T (K) @ t=" << result.times[i]
-                 << "        solid.disp (m) @ t=" << result.times[i];
+            file << "                        V (V) @ t=" << times[i]
+                 << "              T (K) @ t=" << times[i]
+                 << "        solid.disp (m) @ t=" << times[i];
         }
         file << "\n";
 
-        std::vector<const GridFunction *> vFields(result.numTimeSteps(), nullptr);
-        std::vector<const GridFunction *> tFields(result.numTimeSteps(), nullptr);
-        std::vector<const GridFunction *> uFields(result.numTimeSteps(), nullptr);
-        for (int i = 0; i < result.numTimeSteps(); ++i)
+        std::vector<const GridFunction *> vFields(snapshots.size(), nullptr);
+        std::vector<const GridFunction *> tFields(snapshots.size(), nullptr);
+        std::vector<const GridFunction *> uFields(snapshots.size(), nullptr);
+        for (size_t i = 0; i < snapshots.size(); ++i)
         {
-            const auto &fields = result.snapshots[i];
+            const auto &fields = snapshots[i];
             if (fields.hasField(FieldId::ElectricPotential))
             {
                 vFields[i] = &fields.current(FieldId::ElectricPotential);
@@ -92,29 +97,29 @@ namespace mpfem
             const Vertex &v = mesh.vertex(cornerIndices[j]);
             file << v.x() << "       " << v.y() << "       " << v.z();
 
-            for (int i = 0; i < result.numTimeSteps(); ++i)
+            for (size_t idx = 0; idx < snapshots.size(); ++idx)
             {
-                if (vFields[i])
+                if (vFields[idx])
                 {
-                    file << "       " << (*vFields[i])(cornerIndices[j]);
+                    file << "       " << (*vFields[idx])(cornerIndices[j]);
                 }
                 else
                 {
                     file << "       0.0";
                 }
 
-                if (tFields[i])
+                if (tFields[idx])
                 {
-                    file << "       " << (*tFields[i])(cornerIndices[j]);
+                    file << "       " << (*tFields[idx])(cornerIndices[j]);
                 }
                 else
                 {
                     file << "       0.0";
                 }
 
-                if (uFields[i])
+                if (uFields[idx])
                 {
-                    const auto &u = *uFields[i];
+                    const auto &u = *uFields[idx];
                     Index base = cornerIndices[j] * 3;
                     Real dx = u(base);
                     Real dy = u(base + 1);
@@ -222,20 +227,21 @@ namespace mpfem
     // -----------------------------------------------------------------------------
     // VTU export implementation
     // -----------------------------------------------------------------------------
-    void ResultExporter::exportVtu(const SteadyResult &result, const Mesh &mesh,
+    void ResultExporter::exportVtu(const FieldValues &fields, const Mesh &mesh,
                                    const std::string &filename)
     {
-        exportVtuImpl(result.fields, mesh, filename);
+        exportVtuImpl(fields, mesh, filename);
     }
 
-    void ResultExporter::exportVtu(const TransientResult &result, const Mesh &mesh,
+    void ResultExporter::exportVtu(const std::vector<FieldValues> &snapshots,
+                                   const Mesh &mesh,
                                    const std::string &filename)
     {
-        for (int i = 0; i < result.numTimeSteps(); ++i)
+        for (size_t i = 0; i < snapshots.size(); ++i)
         {
             std::ostringstream oss;
             oss << filename << "_" << i << ".vtu";
-            exportVtuImpl(result.snapshots[i], mesh, oss.str());
+            exportVtuImpl(snapshots[i], mesh, oss.str());
         }
     }
 

@@ -2,8 +2,6 @@
 #define MPFEM_INTEGRATORS_HPP
 
 #include "integrator.hpp"
-#include "fe/facet_element_transform.hpp"
-#include "fe/grid_function.hpp"
 #include "core/exception.hpp"
 
 namespace mpfem {
@@ -22,6 +20,8 @@ public:
     explicit DiffusionIntegrator(const MatrixCoefficient* c) : coef_(c) {
         if (!coef_) MPFEM_THROW(ArgumentException, "DiffusionIntegrator requires non-null MatrixCoefficient");
     }
+    
+    int vdim() const override { return 1; }
     
     void assembleElementMatrix(const ReferenceElement& ref,
                                ElementTransform& trans,
@@ -43,6 +43,8 @@ public:
         if (!coef_) MPFEM_THROW(ArgumentException, "MassIntegrator requires non-null Coefficient");
     }
     
+    int vdim() const override { return 1; }
+    
     void assembleElementMatrix(const ReferenceElement& ref,
                                ElementTransform& trans,
                                Matrix& elmat) const override;
@@ -62,6 +64,8 @@ public:
     explicit DomainLFIntegrator(const Coefficient* c) : coef_(c) {
         if (!coef_) MPFEM_THROW(ArgumentException, "DomainLFIntegrator requires non-null Coefficient");
     }
+    
+    int vdim() const override { return 1; }
     
     void assembleElementVector(const ReferenceElement& ref,
                                ElementTransform& trans,
@@ -142,22 +146,25 @@ private:
 /**
  * @brief Elasticity integrator: ∫ (λ div(u) div(v) + 2μ ε(u):ε(v)) dΩ
  */
-class ElasticityIntegrator : public VectorDomainBilinearIntegrator {
+class ElasticityIntegrator : public DomainBilinearIntegratorBase {
 public:
-    ElasticityIntegrator(const Coefficient* E, const Coefficient* nu)
-        : E_(E), nu_(nu) {
+    ElasticityIntegrator(const Coefficient* E, const Coefficient* nu, int vdim)
+        : E_(E), nu_(nu), vdim_(vdim) {
         if (!E_) MPFEM_THROW(ArgumentException, "ElasticityIntegrator requires non-null E Coefficient");
         if (!nu_) MPFEM_THROW(ArgumentException, "ElasticityIntegrator requires non-null nu Coefficient");
+        if (vdim_ <= 0) MPFEM_THROW(ArgumentException, "ElasticityIntegrator requires vdim > 0");
     }
+    
+    int vdim() const override { return vdim_; }
     
     void assembleElementMatrix(const ReferenceElement& ref,
                                ElementTransform& trans,
-                               Matrix& elmat,
-                               int vdim) const override;
+                               Matrix& elmat) const override;
     
 private:
     const Coefficient* E_ = nullptr;
     const Coefficient* nu_ = nullptr;
+    int vdim_ = 1;
 };
 
 /**
@@ -168,26 +175,30 @@ private:
  * - α_tensor is the 3×3 thermal expansion coefficient matrix
  * - ε_thermal in Voigt notation = {α₁₁, α₂₂, α₃₃, 2α₁₂, 2α₁₃, 2α₂₃} · (T - T_ref)
  */
-class ThermalLoadIntegrator : public VectorDomainLinearIntegrator {
+class ThermalLoadIntegrator : public DomainLinearIntegratorBase {
 public:
     ThermalLoadIntegrator(const Coefficient* E,
                           const Coefficient* nu,
-                          const MatrixCoefficient* alphaT)
-        : E_(E), nu_(nu), alphaT_(alphaT) {
+                          const MatrixCoefficient* alphaT,
+                          int vdim)
+        : E_(E), nu_(nu), alphaT_(alphaT), vdim_(vdim) {
         if (!E_) MPFEM_THROW(ArgumentException, "ThermalLoadIntegrator requires non-null E Coefficient");
         if (!nu_) MPFEM_THROW(ArgumentException, "ThermalLoadIntegrator requires non-null nu Coefficient");
         if (!alphaT_) MPFEM_THROW(ArgumentException, "ThermalLoadIntegrator requires non-null alphaT MatrixCoefficient");
+        if (vdim_ <= 0) MPFEM_THROW(ArgumentException, "ThermalLoadIntegrator requires vdim > 0");
     }
+    
+    int vdim() const override { return vdim_; }
     
     void assembleElementVector(const ReferenceElement& ref,
                                ElementTransform& trans,
-                               Vector& elvec,
-                               int vdim) const override;
+                               Vector& elvec) const override;
     
 private:
     const Coefficient* E_ = nullptr;
     const Coefficient* nu_ = nullptr;
     const MatrixCoefficient* alphaT_ = nullptr;
+    int vdim_ = 1;
 };
 
 }  // namespace mpfem

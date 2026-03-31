@@ -17,8 +17,15 @@ namespace mpfem {
 class DomainBilinearIntegratorBase {
 public:
     virtual ~DomainBilinearIntegratorBase() = default;
-    virtual void assembleElementMatrix(const ReferenceElement& ref, 
-                                        ElementTransform& trans, 
+    
+    // Returns the vdim for this integrator (scalar integrators return 1)
+    virtual int vdim() const = 0;
+    
+    // elmat is pre-sized to vdim()*ndof() x vdim()*ndof() by caller
+    // Scalar integrators fill only the diagonal block (0:nd, 0:nd)
+    // Vector integrators fill the full matrix
+    virtual void assembleElementMatrix(const ReferenceElement& ref,
+                                        ElementTransform& trans,
                                         Matrix& elmat) const = 0;
 };
 
@@ -37,6 +44,13 @@ public:
 class DomainLinearIntegratorBase {
 public:
     virtual ~DomainLinearIntegratorBase() = default;
+    
+    // Returns the vdim for this integrator (scalar integrators return 1)
+    virtual int vdim() const = 0;
+    
+    // elvec is pre-sized to vdim()*ndof() by caller
+    // Scalar integrators fill only segment (0:nd)
+    // Vector integrators fill the full vector
     virtual void assembleElementVector(const ReferenceElement& ref,
                                         ElementTransform& trans,
                                         Vector& elvec) const = 0;
@@ -48,28 +62,6 @@ public:
     virtual void assembleFaceVector(const ReferenceElement& ref,
                                      FacetElementTransform& trans,
                                      Vector& elvec) const = 0;
-};
-
-// =============================================================================
-// Vector field integrator interfaces
-// =============================================================================
-
-class VectorDomainBilinearIntegrator {
-public:
-    virtual ~VectorDomainBilinearIntegrator() = default;
-    virtual void assembleElementMatrix(const ReferenceElement& ref,
-                                        ElementTransform& trans,
-                                        Matrix& elmat,
-                                        int vdim) const = 0;
-};
-
-class VectorDomainLinearIntegrator {
-public:
-    virtual ~VectorDomainLinearIntegrator() = default;
-    virtual void assembleElementVector(const ReferenceElement& ref,
-                                        ElementTransform& trans,
-                                        Vector& elvec,
-                                        int vdim) const = 0;
 };
 
 }  // namespace mpfem

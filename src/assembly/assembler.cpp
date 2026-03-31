@@ -71,6 +71,7 @@ void BilinearFormAssembler::assemble() {
             int nd = ref->numDofs();
             
             trans.setElement(e);
+            Index elemAttr = trans.attribute();  // Get element's domain ID
             
             // Use pre-allocated DOF buffer
             buf.numDofs = nd * vdim;
@@ -80,21 +81,26 @@ void BilinearFormAssembler::assemble() {
             int totalDofs = nd * vdim;
             buf.elmatVector.setZero();
             
-            for (const auto& integ : domainIntegs_) {
-                Matrix temp;
+            for (size_t ki = 0; ki < domainIntegs_.size(); ++ki) {
+                // Skip integrator if it doesn't match this element's domain
+                // domainIds_[ki] == -1 means integrator applies to all domains
+                if (domainIds_[ki] >= 0 && domainIds_[ki] != static_cast<int>(elemAttr)) continue;
+                
+                const auto& integ = domainIntegs_[ki];
+                int ivdim = integ->vdim();
+                int iTotalDofs = nd * ivdim;
+                Matrix temp(iTotalDofs, iTotalDofs);
                 integ->assembleElementMatrix(*ref, trans, temp);
                 
-                // Scalar integrator output: expand to vector field diagonal blocks
-                for (int c = 0; c < vdim; ++c) {
-                    buf.elmatVector.block(c * nd, c * nd, nd, nd) += temp;
+                if (ivdim == 1) {
+                    // Scalar integrator: expand to vector field diagonal blocks
+                    for (int c = 0; c < vdim; ++c) {
+                        buf.elmatVector.block(c * nd, c * nd, nd, nd) += temp;
+                    }
+                } else {
+                    // Vector integrator: add directly
+                    buf.elmatVector.topLeftCorner(iTotalDofs, iTotalDofs) += temp;
                 }
-            }
-            
-            // Vector field integrators
-            for (const auto& integ : vectorDomainIntegs_) {
-                Matrix temp;
-                integ->assembleElementMatrix(*ref, trans, temp, vdim);
-                buf.elmatVector.topLeftCorner(totalDofs, totalDofs) += temp;
             }
             
             // 直接写入 triplets
@@ -209,7 +215,7 @@ void LinearFormAssembler::assemble() {
     }
 #endif
     
-    if (!domainIntegs_.empty() || !vectorDomainIntegs_.empty()) {
+    if (!domainIntegs_.empty()) {
         const Index numElements = mesh->numElements();
         
 #ifdef _OPENMP
@@ -236,6 +242,7 @@ void LinearFormAssembler::assemble() {
                 int nd = ref->numDofs();
                 
                 trans.setElement(e);
+                Index elemAttr = trans.attribute();  // Get element's domain ID
                 
                 // Use pre-allocated DOF buffer
                 buf.numDofs = nd * vdim;
@@ -245,20 +252,26 @@ void LinearFormAssembler::assemble() {
                 int totalDofs = nd * vdim;
                 buf.elvecVector.setZero();
                 
-                for (const auto& integ : domainIntegs_) {
-                    Vector temp;
+                for (size_t ki = 0; ki < domainIntegs_.size(); ++ki) {
+                    // Skip integrator if it doesn't match this element's domain
+                    // domainIds_[ki] == -1 means integrator applies to all domains
+                    if (domainIds_[ki] >= 0 && domainIds_[ki] != static_cast<int>(elemAttr)) continue;
+                    
+                    const auto& integ = domainIntegs_[ki];
+                    int ivdim = integ->vdim();
+                    int iTotalDofs = nd * ivdim;
+                    Vector temp(iTotalDofs);
                     integ->assembleElementVector(*ref, trans, temp);
                     
-                    for (int c = 0; c < vdim; ++c) {
-                        buf.elvecVector.segment(c * nd, nd) += temp;
+                    if (ivdim == 1) {
+                        // Scalar integrator: expand to vector field segments
+                        for (int c = 0; c < vdim; ++c) {
+                            buf.elvecVector.segment(c * nd, nd) += temp;
+                        }
+                    } else {
+                        // Vector integrator: add directly
+                        buf.elvecVector.head(iTotalDofs) += temp;
                     }
-                }
-                
-                // Vector field integrators
-                for (const auto& integ : vectorDomainIntegs_) {
-                    Vector temp;
-                    integ->assembleElementVector(*ref, trans, temp, vdim);
-                    buf.elvecVector.head(totalDofs) += temp;
                 }
                 
                 for (int i = 0; i < totalDofs; ++i) {
