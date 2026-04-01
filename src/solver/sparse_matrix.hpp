@@ -275,10 +275,8 @@ namespace mpfem
             return C;
         }
 
-        /// Scalar * SparseMatrix
-        friend SparseMatrix operator*(Real alpha, const SparseMatrix& A) {
-            return A * alpha;
-        }
+        /// Scalar * SparseMatrix (left scalar multiplication is provided
+        /// as a free function below to avoid use of `friend`.)
 
         /// SparseMatrix * SparseMatrix
         SparseMatrix operator*(const SparseMatrix& B) const {
@@ -337,6 +335,11 @@ namespace mpfem
         Storage mat_;
         std::vector<Triplet> triplets_;
     };
+
+// Left scalar multiplication for SparseMatrix without using `friend`.
+inline SparseMatrix operator*(Real alpha, const SparseMatrix& A) {
+    return A * alpha;
+}
 
 } // namespace mpfem
 

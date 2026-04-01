@@ -1,13 +1,12 @@
 #include "structural_solver.hpp"
-#include "assembly/integrators.hpp"
 #include "assembly/dirichlet_bc.hpp"
-#include "solver/solver_factory.hpp"
+#include "assembly/integrators.hpp"
 #include "core/logger.hpp"
+#include "solver/solver_factory.hpp"
 
-namespace mpfem
-{
+namespace mpfem {
 
-    bool StructuralSolver::initialize(const Mesh &mesh, FieldValues &fieldValues, int order, double initialDisplacement)
+    bool StructuralSolver::initialize(const Mesh& mesh, FieldValues& fieldValues, int order, double initialDisplacement)
     {
         mesh_ = &mesh;
         fieldValues_ = &fieldValues;
@@ -29,19 +28,19 @@ namespace mpfem
         return true;
     }
 
-    void StructuralSolver::addElasticity(const std::set<int> &domains,
-                                         const Coefficient *E,
-                                         const Coefficient *nu)
+    void StructuralSolver::addElasticity(const std::set<int>& domains,
+        const Coefficient* E,
+        const Coefficient* nu)
     {
         elasticityBindings_.push_back({domains, E, nu});
     }
 
-    void StructuralSolver::setStrainLoad(const std::set<int> &domains, const MatrixCoefficient *stress)
+    void StructuralSolver::setStrainLoad(const std::set<int>& domains, const MatrixCoefficient* stress)
     {
         strainLoadBindings_.push_back({domains, stress});
     }
 
-    void StructuralSolver::addFixedDisplacementBC(const std::set<int> &boundaryIds, const VectorCoefficient *displacement)
+    void StructuralSolver::addFixedDisplacementBC(const std::set<int>& boundaryIds, const VectorCoefficient* displacement)
     {
         for (int bid : boundaryIds)
             displacementBCs_[bid] = displacement;
@@ -54,8 +53,7 @@ namespace mpfem
         if (!fes_)
             return;
 
-        if (elasticityBindings_.empty())
-        {
+        if (elasticityBindings_.empty()) {
             LOG_ERROR << "StructuralSolver: material not set";
             return;
         }
@@ -68,47 +66,38 @@ namespace mpfem
         const bool rebuildLoad = loadAssemblyState_.needsRebuild(currentLoadTag);
         const bool bcChanged = bcAssemblyState_.needsRebuild(currentBcTag);
 
-        if (!rebuildStiffness && !rebuildLoad && !bcChanged)
-        {
+        if (!rebuildStiffness && !rebuildLoad && !bcChanged) {
             LOG_DEBUG << "Structural assemble skipped (coefficients unchanged)";
             return;
         }
 
-        if (rebuildStiffness)
-        {
+        if (rebuildStiffness) {
             matAsm_->clear();
             matAsm_->clearIntegrators();
 
-            for (const auto &binding : elasticityBindings_)
-            {
+            for (const auto& binding : elasticityBindings_) {
                 matAsm_->addDomainIntegrator(
-                std::make_unique<ElasticityIntegrator>(binding.E, binding.nu, fes_->vdim()),
-                binding.domains);
+                    std::make_unique<ElasticityIntegrator>(binding.E, binding.nu, fes_->vdim()),
+                    binding.domains);
             }
             matAsm_->assemble();
             stiffnessMatrixBeforeBC_ = matAsm_->matrix();
         }
-        else
-        {
-            matAsm_->matrix() = stiffnessMatrixBeforeBC_;
-        }
+        // Skip copy-back when rebuildStiffness=false - applyDirichletBC will modify in-place anyway
 
-        if (rebuildLoad)
-        {
+        if (rebuildLoad) {
             vecAsm_->clear();
             vecAsm_->clearIntegrators();
 
-            for (const auto &binding : strainLoadBindings_)
-            {
+            for (const auto& binding : strainLoadBindings_) {
                 vecAsm_->addDomainIntegrator(std::make_unique<StrainLoadIntegrator>(
-                binding.stress, fes_->vdim()),
-                binding.domains);
+                                                 binding.stress, fes_->vdim()),
+                    binding.domains);
             }
             vecAsm_->assemble();
             rhsBeforeBC_ = vecAsm_->vector();
         }
-        else
-        {
+        else {
             vecAsm_->vector() = rhsBeforeBC_;
         }
 

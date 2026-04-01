@@ -3,6 +3,7 @@
 
 #include "mesh/geometry.hpp"
 #include "reference_element.hpp"
+#include "core/exception.hpp"
 #include <memory>
 #include <unordered_map>
 
@@ -86,20 +87,25 @@ inline FECollection::FECollection(int order, Type type)
 }
 
 inline void FECollection::initialize() {
-    // Create reference elements for all supported geometries
-    if (type_ == Type::H1) {
-        elements_[Geometry::Segment] = std::make_unique<ReferenceElement>(
-            Geometry::Segment, order_);
-        elements_[Geometry::Triangle] = std::make_unique<ReferenceElement>(
-            Geometry::Triangle, order_);
-        elements_[Geometry::Square] = std::make_unique<ReferenceElement>(
-            Geometry::Square, order_);
-        elements_[Geometry::Tetrahedron] = std::make_unique<ReferenceElement>(
-            Geometry::Tetrahedron, order_);
-        elements_[Geometry::Cube] = std::make_unique<ReferenceElement>(
-            Geometry::Cube, order_);
+    elements_.clear();
+
+    const auto addH1Elements = [this]() {
+        elements_[Geometry::Segment] = std::make_unique<ReferenceElement>(Geometry::Segment, order_);
+        elements_[Geometry::Triangle] = std::make_unique<ReferenceElement>(Geometry::Triangle, order_);
+        elements_[Geometry::Square] = std::make_unique<ReferenceElement>(Geometry::Square, order_);
+        elements_[Geometry::Tetrahedron] = std::make_unique<ReferenceElement>(Geometry::Tetrahedron, order_);
+        elements_[Geometry::Cube] = std::make_unique<ReferenceElement>(Geometry::Cube, order_);
+    };
+
+    switch (type_) {
+    case Type::H1:
+        addH1Elements();
+        return;
+    case Type::L2:
+    case Type::ND:
+    case Type::RT:
+        MPFEM_THROW(NotImplementedException, "FECollection type");
     }
-    // TODO: Implement L2, ND, RT
 }
 
 }  // namespace mpfem
