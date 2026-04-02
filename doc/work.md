@@ -26,7 +26,7 @@
 
 ```xml
 <SolverConfiguration>
-    <LinearSolver type="FGMRES">
+    <LinearSolver type="DGMRES">
         <Parameters>
             <Tolerance>1e-8</Tolerance>
             <MaxIterations>500</MaxIterations>
@@ -63,9 +63,5 @@
 </SolverConfiguration>
 ```
 
-* 彻底分离求解器与预条件，重写相关工厂和io方法。
+* 彻底分离求解器与预条件设置（例如求解器只提供单纯的LU，CG，DGMRES等，预条件另外设置），重写相关工厂和io方法。
 * 修改几个case.xml以使用新的模式，编译，测试，验证。
-
-## 工作任务2
-
-* 引入DDM和AMG用于更有效地求解弹性力学方程。

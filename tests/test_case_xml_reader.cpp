@@ -1,17 +1,19 @@
-#include <gtest/gtest.h>
-#include "io/case_xml_reader.hpp"
 #include "core/logger.hpp"
+#include "io/case_xml_reader.hpp"
+#include <gtest/gtest.h>
 
 using namespace mpfem;
 
 class CaseXmlReaderTest : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void SetUp() override
+    {
         Logger::setLevel(LogLevel::Warning);
     }
-    
+
     // Helper to get test data path
-    static std::string dataPath(const std::string& relativePath) {
+    static std::string dataPath(const std::string& relativePath)
+    {
 #ifdef MPFEM_PROJECT_ROOT
         return std::string(MPFEM_PROJECT_ROOT) + "/" + relativePath;
 #else
@@ -20,9 +22,10 @@ protected:
     }
 };
 
-TEST_F(CaseXmlReaderTest, ReadBusbarCase) {
+TEST_F(CaseXmlReaderTest, ReadBusbarCase)
+{
     CaseDefinition caseDef;
-    
+
     // Read the actual case file
     ASSERT_NO_THROW({
         CaseXmlReader::readFromFile(dataPath("cases/busbar_steady/case.xml"), caseDef);
@@ -41,11 +44,11 @@ TEST_F(CaseXmlReaderTest, ReadBusbarCase) {
 
     // Verify variables
     EXPECT_GE(caseDef.variables.size(), 4);
-    
+
     bool foundVtot = false;
     bool foundL = false;
     bool foundHtc = false;
-    
+
     for (const auto& v : caseDef.variables) {
         if (v.name == "Vtot") {
             foundVtot = true;
@@ -74,29 +77,27 @@ TEST_F(CaseXmlReaderTest, ReadBusbarCase) {
     ASSERT_TRUE(caseDef.physics.count("electrostatics") > 0);
     const auto& electrostatics = caseDef.physics.at("electrostatics");
     EXPECT_EQ(electrostatics.order, 1);
-    EXPECT_EQ(electrostatics.solver.linearType, LinearSolverType::Eigen_CG);
+    EXPECT_EQ(electrostatics.solver.solver.type, LinearSolverType::Eigen_CG);
     EXPECT_EQ(electrostatics.solver.preconditioner.type, PreconditionerType::Diagonal);
-    EXPECT_GE(electrostatics.boundaries.size(), 2);  // At least voltage and ground
+    EXPECT_GE(electrostatics.boundaries.size(), 2); // At least voltage and ground
 
     // Check heat transfer physics
     ASSERT_TRUE(caseDef.physics.count("heat_transfer") > 0);
     const auto& heatTransfer = caseDef.physics.at("heat_transfer");
     EXPECT_EQ(heatTransfer.order, 1);
-    EXPECT_EQ(heatTransfer.solver.linearType, LinearSolverType::Eigen_CG);
+    EXPECT_EQ(heatTransfer.solver.solver.type, LinearSolverType::Eigen_CG);
     EXPECT_EQ(heatTransfer.solver.preconditioner.type, PreconditionerType::AdditiveSchwarz);
-    ASSERT_NE(heatTransfer.solver.preconditioner.findChild(SolverNodeRole::LocalSolver), nullptr);
-    EXPECT_EQ(
-        heatTransfer.solver.preconditioner.findChild(SolverNodeRole::LocalSolver)->type,
-        PreconditionerType::Diagonal);
-    EXPECT_GE(heatTransfer.boundaries.size(), 1);  // At least convection
+    ASSERT_NE(heatTransfer.solver.preconditioner.localSolver, nullptr);
+    EXPECT_EQ(heatTransfer.solver.preconditioner.localSolver->type, PreconditionerType::Diagonal);
+    EXPECT_GE(heatTransfer.boundaries.size(), 1); // At least convection
 
     // Check solid mechanics physics
     ASSERT_TRUE(caseDef.physics.count("solid_mechanics") > 0);
     const auto& solidMechanics = caseDef.physics.at("solid_mechanics");
     EXPECT_EQ(solidMechanics.order, 1);
-    EXPECT_EQ(solidMechanics.solver.linearType, LinearSolverType::UMFPACK_LU);
+    EXPECT_EQ(solidMechanics.solver.solver.type, LinearSolverType::UMFPACK_LU);
     EXPECT_EQ(solidMechanics.solver.preconditioner.type, PreconditionerType::None);
-    EXPECT_GE(solidMechanics.boundaries.size(), 1);  // At least fixed constraint
+    EXPECT_GE(solidMechanics.boundaries.size(), 1); // At least fixed constraint
 
     // Verify coupled physics definitions
     EXPECT_GE(caseDef.coupledPhysicsDefinitions.size(), 2);
@@ -105,9 +106,10 @@ TEST_F(CaseXmlReaderTest, ReadBusbarCase) {
     EXPECT_GT(caseDef.couplingConfig.maxIterations, 0);
 }
 
-TEST_F(CaseXmlReaderTest, ReadBusbarOrder2Case) {
+TEST_F(CaseXmlReaderTest, ReadBusbarOrder2Case)
+{
     CaseDefinition caseDef;
-    
+
     ASSERT_NO_THROW({
         CaseXmlReader::readFromFile(dataPath("cases/busbar_steady_order2/case.xml"), caseDef);
     });
@@ -118,7 +120,8 @@ TEST_F(CaseXmlReaderTest, ReadBusbarOrder2Case) {
     }
 }
 
-TEST_F(CaseXmlReaderTest, VariableLookup) {
+TEST_F(CaseXmlReaderTest, VariableLookup)
+{
     CaseDefinition caseDef;
     CaseXmlReader::readFromFile(dataPath("cases/busbar_steady/case.xml"), caseDef);
 
@@ -131,7 +134,8 @@ TEST_F(CaseXmlReaderTest, VariableLookup) {
     EXPECT_DOUBLE_EQ(caseDef.getVariable("htc"), 5.0);
 }
 
-TEST_F(CaseXmlReaderTest, BoundaryConditionParsing) {
+TEST_F(CaseXmlReaderTest, BoundaryConditionParsing)
+{
     CaseDefinition caseDef;
     CaseXmlReader::readFromFile(dataPath("cases/busbar_steady/case.xml"), caseDef);
 
@@ -150,7 +154,8 @@ TEST_F(CaseXmlReaderTest, BoundaryConditionParsing) {
     }
 }
 
-TEST_F(CaseXmlReaderTest, MaterialAssignmentParsing) {
+TEST_F(CaseXmlReaderTest, MaterialAssignmentParsing)
+{
     CaseDefinition caseDef;
     CaseXmlReader::readFromFile(dataPath("cases/busbar_steady/case.xml"), caseDef);
 
