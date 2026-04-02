@@ -245,6 +245,7 @@ mpfem_add_library(mpfem_problem
         mpfem_fe
         mpfem_io
         mpfem_model
+        mpfem_physics
 )
 
 # =============================================================================
@@ -270,7 +271,6 @@ mpfem_add_library(mpfem_physics
         mpfem_coupling
         mpfem_io
         mpfem_model
-        mpfem_problem
 )
 
 # =============================================================================

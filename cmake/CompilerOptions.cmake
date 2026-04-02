@@ -6,4 +6,8 @@ function(mpfem_set_default_compiler_options target_name)
   else()
     target_compile_options(${target_name} PRIVATE -Wall -Wextra -Wpedantic)
   endif()
+
+  if(MINGW)
+    add_compile_options(-Wa,-mbig-obj)
+  endif()
 endfunction()
