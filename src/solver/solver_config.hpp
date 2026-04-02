@@ -18,7 +18,7 @@ enum class LinearSolverType {
     // Eigen solvers (always available)
     Eigen_SparseLU,       ///< Direct LU factorization
     Eigen_CG,             ///< Conjugate Gradient
-    Eigen_DGMRES,         ///< DGMRES / FGMRES style Krylov solver
+    Eigen_DGMRES,         ///< DGMRES style Krylov solver
 
     // MKL PARDISO (conditionally available)
     MKL_Pardiso,          ///< MKL PARDISO direct solver
@@ -34,7 +34,6 @@ enum class PreconditionerType {
     ILU,
     AdditiveSchwarz,
     AMG,
-    GaussSeidel,
 };
 
 enum class SolverNodeRole {
@@ -83,7 +82,7 @@ inline constexpr LinearSolverMeta linearSolverRegistry[] = {
     // Eigen solvers (always available)
     {LinearSolverType::Eigen_SparseLU, "SparseLU", "Eigen SparseLU direct solver", false, false, true},
     {LinearSolverType::Eigen_CG,       "CG",       "Eigen Conjugate Gradient solver", true, true, true},
-    {LinearSolverType::Eigen_DGMRES,   "FGMRES",   "Eigen DGMRES/FGMRES solver", true, false, true},
+    {LinearSolverType::Eigen_DGMRES,   "DGMRES",   "Eigen DGMRES solver", true, false, true},
 
     // MKL PARDISO
     {LinearSolverType::MKL_Pardiso, "Pardiso", "MKL PARDISO direct solver", false, false, isMKLAvailable()},
@@ -131,8 +130,6 @@ inline std::string_view preconditionerTypeName(PreconditionerType type) {
             return "AdditiveSchwarz";
         case PreconditionerType::AMG:
             return "AMG";
-        case PreconditionerType::GaussSeidel:
-            return "GaussSeidel";
         default:
             throw std::runtime_error("Unknown preconditioner type");
     }
@@ -186,12 +183,6 @@ struct SolverConfig {
             if (current->type == PreconditionerType::AdditiveSchwarz) {
                 if (const SolverNodeConfig* local = current->findChild(SolverNodeRole::LocalSolver)) {
                     current = local;
-                    continue;
-                }
-            }
-            if (current->type == PreconditionerType::AMG) {
-                if (const SolverNodeConfig* smoother = current->findChild(SolverNodeRole::Smoother)) {
-                    current = smoother;
                     continue;
                 }
             }

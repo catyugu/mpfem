@@ -32,7 +32,7 @@ public:
         if (key == "cg") {
             return LinearSolverType::Eigen_CG;
         }
-        if (key == "fgmres") {
+        if (key == "dgmres") {
             return LinearSolverType::Eigen_DGMRES;
         }
         if (key == "sparselu") {
@@ -67,9 +67,6 @@ public:
         }
         if (key == "amg") {
             return PreconditionerType::AMG;
-        }
-        if (key == "gaussseidel") {
-            return PreconditionerType::GaussSeidel;
         }
 
         throw std::runtime_error("Unsupported Preconditioner type: " + std::string(name));
