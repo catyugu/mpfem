@@ -373,21 +373,34 @@ namespace mpfem {
                         }
                     }
 
+                    // Pre-compute valid DOF indices to reduce branching
+                    buf.numValidDofs = 0;
                     for (int i = 0; i < totalDofs; ++i) {
-                        if (dofs[i] != InvalidIndex)
+                        if (dofs[i] != InvalidIndex) {
+                            buf.validDofs[buf.numValidDofs++] = i;
+                        }
+                    }
+
+                    // Branch-reduced vector assembly: iterate only valid DOFs
+                    Vector& targetVec = [&]() -> Vector& {
 #ifdef _OPENMP
-                            localVec(dofs[i]) += buf.elvecVector(i);
+                        return localVec;
 #else
-                        vec_(dofs[i]) += buf.elvecVector(i);
+                    return vec_;
 #endif
+                    }();
+
+                    for (int vi = 0; vi < buf.numValidDofs; ++vi) {
+                        const int i = buf.validDofs[vi];
+                        targetVec(dofs[i]) += buf.elvecVector(i);
                     }
                 }
 
 #ifdef _OPENMP
             }
 
-            for (const auto& lv : threadVectors_) {
-                vec_ += lv;
+            for (auto& lv : threadVectors_) {
+                vec_ += std::move(lv);
             }
 #endif
         }
@@ -435,9 +448,18 @@ namespace mpfem {
                     }
                 }
 
+                // Pre-compute valid DOF indices to reduce branching
+                int bNumValidDofs = 0;
                 for (int i = 0; i < totalDofs; ++i) {
-                    if (dofs[i] != InvalidIndex)
-                        vec_(dofs[i]) += bbuf.elvecVector(i);
+                    if (dofs[i] != InvalidIndex) {
+                        bbuf.validDofs[bNumValidDofs++] = i;
+                    }
+                }
+
+                // Branch-reduced vector assembly
+                for (int vi = 0; vi < bNumValidDofs; ++vi) {
+                    const int i = bbuf.validDofs[vi];
+                    vec_(dofs[i]) += bbuf.elvecVector(i);
                 }
             }
         }
