@@ -74,4 +74,4 @@ mpfem_add_test(mpfem_test_integrator mpfem::assembly test_integrator.cpp)
 # =============================================================================
 # Electrostatics Solver Tests (Physics module)
 # =============================================================================
-mpfem_add_test(mpfem_test_electrostatics_solver mpfem::physics test_electrostatics_solver.cpp)
+mpfem_add_test(mpfem_test_electrostatics_solver mpfem::problem test_electrostatics_solver.cpp)
