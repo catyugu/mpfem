@@ -121,10 +121,9 @@ namespace mpfem {
 
         void applyConfig(const SolverConfig& config) override
         {
-            if (config.dropTolerance > 0)
-                setShift(config.dropTolerance);
-            else
-                setShift(1e-14);
+            if (config.preconditionerShift > 0.0) {
+                setShift(config.preconditionerShift);
+            }
         }
 
         /// Set shift parameter for regularization (default 1e-14)
@@ -133,6 +132,7 @@ namespace mpfem {
         bool solve(const SparseMatrix& A, Vector& x, const Vector& b) override
         {
             ScopedTimer timer("Linear solve (CG+ICC)");
+            solver_.preconditioner().setInitialShift(shift_);
 
             return solveIterative<Eigen::ConjugateGradient<Eigen::SparseMatrix<Real>,
                                       Eigen::Lower | Eigen::Upper,
@@ -161,8 +161,8 @@ namespace mpfem {
 
         void applyConfig(const SolverConfig& config) override
         {
-            setDropTolerance(config.dropTolerance);
-            setFillFactor(config.fillFactor);
+            setDropTolerance(config.preconditionerDropTolerance);
+            setFillFactor(config.preconditionerFillLevel);
         }
 
         void setDropTolerance(Real tol) { dropTol_ = tol; }
@@ -256,8 +256,8 @@ namespace mpfem {
 
         void applyConfig(const SolverConfig& config) override
         {
-            setDropTolerance(config.dropTolerance);
-            setFillFactor(config.fillFactor);
+            setDropTolerance(config.preconditionerDropTolerance);
+            setFillFactor(config.preconditionerFillLevel);
         }
 
         void setDropTolerance(Real tol) { dropTol_ = tol; }

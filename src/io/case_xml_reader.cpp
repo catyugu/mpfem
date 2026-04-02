@@ -3,9 +3,12 @@
 #include "core/logger.hpp"
 #include "core/exception.hpp"
 #include "core/string_utils.hpp"
+#include "solver/solver_factory.hpp"
 
 #include <tinyxml2.h>
 
+#include <cctype>
+#include <functional>
 #include <sstream>
 #include <cstdlib>
 
@@ -14,6 +17,18 @@ namespace mpfem {
 using strings::trim;
 
 namespace {
+
+std::string normalizeToken(std::string_view text) {
+    std::string normalized;
+    normalized.reserve(text.size());
+    for (char ch : text) {
+        const unsigned char value = static_cast<unsigned char>(ch);
+        if (std::isalnum(value)) {
+            normalized.push_back(static_cast<char>(std::tolower(value)));
+        }
+    }
+    return normalized;
+}
 
 const std::string& requireBoundaryParam(const std::map<std::string, std::string>& params,
                                         const std::string& key,
@@ -147,6 +162,100 @@ void CaseXmlReader::readFromFile(const std::string& filePath, CaseDefinition& ca
         return ExpressionParser::instance().evaluate(text, variableValues);
     };
 
+    auto readParameterMap = [&](const tinyxml2::XMLElement* parametersElement) {
+        std::map<std::string, Real> parameters;
+        if (!parametersElement) {
+            return parameters;
+        }
+
+        for (const tinyxml2::XMLElement* parameter = parametersElement->FirstChildElement();
+             parameter != nullptr;
+             parameter = parameter->NextSiblingElement()) {
+            const std::string key = parameter->Name();
+            std::string value;
+            if (const char* valueAttr = parameter->Attribute("value")) {
+                value = trim(valueAttr);
+            } else if (const char* text = parameter->GetText()) {
+                value = trim(text);
+            }
+
+            if (!key.empty() && !value.empty()) {
+                parameters[key] = static_cast<Real>(evalExpr(value.c_str(), 0.0));
+            }
+        }
+
+        return parameters;
+    };
+
+    auto getParameter = [&](const std::map<std::string, Real>& parameters,
+                            std::initializer_list<std::string_view> names) -> const Real* {
+        for (std::string_view name : names) {
+            const std::string expected = normalizeToken(name);
+            for (const auto& [key, value] : parameters) {
+                if (normalizeToken(key) == expected) {
+                    return &value;
+                }
+            }
+        }
+        return nullptr;
+    };
+
+    auto parseParameterReal = [&](const std::map<std::string, Real>& parameters,
+                                  std::initializer_list<std::string_view> names,
+                                  double defaultValue) -> double {
+        const Real* value = getParameter(parameters, names);
+        if (!value) {
+            return defaultValue;
+        }
+        return static_cast<double>(*value);
+    };
+
+    auto parseParameterInt = [&](const std::map<std::string, Real>& parameters,
+                                 std::initializer_list<std::string_view> names,
+                                 int defaultValue) -> int {
+        const Real* value = getParameter(parameters, names);
+        if (!value) {
+            return defaultValue;
+        }
+        return static_cast<int>(std::lround(static_cast<double>(*value)));
+    };
+
+    std::function<SolverNodeConfig(const tinyxml2::XMLElement*, SolverNodeRole)> readSolverNode;
+    readSolverNode = [&](const tinyxml2::XMLElement* element, SolverNodeRole role) -> SolverNodeConfig {
+        if (!element) {
+            throw FileException("Invalid solver node element in " + filePath);
+        }
+
+        const char* typeAttr = element->Attribute("type");
+        if (!typeAttr) {
+            throw FileException(std::string("Missing solver node type on <") + element->Name() + "> in " + filePath);
+        }
+
+        SolverNodeConfig node;
+        node.role = role;
+        node.type = SolverFactory::preconditionerTypeFromName(typeAttr);
+        node.parameters = readParameterMap(element->FirstChildElement("Parameters"));
+
+        for (const tinyxml2::XMLElement* child = element->FirstChildElement();
+             child != nullptr;
+             child = child->NextSiblingElement()) {
+            const std::string childName = child->Name();
+            if (childName == "LocalSolver") {
+                node.children.push_back(readSolverNode(child, SolverNodeRole::LocalSolver));
+                continue;
+            }
+            if (childName == "CoarseSolver") {
+                node.children.push_back(readSolverNode(child, SolverNodeRole::CoarseSolver));
+                continue;
+            }
+            if (childName == "Smoother") {
+                node.children.push_back(readSolverNode(child, SolverNodeRole::Smoother));
+            }
+        }
+
+        return node;
+    };
+
     // Variables are parsed first so all following numeric attributes can use
     // a single expression pipeline with variable substitution.
     if (const tinyxml2::XMLElement* variablesElement = caseElement->FirstChildElement("variables")) {
@@ -260,28 +369,77 @@ void CaseXmlReader::readFromFile(const std::string& filePath, CaseDefinition& ca
         }
 
         // Solver configuration
-        if (const tinyxml2::XMLElement* solverElement = physicsElement->FirstChildElement("solver")) {
-            if (const char* typeAttr = solverElement->Attribute("type")) {
-                physics.solver.type = solverTypeFromName(typeAttr);
+        if (const tinyxml2::XMLElement* solverConfigElement = physicsElement->FirstChildElement("SolverConfiguration")) {
+            const tinyxml2::XMLElement* linearSolverElement = solverConfigElement->FirstChildElement("LinearSolver");
+            if (!linearSolverElement) {
+                throw FileException("Missing <LinearSolver> in <SolverConfiguration> for physics '" + physics.kind + "'");
             }
-            if (const char* maxIterAttr = solverElement->Attribute("max_iter")) {
-                physics.solver.maxIterations =
-                    static_cast<int>(std::lround(evalExpr(maxIterAttr, physics.solver.maxIterations)));
+
+            const char* linearTypeAttr = linearSolverElement->Attribute("type");
+            if (!linearTypeAttr) {
+                throw FileException("Missing LinearSolver type for physics '" + physics.kind + "'");
             }
-            if (const char* tolAttr = solverElement->Attribute("tolerance")) {
-                physics.solver.relativeTolerance = evalExpr(tolAttr, physics.solver.relativeTolerance);
+            physics.solver.linearType = SolverFactory::linearSolverTypeFromName(linearTypeAttr);
+
+            const auto linearParameters = readParameterMap(linearSolverElement->FirstChildElement("Parameters"));
+            physics.solver.maxIterations = parseParameterInt(
+                linearParameters,
+                {"MaxIterations"},
+                physics.solver.maxIterations);
+            physics.solver.restart = parseParameterInt(
+                linearParameters,
+                {"Restart"},
+                physics.solver.restart);
+            physics.solver.relativeTolerance = parseParameterReal(
+                linearParameters,
+                {"Tolerance", "RelativeTolerance"},
+                physics.solver.relativeTolerance);
+            physics.solver.absoluteTolerance = parseParameterReal(
+                linearParameters,
+                {"AbsoluteTolerance"},
+                physics.solver.absoluteTolerance);
+            physics.solver.printLevel = parseParameterInt(
+                linearParameters,
+                {"PrintLevel"},
+                physics.solver.printLevel);
+
+            if (const tinyxml2::XMLElement* preconditionerElement = linearSolverElement->FirstChildElement("Preconditioner")) {
+                physics.solver.preconditioner = readSolverNode(preconditionerElement, SolverNodeRole::Preconditioner);
+            } else {
+                physics.solver.preconditioner.type = PreconditionerType::None;
+                physics.solver.preconditioner.parameters.clear();
+                physics.solver.preconditioner.children.clear();
             }
-            if (const char* printLevelAttr = solverElement->Attribute("print_level")) {
-                physics.solver.printLevel =
-                    static_cast<int>(std::lround(evalExpr(printLevelAttr, physics.solver.printLevel)));
-            }
-            if (const char* dropTolAttr = solverElement->Attribute("drop_tol")) {
-                physics.solver.dropTolerance = evalExpr(dropTolAttr, physics.solver.dropTolerance);
-            }
-            if (const char* fillFactorAttr = solverElement->Attribute("fill_factor")) {
-                physics.solver.fillFactor =
-                    static_cast<int>(std::lround(evalExpr(fillFactorAttr, physics.solver.fillFactor)));
-            }
+
+            const auto findNodeParameter = [&](const SolverNodeConfig& node,
+                                               std::initializer_list<std::string_view> names,
+                                               Real defaultValue) {
+                for (std::string_view name : names) {
+                    const std::string expected = normalizeToken(name);
+                    for (const auto& [key, value] : node.parameters) {
+                        if (normalizeToken(key) == expected) {
+                            return value;
+                        }
+                    }
+                }
+                return defaultValue;
+            };
+
+            const SolverNodeConfig& effective = physics.solver.effectivePreconditioner();
+            physics.solver.preconditionerDropTolerance = findNodeParameter(
+                effective,
+                {"DropTolerance"},
+                physics.solver.preconditionerDropTolerance);
+            physics.solver.preconditionerFillLevel = static_cast<int>(std::lround(findNodeParameter(
+                effective,
+                {"FillLevel"},
+                static_cast<Real>(physics.solver.preconditionerFillLevel))));
+            physics.solver.preconditionerShift = findNodeParameter(
+                effective,
+                {"Shift"},
+                physics.solver.preconditionerShift);
+        } else {
+            throw FileException("Missing <SolverConfiguration> for physics '" + physics.kind + "'");
         }
 
         // Boundary conditions

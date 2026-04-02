@@ -22,6 +22,50 @@
 
 ## 工作任务1
 
-* 依据以上原则，对代码进行清理与重构，使其尽可能简洁并便于扩展。 
-* 请进行破坏式重构，不需要考虑向后兼容性。
-* 同时考虑性能调优，根据capture.csv分析性能瓶颈。
+* 彻底改变线性求解层的架构设计，允许多层次的配置/求解方式，参考配置格式：
+
+```xml
+<SolverConfiguration>
+    <LinearSolver type="FGMRES">
+        <Parameters>
+            <Tolerance>1e-8</Tolerance>
+            <MaxIterations>500</MaxIterations>
+            <Restart>30</Restart>
+        </Parameters>
+
+        <Preconditioner type="AdditiveSchwarz">
+            <Parameters>
+                <Overlap>1</Overlap> </Parameters>
+
+            <LocalSolver type="ILU">
+                <Parameters>
+                    <FillLevel>0</FillLevel>
+                    <DropTolerance>1e-4</DropTolerance>
+                </Parameters>
+            </LocalSolver>
+
+            <CoarseSolver type="AMG">
+                <Parameters>
+                    <CoarseningMethod>Ruge-Stueben</CoarseningMethod>
+                    <CycleType>V-Cycle</CycleType>
+                    <MaxLevels>5</MaxLevels>
+                </Parameters>
+                
+                <Smoother type="GaussSeidel">
+                    <Parameters>
+                        <Sweeps>2</Sweeps>
+                    </Parameters>
+                </Smoother>
+            </CoarseSolver>
+
+        </Preconditioner>
+    </LinearSolver>
+</SolverConfiguration>
+```
+
+* 彻底分离求解器与预条件，重写相关工厂和io方法。
+* 修改几个case.xml以使用新的模式，编译，测试，验证。
+
+## 工作任务2
+
+* 引入DDM和AMG用于更有效地求解弹性力学方程。

@@ -2,24 +2,23 @@
 #define MPFEM_SOLVER_CONFIG_HPP
 
 #include "core/types.hpp"
+#include <map>
+#include <string>
 #include <string_view>
 #include <stdexcept>
 #include <vector>
-#include <string>
 
 namespace mpfem {
 
 // =============================================================================
-// Solver Type Enumeration
+// Solver Type Enumerations
 // =============================================================================
 
-enum class SolverType {
+enum class LinearSolverType {
     // Eigen solvers (always available)
     Eigen_SparseLU,       ///< Direct LU factorization
-    Eigen_CG_Jacobi,      ///< CG with diagonal preconditioner
-    Eigen_CG_ICC,         ///< CG with Incomplete Cholesky preconditioner (recommended for elasticity)
-    Eigen_CG_ILU,         ///< CG with ILU preconditioner
-    Eigen_DGMRES_ILU,     ///< DGMRES with ILU preconditioner
+    Eigen_CG,             ///< Conjugate Gradient
+    Eigen_DGMRES,         ///< DGMRES / FGMRES style Krylov solver
 
     // MKL PARDISO (conditionally available)
     MKL_Pardiso,          ///< MKL PARDISO direct solver
@@ -28,12 +27,29 @@ enum class SolverType {
     UMFPACK_LU,           ///< SuiteSparse UMFPACK direct solver
 };
 
+enum class PreconditionerType {
+    None,
+    Diagonal,
+    ICC,
+    ILU,
+    AdditiveSchwarz,
+    AMG,
+    GaussSeidel,
+};
+
+enum class SolverNodeRole {
+    Preconditioner,
+    LocalSolver,
+    CoarseSolver,
+    Smoother,
+};
+
 // =============================================================================
 // Solver Metadata
 // =============================================================================
 
-struct SolverMeta {
-    SolverType type;
+struct LinearSolverMeta {
+    LinearSolverType type;
     std::string_view name;
     std::string_view description;
     bool isIterative;
@@ -63,22 +79,20 @@ inline constexpr bool isSuiteSparseAvailable() {
 #endif
 }
 
-inline constexpr SolverMeta solverRegistry[] = {
+inline constexpr LinearSolverMeta linearSolverRegistry[] = {
     // Eigen solvers (always available)
-    {SolverType::Eigen_SparseLU,     "eigen.sparse_lu",     "Eigen SparseLU direct solver",               false, false, true},
-    {SolverType::Eigen_CG_Jacobi,    "eigen.cg_jacobi",     "Eigen CG with diagonal preconditioner",      true,  true,  true},
-    {SolverType::Eigen_CG_ICC,       "eigen.cg_icc",        "Eigen CG with ICC preconditioner",           true,  true,  true},
-    {SolverType::Eigen_CG_ILU,       "eigen.cg_ilu",        "Eigen CG with ILU preconditioner",           true,  true,  true},
-    {SolverType::Eigen_DGMRES_ILU,   "eigen.dgmres_ilu",    "Eigen DGMRES with ILU preconditioner",       true,  false, true},
+    {LinearSolverType::Eigen_SparseLU, "SparseLU", "Eigen SparseLU direct solver", false, false, true},
+    {LinearSolverType::Eigen_CG,       "CG",       "Eigen Conjugate Gradient solver", true, true, true},
+    {LinearSolverType::Eigen_DGMRES,   "FGMRES",   "Eigen DGMRES/FGMRES solver", true, false, true},
 
     // MKL PARDISO
-    {SolverType::MKL_Pardiso,        "mkl.pardiso",         "MKL PARDISO direct solver",                  false, false, isMKLAvailable()},
+    {LinearSolverType::MKL_Pardiso, "Pardiso", "MKL PARDISO direct solver", false, false, isMKLAvailable()},
 
     // SuiteSparse UMFPACK
-    {SolverType::UMFPACK_LU,         "umfpack.lu",          "SuiteSparse UMFPACK direct solver",          false, false, isSuiteSparseAvailable()},
+    {LinearSolverType::UMFPACK_LU, "UMFPACK", "SuiteSparse UMFPACK direct solver", false, false, isSuiteSparseAvailable()},
 };
 
-inline constexpr size_t solverRegistrySize = sizeof(solverRegistry) / sizeof(SolverMeta);
+inline constexpr size_t linearSolverRegistrySize = sizeof(linearSolverRegistry) / sizeof(LinearSolverMeta);
 
 }  // namespace detail
 
@@ -86,50 +100,49 @@ inline constexpr size_t solverRegistrySize = sizeof(solverRegistry) / sizeof(Sol
 // Utility Functions
 // =============================================================================
 
-inline const SolverMeta& getSolverMeta(SolverType type) {
-    for (size_t i = 0; i < detail::solverRegistrySize; ++i) {
-        if (detail::solverRegistry[i].type == type) {
-            return detail::solverRegistry[i];
+inline const LinearSolverMeta& getLinearSolverMeta(LinearSolverType type) {
+    for (size_t i = 0; i < detail::linearSolverRegistrySize; ++i) {
+        if (detail::linearSolverRegistry[i].type == type) {
+            return detail::linearSolverRegistry[i];
         }
     }
-    throw std::runtime_error("Unknown solver type");
+    throw std::runtime_error("Unknown linear solver type");
 }
 
-inline const SolverMeta& getSolverMeta(std::string_view name) {
-    for (size_t i = 0; i < detail::solverRegistrySize; ++i) {
-        if (detail::solverRegistry[i].name == name) {
-            return detail::solverRegistry[i];
-        }
+inline std::string_view linearSolverTypeName(LinearSolverType type) {
+    return getLinearSolverMeta(type).name;
+}
+
+inline bool isLinearSolverAvailable(LinearSolverType type) {
+    return getLinearSolverMeta(type).isAvailable;
+}
+
+inline std::string_view preconditionerTypeName(PreconditionerType type) {
+    switch (type) {
+        case PreconditionerType::None:
+            return "None";
+        case PreconditionerType::Diagonal:
+            return "Diagonal";
+        case PreconditionerType::ICC:
+            return "ICC";
+        case PreconditionerType::ILU:
+            return "ILU";
+        case PreconditionerType::AdditiveSchwarz:
+            return "AdditiveSchwarz";
+        case PreconditionerType::AMG:
+            return "AMG";
+        case PreconditionerType::GaussSeidel:
+            return "GaussSeidel";
+        default:
+            throw std::runtime_error("Unknown preconditioner type");
     }
-    throw std::runtime_error("Unknown solver name: " + std::string(name));
 }
 
-inline std::string_view solverTypeName(SolverType type) {
-    return getSolverMeta(type).name;
-}
-
-inline SolverType solverTypeFromName(std::string_view name) {
-    return getSolverMeta(name).type;
-}
-
-inline bool isSolverAvailable(SolverType type) {
-    return getSolverMeta(type).isAvailable;
-}
-
-inline bool isSolverAvailable(std::string_view name) {
-    for (size_t i = 0; i < detail::solverRegistrySize; ++i) {
-        if (detail::solverRegistry[i].name == name) {
-            return detail::solverRegistry[i].isAvailable;
-        }
-    }
-    return false;
-}
-
-inline std::vector<std::string> availableSolverNames() {
+inline std::vector<std::string> availableLinearSolverNames() {
     std::vector<std::string> result;
-    for (size_t i = 0; i < detail::solverRegistrySize; ++i) {
-        if (detail::solverRegistry[i].isAvailable) {
-            result.emplace_back(detail::solverRegistry[i].name);
+    for (size_t i = 0; i < detail::linearSolverRegistrySize; ++i) {
+        if (detail::linearSolverRegistry[i].isAvailable) {
+            result.emplace_back(detail::linearSolverRegistry[i].name);
         }
     }
     return result;
@@ -139,24 +152,53 @@ inline std::vector<std::string> availableSolverNames() {
 // Solver Configuration
 // =============================================================================
 
+struct SolverNodeConfig {
+    SolverNodeRole role = SolverNodeRole::Preconditioner;
+    PreconditionerType type = PreconditionerType::None;
+    std::map<std::string, Real> parameters;
+    std::vector<SolverNodeConfig> children;
+
+    const SolverNodeConfig* findChild(SolverNodeRole childRole) const {
+        for (const auto& child : children) {
+            if (child.role == childRole) {
+                return &child;
+            }
+        }
+        return nullptr;
+    }
+};
+
 struct SolverConfig {
-    SolverType type = SolverType::Eigen_CG_Jacobi;  // Default to CG+Jacobi
+    LinearSolverType linearType = LinearSolverType::Eigen_CG;
     int maxIterations = 1000;
-    int restart = 30;              // GMRES restart parameter
+    int restart = 30;
     Real relativeTolerance = 1e-10;
     Real absoluteTolerance = 1e-14;
-    Real dropTolerance = 1e-4;     // ILU/ICC drop tolerance
-    int fillFactor = 10;           // ILU/ICC fill factor
     int printLevel = 0;
-    
-    // Convenience constructors
-    static SolverConfig eigenSparseLU() { return {SolverType::Eigen_SparseLU}; }
-    static SolverConfig eigenCGJacobi() { return {SolverType::Eigen_CG_Jacobi}; }
-    static SolverConfig eigenCGICC() { return {SolverType::Eigen_CG_ICC}; }
-    static SolverConfig eigenCGILU() { return {SolverType::Eigen_CG_ILU}; }
-    static SolverConfig eigenDGMRES() { return {SolverType::Eigen_DGMRES_ILU}; }
-    static SolverConfig pardiso() { return {SolverType::MKL_Pardiso}; }
-    static SolverConfig umfpack() { return {SolverType::UMFPACK_LU}; }
+    Real preconditionerDropTolerance = 1e-4;
+    int preconditionerFillLevel = 10;
+    Real preconditionerShift = 1e-14;
+    SolverNodeConfig preconditioner{SolverNodeRole::Preconditioner, PreconditionerType::Diagonal, {}, {}};
+
+    const SolverNodeConfig& effectivePreconditioner() const {
+        const SolverNodeConfig* current = &preconditioner;
+        while (current) {
+            if (current->type == PreconditionerType::AdditiveSchwarz) {
+                if (const SolverNodeConfig* local = current->findChild(SolverNodeRole::LocalSolver)) {
+                    current = local;
+                    continue;
+                }
+            }
+            if (current->type == PreconditionerType::AMG) {
+                if (const SolverNodeConfig* smoother = current->findChild(SolverNodeRole::Smoother)) {
+                    current = smoother;
+                    continue;
+                }
+            }
+            return *current;
+        }
+        return preconditioner;
+    }
 };
 
 }  // namespace mpfem
