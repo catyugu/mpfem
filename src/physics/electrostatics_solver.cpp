@@ -62,6 +62,10 @@ namespace mpfem {
         applyDirichletBC(matAsm_->matrix(), vecAsm_->vector(), field().values(), *fes_, *mesh_, voltageBCs_);
         matAsm_->finalize();
 
+        // Mark matrix as updated so solver will re-setup on next solve()
+        // This avoids expensive fingerprint recomputation when matrix is unchanged
+        matrix_needs_update_ = true;
+
         assembledSystemState_.update(currentTag);
     }
 

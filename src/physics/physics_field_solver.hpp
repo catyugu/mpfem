@@ -26,8 +26,12 @@ namespace mpfem {
             if (!solver_ || !matAsm_ || !vecAsm_ || !fieldValues_)
                 return false;
 
-            // Setup operator with current matrix (pass pointer, no copy)
-            solver_->setup(&matAsm_->matrix());
+            // Only setup operator if matrix was rebuilt (tracked by derived classes)
+            // This avoids expensive fingerprint recomputation on repeated solves
+            if (matrix_needs_update_) {
+                solver_->setup(&matAsm_->matrix());
+                matrix_needs_update_ = false;
+            }
 
             // Apply solver: x = solver^{-1} * b (x used as initial guess for iterative solvers)
             Vector& x = field().values();
@@ -72,6 +76,10 @@ namespace mpfem {
                 vecAsm_->clearIntegrators();
             }
         }
+
+        /// Flag indicating matrix needs re-setup (set by derived class after assemble())
+        /// This prevents expensive fingerprint recomputation when matrix is unchanged
+        bool matrix_needs_update_ = true;
 
         int order_ = 1;
 
