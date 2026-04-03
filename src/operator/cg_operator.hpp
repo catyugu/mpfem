@@ -8,11 +8,67 @@
 namespace mpfem {
 
     /**
+     * @brief Lightweight adapter that delegates to a LinearOperator.
+     *
+     * This adapter satisfies Eigen's preconditioner concept while
+     * delegating to our runtime-configurable LinearOperator via
+     * a captured pointer (not global storage).
+     */
+    template <typename MatrixType>
+    class EigenPreconditionerAdapter {
+    public:
+        typedef typename MatrixType::Scalar Scalar;
+        typedef typename MatrixType::RealScalar RealScalar;
+
+    private:
+        LinearOperator* preconditioner_ = nullptr;
+
+    public:
+        EigenPreconditionerAdapter() = default;
+
+        void set_preconditioner(LinearOperator* pc)
+        {
+            preconditioner_ = pc;
+        }
+
+        LinearOperator* get_preconditioner() const
+        {
+            return preconditioner_;
+        }
+
+        template <typename MatType>
+        EigenPreconditionerAdapter& compute(const MatType& /*mat*/)
+        {
+            return *this;
+        }
+
+        template <typename Rhs>
+        Rhs solve(const Rhs& b) const
+        {
+            if (preconditioner_) {
+                Rhs x;
+                x.resize(b.size());
+                preconditioner_->apply(b, x);
+                return x;
+            }
+            else {
+                return b;
+            }
+        }
+
+        Eigen::ComputationInfo info() const
+        {
+            return Eigen::Success;
+        }
+    };
+
+    /**
      * @brief Conjugate Gradient operator.
      *
      * Iterative solver for symmetric positive definite (SPD) matrices.
+     * Supports custom preconditioner via inner_operator_.
+     * If no preconditioner is set, uses diagonal preconditioning.
      * Uses solveWithGuess() to leverage initial guess from previous iteration.
-     * Caches factorization via matrix timestamp to avoid recompute.
      */
     class CGOperator : public LinearOperator {
     public:
@@ -36,6 +92,13 @@ namespace mpfem {
             }
 
             A_ = A;
+
+            // Setup preconditioner if present
+            if (inner_operator_) {
+                inner_operator_->setup(A);
+                preconditionerAdapter_.set_preconditioner(inner_operator_);
+            }
+
             solver_.compute(A->eigen());
             lastMatrixTimestamp_ = A->timestamp();
             is_setup_ = true;
@@ -46,6 +109,13 @@ namespace mpfem {
             if (!is_setup_) {
                 throw std::runtime_error("CGOperator: setup() must be called before apply()");
             }
+
+            // Update preconditioner pointer in solver's internal copy
+            // (Eigen stores preconditioner by value, so we must update after compute)
+            if (inner_operator_) {
+                solver_.preconditioner().set_preconditioner(inner_operator_);
+            }
+
             // Use solveWithGuess to leverage initial guess from previous Picard iteration
             x = solver_.solveWithGuess(b, x);
             num_iterations_ = static_cast<int>(solver_.iterations());
@@ -56,10 +126,12 @@ namespace mpfem {
         Real residual() const override { return residual_; }
 
     private:
+        using PrecondAdapter = EigenPreconditionerAdapter<Eigen::SparseMatrix<Real>>;
         Eigen::ConjugateGradient<Eigen::SparseMatrix<Real>,
             Eigen::Lower | Eigen::Upper,
-            Eigen::DiagonalPreconditioner<Real>>
+            PrecondAdapter>
             solver_;
+        PrecondAdapter preconditionerAdapter_;
         std::uint64_t lastMatrixTimestamp_ = 0;
         int num_iterations_ = 0;
         Real residual_ = 0.0;

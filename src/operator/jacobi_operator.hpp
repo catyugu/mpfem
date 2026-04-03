@@ -37,10 +37,8 @@ namespace mpfem {
                 throw std::runtime_error("JacobiOperator: setup() must be called before apply()");
             }
 
-            for (int sweep = 0; sweep < num_sweeps_; ++sweep) {
-                Vector temp = b - A_->eigen() * x;
-                x += inverse_diagonal_.cwiseProduct(temp);
-            }
+            // Direct diagonal preconditioner: x = D^{-1} * b
+            x = inverse_diagonal_.cwiseProduct(b);
         }
 
     private:
