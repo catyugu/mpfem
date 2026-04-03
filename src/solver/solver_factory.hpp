@@ -79,9 +79,6 @@ namespace mpfem {
             if (key == "additiveschwarz") {
                 return PreconditionerType::AdditiveSchwarz;
             }
-            if (key == "amg") {
-                return PreconditionerType::AMG;
-            }
 
             throw std::runtime_error("Unsupported Preconditioner type: " + std::string(name));
         }
@@ -125,20 +122,15 @@ namespace mpfem {
          * @brief Create a preconditioner instance.
          * @param config Preconditioner configuration
          * @return Unique pointer to the preconditioner, or nullptr if not implemented
-         *         (AdditiveSchwarz, AMG) or type is None
+         *         (AdditiveSchwarz) or type is None
          */
         static std::unique_ptr<Preconditioner> createPreconditioner(const PreconditionerConfig& config)
         {
             const PreconditionerType type = config.type;
 
-            // AdditiveSchwarz and AMG require hierarchical setup - not implemented here
+            // AdditiveSchwarz require hierarchical setup - not implemented here
             if (type == PreconditionerType::AdditiveSchwarz) {
                 LOG_WARN << "AdditiveSchwarz preconditioner requires hierarchical setup; "
-                         << "returning nullptr. Use HierarchicalSolver instead.";
-                return nullptr;
-            }
-            if (type == PreconditionerType::AMG) {
-                LOG_WARN << "AMG preconditioner requires hierarchical setup; "
                          << "returning nullptr. Use HierarchicalSolver instead.";
                 return nullptr;
             }

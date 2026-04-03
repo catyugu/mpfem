@@ -161,7 +161,7 @@ namespace mpfem {
          * @brief Create a preconditioner instance.
          * @param type The type of preconditioner to create.
          * @return unique_ptr to the preconditioner, or nullptr if type requires
-         *         hierarchical setup (AdditiveSchwarz, AMG).
+         *         hierarchical setup (AdditiveSchwarz).
          */
         static std::unique_ptr<Preconditioner> create(PreconditionerType type)
         {
@@ -180,11 +180,6 @@ namespace mpfem {
 
             case PreconditionerType::AdditiveSchwarz:
                 LOG_WARN << "AdditiveSchwarz preconditioner requires hierarchical setup; "
-                         << "returning nullptr. Use HierarchicalSolver instead.";
-                return nullptr;
-
-            case PreconditionerType::AMG:
-                LOG_WARN << "AMG preconditioner requires hierarchical setup; "
                          << "returning nullptr. Use HierarchicalSolver instead.";
                 return nullptr;
 

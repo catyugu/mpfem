@@ -39,8 +39,7 @@ namespace mpfem {
         Diagonal,
         ICC,
         ILU,
-        AdditiveSchwarz,
-        AMG,
+        AdditiveSchwarz
     };
 
     // =============================================================================
@@ -134,8 +133,6 @@ namespace mpfem {
             return "ILU";
         case PreconditionerType::AdditiveSchwarz:
             return "AdditiveSchwarz";
-        case PreconditionerType::AMG:
-            return "AMG";
         default:
             throw std::runtime_error("Unknown preconditioner type");
         }
