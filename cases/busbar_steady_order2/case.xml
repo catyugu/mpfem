@@ -25,16 +25,16 @@
 
   <physics kind="electrostatics" order="2">
     <SolverConfiguration>
-      <LinearSolver type="CG">
+      <Operator type="CG">
         <Parameters>
           <Tolerance>1e-10</Tolerance>
           <MaxIterations>1000</MaxIterations>
-          <PrintLevel>0</PrintLevel>
         </Parameters>
-        <Preconditioner type="Diagonal"/>
-      </LinearSolver>
+        <Preconditioner>
+          <Operator type="Jacobi"/>
+        </Preconditioner>
+      </Operator>
     </SolverConfiguration>
-    <!-- Split voltage boundaries to test new structure -->
     <boundary kind="voltage" ids="43">
       <param name="value" value="Vtot"/>
     </boundary>
@@ -49,19 +49,15 @@
 
   <physics kind="heat_transfer" order="2">
     <SolverConfiguration>
-      <LinearSolver type="CG">
+      <Operator type="CG">
         <Parameters>
           <Tolerance>1e-10</Tolerance>
           <MaxIterations>2000</MaxIterations>
-          <PrintLevel>0</PrintLevel>
         </Parameters>
-        <Preconditioner type="AdditiveSchwarz">
-          <Parameters>
-            <Overlap>1</Overlap>
-          </Parameters>
-          <LocalSolver type="Diagonal"/>
+        <Preconditioner>
+          <Operator type="Jacobi"/>
         </Preconditioner>
-      </LinearSolver>
+      </Operator>
     </SolverConfiguration>
     <boundary kind="convection" ids="1-7, 9-14, 16-28, 29-42">
       <param name="h" value="htc"/>
@@ -73,13 +69,11 @@
 
   <physics kind="solid_mechanics" order="2">
     <SolverConfiguration>
-      <LinearSolver type="UMFPACK">
+      <Operator type="UMFPACK">
         <Parameters>
           <Tolerance>1e-10</Tolerance>
-          <MaxIterations>1000</MaxIterations>
-          <PrintLevel>0</PrintLevel>
         </Parameters>
-      </LinearSolver>
+      </Operator>
     </SolverConfiguration>
     <boundary kind="fixed_constraint" ids="8" />
     <boundary kind="fixed_constraint" ids="15" />

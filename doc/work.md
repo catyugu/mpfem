@@ -22,47 +22,28 @@
 
 ## 工作任务1
 
+* 重塑线性求解器层的类型系统：不要纠结于它“是什么”，而要关注它“在何处”。在你的接口设计里，Jacobi、ILU、ASM 甚至 AMG 本身，都应该只是一个个实现了 apply(b, x) 的算子。
+    * 当它被 FGMRES 调用时，它是预条件子。
+    * 当它被 AMG 内部调用时，它是平滑器。
+    * 当它被用户直接调用时，它是求解器。
+这种“一切皆算子”的设计，是解决你目前架构混乱问题的终极药方。
 * 彻底改变线性求解层的架构设计，允许多层次的配置/求解方式，参考配置格式：
 
 ```xml
 <SolverConfiguration>
-    <LinearSolver type="DGMRES">
+    <Operator type="CG">
         <Parameters>
-            <Tolerance>1e-8</Tolerance>
-            <MaxIterations>500</MaxIterations>
-            <Restart>30</Restart>
+            <Tolerance>1e-10</Tolerance>
+            <MaxIterations>1000</MaxIterations>
+            <PrintLevel>0</PrintLevel>
         </Parameters>
-
-        <Preconditioner type="AdditiveSchwarz">
-            <Parameters>
-                <Overlap>1</Overlap> </Parameters>
-
-            <LocalSolver type="ILU">
-                <Parameters>
-                    <FillLevel>0</FillLevel>
-                    <DropTolerance>1e-4</DropTolerance>
-                </Parameters>
-            </LocalSolver>
-
-            <CoarseSolver type="AMG">
-                <Parameters>
-                    <CoarseningMethod>Ruge-Stueben</CoarseningMethod>
-                    <CycleType>V-Cycle</CycleType>
-                    <MaxLevels>5</MaxLevels>
-                </Parameters>
-                
-                <Smoother type="GaussSeidel">
-                    <Parameters>
-                        <Sweeps>2</Sweeps>
-                    </Parameters>
-                </Smoother>
-            </CoarseSolver>
-
+        <Preconditioner>
+            <Operator type="Jacobi"/>
         </Preconditioner>
-    </LinearSolver>
+    </Operator>
 </SolverConfiguration>
 ```
 
-* 彻底分离求解器与预条件设置（例如求解器只提供单纯的LU，CG，DGMRES等，预条件另外设置），重写相关工厂和io方法。
-* 正确实现加性施瓦兹（DDM）预条件子，为此你可能需要修改网格的数据结构以及其他相关代码以支持MPI并行。
+* 完全重写原来的solver层。
+* 重写相关工厂和io方法，实现嵌套配置的工厂。
 * 修改几个case.xml以使用新的模式，编译，测试，验证。

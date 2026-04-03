@@ -1,185 +1,187 @@
 #ifndef MPFEM_CASE_DEFINITION_HPP
 #define MPFEM_CASE_DEFINITION_HPP
 
-#include "solver/solver_config.hpp"
 #include "core/exception.hpp"
-#include <string>
-#include <vector>
-#include <set>
+#include "operator/operator_config.hpp"
 #include <map>
+#include <set>
+#include <string>
 #include <variant>
+#include <vector>
 
 namespace mpfem {
 
-/**
- * @brief Scalar variable definition from case XML.
- */
-struct VariableEntry {
-    std::string name;
-    std::string valueText;
-    double siValue = 0.0;
-};
-
-/**
- * @brief Domain to material tag mapping rule.
- */
-struct MaterialAssignment {
-    std::set<int> domainIds;
-    std::string materialTag;
-};
-
-struct VoltageBoundaryCondition {
-    std::set<int> ids;
-    std::string value;
-};
-
-struct ElectricInsulationBoundaryCondition {
-    std::set<int> ids;
-};
-
-struct TemperatureBoundaryCondition {
-    std::set<int> ids;
-    std::string value;
-};
-
-struct ConvectionBoundaryCondition {
-    std::set<int> ids;
-    std::string h;
-    std::string tInf;
-};
-
-struct ThermalInsulationBoundaryCondition {
-    std::set<int> ids;
-};
-
-struct FixedConstraintBoundaryCondition {
-    std::set<int> ids;
-};
-
-struct FreeBoundaryCondition {
-    std::set<int> ids;
-};
-
-using BoundaryCondition = std::variant<
-    VoltageBoundaryCondition,
-    ElectricInsulationBoundaryCondition,
-    TemperatureBoundaryCondition,
-    ConvectionBoundaryCondition,
-    ThermalInsulationBoundaryCondition,
-    FixedConstraintBoundaryCondition,
-    FreeBoundaryCondition>;
-
-/**
- * @brief Volumetric or surface source definition.
- */
-struct SourceDefinition {
-    std::string kind;
-    std::set<int> domainIds;
-    std::string valueText;
-};
-
-/**
- * @brief Coupling iteration configuration.
- */
-struct CouplingConfig {
-    int maxIterations = 15;
-    double tolerance = 1e-6;
-};
-
-/**
- * @brief Time configuration for time-dependent simulations.
- */
-struct TimeConfig {
-    double start = 0.0;
-    double end = 1.0;
-    double step = 0.01;
-    std::string scheme = "BDF1";  // BDF1, BDF2, CrankNicolson
-};
-
-/**
- * @brief Initial condition definition for a physics field.
- */
-struct InitialCondition {
-    std::string fieldKind;  // "electrostatics", "heat_transfer", "solid_mechanics"
-    double value = 0.0;     // scalar value for initial condition
-};
-
-/**
- * @brief Cross-physics coupling definition extracted from case XML.
- */
-struct CoupledPhysicsDefinition {
-    std::string name;
-    std::string kind;
-    std::vector<std::string> physicsKinds;
-    std::set<int> domainIds;
-};
-
-/**
- * @brief Fully parsed case configuration.
- */
-struct CaseDefinition {
     /**
-     * Physics block keyed by physics kind (e.g., "electrostatics", "heat_transfer").
+     * @brief Scalar variable definition from case XML.
      */
-    struct Physics {
-        std::string kind;
-        int order = 1;  // Polynomial order for this physics field
-        SolverConfig solver;
-        std::vector<BoundaryCondition> boundaries;
-        std::vector<SourceDefinition> sources;
-        // Reference temperature for thermal expansion [K]
-        double referenceTemperature = 293.15;
+    struct VariableEntry {
+        std::string name;
+        std::string valueText;
+        double siValue = 0.0;
     };
 
-    std::string caseName;
-    std::string studyType;
-    std::string meshPath;
-    std::string materialsPath;
-    std::string comsolResultPath;
-    std::vector<VariableEntry> variables;
-    std::vector<MaterialAssignment> materialAssignments;
-    std::map<std::string, Physics> physics;  // keyed by physics kind
-    std::vector<CoupledPhysicsDefinition> coupledPhysicsDefinitions;
-    CouplingConfig couplingConfig;
-    TimeConfig timeConfig;
-    std::vector<InitialCondition> initialConditions;
+    /**
+     * @brief Domain to material tag mapping rule.
+     */
+    struct MaterialAssignment {
+        std::set<int> domainIds;
+        std::string materialTag;
+    };
 
-    // O(1) variable lookup map, built explicitly after variables are populated.
-    std::map<std::string, double> variableMap_;
+    struct VoltageBoundaryCondition {
+        std::set<int> ids;
+        std::string value;
+    };
+
+    struct ElectricInsulationBoundaryCondition {
+        std::set<int> ids;
+    };
+
+    struct TemperatureBoundaryCondition {
+        std::set<int> ids;
+        std::string value;
+    };
+
+    struct ConvectionBoundaryCondition {
+        std::set<int> ids;
+        std::string h;
+        std::string tInf;
+    };
+
+    struct ThermalInsulationBoundaryCondition {
+        std::set<int> ids;
+    };
+
+    struct FixedConstraintBoundaryCondition {
+        std::set<int> ids;
+    };
+
+    struct FreeBoundaryCondition {
+        std::set<int> ids;
+    };
+
+    using BoundaryCondition = std::variant<
+        VoltageBoundaryCondition,
+        ElectricInsulationBoundaryCondition,
+        TemperatureBoundaryCondition,
+        ConvectionBoundaryCondition,
+        ThermalInsulationBoundaryCondition,
+        FixedConstraintBoundaryCondition,
+        FreeBoundaryCondition>;
 
     /**
-     * @brief Build variable map for O(1) lookup from variables vector.
-     * Call this after variables are populated or modified.
+     * @brief Volumetric or surface source definition.
      */
-    void buildVariableMap() {
-        variableMap_.clear();
-        for (const auto& v : variables) {
-            variableMap_[v.name] = v.siValue;
+    struct SourceDefinition {
+        std::string kind;
+        std::set<int> domainIds;
+        std::string valueText;
+    };
+
+    /**
+     * @brief Coupling iteration configuration.
+     */
+    struct CouplingConfig {
+        int maxIterations = 15;
+        double tolerance = 1e-6;
+    };
+
+    /**
+     * @brief Time configuration for time-dependent simulations.
+     */
+    struct TimeConfig {
+        double start = 0.0;
+        double end = 1.0;
+        double step = 0.01;
+        std::string scheme = "BDF1"; // BDF1, BDF2, CrankNicolson
+    };
+
+    /**
+     * @brief Initial condition definition for a physics field.
+     */
+    struct InitialCondition {
+        std::string fieldKind; // "electrostatics", "heat_transfer", "solid_mechanics"
+        double value = 0.0; // scalar value for initial condition
+    };
+
+    /**
+     * @brief Cross-physics coupling definition extracted from case XML.
+     */
+    struct CoupledPhysicsDefinition {
+        std::string name;
+        std::string kind;
+        std::vector<std::string> physicsKinds;
+        std::set<int> domainIds;
+    };
+
+    /**
+     * @brief Fully parsed case configuration.
+     */
+    struct CaseDefinition {
+        /**
+         * Physics block keyed by physics kind (e.g., "electrostatics", "heat_transfer").
+         */
+        struct Physics {
+            std::string kind;
+            int order = 1; // Polynomial order for this physics field
+            OperatorConfig solverConfig; // LinearOperator configuration
+            std::vector<BoundaryCondition> boundaries;
+            std::vector<SourceDefinition> sources;
+            // Reference temperature for thermal expansion [K]
+            double referenceTemperature = 293.15;
+        };
+
+        std::string caseName;
+        std::string studyType;
+        std::string meshPath;
+        std::string materialsPath;
+        std::string comsolResultPath;
+        std::vector<VariableEntry> variables;
+        std::vector<MaterialAssignment> materialAssignments;
+        std::map<std::string, Physics> physics; // keyed by physics kind
+        std::vector<CoupledPhysicsDefinition> coupledPhysicsDefinitions;
+        CouplingConfig couplingConfig;
+        TimeConfig timeConfig;
+        std::vector<InitialCondition> initialConditions;
+
+        // O(1) variable lookup map, built explicitly after variables are populated.
+        std::map<std::string, double> variableMap_;
+
+        /**
+         * @brief Build variable map for O(1) lookup from variables vector.
+         * Call this after variables are populated or modified.
+         */
+        void buildVariableMap()
+        {
+            variableMap_.clear();
+            for (const auto& v : variables) {
+                variableMap_[v.name] = v.siValue;
+            }
         }
-    }
 
-    /**
-     * @brief Get variable value by name.
-     * @throws Exception if variable not found.
-     */
-    double getVariable(const std::string& name) const {
-        auto it = variableMap_.find(name);
-        if (it != variableMap_.end()) {
-            return it->second;
+        /**
+         * @brief Get variable value by name.
+         * @throws Exception if variable not found.
+         */
+        double getVariable(const std::string& name) const
+        {
+            auto it = variableMap_.find(name);
+            if (it != variableMap_.end()) {
+                return it->second;
+            }
+            MPFEM_THROW(Exception,
+                "CaseDefinition::getVariable: variable '" + name + "' not found");
         }
-        MPFEM_THROW(Exception, 
-            "CaseDefinition::getVariable: variable '" + name + "' not found");
-    }
-    
-    /**
-     * @brief Check if variable exists.
-     */
-    bool hasVariable(const std::string& name) const {
-        return variableMap_.find(name) != variableMap_.end();
-    }
-    
-};
 
-}  // namespace mpfem
+        /**
+         * @brief Check if variable exists.
+         */
+        bool hasVariable(const std::string& name) const
+        {
+            return variableMap_.find(name) != variableMap_.end();
+        }
+    };
 
-#endif  // MPFEM_CASE_DEFINITION_HPP
+} // namespace mpfem
+
+#endif // MPFEM_CASE_DEFINITION_HPP

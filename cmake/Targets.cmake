@@ -190,12 +190,11 @@ mpfem_add_library(mpfem_fe
 )
 
 # =============================================================================
-# Solver library
+# Operator library (header-only - all operators are header-only)
 # =============================================================================
 
-mpfem_add_library(mpfem_solver
-    SOURCES
-        src/solver/preconditioner.cpp
+mpfem_add_library(mpfem_operator
+    HEADER_ONLY
     PUBLIC_LINK
         Eigen3::Eigen
         mpfem_core
@@ -214,7 +213,7 @@ mpfem_add_library(mpfem_assembly
         mpfem_core
         mpfem_mesh
         mpfem_fe
-        mpfem_solver
+        mpfem_operator
 )
 
 # =============================================================================
@@ -262,14 +261,13 @@ mpfem_add_library(mpfem_physics
         src/time/time_integrator.cpp
         src/time/bdf1_integrator.cpp
         src/time/bdf2_integrator.cpp
-        src/solver/preconditioner.cpp
     PUBLIC_LINK
         Eigen3::Eigen
         mpfem_core
         mpfem_mesh
         mpfem_fe
         mpfem_assembly
-        mpfem_solver
+        mpfem_operator
         mpfem_coupling
         mpfem_io
         mpfem_model
@@ -286,7 +284,7 @@ mpfem_create_alias(mesh)
 mpfem_create_alias(io)
 mpfem_create_alias(fe)
 mpfem_create_alias(assembly)
-mpfem_create_alias(solver)
+mpfem_create_alias(operator)
 mpfem_create_alias(coupling)
 mpfem_create_alias(problem)
 mpfem_create_alias(physics)

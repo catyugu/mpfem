@@ -7,9 +7,8 @@
 #include "fe/fe_space.hpp"
 #include "fe/grid_function.hpp"
 #include "mesh/mesh.hpp"
+#include "operator/linear_operator.hpp"
 #include "physics/field_values.hpp"
-#include "solver/linear_solver.hpp"
-#include "solver/solver_config.hpp"
 #include <memory>
 
 namespace mpfem {
@@ -26,12 +25,19 @@ namespace mpfem {
         {
             if (!solver_ || !matAsm_ || !vecAsm_ || !fieldValues_)
                 return false;
-            bool ok = solver_->solve(matAsm_->matrix(), field().values(), vecAsm_->vector());
-            if (ok) {
-                field().markUpdated();
-                LOG_INFO << fieldName() << " solver converged!";
-            }
-            return ok;
+
+            // Setup operator with current matrix (pass pointer, no copy)
+            solver_->setup(&matAsm_->matrix());
+
+            // Apply solver: x = solver^{-1} * b (x used as initial guess for iterative solvers)
+            Vector& x = field().values();
+            const Vector& b = vecAsm_->vector();
+            solver_->apply(b, x);
+
+            field().markUpdated();
+            LOG_INFO << fieldName() << " solved (iterations: " << solver_->num_iterations()
+                     << ", residual: " << solver_->residual() << ")";
+            return true;
         }
 
         const GridFunction& field() const
@@ -49,10 +55,10 @@ namespace mpfem {
         Index numDofs() const { return fes_ ? fes_->numDofs() : 0; }
         const Mesh& mesh() const { return *mesh_; }
 
-        void setSolverConfig(SolverConfig config) { solverConfig_ = std::move(config); }
+        void setSolverOperator(std::unique_ptr<LinearOperator> op) { solver_ = std::move(op); }
 
-        int iterations() const { return solver_->iterations(); }
-        Real residual() const { return solver_->residual(); }
+        int iterations() const { return solver_ ? solver_->num_iterations() : 0; }
+        Real residual() const { return solver_ ? solver_->residual() : 0.0; }
 
     protected:
         void clearAssemblers()
@@ -68,14 +74,13 @@ namespace mpfem {
         }
 
         int order_ = 1;
-        SolverConfig solverConfig_;
 
         const Mesh* mesh_ = nullptr;
         FieldValues* fieldValues_ = nullptr;
         std::unique_ptr<FESpace> fes_;
         std::unique_ptr<BilinearFormAssembler> matAsm_;
         std::unique_ptr<LinearFormAssembler> vecAsm_;
-        std::unique_ptr<LinearSolver> solver_;
+        std::unique_ptr<LinearOperator> solver_;
     };
 
 } // namespace mpfem

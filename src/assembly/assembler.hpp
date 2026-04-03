@@ -3,7 +3,7 @@
 
 #include "assembly/integrator.hpp"
 #include "fe/fe_space.hpp"
-#include "solver/sparse_matrix.hpp"
+#include "operator/sparse_matrix.hpp"
 #include <algorithm>
 #include <memory>
 #include <set>

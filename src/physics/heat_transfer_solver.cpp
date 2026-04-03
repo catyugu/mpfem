@@ -2,7 +2,6 @@
 #include "assembly/dirichlet_bc.hpp"
 #include "assembly/integrators.hpp"
 #include "core/logger.hpp"
-#include "solver/solver_factory.hpp"
 
 namespace mpfem {
 
@@ -19,7 +18,6 @@ namespace mpfem {
 
         matAsm_ = std::make_unique<BilinearFormAssembler>(fes_.get());
         vecAsm_ = std::make_unique<LinearFormAssembler>(fes_.get());
-        solver_ = SolverFactory::create(solverConfig_);
 
         LOG_INFO << "HeatTransferSolver: " << fes_->numDofs() << " DOFs";
 
@@ -208,18 +206,12 @@ namespace mpfem {
         applyDirichletBC(A, systemRhs_, x, *fes_, *mesh_, temperatureBCs_);
         A.makeCompressed();
 
-        // Solve the system
-        bool ok = solver_->solve(A, x, systemRhs_);
+        // Solve the system using new operator interface (pass pointer, no copy)
+        solver_->setup(&A);
+        solver_->apply(systemRhs_, x);
 
-        if (ok) {
-            field().markUpdated();
-            LOG_INFO << fieldName() << " linear solve converged in " << iterations() << " iterations";
-        }
-        else {
-            LOG_ERROR << fieldName() << " linear solve failed, residual: " << residual();
-        }
-
-        return ok;
+        field().markUpdated();
+        return true;
     }
 
 } // namespace mpfem

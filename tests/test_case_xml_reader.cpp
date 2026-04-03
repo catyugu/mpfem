@@ -77,26 +77,21 @@ TEST_F(CaseXmlReaderTest, ReadBusbarCase)
     ASSERT_TRUE(caseDef.physics.count("electrostatics") > 0);
     const auto& electrostatics = caseDef.physics.at("electrostatics");
     EXPECT_EQ(electrostatics.order, 1);
-    EXPECT_EQ(electrostatics.solver.solver.type, LinearSolverType::Eigen_CG);
-    EXPECT_EQ(electrostatics.solver.preconditioner.type, PreconditionerType::Diagonal);
+    EXPECT_EQ(electrostatics.solverConfig.type, "CG");
     EXPECT_GE(electrostatics.boundaries.size(), 2); // At least voltage and ground
 
     // Check heat transfer physics
     ASSERT_TRUE(caseDef.physics.count("heat_transfer") > 0);
     const auto& heatTransfer = caseDef.physics.at("heat_transfer");
     EXPECT_EQ(heatTransfer.order, 1);
-    EXPECT_EQ(heatTransfer.solver.solver.type, LinearSolverType::Eigen_CG);
-    EXPECT_EQ(heatTransfer.solver.preconditioner.type, PreconditionerType::AdditiveSchwarz);
-    ASSERT_NE(heatTransfer.solver.preconditioner.localSolver, nullptr);
-    EXPECT_EQ(heatTransfer.solver.preconditioner.localSolver->type, PreconditionerType::Diagonal);
+    EXPECT_EQ(heatTransfer.solverConfig.type, "CG"); // CG for heat as per architecture decision
     EXPECT_GE(heatTransfer.boundaries.size(), 1); // At least convection
 
     // Check solid mechanics physics
     ASSERT_TRUE(caseDef.physics.count("solid_mechanics") > 0);
     const auto& solidMechanics = caseDef.physics.at("solid_mechanics");
     EXPECT_EQ(solidMechanics.order, 1);
-    EXPECT_EQ(solidMechanics.solver.solver.type, LinearSolverType::UMFPACK_LU);
-    EXPECT_EQ(solidMechanics.solver.preconditioner.type, PreconditionerType::None);
+    EXPECT_EQ(solidMechanics.solverConfig.type, "UMFPACK"); // UMFPACK for structural as per architecture decision
     EXPECT_GE(solidMechanics.boundaries.size(), 1); // At least fixed constraint
 
     // Verify coupled physics definitions

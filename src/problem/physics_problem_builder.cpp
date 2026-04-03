@@ -4,6 +4,7 @@
 #include "fe/element_transform.hpp"
 #include "fe/grid_function.hpp"
 #include "io/problem_input_loader.hpp"
+#include "operator/operator_factory.hpp"
 #include "physics/electrostatics_solver.hpp"
 #include "physics/field_values.hpp"
 #include "physics/heat_transfer_solver.hpp"
@@ -282,7 +283,7 @@ namespace mpfem {
         {
             LOG_INFO << "Building electrostatics solver, order = " << physics.order;
             problem.electrostatics = std::make_unique<ElectrostaticsSolver>(physics.order);
-            problem.electrostatics->setSolverConfig(physics.solver);
+            problem.electrostatics->setSolverOperator(OperatorFactory::createRecursive(physics.solverConfig));
 
             double icValue = getInitialCondition(problem.caseDef, kPhysicsElectrostatics, 0.0);
             problem.electrostatics->initialize(*problem.mesh, problem.fieldValues, physics.order, icValue);
@@ -308,7 +309,7 @@ namespace mpfem {
         {
             LOG_INFO << "Building heat transfer solver, order = " << physics.order;
             problem.heatTransfer = std::make_unique<HeatTransferSolver>(physics.order);
-            problem.heatTransfer->setSolverConfig(physics.solver);
+            problem.heatTransfer->setSolverOperator(OperatorFactory::createRecursive(physics.solverConfig));
 
             double icValue = getInitialCondition(problem.caseDef, kPhysicsHeatTransfer, 293.15);
             problem.heatTransfer->initialize(*problem.mesh, problem.fieldValues, physics.order, icValue);
@@ -349,7 +350,7 @@ namespace mpfem {
         {
             LOG_INFO << "Building structural solver, order = " << physics.order;
             problem.structural = std::make_unique<StructuralSolver>(physics.order);
-            problem.structural->setSolverConfig(physics.solver);
+            problem.structural->setSolverOperator(OperatorFactory::createRecursive(physics.solverConfig));
 
             double icValue = getInitialCondition(problem.caseDef, kPhysicsSolidMechanics, 0.0);
             problem.structural->initialize(*problem.mesh, problem.fieldValues, physics.order, icValue);
