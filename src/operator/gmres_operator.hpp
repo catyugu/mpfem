@@ -11,7 +11,7 @@ namespace mpfem {
      * @brief DGMRES (Direct GMRES) operator.
      *
      * Iterative solver for general (non-symmetric) matrices.
-     * Caches factorization via matrix fingerprint to avoid recompute.
+     * Caches factorization via matrix timestamp to avoid recompute.
      */
     class GMRESOperator : public LinearOperator {
     public:
@@ -29,24 +29,21 @@ namespace mpfem {
 
         void setup(const SparseMatrix* A) override
         {
-            // Skip if matrix fingerprint unchanged (cache hit)
-            if (is_setup_ && A_ != nullptr) {
-                std::uint64_t currentFingerprint = A->fingerprint();
-                if (currentFingerprint == lastMatrixFingerprint_) {
-                    return; // Reuse existing factorization
-                }
+            // Skip if matrix timestamp unchanged (cache hit) - O(1) check
+            if (is_setup_ && A->timestamp() == lastMatrixTimestamp_) {
+                return; // Reuse existing factorization
             }
 
             A_ = A;
             solver_.compute(A->eigen());
-            lastMatrixFingerprint_ = A->fingerprint();
+            lastMatrixTimestamp_ = A->timestamp();
             is_setup_ = true;
         }
 
         void apply(const Vector& b, Vector& x) override
         {
             if (!is_setup_) {
-                throw std::runtime_error("GMRESOperator: setup() must be called before apply()");
+                throw std::runtime_error("GMRESOperator::setup() must be called before apply()");
             }
             x = solver_.solveWithGuess(b, x);
             num_iterations_ = static_cast<int>(solver_.iterations());
@@ -58,7 +55,7 @@ namespace mpfem {
 
     private:
         Eigen::DGMRES<Eigen::SparseMatrix<Real>, Eigen::DiagonalPreconditioner<Real>> solver_;
-        std::uint64_t lastMatrixFingerprint_ = 0;
+        std::uint64_t lastMatrixTimestamp_ = 0;
         int num_iterations_ = 0;
         Real residual_ = 0.0;
     };

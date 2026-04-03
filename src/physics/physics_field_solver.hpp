@@ -27,7 +27,6 @@ namespace mpfem {
                 return false;
 
             // Only setup operator if matrix was rebuilt (tracked by derived classes)
-            // This avoids expensive fingerprint recomputation on repeated solves
             if (matrix_needs_update_) {
                 solver_->setup(&matAsm_->matrix());
                 matrix_needs_update_ = false;
@@ -77,8 +76,7 @@ namespace mpfem {
             }
         }
 
-        /// Flag indicating matrix needs re-setup (set by derived class after assemble())
-        /// This prevents expensive fingerprint recomputation when matrix is unchanged
+        /// Flag indicating matrix needs re-setup (set by derived class after assemble()
         bool matrix_needs_update_ = true;
 
         int order_ = 1;

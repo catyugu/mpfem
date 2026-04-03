@@ -34,10 +34,12 @@ namespace mpfem {
             }
 
             // Check if we can reuse previous factorization
-            std::uint64_t currentFingerprint = A->fingerprint();
-            if (currentFingerprint == lastMatrixFingerprint_ && symbolic_ != nullptr) {
+            // Note: timestamp only tells us "modified" but not what changed.
+            // If symbolic exists, we can reuse it and just re-factorize numerically.
+            if (A->timestamp() == lastMatrixTimestamp_ && symbolic_ != nullptr) {
                 // Reuse existing factorization - just need numeric step
                 numericReFactorize(A);
+                lastMatrixTimestamp_ = A->timestamp();
                 is_setup_ = true;
                 return;
             }
@@ -77,7 +79,7 @@ namespace mpfem {
             }
             numeric_ = numeric;
 
-            lastMatrixFingerprint_ = currentFingerprint;
+            lastMatrixTimestamp_ = A->timestamp();
             is_setup_ = true;
         }
 
@@ -125,7 +127,7 @@ namespace mpfem {
     private:
         void* symbolic_ = nullptr;
         void* numeric_ = nullptr;
-        std::uint64_t lastMatrixFingerprint_ = 0;
+        std::uint64_t lastMatrixTimestamp_ = 0;
         std::vector<int64_t> ap_; // CSC row pointer (int64_t for UMFPACK)
         std::vector<int64_t> ai_; // CSC column indices
         std::vector<double> ax_; // CSC values
@@ -140,7 +142,7 @@ namespace mpfem {
                 umfpack_dl_free_numeric(&numeric_);
                 numeric_ = nullptr;
             }
-            lastMatrixFingerprint_ = 0;
+            lastMatrixTimestamp_ = 0;
             is_setup_ = false;
         }
 

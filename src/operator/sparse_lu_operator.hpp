@@ -13,7 +13,7 @@ namespace mpfem {
      * General-purpose sparse LU factorization for square matrices.
      * setup() performs symbolic analysis + factorization (expensive).
      * apply() does forward/back substitution (fast).
-     * Caches factorization and reuses when matrix fingerprint is unchanged.
+     * Caches factorization and reuses when matrix timestamp is unchanged.
      */
     class SparseLUOperator : public LinearOperator {
     public:
@@ -26,6 +26,11 @@ namespace mpfem {
 
         void setup(const SparseMatrix* A) override
         {
+            // Skip if matrix timestamp unchanged (cache hit) - O(1) check
+            if (is_setup_ && A->timestamp() == lastMatrixTimestamp_) {
+                return; // Reuse existing factorization
+            }
+
             A_ = A;
             solver_.compute(A->eigen());
 
@@ -33,7 +38,7 @@ namespace mpfem {
                 throw std::runtime_error("SparseLUOperator: factorization failed");
             }
 
-            lastMatrixFingerprint_ = A->fingerprint();
+            lastMatrixTimestamp_ = A->timestamp();
             is_setup_ = true;
         }
 
@@ -42,7 +47,6 @@ namespace mpfem {
             if (!is_setup_) {
                 throw std::runtime_error("SparseLUOperator: not setup");
             }
-
 
             x = solver_.solve(b);
 
@@ -53,7 +57,7 @@ namespace mpfem {
 
     private:
         Eigen::SparseLU<SparseMatrix::Storage, Eigen::COLAMDOrdering<int>> solver_;
-        std::uint64_t lastMatrixFingerprint_ = 0;
+        std::uint64_t lastMatrixTimestamp_ = 0;
     };
 
 } // namespace mpfem

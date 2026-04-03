@@ -4,6 +4,7 @@
 #include "core/exception.hpp"
 #include "core/types.hpp"
 #include <Eigen/Sparse>
+#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
@@ -45,12 +46,14 @@ namespace mpfem {
         SparseMatrix& operator=(const Storage& mat)
         {
             mat_ = mat;
+            markModified();
             return *this;
         }
 
         SparseMatrix& operator=(Storage&& mat)
         {
             mat_ = std::move(mat);
+            markModified();
             return *this;
         }
 
@@ -67,6 +70,7 @@ namespace mpfem {
         void resize(Index rows, Index cols)
         {
             mat_.resize(rows, cols);
+            markModified();
         }
 
         /// Reserve space for non-zeros per column
@@ -77,30 +81,35 @@ namespace mpfem {
             Eigen::VectorXi reserveSize(mat_.cols());
             reserveSize.setConstant(nonZerosPerCol);
             mat_.reserve(reserveSize);
+            markModified();
         }
 
         /// Set from triplets (efficient batch insertion)
         void setFromTriplets(const std::vector<Triplet>& triplets)
         {
             mat_.setFromTriplets(triplets.begin(), triplets.end());
+            markModified();
         }
 
         /// Set from triplets (move version)
         void setFromTriplets(std::vector<Triplet>&& triplets)
         {
             mat_.setFromTriplets(triplets.begin(), triplets.end());
+            markModified();
         }
 
         /// Clear all data
         void clear()
         {
             mat_.setZero();
+            markModified();
         }
 
         /// Set all entries to zero (keep structure)
         void setZero()
         {
             mat_.setZero();
+            markModified();
         }
 
         /// Coefficient access (slow, for debugging)
@@ -112,6 +121,7 @@ namespace mpfem {
         /// Mutable coefficient access (slow, creates entry if not exists)
         Real& coeffRef(Index row, Index col)
         {
+            markModified();
             return mat_.coeffRef(row, col);
         }
 
@@ -125,6 +135,7 @@ namespace mpfem {
         void makeCompressed()
         {
             mat_.makeCompressed();
+            markModified();
         }
 
         /// Check if compressed
@@ -183,6 +194,7 @@ namespace mpfem {
                 mat_.coeffRef(dof, dof) = 1.0;
                 b(dof) = dofValues[dof];
             }
+            markModified();
         }
 
         /// Write to Matrix Market format
@@ -205,6 +217,7 @@ namespace mpfem {
             MPFEM_ASSERT(rows() == B.rows() && cols() == B.cols(),
                 "SparseMatrix size mismatch in +=");
             mat_ += B.mat_;
+            markModified();
             return *this;
         }
 
@@ -215,6 +228,7 @@ namespace mpfem {
                 "SparseMatrix size mismatch in addScaled");
             if (alpha != 0.0) {
                 mat_ += alpha * B.mat_;
+                markModified();
             }
             return *this;
         }
@@ -225,6 +239,7 @@ namespace mpfem {
             MPFEM_ASSERT(rows() == B.rows() && cols() == B.cols(),
                 "SparseMatrix size mismatch in -=");
             mat_ -= B.mat_;
+            markModified();
             return *this;
         }
 
@@ -232,6 +247,7 @@ namespace mpfem {
         SparseMatrix& operator*=(Real alpha)
         {
             mat_ *= alpha;
+            markModified();
             return *this;
         }
 
@@ -284,46 +300,19 @@ namespace mpfem {
             return mat_ * v;
         }
 
-        /// Fast fingerprint for matrix-identity based caches.
-        /// Requires compressed storage for deterministic index arrays.
-        std::uint64_t fingerprint() const
-        {
-            MPFEM_ASSERT(mat_.isCompressed(), "SparseMatrix::fingerprint requires compressed matrix");
-
-            constexpr std::uint64_t kFnvOffset = 1469598103934665603ull;
-            constexpr std::uint64_t kFnvPrime = 1099511628211ull;
-
-            auto mixBytes = [](std::uint64_t seed, const void* data, std::size_t len) {
-                const auto* bytes = static_cast<const unsigned char*>(data);
-                for (std::size_t i = 0; i < len; ++i) {
-                    seed ^= static_cast<std::uint64_t>(bytes[i]);
-                    seed *= kFnvPrime;
-                }
-                return seed;
-            };
-
-            std::uint64_t h = kFnvOffset;
-            const Index r = rows();
-            const Index c = cols();
-            const Index nz = nonZeros();
-
-            h = mixBytes(h, &r, sizeof(r));
-            h = mixBytes(h, &c, sizeof(c));
-            h = mixBytes(h, &nz, sizeof(nz));
-
-            const auto* outer = mat_.outerIndexPtr();
-            const auto* inner = mat_.innerIndexPtr();
-            const auto* vals = mat_.valuePtr();
-
-            h = mixBytes(h, outer, static_cast<std::size_t>(mat_.outerSize() + 1) * sizeof(Index));
-            h = mixBytes(h, inner, static_cast<std::size_t>(nz) * sizeof(Index));
-            h = mixBytes(h, vals, static_cast<std::size_t>(nz) * sizeof(Real));
-
-            return h;
-        }
-
     private:
         Storage mat_;
+        std::uint64_t modification_timestamp_ = 0;
+
+        /// Mark matrix as modified (sets timestamp to current time)
+        void markModified()
+        {
+            modification_timestamp_ = std::chrono::steady_clock::now().time_since_epoch().count();
+        }
+
+    public:
+        /// Get current modification timestamp for cache invalidation
+        std::uint64_t timestamp() const { return modification_timestamp_; }
     };
 
     // Left scalar multiplication for SparseMatrix without using `friend`.

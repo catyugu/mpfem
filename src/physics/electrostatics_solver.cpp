@@ -63,7 +63,6 @@ namespace mpfem {
         matAsm_->finalize();
 
         // Mark matrix as updated so solver will re-setup on next solve()
-        // This avoids expensive fingerprint recomputation when matrix is unchanged
         matrix_needs_update_ = true;
 
         assembledSystemState_.update(currentTag);
