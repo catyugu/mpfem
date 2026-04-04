@@ -91,14 +91,12 @@ namespace mpfem {
 
     void HeatTransferSolver::addTemperatureBC(const std::set<int>& boundaryIds, const Coefficient* temperature)
     {
-        for (int bid : boundaryIds)
-            temperatureBCs_[bid] = temperature;
+        temperatureBindings_.push_back({boundaryIds, temperature});
     }
 
     void HeatTransferSolver::addConvectionBC(const std::set<int>& boundaryIds, const Coefficient* h, const Coefficient* Tinf)
     {
-        for (int bid : boundaryIds)
-            convBCs_[bid] = {h, Tinf};
+        convectionBindings_.push_back({boundaryIds, h, Tinf});
     }
 
     void HeatTransferSolver::assemble()
@@ -118,25 +116,15 @@ namespace mpfem {
             massAssemblyState_.update(currentMassTag);
         }
 
-        const std::uint64_t convectionStiffnessTag = stateTagOfRange(
-            convBCs_,
-            [](const auto& entry) {
-                return combineTag(stateTagOf(entry.first), entry.second.stiffnessTag());
-            });
         const std::uint64_t currentStiffnessTag = combineTag(
             stateTagOfRange(conductivityBindings_),
-            convectionStiffnessTag);
+            stateTagOfRange(convectionBindings_, [](const auto& binding) { return binding.stiffnessTag(); }));
 
-        const std::uint64_t convectionLoadTag = stateTagOfRange(
-            convBCs_,
-            [](const auto& entry) {
-                return combineTag(stateTagOf(entry.first), entry.second.loadTag());
-            });
         const std::uint64_t currentLoadTag = combineTag(
             stateTagOfRange(heatSourceBindings_),
-            convectionLoadTag);
+            stateTagOfRange(convectionBindings_, [](const auto& binding) { return binding.loadTag(); }));
 
-        const std::uint64_t currentBcTag = stateTagOfRange(temperatureBCs_);
+        const std::uint64_t currentBcTag = stateTagOfRange(temperatureBindings_);
 
         const bool rebuildStiffness = stiffnessAssemblyState_.needsRebuild(currentStiffnessTag);
         const bool rebuildLoad = loadAssemblyState_.needsRebuild(currentLoadTag);
@@ -157,8 +145,10 @@ namespace mpfem {
                     binding.domains);
             }
 
-            for (const auto& [bid, bc] : convBCs_) {
-                matAsm_->addBoundaryIntegrator(std::make_unique<ConvectionMassIntegrator>(bc.h), bid);
+            for (const auto& binding : convectionBindings_) {
+                for (int bid : binding.boundaryIds) {
+                    matAsm_->addBoundaryIntegrator(std::make_unique<ConvectionMassIntegrator>(binding.h), bid);
+                }
             }
 
             matAsm_->assemble();
@@ -170,8 +160,10 @@ namespace mpfem {
             vecAsm_->clear();
             vecAsm_->clearIntegrators();
 
-            for (const auto& [bid, bc] : convBCs_) {
-                vecAsm_->addBoundaryIntegrator(std::make_unique<ConvectionLFIntegrator>(bc.h, bc.Tinf), bid);
+            for (const auto& binding : convectionBindings_) {
+                for (int bid : binding.boundaryIds) {
+                    vecAsm_->addBoundaryIntegrator(std::make_unique<ConvectionLFIntegrator>(binding.h, binding.Tinf), bid);
+                }
             }
 
             for (const auto& binding : heatSourceBindings_) {
@@ -186,7 +178,14 @@ namespace mpfem {
             vecAsm_->vector() = rhsBeforeBC_;
         }
 
-        applyDirichletBC(matAsm_->matrix(), vecAsm_->vector(), field().values(), *fes_, *mesh_, temperatureBCs_);
+        // Flatten temperatureBindings_ to map for applyDirichletBC
+        std::map<int, const Coefficient*> temperatureBCs;
+        for (const auto& binding : temperatureBindings_) {
+            for (int bid : binding.boundaryIds) {
+                temperatureBCs[bid] = binding.temperature;
+            }
+        }
+        applyDirichletBC(matAsm_->matrix(), vecAsm_->vector(), field().values(), *fes_, *mesh_, temperatureBCs);
         matAsm_->finalize();
 
         stiffnessAssemblyState_.update(currentStiffnessTag);
@@ -204,8 +203,16 @@ namespace mpfem {
         // Use A directly instead of copying to persistent buffer
         systemRhs_ = b;
 
+        // Flatten temperatureBindings_ to map for applyDirichletBC
+        std::map<int, const Coefficient*> temperatureBCs;
+        for (const auto& binding : temperatureBindings_) {
+            for (int bid : binding.boundaryIds) {
+                temperatureBCs[bid] = binding.temperature;
+            }
+        }
+
         // Apply boundary conditions to the combined system (A is modified in-place)
-        applyDirichletBC(A, systemRhs_, x, *fes_, *mesh_, temperatureBCs_);
+        applyDirichletBC(A, systemRhs_, x, *fes_, *mesh_, temperatureBCs);
         A.makeCompressed();
 
         // Two-stage solve: setup then apply

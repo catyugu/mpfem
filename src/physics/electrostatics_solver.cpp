@@ -32,8 +32,7 @@ namespace mpfem {
 
     void ElectrostaticsSolver::addVoltageBC(const std::set<int>& boundaryIds, const Coefficient* voltage)
     {
-        for (int bid : boundaryIds)
-            voltageBCs_[bid] = voltage;
+        voltageBindings_.push_back({boundaryIds, voltage});
     }
 
     void ElectrostaticsSolver::assemble()
@@ -47,7 +46,7 @@ namespace mpfem {
 
         const std::uint64_t currentTag = combineTag(
             stateTagOfRange(conductivityBindings_),
-            stateTagOfRange(voltageBCs_));
+            stateTagOfRange(voltageBindings_));
         if (stiffnessAssemblyState_.isUnchanged(currentTag)) {
             LOG_DEBUG << "Electrostatics assemble skipped (coefficients unchanged)";
             return;
@@ -61,7 +60,14 @@ namespace mpfem {
         matAsm_->assemble();
         vecAsm_->assemble();
 
-        applyDirichletBC(matAsm_->matrix(), vecAsm_->vector(), field().values(), *fes_, *mesh_, voltageBCs_);
+        // Flatten voltageBindings_ to map for applyDirichletBC
+        std::map<int, const Coefficient*> voltageBCs;
+        for (const auto& binding : voltageBindings_) {
+            for (int bid : binding.boundaryIds) {
+                voltageBCs[bid] = binding.voltage;
+            }
+        }
+        applyDirichletBC(matAsm_->matrix(), vecAsm_->vector(), field().values(), *fes_, *mesh_, voltageBCs);
         matAsm_->finalize();
 
         stiffnessAssemblyState_.update(currentTag);

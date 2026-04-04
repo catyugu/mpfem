@@ -42,8 +42,7 @@ namespace mpfem {
 
     void StructuralSolver::addFixedDisplacementBC(const std::set<int>& boundaryIds, const VectorCoefficient* displacement)
     {
-        for (int bid : boundaryIds)
-            displacementBCs_[bid] = displacement;
+        displacementBindings_.push_back({boundaryIds, displacement});
     }
 
     void StructuralSolver::assemble()
@@ -60,7 +59,7 @@ namespace mpfem {
 
         const std::uint64_t currentStiffnessTag = stateTagOfRange(elasticityBindings_);
         const std::uint64_t currentLoadTag = stateTagOfRange(strainLoadBindings_);
-        const std::uint64_t currentBcTag = stateTagOfRange(displacementBCs_);
+        const std::uint64_t currentBcTag = stateTagOfRange(displacementBindings_);
 
         const bool rebuildStiffness = stiffnessAssemblyState_.needsRebuild(currentStiffnessTag);
         const bool rebuildLoad = loadAssemblyState_.needsRebuild(currentLoadTag);
@@ -101,7 +100,14 @@ namespace mpfem {
             vecAsm_->vector() = rhsBeforeBC_;
         }
 
-        applyDirichletBC(matAsm_->matrix(), vecAsm_->vector(), field().values(), *fes_, *mesh_, displacementBCs_, 3);
+        // Flatten displacementBindings_ to map for applyDirichletBC
+        std::map<int, const VectorCoefficient*> displacementBCs;
+        for (const auto& binding : displacementBindings_) {
+            for (int bid : binding.boundaryIds) {
+                displacementBCs[bid] = binding.displacement;
+            }
+        }
+        applyDirichletBC(matAsm_->matrix(), vecAsm_->vector(), field().values(), *fes_, *mesh_, displacementBCs, 3);
         matAsm_->finalize();
 
         stiffnessAssemblyState_.update(currentStiffnessTag);

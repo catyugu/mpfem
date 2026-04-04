@@ -5,7 +5,6 @@
 #include "fe/coefficient.hpp"
 #include "physics_field_solver.hpp"
 #include <cstdint>
-#include <map>
 #include <set>
 #include <vector>
 
@@ -42,8 +41,8 @@ namespace mpfem {
         void addConvectionBC(const std::set<int>& boundaryIds, const Coefficient* h, const Coefficient* Tinf);
         void clearBoundaryConditions()
         {
-            temperatureBCs_.clear();
-            convBCs_.clear();
+            temperatureBindings_.clear();
+            convectionBindings_.clear();
         }
 
         void assemble() override;
@@ -82,18 +81,29 @@ namespace mpfem {
         const Vector& rhsBeforeBC() const { return rhsBeforeBC_; }
 
     private:
-        struct ConvBC {
+        struct TemperatureBinding {
+            std::set<int> boundaryIds;
+            const Coefficient* temperature = nullptr;
+
+            std::uint64_t stateTag() const
+            {
+                return combineTag(stateTagOf(boundaryIds), stateTagOf(temperature));
+            }
+        };
+
+        struct ConvectionBinding {
+            std::set<int> boundaryIds;
             const Coefficient* h = nullptr;
             const Coefficient* Tinf = nullptr;
 
             std::uint64_t stiffnessTag() const
             {
-                return stateTagOf(h);
+                return combineTag(stateTagOf(boundaryIds), stateTagOf(h));
             }
 
             std::uint64_t loadTag() const
             {
-                return combineTag(stateTagOf(h), stateTagOf(Tinf));
+                return combineTag(stateTagOf(boundaryIds), combineTag(stateTagOf(h), stateTagOf(Tinf)));
             }
 
             std::uint64_t stateTag() const
@@ -137,11 +147,11 @@ namespace mpfem {
         std::vector<ConductivityBinding> conductivityBindings_;
         std::vector<HeatSourceBinding> heatSourceBindings_;
         std::vector<MassBinding> massBindings_;
+        std::vector<TemperatureBinding> temperatureBindings_;
+        std::vector<ConvectionBinding> convectionBindings_;
         SparseMatrix massMatrix_;
         bool massMatrixAssembled_ = false;
         AssemblyTagCache massAssemblyState_;
-        std::map<int, const Coefficient*> temperatureBCs_;
-        std::map<int, ConvBC> convBCs_;
 
         /// @brief Stiffness matrix before BC application (for transient time integrators)
         SparseMatrix stiffnessMatrixBeforeBC_;
