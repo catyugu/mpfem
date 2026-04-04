@@ -22,10 +22,12 @@ namespace mpfem {
         virtual FieldId fieldId() const = 0;
         virtual void assemble() = 0;
 
-        bool solve()
+        void solve()
         {
-            if (!solver_ || !matAsm_ || !vecAsm_ || !fieldValues_)
-                return false;
+            MPFEM_ASSERT(solver_ != nullptr, "Solver not configured - call setSolverConfig() first");
+            MPFEM_ASSERT(matAsm_ != nullptr, "Matrix assembler not configured");
+            MPFEM_ASSERT(vecAsm_ != nullptr, "Vector assembler not configured");
+            MPFEM_ASSERT(fieldValues_ != nullptr, "FieldValues not set");
 
             // Two-stage lifecycle: setup then apply
             // Re-setup if matrix fingerprint changed (matrix was rebuilt)
@@ -39,7 +41,6 @@ namespace mpfem {
             field().markUpdated();
             LOG_INFO << fieldName() << " solver iterations: " << solver_->iterations()
                      << ", residual: " << solver_->residual();
-            return true;
         }
 
         const GridFunction& field() const

@@ -41,6 +41,16 @@ namespace mpfem {
         int max_iterations() const { return maxIterations_; }
         Real tolerance() const { return tolerance_; }
 
+        void configure(const LinearOperatorConfig& config) override
+        {
+            if (auto it = config.parameters.find("MaxIterations"); it != config.parameters.end()) {
+                set_max_iterations(static_cast<int>(it->second));
+            }
+            if (auto it = config.parameters.find("Tolerance"); it != config.parameters.end()) {
+                set_tolerance(it->second);
+            }
+        }
+
         int iterations() const override { return iterations_; }
         Real residual() const override { return residual_; }
 
@@ -86,6 +96,16 @@ namespace mpfem {
         void set_tolerance(Real tol) { tolerance_ = tol; }
         int max_iterations() const { return maxIterations_; }
         Real tolerance() const { return tolerance_; }
+
+        void configure(const LinearOperatorConfig& config) override
+        {
+            if (auto it = config.parameters.find("MaxIterations"); it != config.parameters.end()) {
+                set_max_iterations(static_cast<int>(it->second));
+            }
+            if (auto it = config.parameters.find("Tolerance"); it != config.parameters.end()) {
+                set_tolerance(it->second);
+            }
+        }
 
         int iterations() const override { return iterations_; }
         Real residual() const override { return residual_; }

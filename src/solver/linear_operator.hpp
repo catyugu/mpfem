@@ -2,6 +2,7 @@
 #define MPFEM_LINEAR_OPERATOR_HPP
 
 #include "core/types.hpp"
+#include "solver/solver_config.hpp"
 #include "solver/sparse_matrix.hpp"
 #include <memory>
 #include <string>
@@ -20,6 +21,7 @@ namespace mpfem {
      * - Two-stage lifecycle: setup(A) for heavy computation, apply(b,x) for pure iteration
      * - Does NOT own or destroy the input matrix (borrowed pointer only)
      * - Supports nested preconditioners via set_preconditioner()
+     * - Configuration via virtual configure() method - no dynamic_cast needed
      */
     class LinearOperator {
     public:
@@ -33,6 +35,20 @@ namespace mpfem {
         LinearOperator(LinearOperator&&) = default;
         /// Enable move assignment
         LinearOperator& operator=(LinearOperator&&) = default;
+
+        /**
+         * @brief Configure operator from configuration struct.
+         *
+         * Default implementation does nothing. Subclasses override to handle
+         * type-specific parameters (MaxIterations, Tolerance, Shift, etc.).
+         * This eliminates the need for dynamic_cast in factory code.
+         *
+         * @param config Configuration with type and parameters
+         */
+        virtual void configure(const LinearOperatorConfig& config)
+        {
+            (void)config;
+        }
 
         /**
          * @brief Setup phase: heavy computation (factorization, preprocessing).
@@ -176,6 +192,13 @@ namespace mpfem {
 
         void set_shift(Real shift) { shift_ = shift; }
         Real shift() const { return shift_; }
+
+        void configure(const LinearOperatorConfig& config) override
+        {
+            if (auto it = config.parameters.find("Shift"); it != config.parameters.end()) {
+                set_shift(it->second);
+            }
+        }
 
         int iterations() const override { return 1; }
         Real residual() const override { return Real {0}; }

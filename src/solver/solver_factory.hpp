@@ -44,8 +44,8 @@ namespace mpfem {
 
             std::unique_ptr<LinearOperator> op = createByType(config.type);
 
-            // Apply parameters
-            applyParameters(op.get(), config);
+            // Configure operator parameters via virtual configure() method (no dynamic_cast needed)
+            op->configure(config);
 
             // Create and attach nested preconditioner
             if (config.preconditioner) {
@@ -88,34 +88,6 @@ namespace mpfem {
 #endif
             default:
                 throw std::runtime_error("Unsupported operator type");
-            }
-        }
-
-    private:
-        static void applyParameters(LinearOperator* op, const LinearOperatorConfig& config)
-        {
-            const auto& params = config.parameters;
-
-            if (auto* cg = dynamic_cast<CgOperator*>(op)) {
-                if (auto it = params.find("MaxIterations"); it != params.end()) {
-                    cg->set_max_iterations(static_cast<int>(it->second));
-                }
-                if (auto it = params.find("Tolerance"); it != params.end()) {
-                    cg->set_tolerance(it->second);
-                }
-            }
-            else if (auto* gmres = dynamic_cast<GmresOperator*>(op)) {
-                if (auto it = params.find("MaxIterations"); it != params.end()) {
-                    gmres->set_max_iterations(static_cast<int>(it->second));
-                }
-                if (auto it = params.find("Tolerance"); it != params.end()) {
-                    gmres->set_tolerance(it->second);
-                }
-            }
-            else if (auto* icc = dynamic_cast<IccOperator*>(op)) {
-                if (auto it = params.find("Shift"); it != params.end()) {
-                    icc->set_shift(it->second);
-                }
             }
         }
     };
