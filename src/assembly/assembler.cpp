@@ -61,12 +61,6 @@ namespace mpfem {
         if (fes_ && fes_->numDofs() > 0) {
             mat_.resize(fes_->numDofs(), fes_->numDofs());
         }
-#ifdef _OPENMP
-        int nthreads = omp_get_max_threads();
-#else
-        int nthreads = 1;
-#endif
-        buffers_.resize(nthreads);
 
         if (fes_) {
             const Mesh* mesh = fes_->mesh();
@@ -80,6 +74,7 @@ namespace mpfem {
     {
         if (!fes_)
             return;
+
         const Mesh* mesh = fes_->mesh();
         if (!mesh)
             return;
@@ -99,8 +94,7 @@ namespace mpfem {
 #ifdef _OPENMP
 #pragma omp parallel
         {
-            int tid = omp_get_thread_num();
-            ThreadBuffer& buf = buffers_[tid];
+            ThreadBuffer buf;
 
             std::vector<SparseMatrix::Triplet> localTriplets;
             localTriplets.reserve(estimatedTriplets / omp_get_num_threads());
@@ -113,7 +107,7 @@ namespace mpfem {
             const int maxDynSize = MaxDofsPerElement * maxPossibleIvdims;
             buf.ensureDynMatrixSize(maxDynSize);
 #else
-        ThreadBuffer& buf = buffers_[0];
+        ThreadBuffer buf;
         ElementTransform trans;
         trans.setMesh(mesh);
 
@@ -207,7 +201,10 @@ namespace mpfem {
         if (!bdrIntegs_.empty()) {
             FacetElementTransform btrans;
             btrans.setMesh(mesh);
-            ThreadBuffer& bbuf = buffers_[0]; // Use first thread buffer
+            ThreadBuffer bbuf;
+            const int maxPossibleIvdims = maxIvdim_ > 0 ? maxIvdim_ : 1;
+            const int maxDynSize = MaxDofsPerElement * maxPossibleIvdims;
+            bbuf.ensureDynMatrixSize(maxDynSize);
 
             for (Index b = 0; b < mesh->numBdrElements(); ++b) {
                 int attr = mesh->bdrElement(b).attribute();
@@ -282,16 +279,6 @@ namespace mpfem {
         if (fes_ && fes_->numDofs() > 0) {
             vec_.setZero(fes_->numDofs());
         }
-#ifdef _OPENMP
-        int nthreads = omp_get_max_threads();
-#else
-        int nthreads = 1;
-#endif
-        buffers_.resize(nthreads);
-        threadVectors_.resize(nthreads);
-        for (auto& v : threadVectors_) {
-            v.setZero(fes_ ? fes_->numDofs() : 0);
-        }
     }
 
     void LinearFormAssembler::assemble()
@@ -308,6 +295,16 @@ namespace mpfem {
         const DomainIntegratorMap activeDomains = buildDomainIntegratorMap(domainSets_, *mesh);
 
 #ifdef _OPENMP
+        // Ensure threadVectors_ is sized for current thread count
+        {
+            const int nthreads = omp_get_max_threads();
+            if (static_cast<int>(threadVectors_.size()) < nthreads) {
+                threadVectors_.resize(nthreads);
+                for (auto& v : threadVectors_) {
+                    v.setZero(fes_->numDofs());
+                }
+            }
+        }
         for (auto& v : threadVectors_) {
             v.setZero();
         }
@@ -320,13 +317,13 @@ namespace mpfem {
 #pragma omp parallel
             {
                 int tid = omp_get_thread_num();
-                ThreadBuffer& buf = buffers_[tid];
+                ThreadBuffer buf;
                 Vector& localVec = threadVectors_[tid];
 
                 ElementTransform trans;
                 trans.setMesh(mesh);
 #else
-            ThreadBuffer& buf = buffers_[0];
+            ThreadBuffer buf;
             ElementTransform trans;
             trans.setMesh(mesh);
 #endif
@@ -409,7 +406,7 @@ namespace mpfem {
         if (!bdrIntegs_.empty()) {
             FacetElementTransform btrans;
             btrans.setMesh(mesh);
-            ThreadBuffer& bbuf = buffers_[0]; // Use first thread buffer
+            ThreadBuffer bbuf;
 
             for (Index b = 0; b < mesh->numBdrElements(); ++b) {
                 int attr = mesh->bdrElement(b).attribute();

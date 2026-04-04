@@ -22,51 +22,155 @@
 
 ## 具体工作任务
 
-### 任务一：重塑统一算子抽象 (LinearOperator 基类)
+通过对代码的分析，我发现该有限元库（MPFEM）在架构上存在几个较为明显的**设计反模式（Anti-patterns）**。这些问题主要集中在**违反开闭原则（OCP）**、**类型嗅探（RTTI 滥用）**、**时间耦合（Temporal Coupling）**以及**数据结构内聚性差**等方面。
 
-废弃原有的“求解器 vs 预条件子”二元对立设计，建立“一切皆算子”的统一抽象模型。无论是直接法、Krylov 方法、AMG 还是 DDM，均必须继承自统一的基类接口。
+以下是破坏式重构（Breaking Changes）的建议，旨在用最少的不必要复杂度提升代码的健壮性和可扩展性。
 
-* **定义核心两阶段生命周期：**
-    * 强制实现 `setup(const Matrix* A)`：处理矩阵因式分解、区域切分、粗网格构建等繁重计算。
-    * 强制实现 `apply(const Vector& b, Vector& x)`：执行纯粹的向量迭代与映射操作。
-* **实现嵌套能力：** 在基类中提供 `set_preconditioner(std::unique_ptr<LinearOperator> pc)` 方法，支持算子的无限层级嵌套。
-* **剥离矩阵所有权：** 确保基类及各子类在 `setup` 中绝不隐式接管或销毁外部传入的系统矩阵。
+### 1. 违反开闭原则的“上帝类” (God Object)
+**文件**: `src/problem/problem.hpp`
+**现象**: `Problem` 类硬编码了所有具体的物理场求解器（`ElectrostaticsSolver`, `HeatTransferSolver`, `StructuralSolver`），并包含大量的 `hasElectrostatics()`、`hasJouleHeating()` 等硬编码判断。
+**反模式**: 典型的 **God Object** 和 **OCP 违背**。每当想要引入一种新的物理场（例如流体动力学、电磁波），都必须修改 `Problem` 类的核心头文件。
 
-### 任务二：构建动态配置树与工厂解析器
+**破坏式重构建议**:
+将具体的物理场指针替换为基于接口的通用容器。依赖 `PhysicsFieldSolver` 基类，并通过 `FieldId` 或字符串名称进行管理。
 
-彻底改变线性求解层的实例化方式，从代码硬编码转向基于配置文件的树状解析。
+```cpp
+// 重构后的 Problem 类
+class Problem {
+public:
+    // ...
+    // 统一管理所有的物理场求解器
+    void addSolver(std::unique_ptr<PhysicsFieldSolver> solver);
+    PhysicsFieldSolver* getSolver(const std::string& fieldName);
+    const PhysicsFieldSolver* getSolver(const std::string& fieldName) const;
 
-* **实现递归工厂模式：** 编写能够解析多层级 XML 配置的 Factory 方法，依据配置动态实例化算子，并利用 `set_preconditioner` 自动完成组装。
-* **支持标准配置协议：** 解析器必须完美支持以下洋葱状的嵌套 XML 结构：
+    // 耦合关系不再硬编码，而是通过检查 CaseDefinition 中的 CoupledPhysicsDefinition 动态决定
+    bool isCoupled() const { return !caseDef.coupledPhysicsDefinitions.empty(); }
 
-```xml
-<SolverConfiguration>
-    <Operator type="CG">
-        <Parameters>
-            <Tolerance>1e-10</Tolerance>
-            <MaxIterations>1000</MaxIterations>
-            <PrintLevel>0</PrintLevel>
-        </Parameters>
-        <Preconditioner>
-            <Operator type="Jacobi">
-                <Parameters>
-                    <Sweeps>1</Sweeps>
-                </Parameters>
-            </Operator>
-        </Preconditioner>
-    </Operator>
-</SolverConfiguration>
+private:
+    // 取代硬编码的 unique_ptr<ElectrostaticsSolver> 等
+    std::unordered_map<std::string, std::unique_ptr<PhysicsFieldSolver>> solvers_;
+};
 ```
 
-### 任务三：解决动静多态冲突 (Eigen Adapter)
+---
 
-针对底层大量使用 Eigen 等基于模板元编程的静态求解器，开发适配器以桥接动态架构。
+### 2. 工厂模式中的向下转型与 RTTI 滥用
+**文件**: `src/solver/solver_factory.hpp`
+**现象**: `OperatorFactory::applyParameters` 函数中使用了大量的 `dynamic_cast<CgOperator*>(op)` 来判断对象类型，从而调用 `set_max_iterations()` 等专属方法。
+**反模式**: **Switch 语句嗅探 / 类型查询 (Type Querying)**。工厂类不仅要知道如何创建对象，还要清楚每个子类的实现细节和参数接口。一旦添加新的求解器（如 BiCGSTAB），必须回头修改这个工厂方法。
 
-* **编写 Adapter 封装类：** 创建符合 Eigen 预条件子 Concept 的模板类 `DynamicPreconditionerAdapter`。
-* **运行时转发机制：** 该 Adapter 内部持有 `LinearOperator*` 借用指针，在 Eigen 的编译期循环内，通过虚函数调用将 `solve` 操作安全转发至动态配置的自定义算子中。
+**破坏式重构建议**:
+将参数配置的职责下放给具体的 `LinearOperator` 子类（或其 Config 结构），在基类中引入通用的参数配置接口。
 
-### 任务四：全局重构与测试验证
+```cpp
+// 1. 在 LinearOperator (基类) 中增加虚函数
+class LinearOperator {
+public:
+    // ...
+    virtual void configure(const std::map<std::string, double>& params) {} 
+    // 或者使用 std::any 以支持非 double 类型的参数
+};
 
-* **清理旧架构：** 完全移除原有的 Solver 层遗留代码。
-* **升级测试用例：** 修改项目中所有 `case.xml` 文件，使其符合全新的嵌套算子配置规范。
-* **端到端验证：** 执行系统级编译，并运行全套测试集，确保精度和性能符合预期，且借助内存检测工具（如 Valgrind/ASan）确认无由 `unique_ptr` 和裸指针混用导致的内存泄漏或悬空指针。
+// 2. 在具体的子类中实现 (例如 CgOperator)
+void CgOperator::configure(const std::map<std::string, double>& params) override {
+    if (auto it = params.find("MaxIterations"); it != params.end()) {
+        this->set_max_iterations(static_cast<int>(it->second));
+    }
+    // ...
+}
+
+// 3. 工厂代码变得极其纯粹（甚至不再需要单独的 applyParameters 函数）
+static std::unique_ptr<LinearOperator> create(const LinearOperatorConfig& config) {
+    std::unique_ptr<LinearOperator> op = createByType(config.type);
+    
+    // 多态调用，工厂无需知道具体类型
+    op->configure(config.parameters);
+    
+    if (config.preconditioner) {
+        op->set_preconditioner(create(*config.preconditioner));
+    }
+    return op;
+}
+```
+
+---
+
+### 3. 危险的时间耦合 (Temporal Coupling)
+**文件**: `src/model/case_definition.hpp`
+**现象**: `CaseDefinition` 同时维护了 `std::vector<VariableEntry> variables` 和 `std::map<std::string, double> variableMap_`。注释中明确要求：“*Call this (buildVariableMap) after variables are populated or modified.*”
+**反模式**: **双重数据源验证缺失 / 时间耦合**。调用方在修改 `variables` 后，如果忘记调用 `buildVariableMap()`，系统将读取到过期或错误的数据（且不会有任何编译期报错）。
+
+**破坏式重构建议**:
+将变量管理的职责完全封装，对外不暴露裸露的 `vector` 或 `map`，或者废弃冗余结构。如果不需要保持 XML 解析的原始顺序，直接废弃 `vector`。如果需要顺序，就用专门的类封装它们。
+
+```cpp
+// 重构：直接隐藏数据成员，强制通过接口操作
+class CaseDefinition {
+public:
+    // 添加变量时同步更新 map 和 vector
+    void addVariable(const std::string& name, const std::string& text, double val) {
+        variables_.push_back({name, text, val});
+        variableMap_[name] = val;
+    }
+
+    double getVariable(const std::string& name) const { /* ... */ }
+
+private:
+    std::vector<VariableEntry> variables_;
+    std::unordered_map<std::string, double> variableMap_;
+};
+```
+
+---
+
+### 4. 平行数组导致的高内聚缺失
+**文件**: `src/assembly/assembler.hpp` (在 `BilinearFormAssembler` 和 `LinearFormAssembler` 中)
+**现象**: 
+```cpp
+std::vector<std::unique_ptr<DomainBilinearIntegratorBase>> domainIntegs_;
+std::vector<std::vector<int>> domainSets_;
+```
+**反模式**: **平行数组 (Parallel Arrays)**。积分器（Integrator）和它适用的域（Domain sets）在逻辑上是强绑定的，但却被分拆存储在两个并行的 `vector` 中。这降低了缓存局部性，增加了错位（Misalignment）的风险。
+
+**破坏式重构建议**:
+创建一个轻量级的结构体将它们绑定在一起。
+
+```cpp
+// 在 BilinearFormAssembler 内部：
+struct DomainIntegratorEntry {
+    std::unique_ptr<DomainBilinearIntegratorBase> integrator;
+    std::vector<int> domains;
+};
+
+// 取代平行数组
+std::vector<DomainIntegratorEntry> domainIntegrators_;
+```
+
+---
+
+### 5. 掩盖错误的“静默失败” (Silent Failures)
+**文件**: `src/physics/physics_field_solver.hpp`
+**现象**: 
+```cpp
+bool solve() {
+    if (!solver_ || !matAsm_ || !vecAsm_ || !fieldValues_)
+        return false;
+    // ...
+}
+```
+**反模式**: 核心数学/物理求解管线不应该**静默失败**。如果这些核心组件为空，说明在 Setup 阶段出现了严重的生命周期错误或逻辑断裂。返回 `false` 并不能让上层排查到“究竟是哪个组件为 Null”。
+
+**破坏式重构建议**:
+遵循“快速失败（Fail Fast）”原则。既然依赖缺失无法求解，应该直接抛出异常或触发断言。
+
+```cpp
+void solve() { // 甚至不需要返回 bool，除非求解不收敛需要返回状态
+    MPFEM_ASSERT(solver_ != nullptr, "Solver not initialized prior to solve()");
+    MPFEM_ASSERT(matAsm_ != nullptr, "Matrix Assembler missing");
+    // ... 
+    
+    // 如果求解器发散（迭代不收敛），这才是应该被返回/抛出的错误
+    solver_->apply(vecAsm_->vector(), field().values());
+}
+```

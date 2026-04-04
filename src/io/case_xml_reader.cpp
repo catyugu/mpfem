@@ -18,18 +18,6 @@ namespace mpfem {
 
     namespace {
 
-        const std::string& requireBoundaryParam(const std::map<std::string, std::string>& params,
-            const std::string& key,
-            const std::string& physicsKind,
-            const std::string& boundaryKind)
-        {
-            auto it = params.find(key);
-            if (it != params.end()) {
-                return it->second;
-            }
-            throw FileException("Missing boundary parameter '" + key + "' for boundary kind '" + boundaryKind + "' in physics '" + physicsKind + "'");
-        }
-
         std::map<std::string, std::string> parseBoundaryParams(const tinyxml2::XMLElement* boundaryElement)
         {
             std::map<std::string, std::string> params;

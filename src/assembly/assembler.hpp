@@ -88,7 +88,6 @@ namespace mpfem {
         std::vector<std::unique_ptr<FaceBilinearIntegratorBase>> bdrIntegs_;
         std::vector<int> bdrIds_;
         SparseMatrix mat_;
-        std::vector<ThreadBuffer> buffers_;
         std::vector<SparseMatrix::Triplet> triplets_;
         int maxIvdim_ = 1; // Track maximum ivdim across all integrators for pre-sizing
     };
@@ -134,7 +133,6 @@ namespace mpfem {
         std::vector<std::unique_ptr<FaceLinearIntegratorBase>> bdrIntegs_;
         std::vector<int> bdrIds_;
         Vector vec_;
-        std::vector<ThreadBuffer> buffers_;
         std::vector<Vector> threadVectors_;
     };
 
