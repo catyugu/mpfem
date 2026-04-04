@@ -111,19 +111,21 @@ namespace mpfem {
         TimeConfig timeConfig;
         std::vector<InitialCondition> initialConditions;
 
-        // O(1) variable lookup map, built explicitly after variables are populated.
+    private:
+        // O(1) variable lookup map, kept in sync with variables vector via addVariable()
         std::map<std::string, double> variableMap_;
 
+    public:
         /**
-         * @brief Build variable map for O(1) lookup from variables vector.
-         * Call this after variables are populated or modified.
+         * @brief Add a variable, synchronizing both vector and map storage.
+         *
+         * This eliminates the temporal coupling issue where buildVariableMap()
+         * had to be called explicitly after modifying variables.
          */
-        void buildVariableMap()
+        void addVariable(std::string name, std::string valueText, double siValue)
         {
-            variableMap_.clear();
-            for (const auto& v : variables) {
-                variableMap_[v.name] = v.siValue;
-            }
+            variables.push_back({name, std::move(valueText), siValue});
+            variableMap_[std::move(name)] = siValue;
         }
 
         /**
@@ -147,6 +149,9 @@ namespace mpfem {
         {
             return variableMap_.find(name) != variableMap_.end();
         }
+
+        /// @brief Get const reference to variables vector for iteration.
+        const std::vector<VariableEntry>& getVariables() const { return variables; }
     };
 
 } // namespace mpfem

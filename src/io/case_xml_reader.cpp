@@ -233,7 +233,7 @@ namespace mpfem {
                 entry.siValue = evalExpr(evalText, 0.0);
 
                 variableValues[entry.name] = entry.siValue;
-                caseDefinition.variables.push_back(entry);
+                caseDefinition.addVariable(entry.name, entry.valueText, entry.siValue);
             }
         }
 
@@ -418,8 +418,6 @@ namespace mpfem {
                 caseDefinition.couplingConfig.tolerance = evalExpr(tolAttr, caseDefinition.couplingConfig.tolerance);
             }
         }
-
-        caseDefinition.buildVariableMap();
 
         LOG_INFO << "Loaded case definition: " << caseDefinition.caseName
                  << " with " << caseDefinition.physics.size() << " physics fields";
