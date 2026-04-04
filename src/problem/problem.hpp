@@ -1,6 +1,7 @@
 #ifndef MPFEM_PROBLEM_HPP
 #define MPFEM_PROBLEM_HPP
 
+#include "core/hash.hpp"
 #include "core/types.hpp"
 #include "fe/coefficient.hpp"
 #include "fe/grid_function.hpp"
@@ -12,7 +13,6 @@
 #include <string_view>
 #include <unordered_map>
 #include <vector>
-
 
 namespace mpfem {
 
@@ -37,7 +37,7 @@ namespace mpfem {
             {
                 const std::size_t h1 = std::hash<std::string> {}(key.property);
                 const std::size_t h2 = std::hash<int> {}(key.domainId);
-                return h1 ^ (h2 + 0x9e3779b97f4a7c15ull + (h1 << 6) + (h1 >> 2));
+                return h1 ^ (h2 + kGoldenRatioPrime + (h1 << 6) + (h1 >> 2));
             }
         };
 

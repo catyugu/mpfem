@@ -50,42 +50,43 @@ namespace mpfem {
             std::set<int> ids,
             const std::map<std::string, std::string>& params)
         {
+            BoundaryCondition bc;
+            bc.ids = std::move(ids);
+            bc.parameters = params; // Already contains "value", "h", "T_inf" as needed
+
             if (physicsKind == "electrostatics") {
                 if (boundaryKind == "voltage") {
-                    return VoltageBoundaryCondition {std::move(ids),
-                        requireBoundaryParam(params, "value", physicsKind, boundaryKind)};
+                    bc.type = "Voltage";
                 }
-                if (boundaryKind == "electric_insulation") {
-                    return ElectricInsulationBoundaryCondition {std::move(ids)};
+                else if (boundaryKind == "electric_insulation") {
+                    bc.type = "ElectricInsulation";
                 }
             }
-
-            if (physicsKind == "heat_transfer") {
+            else if (physicsKind == "heat_transfer") {
                 if (boundaryKind == "temperature") {
-                    return TemperatureBoundaryCondition {std::move(ids),
-                        requireBoundaryParam(params, "value", physicsKind, boundaryKind)};
+                    bc.type = "Temperature";
                 }
-                if (boundaryKind == "convection") {
-                    return ConvectionBoundaryCondition {
-                        std::move(ids),
-                        requireBoundaryParam(params, "h", physicsKind, boundaryKind),
-                        requireBoundaryParam(params, "T_inf", physicsKind, boundaryKind)};
+                else if (boundaryKind == "convection") {
+                    bc.type = "Convection";
                 }
-                if (boundaryKind == "thermal_insulation") {
-                    return ThermalInsulationBoundaryCondition {std::move(ids)};
+                else if (boundaryKind == "thermal_insulation") {
+                    bc.type = "ThermalInsulation";
                 }
             }
-
-            if (physicsKind == "solid_mechanics") {
+            else if (physicsKind == "solid_mechanics") {
                 if (boundaryKind == "fixed_constraint") {
-                    return FixedConstraintBoundaryCondition {std::move(ids)};
+                    bc.type = "Fixed";
                 }
-                if (boundaryKind == "free_boundary") {
-                    return FreeBoundaryCondition {std::move(ids)};
+                else if (boundaryKind == "free_boundary") {
+                    bc.type = "Free";
                 }
             }
 
-            throw FileException("Unsupported boundary kind '" + boundaryKind + "' for physics '" + physicsKind + "'");
+            if (bc.type.empty()) {
+                throw FileException("Unsupported boundary kind '" + boundaryKind + "' for physics '" + physicsKind + "'");
+            }
+
+            return bc;
         }
 
     } // namespace

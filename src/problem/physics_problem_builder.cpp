@@ -101,8 +101,6 @@ namespace mpfem {
                 makeScalarExpressionCoefficient(problem, expression));
         }
 
-        constexpr std::uint64_t kLocalTagSeed = 1469598103934665603ull;
-
         struct RuntimeSymbolBinding {
             const GridFunction* field = nullptr;
         };
@@ -296,10 +294,10 @@ namespace mpfem {
             }
 
             for (const auto& bc : physics.boundaries) {
-                if (const auto* voltageBc = std::get_if<VoltageBoundaryCondition>(&bc)) {
+                if (bc.type == "Voltage") {
                     const Coefficient* voltage = problem.ownScalarCoef(
-                        makeScalarExpressionCoefficient(problem, voltageBc->value));
-                    problem.electrostatics->addVoltageBC(voltageBc->ids, voltage);
+                        makeScalarExpressionCoefficient(problem, bc.parameters.at("value")));
+                    problem.electrostatics->addVoltageBC(bc.ids, voltage);
                 }
             }
         }
@@ -326,21 +324,17 @@ namespace mpfem {
             }
 
             for (const auto& bc : physics.boundaries) {
-                if (const auto* temperatureBc = std::get_if<TemperatureBoundaryCondition>(&bc)) {
+                if (bc.type == "Temperature") {
                     const Coefficient* temperature = problem.ownScalarCoef(
-                        makeScalarExpressionCoefficient(problem, temperatureBc->value));
-                    problem.heatTransfer->addTemperatureBC(temperatureBc->ids, temperature);
-                    continue;
+                        makeScalarExpressionCoefficient(problem, bc.parameters.at("value")));
+                    problem.heatTransfer->addTemperatureBC(bc.ids, temperature);
                 }
-
-                if (const auto* convectionBc = std::get_if<ConvectionBoundaryCondition>(&bc)) {
+                else if (bc.type == "Convection") {
                     const Coefficient* h = problem.ownScalarCoef(
-                        makeScalarExpressionCoefficient(problem, convectionBc->h));
+                        makeScalarExpressionCoefficient(problem, bc.parameters.at("h")));
                     const Coefficient* tinf = problem.ownScalarCoef(
-                        makeScalarExpressionCoefficient(problem, convectionBc->tInf));
-                    problem.heatTransfer->addConvectionBC(convectionBc->ids,
-                        h,
-                        tinf);
+                        makeScalarExpressionCoefficient(problem, bc.parameters.at("T_inf")));
+                    problem.heatTransfer->addConvectionBC(bc.ids, h, tinf);
                 }
             }
         }
@@ -361,11 +355,10 @@ namespace mpfem {
             }
 
             for (const auto& bc : physics.boundaries) {
-                if (const auto* fixedBc = std::get_if<FixedConstraintBoundaryCondition>(&bc)) {
+                if (bc.type == "Fixed") {
                     const VectorCoefficient* disp = problem.ownVectorCoef(
                         constantVectorCoefficient(0.0, 0.0, 0.0));
-                    problem.structural->addFixedDisplacementBC(fixedBc->ids,
-                        disp);
+                    problem.structural->addFixedDisplacementBC(bc.ids, disp);
                 }
             }
         }
@@ -390,7 +383,7 @@ namespace mpfem {
                     result = g.transpose() * sigma_mat * g;
                 },
                 [&problem, sigmaByDomain]() -> std::uint64_t {
-                    std::uint64_t tag = combineFieldRevisionTag(kLocalTagSeed,
+                    std::uint64_t tag = combineFieldRevisionTag(kFNVOffsetBasis,
                         problem.electrostatics ? &problem.electrostatics->field() : nullptr);
                     return combinePointerMapStateTags(tag, sigmaByDomain);
                 });
@@ -450,7 +443,7 @@ namespace mpfem {
                     result.diagonal().array() += lambda * epsSym.trace();
                 },
                 [&problem, alphaByDomain, youngByDomain, nuByDomain]() -> std::uint64_t {
-                    std::uint64_t tag = combineFieldRevisionTag(kLocalTagSeed,
+                    std::uint64_t tag = combineFieldRevisionTag(kFNVOffsetBasis,
                         problem.heatTransfer ? &problem.heatTransfer->field() : nullptr);
                     tag = combinePointerMapStateTags(tag, alphaByDomain);
                     tag = combinePointerMapStateTags(tag, youngByDomain);

@@ -6,7 +6,6 @@
 #include <map>
 #include <set>
 #include <string>
-#include <variant>
 #include <vector>
 
 namespace mpfem {
@@ -28,46 +27,14 @@ namespace mpfem {
         std::string materialTag;
     };
 
-    struct VoltageBoundaryCondition {
-        std::set<int> ids;
-        std::string value;
+    /**
+     * @brief Unified boundary condition structure.
+     */
+    struct BoundaryCondition {
+        std::string type; // "Voltage", "Temperature", "Convection", "Fixed", ...
+        std::set<int> ids; // Boundary IDs this applies to
+        std::map<std::string, std::string> parameters; // Type-specific parameters
     };
-
-    struct ElectricInsulationBoundaryCondition {
-        std::set<int> ids;
-    };
-
-    struct TemperatureBoundaryCondition {
-        std::set<int> ids;
-        std::string value;
-    };
-
-    struct ConvectionBoundaryCondition {
-        std::set<int> ids;
-        std::string h;
-        std::string tInf;
-    };
-
-    struct ThermalInsulationBoundaryCondition {
-        std::set<int> ids;
-    };
-
-    struct FixedConstraintBoundaryCondition {
-        std::set<int> ids;
-    };
-
-    struct FreeBoundaryCondition {
-        std::set<int> ids;
-    };
-
-    using BoundaryCondition = std::variant<
-        VoltageBoundaryCondition,
-        ElectricInsulationBoundaryCondition,
-        TemperatureBoundaryCondition,
-        ConvectionBoundaryCondition,
-        ThermalInsulationBoundaryCondition,
-        FixedConstraintBoundaryCondition,
-        FreeBoundaryCondition>;
 
     /**
      * @brief Volumetric or surface source definition.
