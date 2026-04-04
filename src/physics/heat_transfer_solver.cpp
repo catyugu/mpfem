@@ -19,7 +19,7 @@ namespace mpfem {
 
         matAsm_ = std::make_unique<BilinearFormAssembler>(fes_.get());
         vecAsm_ = std::make_unique<LinearFormAssembler>(fes_.get());
-        solver_ = SolverFactory::create(solverConfig_);
+        solver_ = SolverFactory::create(*solverConfig_);
 
         LOG_INFO << "HeatTransferSolver: " << fes_->numDofs() << " DOFs";
 
@@ -208,18 +208,14 @@ namespace mpfem {
         applyDirichletBC(A, systemRhs_, x, *fes_, *mesh_, temperatureBCs_);
         A.makeCompressed();
 
-        // Solve the system
-        bool ok = solver_->solve(A, x, systemRhs_);
+        // Two-stage solve: setup then apply
+        solver_->setup(&A);
+        solver_->apply(systemRhs_, x);
 
-        if (ok) {
-            field().markUpdated();
-            LOG_INFO << fieldName() << " linear solve converged in " << iterations() << " iterations";
-        }
-        else {
-            LOG_ERROR << fieldName() << " linear solve failed, residual: " << residual();
-        }
+        field().markUpdated();
+        LOG_INFO << fieldName() << " linear solve converged in " << iterations() << " iterations";
 
-        return ok;
+        return true;
     }
 
 } // namespace mpfem

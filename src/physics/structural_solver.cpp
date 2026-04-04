@@ -22,7 +22,7 @@ namespace mpfem {
 
         matAsm_ = std::make_unique<BilinearFormAssembler>(fes_.get());
         vecAsm_ = std::make_unique<LinearFormAssembler>(fes_.get());
-        solver_ = SolverFactory::create(solverConfig_);
+        solver_ = SolverFactory::create(*solverConfig_);
 
         LOG_INFO << "StructuralSolver: " << fes_->numDofs() << " DOFs";
         return true;

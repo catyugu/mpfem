@@ -190,12 +190,11 @@ mpfem_add_library(mpfem_fe
 )
 
 # =============================================================================
-# Solver library
+# Solver library (header-only)
 # =============================================================================
 
 mpfem_add_library(mpfem_solver
-    SOURCES
-        src/solver/preconditioner.cpp
+    HEADER_ONLY
     PUBLIC_LINK
         Eigen3::Eigen
         mpfem_core
@@ -262,7 +261,6 @@ mpfem_add_library(mpfem_physics
         src/time/time_integrator.cpp
         src/time/bdf1_integrator.cpp
         src/time/bdf2_integrator.cpp
-        src/solver/preconditioner.cpp
     PUBLIC_LINK
         Eigen3::Eigen
         mpfem_core

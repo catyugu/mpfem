@@ -8,7 +8,7 @@
 #include "fe/grid_function.hpp"
 #include "mesh/mesh.hpp"
 #include "physics/field_values.hpp"
-#include "solver/linear_solver.hpp"
+#include "solver/linear_operator.hpp"
 #include "solver/solver_config.hpp"
 #include <memory>
 
@@ -26,12 +26,20 @@ namespace mpfem {
         {
             if (!solver_ || !matAsm_ || !vecAsm_ || !fieldValues_)
                 return false;
-            bool ok = solver_->solve(matAsm_->matrix(), field().values(), vecAsm_->vector());
-            if (ok) {
-                field().markUpdated();
-                LOG_INFO << fieldName() << " solver converged!";
+
+            // Two-stage lifecycle: setup then apply
+            // Re-setup if matrix fingerprint changed (matrix was rebuilt)
+            const auto currentFingerprint = matAsm_->matrix().fingerprint();
+            if (!solver_->is_setup() || currentFingerprint != matrixFingerprint_) {
+                solver_->setup(&matAsm_->matrix());
+                matrixFingerprint_ = currentFingerprint;
             }
-            return ok;
+            solver_->apply(vecAsm_->vector(), field().values());
+
+            field().markUpdated();
+            LOG_INFO << fieldName() << " solver iterations: " << solver_->iterations()
+                     << ", residual: " << solver_->residual();
+            return true;
         }
 
         const GridFunction& field() const
@@ -49,7 +57,7 @@ namespace mpfem {
         Index numDofs() const { return fes_ ? fes_->numDofs() : 0; }
         const Mesh& mesh() const { return *mesh_; }
 
-        void setSolverConfig(SolverConfig config) { solverConfig_ = std::move(config); }
+        void setSolverConfig(std::unique_ptr<LinearOperatorConfig> config) { solverConfig_ = std::move(config); }
 
         int iterations() const { return solver_->iterations(); }
         Real residual() const { return solver_->residual(); }
@@ -68,14 +76,15 @@ namespace mpfem {
         }
 
         int order_ = 1;
-        SolverConfig solverConfig_;
+        std::unique_ptr<LinearOperatorConfig> solverConfig_;
+        std::uint64_t matrixFingerprint_ = 0;
 
         const Mesh* mesh_ = nullptr;
         FieldValues* fieldValues_ = nullptr;
         std::unique_ptr<FESpace> fes_;
         std::unique_ptr<BilinearFormAssembler> matAsm_;
         std::unique_ptr<LinearFormAssembler> vecAsm_;
-        std::unique_ptr<LinearSolver> solver_;
+        std::unique_ptr<LinearOperator> solver_;
     };
 
 } // namespace mpfem

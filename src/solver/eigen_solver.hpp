@@ -2,181 +2,138 @@
 #define MPFEM_EIGEN_SOLVER_HPP
 
 #include "core/logger.hpp"
-#include "linear_solver.hpp"
+#include "linear_operator.hpp"
 #include <Eigen/IterativeLinearSolvers>
 #include <Eigen/Sparse>
-#include <cstdint>
 #include <unsupported/Eigen/IterativeSolvers>
 
 namespace mpfem {
 
-    /**
-     * @brief Base class for Eigen iterative solvers.
-     *
-     * Provides common infrastructure for CG and DGMRES solvers.
-     */
-    class EigenIterativeSolverBase : public LinearSolver {
-    protected:
-        Real dropTol_ = 1e-4;
-        int fillFactor_ = 10;
-    };
+    // =============================================================================
+    // Eigen CG Operator
+    // =============================================================================
 
-    /**
-     * @brief Eigen CG solver.
-     *
-     * Uses Eigen's ConjugateGradient with diagonal preconditioning.
-     */
-    class EigenCGSolver : public EigenIterativeSolverBase {
+    class CgOperator : public LinearOperator {
     public:
-        ~EigenCGSolver() override = default;
+        std::string_view name() const override { return "CG"; }
 
-        std::string name() const override { return "Eigen::CG"; }
-
-        bool solve(const SparseMatrix& A, Vector& x, const Vector& b) override
+        void setup(const SparseMatrix* A) override
         {
-            ScopedTimer timer("Linear solve (CG)");
-
+            if (!A) {
+                throw std::runtime_error("CgOperator: null matrix in setup");
+            }
             solver_.setMaxIterations(maxIterations_);
             solver_.setTolerance(tolerance_);
-
-            solver_.compute(A.eigen());
-
-            if (solver_.info() != Eigen::Success) {
-                LOG_ERROR << "[CG] Preconditioner setup failed";
-                x.setZero(b.size());
-                return false;
-            }
-
-            x = solver_.solveWithGuess(b, x);
-
-            iterations_ = static_cast<int>(solver_.iterations());
-            residual_ = solver_.error();
-
-            const bool success = solver_.info() == Eigen::Success;
-
-            if (printLevel_ > 0 || !success) {
-                LOG_INFO << "[CG] Iterations: " << iterations_
-                         << ", Error: " << residual_
-                         << ", Success: " << (success ? "yes" : "no");
-            }
-
-            if (success) {
-                LOG_INFO << "[CG] Solve successful, solution norm: " << x.norm();
-            }
-
-            return success;
+            solver_.compute(A->eigen());
+            set_matrix(A);
+            mark_setup();
         }
 
+        void apply(const Vector& b, Vector& x) override
+        {
+            x = solver_.solveWithGuess(b, x);
+            iterations_ = static_cast<int>(solver_.iterations());
+            residual_ = solver_.error();
+        }
+
+        void set_max_iterations(int iter) { maxIterations_ = iter; }
+        void set_tolerance(Real tol) { tolerance_ = tol; }
+        int max_iterations() const { return maxIterations_; }
+        Real tolerance() const { return tolerance_; }
+
+        int iterations() const override { return iterations_; }
+        Real residual() const override { return residual_; }
+
     private:
+        int maxIterations_ = 1000;
+        Real tolerance_ = 1e-10;
+        int iterations_ = 0;
+        Real residual_ = 0.0;
         Eigen::ConjugateGradient<Eigen::SparseMatrix<Real>,
             Eigen::Lower | Eigen::Upper,
             Eigen::DiagonalPreconditioner<Real>>
             solver_;
     };
 
-    /**
-     * @brief Eigen DGMRES solver.
-     *
-     * Uses Eigen's DGMRES with diagonal preconditioning.
-     */
-    class EigenDGMRESSolver : public EigenIterativeSolverBase {
+    // =============================================================================
+    // Eigen DGMRES Operator
+    // =============================================================================
+
+    class GmresOperator : public LinearOperator {
     public:
-        ~EigenDGMRESSolver() override = default;
+        std::string_view name() const override { return "DGMRES"; }
 
-        std::string name() const override { return "Eigen::DGMRES"; }
-
-        bool solve(const SparseMatrix& A, Vector& x, const Vector& b) override
+        void setup(const SparseMatrix* A) override
         {
-            ScopedTimer timer("Linear solve (DGMRES)");
-
+            if (!A) {
+                throw std::runtime_error("GmresOperator: null matrix in setup");
+            }
             solver_.setMaxIterations(maxIterations_);
             solver_.setTolerance(tolerance_);
-
-            solver_.compute(A.eigen());
-
-            if (solver_.info() != Eigen::Success) {
-                LOG_ERROR << "[DGMRES] Preconditioner setup failed";
-                x.setZero(b.size());
-                return false;
-            }
-
-            x = solver_.solveWithGuess(b, x);
-
-            iterations_ = static_cast<int>(solver_.iterations());
-            residual_ = solver_.error();
-
-            const bool success = solver_.info() == Eigen::Success;
-
-            if (printLevel_ > 0 || !success) {
-                LOG_INFO << "[DGMRES] Iterations: " << iterations_
-                         << ", Error: " << residual_
-                         << ", Success: " << (success ? "yes" : "no");
-            }
-
-            if (success) {
-                LOG_INFO << "[DGMRES] Solve successful, solution norm: " << x.norm();
-            }
-
-            return success;
+            solver_.compute(A->eigen());
+            set_matrix(A);
+            mark_setup();
         }
 
+        void apply(const Vector& b, Vector& x) override
+        {
+            x = solver_.solveWithGuess(b, x);
+            iterations_ = static_cast<int>(solver_.iterations());
+            residual_ = solver_.error();
+        }
+
+        void set_max_iterations(int iter) { maxIterations_ = iter; }
+        void set_tolerance(Real tol) { tolerance_ = tol; }
+        int max_iterations() const { return maxIterations_; }
+        Real tolerance() const { return tolerance_; }
+
+        int iterations() const override { return iterations_; }
+        Real residual() const override { return residual_; }
+
     private:
+        int maxIterations_ = 1000;
+        Real tolerance_ = 1e-10;
+        int iterations_ = 0;
+        Real residual_ = 0.0;
         Eigen::DGMRES<Eigen::SparseMatrix<Real>, Eigen::DiagonalPreconditioner<Real>> solver_;
     };
 
-    /**
-     * @brief Eigen SparseLU direct solver.
-     *
-     * General-purpose sparse LU factorization for square matrices.
-     * Suitable for both symmetric and non-symmetric systems.
-     */
-    class EigenSparseLUSolver : public LinearSolver {
+    // =============================================================================
+    // Eigen SparseLU Operator
+    // =============================================================================
+
+    class EigenSparseLUOperator : public LinearOperator {
     public:
-        std::string name() const override { return "Eigen::SparseLU"; }
+        std::string_view name() const override { return "SparseLU"; }
 
-        bool solve(const SparseMatrix& A, Vector& x, const Vector& b) override
+        void setup(const SparseMatrix* A) override
         {
-            ScopedTimer timer("Linear solve (SparseLU)");
-
-            const std::uint64_t currentFingerprint = A.fingerprint();
-            const bool needRefactor = !hasFactorCache_ || (currentFingerprint != lastMatrixFingerprint_);
-
-            if (needRefactor) {
-                solver_.compute(A.eigen());
-
+            if (!A) {
+                throw std::runtime_error("EigenSparseLUOperator: null matrix in setup");
+            }
+            const std::uint64_t currentFingerprint = A->fingerprint();
+            if (!hasFactorCache_ || currentFingerprint != lastMatrixFingerprint_) {
+                solver_.compute(A->eigen());
                 if (solver_.info() != Eigen::Success) {
-                    LOG_ERROR << "[EigenSparseLU] Factorization failed";
-                    x.setZero(b.size());
-                    hasFactorCache_ = false;
-                    return false;
+                    throw std::runtime_error("EigenSparseLUOperator: factorization failed");
                 }
-
                 hasFactorCache_ = true;
                 lastMatrixFingerprint_ = currentFingerprint;
             }
-            else if (printLevel_ > 0) {
-                LOG_INFO << "[EigenSparseLU] Reusing cached factorization";
-            }
-
-            x = solver_.solve(b);
-
-            if (solver_.info() != Eigen::Success) {
-                LOG_ERROR << "[EigenSparseLU] Solve failed";
-                x.setZero(b.size());
-                return false;
-            }
-
-            LOG_INFO << "[EigenSparseLU] Solve successful, solution norm: " << x.norm();
-
-            iterations_ = 1;
-            residual_ = (A.eigen() * x - b).norm() / b.norm();
-
-            if (printLevel_ > 0) {
-                LOG_INFO << "[EigenSparseLU] Residual = " << residual_;
-            }
-
-            return true;
+            set_matrix(A);
+            mark_setup();
         }
+
+        void apply(const Vector& b, Vector& x) override
+        {
+            x = solver_.solve(b);
+            if (solver_.info() != Eigen::Success) {
+                throw std::runtime_error("EigenSparseLUOperator: solve failed");
+            }
+        }
+
+        int iterations() const override { return 1; }
+        Real residual() const override { return Real {0}; }
 
     private:
         Eigen::SparseLU<Eigen::SparseMatrix<Real>> solver_;

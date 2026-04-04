@@ -15,39 +15,35 @@ namespace mpfem {
     // Forward Declarations
     // =============================================================================
 
-    class Preconditioner;
+    class LinearOperator;
 
     // =============================================================================
-    // Solver Type Enumerations
+    // Operator Type Enumeration (unified for solvers and preconditioners)
     // =============================================================================
 
-    enum class LinearSolverType {
-        // Eigen solvers (always available)
-        Eigen_SparseLU, ///< Direct LU factorization
-        Eigen_CG, ///< Conjugate Gradient
-        Eigen_DGMRES, ///< DGMRES style Krylov solver
+    enum class OperatorType {
+        // Direct solvers
+        SparseLU,
+        Pardiso,
+        Umfpack,
 
-        // MKL PARDISO (conditionally available)
-        MKL_Pardiso, ///< MKL PARDISO direct solver
+        // Iterative solvers
+        CG,
+        DGMRES,
 
-        // SuiteSparse UMFPACK (conditionally available)
-        UMFPACK_LU, ///< SuiteSparse UMFPACK direct solver
-    };
-
-    enum class PreconditionerType {
-        None,
+        // Preconditioners
         Diagonal,
         ICC,
         ILU,
-        AdditiveSchwarz
+        AdditiveSchwarz,
     };
 
     // =============================================================================
-    // Solver Metadata
+    // Operator Metadata
     // =============================================================================
 
-    struct LinearSolverMeta {
-        LinearSolverType type;
+    struct OperatorMeta {
+        OperatorType type;
         std::string_view name;
         std::string_view description;
         bool isIterative;
@@ -56,7 +52,7 @@ namespace mpfem {
     };
 
     // =============================================================================
-    // Solver Registry
+    // Operator Registry
     // =============================================================================
 
     namespace detail {
@@ -79,20 +75,24 @@ namespace mpfem {
 #endif
         }
 
-        inline constexpr LinearSolverMeta linearSolverRegistry[] = {
-            // Eigen solvers (always available)
-            {LinearSolverType::Eigen_SparseLU, "SparseLU", "Eigen SparseLU direct solver", false, false, true},
-            {LinearSolverType::Eigen_CG, "CG", "Eigen Conjugate Gradient solver", true, true, true},
-            {LinearSolverType::Eigen_DGMRES, "DGMRES", "Eigen DGMRES solver", true, false, true},
+        inline constexpr OperatorMeta operatorRegistry[] = {
+            // Direct solvers
+            {OperatorType::SparseLU, "SparseLU", "Eigen SparseLU direct solver", false, false, true},
+            {OperatorType::Pardiso, "Pardiso", "MKL PARDISO direct solver", false, false, isMKLAvailable()},
+            {OperatorType::Umfpack, "UMFPACK", "SuiteSparse UMFPACK direct solver", false, false, isSuiteSparseAvailable()},
 
-            // MKL PARDISO
-            {LinearSolverType::MKL_Pardiso, "Pardiso", "MKL PARDISO direct solver", false, false, isMKLAvailable()},
+            // Iterative solvers
+            {OperatorType::CG, "CG", "Eigen Conjugate Gradient solver", true, true, true},
+            {OperatorType::DGMRES, "DGMRES", "Eigen DGMRES solver", true, false, true},
 
-            // SuiteSparse UMFPACK
-            {LinearSolverType::UMFPACK_LU, "UMFPACK", "SuiteSparse UMFPACK direct solver", false, false, isSuiteSparseAvailable()},
+            // Preconditioners
+            {OperatorType::Diagonal, "Diagonal", "Diagonal (Jacobi) preconditioner", false, false, true},
+            {OperatorType::ICC, "ICC", "Incomplete Cholesky preconditioner", false, true, true},
+            {OperatorType::ILU, "ILU", "Incomplete LU preconditioner", false, false, true},
+            {OperatorType::AdditiveSchwarz, "AdditiveSchwarz", "Additive Schwarz domain decomposition", false, false, true},
         };
 
-        inline constexpr size_t linearSolverRegistrySize = sizeof(linearSolverRegistry) / sizeof(LinearSolverMeta);
+        inline constexpr size_t operatorRegistrySize = sizeof(operatorRegistry) / sizeof(OperatorMeta);
 
     } // namespace detail
 
@@ -100,86 +100,115 @@ namespace mpfem {
     // Utility Functions
     // =============================================================================
 
-    inline const LinearSolverMeta& getLinearSolverMeta(LinearSolverType type)
+    inline const OperatorMeta& getOperatorMeta(OperatorType type)
     {
-        for (size_t i = 0; i < detail::linearSolverRegistrySize; ++i) {
-            if (detail::linearSolverRegistry[i].type == type) {
-                return detail::linearSolverRegistry[i];
+        for (size_t i = 0; i < detail::operatorRegistrySize; ++i) {
+            if (detail::operatorRegistry[i].type == type) {
+                return detail::operatorRegistry[i];
             }
         }
-        throw std::runtime_error("Unknown linear solver type");
+        throw std::runtime_error("Unknown operator type");
     }
 
-    inline std::string_view linearSolverTypeName(LinearSolverType type)
+    inline std::string_view operatorTypeName(OperatorType type)
     {
-        return getLinearSolverMeta(type).name;
+        return getOperatorMeta(type).name;
     }
 
-    inline bool isLinearSolverAvailable(LinearSolverType type)
+    inline bool isOperatorAvailable(OperatorType type)
     {
-        return getLinearSolverMeta(type).isAvailable;
+        return getOperatorMeta(type).isAvailable;
     }
 
-    inline std::string_view preconditionerTypeName(PreconditionerType type)
-    {
-        switch (type) {
-        case PreconditionerType::None:
-            return "None";
-        case PreconditionerType::Diagonal:
-            return "Diagonal";
-        case PreconditionerType::ICC:
-            return "ICC";
-        case PreconditionerType::ILU:
-            return "ILU";
-        case PreconditionerType::AdditiveSchwarz:
-            return "AdditiveSchwarz";
-        default:
-            throw std::runtime_error("Unknown preconditioner type");
-        }
-    }
-
-    inline std::vector<std::string> availableLinearSolverNames()
+    inline std::vector<std::string> availableOperatorNames()
     {
         std::vector<std::string> result;
-        for (size_t i = 0; i < detail::linearSolverRegistrySize; ++i) {
-            if (detail::linearSolverRegistry[i].isAvailable) {
-                result.emplace_back(detail::linearSolverRegistry[i].name);
+        for (size_t i = 0; i < detail::operatorRegistrySize; ++i) {
+            if (detail::operatorRegistry[i].isAvailable) {
+                result.emplace_back(detail::operatorRegistry[i].name);
             }
         }
         return result;
     }
 
+    inline OperatorType operatorTypeFromName(std::string_view name)
+    {
+        const std::string key = [name]() {
+            std::string normalized;
+            normalized.reserve(name.size());
+            for (char ch : name) {
+                const unsigned char value = static_cast<unsigned char>(ch);
+                if (std::isalnum(value)) {
+                    normalized.push_back(static_cast<char>(std::tolower(value)));
+                }
+            }
+            return normalized;
+        }();
+
+        if (key == "sparselu")
+            return OperatorType::SparseLU;
+        if (key == "pardiso")
+            return OperatorType::Pardiso;
+        if (key == "umfpack")
+            return OperatorType::Umfpack;
+        if (key == "cg")
+            return OperatorType::CG;
+        if (key == "dgmres")
+            return OperatorType::DGMRES;
+        if (key == "diagonal")
+            return OperatorType::Diagonal;
+        if (key == "icc")
+            return OperatorType::ICC;
+        if (key == "ilu")
+            return OperatorType::ILU;
+        if (key == "additiveschwarz")
+            return OperatorType::AdditiveSchwarz;
+
+        throw std::runtime_error("Unknown operator type: " + std::string(name));
+    }
+
     // =============================================================================
-    // Linear Solver Configuration
+    // Recursive Operator Configuration (onion skin structure)
     // =============================================================================
 
-    struct LinearSolverConfig {
-        LinearSolverType type = LinearSolverType::Eigen_CG;
-        int maxIterations = 1000;
-        int restart = 30;
-        Real tolerance = 1e-10;
-        int printLevel = 0;
-    };
+    /**
+     * @brief Recursive configuration for LinearOperator tree.
+     *
+     * Supports arbitrary nesting of preconditioners via the preconditioner field.
+     * Example XML structure:
+     * <Operator type="CG">
+     *   <Tolerance>1e-10</Tolerance>
+     *   <MaxIterations>1000</MaxIterations>
+     *   <Preconditioner type="AdditiveSchwarz">
+     *     <Overlap>1</Overlap>
+     *     <LocalSolver>
+     *       <Preconditioner type="ILU"/>
+     *     </LocalSolver>
+     *   </Preconditioner>
+     * </Operator>
+     */
+    struct LinearOperatorConfig {
+        /// Operator type
+        OperatorType type = OperatorType::CG;
 
-    // =============================================================================
-    // Preconditioner Configuration (hierarchical)
-    // =============================================================================
-
-    struct PreconditionerConfig {
-        PreconditionerType type = PreconditionerType::None;
+        /// Scalar parameters (Tolerance, MaxIterations, Sweeps, etc.)
         std::map<std::string, Real> parameters;
-        PreconditionerConfig* localSolver = nullptr; ///< For AdditiveSchwarz (non-owning)
-        PreconditionerConfig* coarseSolver = nullptr; ///< For AdditiveSchwarz/AMG (non-owning)
-        PreconditionerConfig* smoother = nullptr; ///< For AMG (non-owning)
-    };
 
-    // =============================================================================
-    // Solver Configuration
-    // =============================================================================
+        /// Nested preconditioner (onion skin)
+        std::unique_ptr<LinearOperatorConfig> preconditioner;
 
-    struct SolverConfig {
-        LinearSolverConfig solver;
-        PreconditionerConfig preconditioner;
+        /// For AdditiveSchwarz: local solver configuration
+        std::unique_ptr<LinearOperatorConfig> localSolver;
+
+        /// For AdditiveSchwarz/AMG: coarse solver configuration
+        std::unique_ptr<LinearOperatorConfig> coarseSolver;
+
+        /// For AMG: smoother configuration
+        std::unique_ptr<LinearOperatorConfig> smoother;
+
+        // Convenience constructor
+        LinearOperatorConfig() = default;
+        explicit LinearOperatorConfig(OperatorType t) : type(t) { }
     };
 
 } // namespace mpfem

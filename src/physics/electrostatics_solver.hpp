@@ -48,7 +48,7 @@ private:
 
     std::vector<ConductivityBinding> conductivityBindings_;
     std::map<int, const Coefficient*> voltageBCs_;
-    AssemblyTagCache assembledSystemState_;
+    AssemblyTagCache stiffnessAssemblyState_;
 };
 
 } // namespace mpfem

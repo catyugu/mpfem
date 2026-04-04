@@ -20,49 +20,53 @@
   * 验证编译运行结果，移除所有向后兼容的或容易误用的接口，防止冗余。
   * 提交一次代码，然后继续完成下一个子任务。
 
-## 工作任务1
+## 具体工作任务
 
-* 彻底改变线性求解层的架构设计，允许多层次的配置/求解方式，参考配置格式：
+### 任务一：重塑统一算子抽象 (LinearOperator 基类)
+
+废弃原有的“求解器 vs 预条件子”二元对立设计，建立“一切皆算子”的统一抽象模型。无论是直接法、Krylov 方法、AMG 还是 DDM，均必须继承自统一的基类接口。
+
+* **定义核心两阶段生命周期：**
+    * 强制实现 `setup(const Matrix* A)`：处理矩阵因式分解、区域切分、粗网格构建等繁重计算。
+    * 强制实现 `apply(const Vector& b, Vector& x)`：执行纯粹的向量迭代与映射操作。
+* **实现嵌套能力：** 在基类中提供 `set_preconditioner(std::unique_ptr<LinearOperator> pc)` 方法，支持算子的无限层级嵌套。
+* **剥离矩阵所有权：** 确保基类及各子类在 `setup` 中绝不隐式接管或销毁外部传入的系统矩阵。
+
+### 任务二：构建动态配置树与工厂解析器
+
+彻底改变线性求解层的实例化方式，从代码硬编码转向基于配置文件的树状解析。
+
+* **实现递归工厂模式：** 编写能够解析多层级 XML 配置的 Factory 方法，依据配置动态实例化算子，并利用 `set_preconditioner` 自动完成组装。
+* **支持标准配置协议：** 解析器必须完美支持以下洋葱状的嵌套 XML 结构：
 
 ```xml
 <SolverConfiguration>
-    <LinearSolver type="DGMRES">
+    <Operator type="CG">
         <Parameters>
-            <Tolerance>1e-8</Tolerance>
-            <MaxIterations>500</MaxIterations>
-            <Restart>30</Restart>
+            <Tolerance>1e-10</Tolerance>
+            <MaxIterations>1000</MaxIterations>
+            <PrintLevel>0</PrintLevel>
         </Parameters>
-
-        <Preconditioner type="AdditiveSchwarz">
-            <Parameters>
-                <Overlap>1</Overlap> </Parameters>
-
-            <LocalSolver type="ILU">
+        <Preconditioner>
+            <Operator type="Jacobi">
                 <Parameters>
-                    <FillLevel>0</FillLevel>
-                    <DropTolerance>1e-4</DropTolerance>
+                    <Sweeps>1</Sweeps>
                 </Parameters>
-            </LocalSolver>
-
-            <CoarseSolver type="AMG">
-                <Parameters>
-                    <CoarseningMethod>Ruge-Stueben</CoarseningMethod>
-                    <CycleType>V-Cycle</CycleType>
-                    <MaxLevels>5</MaxLevels>
-                </Parameters>
-                
-                <Smoother type="GaussSeidel">
-                    <Parameters>
-                        <Sweeps>2</Sweeps>
-                    </Parameters>
-                </Smoother>
-            </CoarseSolver>
-
+            </Operator>
         </Preconditioner>
-    </LinearSolver>
+    </Operator>
 </SolverConfiguration>
 ```
 
-* 彻底分离求解器与预条件设置（例如求解器只提供单纯的LU，CG，DGMRES等，预条件另外设置），重写相关工厂和io方法。
-* 正确实现加性施瓦兹（DDM）预条件子，为此你可能需要修改网格的数据结构以及其他相关代码以支持MPI并行。
-* 修改几个case.xml以使用新的模式，编译，测试，验证。
+### 任务三：解决动静多态冲突 (Eigen Adapter)
+
+针对底层大量使用 Eigen 等基于模板元编程的静态求解器，开发适配器以桥接动态架构。
+
+* **编写 Adapter 封装类：** 创建符合 Eigen 预条件子 Concept 的模板类 `DynamicPreconditionerAdapter`。
+* **运行时转发机制：** 该 Adapter 内部持有 `LinearOperator*` 借用指针，在 Eigen 的编译期循环内，通过虚函数调用将 `solve` 操作安全转发至动态配置的自定义算子中。
+
+### 任务四：全局重构与测试验证
+
+* **清理旧架构：** 完全移除原有的 Solver 层遗留代码。
+* **升级测试用例：** 修改项目中所有 `case.xml` 文件，使其符合全新的嵌套算子配置规范。
+* **端到端验证：** 执行系统级编译，并运行全套测试集，确保精度和性能符合预期，且借助内存检测工具（如 Valgrind/ASan）确认无由 `unique_ptr` 和裸指针混用导致的内存泄漏或悬空指针。

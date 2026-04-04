@@ -18,19 +18,6 @@ namespace mpfem {
 
     namespace {
 
-        std::string normalizeToken(std::string_view text)
-        {
-            std::string normalized;
-            normalized.reserve(text.size());
-            for (char ch : text) {
-                const unsigned char value = static_cast<unsigned char>(ch);
-                if (std::isalnum(value)) {
-                    normalized.push_back(static_cast<char>(std::tolower(value)));
-                }
-            }
-            return normalized;
-        }
-
         const std::string& requireBoundaryParam(const std::map<std::string, std::string>& params,
             const std::string& key,
             const std::string& physicsKind,
@@ -193,68 +180,39 @@ namespace mpfem {
             return parameters;
         };
 
-        auto getParameter = [&](const std::map<std::string, Real>& parameters,
-                                std::initializer_list<std::string_view> names) -> const Real* {
-            for (std::string_view name : names) {
-                const std::string expected = normalizeToken(name);
-                for (const auto& [key, value] : parameters) {
-                    if (normalizeToken(key) == expected) {
-                        return &value;
-                    }
-                }
-            }
-            return nullptr;
-        };
-
-        auto parseParameterReal = [&](const std::map<std::string, Real>& parameters,
-                                      std::initializer_list<std::string_view> names,
-                                      double defaultValue) -> double {
-            const Real* value = getParameter(parameters, names);
-            if (!value) {
-                return defaultValue;
-            }
-            return static_cast<double>(*value);
-        };
-
-        auto parseParameterInt = [&](const std::map<std::string, Real>& parameters,
-                                     std::initializer_list<std::string_view> names,
-                                     int defaultValue) -> int {
-            const Real* value = getParameter(parameters, names);
-            if (!value) {
-                return defaultValue;
-            }
-            return static_cast<int>(std::lround(static_cast<double>(*value)));
-        };
-
-        std::function<PreconditionerConfig*(const tinyxml2::XMLElement*)> readPreconditionerNode;
-        readPreconditionerNode = [&](const tinyxml2::XMLElement* element) -> PreconditionerConfig* {
+        std::function<std::unique_ptr<LinearOperatorConfig>(const tinyxml2::XMLElement*)> readOperatorConfigNode;
+        readOperatorConfigNode = [&](const tinyxml2::XMLElement* element) -> std::unique_ptr<LinearOperatorConfig> {
             if (!element) {
                 return nullptr;
             }
 
             const char* typeAttr = element->Attribute("type");
             if (!typeAttr) {
-                throw FileException(std::string("Missing preconditioner node type on <") + element->Name() + "> in " + filePath);
+                throw FileException(std::string("Missing operator node type on <") + element->Name() + "> in " + filePath);
             }
 
-            auto* node = new PreconditionerConfig();
-            node->type = SolverFactory::preconditionerTypeFromName(typeAttr);
+            auto node = std::make_unique<LinearOperatorConfig>();
+            node->type = operatorTypeFromName(typeAttr);
             node->parameters = readParameterMap(element->FirstChildElement("Parameters"));
 
             for (const tinyxml2::XMLElement* child = element->FirstChildElement();
                 child != nullptr;
                 child = child->NextSiblingElement()) {
                 const std::string childName = child->Name();
+                if (childName == "Preconditioner") {
+                    node->preconditioner = readOperatorConfigNode(child);
+                    continue;
+                }
                 if (childName == "LocalSolver") {
-                    node->localSolver = readPreconditionerNode(child);
+                    node->localSolver = readOperatorConfigNode(child);
                     continue;
                 }
                 if (childName == "CoarseSolver") {
-                    node->coarseSolver = readPreconditionerNode(child);
+                    node->coarseSolver = readOperatorConfigNode(child);
                     continue;
                 }
                 if (childName == "Smoother") {
-                    node->smoother = readPreconditionerNode(child);
+                    node->smoother = readOperatorConfigNode(child);
                 }
             }
 
@@ -381,40 +339,8 @@ namespace mpfem {
                     throw FileException("Missing <LinearSolver> in <SolverConfiguration> for physics '" + physics.kind + "'");
                 }
 
-                const char* linearTypeAttr = linearSolverElement->Attribute("type");
-                if (!linearTypeAttr) {
-                    throw FileException("Missing LinearSolver type for physics '" + physics.kind + "'");
-                }
-                physics.solver.solver.type = SolverFactory::linearSolverTypeFromName(linearTypeAttr);
-
-                const auto linearParameters = readParameterMap(linearSolverElement->FirstChildElement("Parameters"));
-                physics.solver.solver.maxIterations = parseParameterInt(
-                    linearParameters,
-                    {"MaxIterations"},
-                    physics.solver.solver.maxIterations);
-                physics.solver.solver.restart = parseParameterInt(
-                    linearParameters,
-                    {"Restart"},
-                    physics.solver.solver.restart);
-                physics.solver.solver.tolerance = parseParameterReal(
-                    linearParameters,
-                    {"Tolerance", "RelativeTolerance"},
-                    physics.solver.solver.tolerance);
-                physics.solver.solver.printLevel = parseParameterInt(
-                    linearParameters,
-                    {"PrintLevel"},
-                    physics.solver.solver.printLevel);
-
-                if (const tinyxml2::XMLElement* preconditionerElement = linearSolverElement->FirstChildElement("Preconditioner")) {
-                    physics.solver.preconditioner = *readPreconditionerNode(preconditionerElement);
-                }
-                else {
-                    physics.solver.preconditioner.type = PreconditionerType::None;
-                    physics.solver.preconditioner.parameters.clear();
-                    physics.solver.preconditioner.localSolver = nullptr;
-                    physics.solver.preconditioner.coarseSolver = nullptr;
-                    physics.solver.preconditioner.smoother = nullptr;
-                }
+                // Parse the root operator configuration
+                physics.solver = readOperatorConfigNode(linearSolverElement);
             }
             else {
                 throw FileException("Missing <SolverConfiguration> for physics '" + physics.kind + "'");

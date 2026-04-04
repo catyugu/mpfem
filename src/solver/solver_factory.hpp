@@ -3,219 +3,125 @@
 
 #include "core/logger.hpp"
 #include "eigen_solver.hpp"
-#include "linear_solver.hpp"
+#include "linear_operator.hpp"
 #include "pardiso_solver.hpp"
-#include "preconditioner.hpp"
 #include "solver_config.hpp"
 #include "umfpack_solver.hpp"
-#include <cctype>
 #include <memory>
+#include <stdexcept>
+#include <string>
 #include <string_view>
 
 namespace mpfem {
 
     // =============================================================================
-    // Solver Factory
+    // Operator Factory
     // =============================================================================
 
     /**
-     * @brief Factory for creating linear solvers and preconditioners.
+     * @brief Factory for creating LinearOperator instances from configuration.
+     *
+     * Recursively parses LinearOperatorConfig tree and instantiates operators,
+     * wiring nested preconditioners via set_preconditioner().
      *
      * Design principles:
-     * - No fallback logic - if solver is not available, throw exception
-     * - Separate creation for solver and preconditioner
-     * - Direct solvers (SparseLU, Pardiso, UMFPACK) do not support preconditioners
-     * - setPreconditioner() will be called on the solver to attach the preconditioner
+     * - No fallback logic - if operator is not available, throw exception
+     * - Recursive construction for nested preconditioners
+     * - All operators inherit from LinearOperator base class
      */
-    class SolverFactory {
+    class OperatorFactory {
     public:
         /**
-         * @brief Convert string to LinearSolverType enum.
-         * @param name Solver name (e.g., "CG", "DGMRES", "SparseLU", "Pardiso", "UMFPACK")
-         * @throws std::runtime_error if name is not recognized
+         * @brief Create a LinearOperator from configuration.
          */
-        static LinearSolverType linearSolverTypeFromName(std::string_view name)
+        static std::unique_ptr<LinearOperator> create(const LinearOperatorConfig& config)
         {
-            const std::string key = normalizeToken(name);
-            if (key == "cg") {
-                return LinearSolverType::Eigen_CG;
-            }
-            if (key == "dgmres") {
-                return LinearSolverType::Eigen_DGMRES;
-            }
-            if (key == "sparselu") {
-                return LinearSolverType::Eigen_SparseLU;
-            }
-            if (key == "pardiso") {
-                return LinearSolverType::MKL_Pardiso;
-            }
-            if (key == "umfpack") {
-                return LinearSolverType::UMFPACK_LU;
-            }
-
-            throw std::runtime_error("Unsupported LinearSolver type: " + std::string(name));
-        }
-
-        /**
-         * @brief Convert string to PreconditionerType enum.
-         * @param name Preconditioner name (e.g., "None", "Diagonal", "ICC", "ILU")
-         * @throws std::runtime_error if name is not recognized
-         */
-        static PreconditionerType preconditionerTypeFromName(std::string_view name)
-        {
-            const std::string key = normalizeToken(name);
-            if (key == "none") {
-                return PreconditionerType::None;
-            }
-            if (key == "diagonal") {
-                return PreconditionerType::Diagonal;
-            }
-            if (key == "icc") {
-                return PreconditionerType::ICC;
-            }
-            if (key == "ilu") {
-                return PreconditionerType::ILU;
-            }
-            if (key == "additiveschwarz") {
-                return PreconditionerType::AdditiveSchwarz;
-            }
-
-            throw std::runtime_error("Unsupported Preconditioner type: " + std::string(name));
-        }
-
-        /**
-         * @brief Create a solver instance without preconditioner.
-         * @param config Solver configuration containing linearType
-         * @return Unique pointer to the solver instance
-         * @throws std::runtime_error if solver is not available
-         */
-        static std::unique_ptr<LinearSolver> createSolver(const SolverConfig& config)
-        {
-            const LinearSolverType type = config.solver.type;
-
-            // Check availability
-            const auto& meta = getLinearSolverMeta(type);
+            const auto& meta = getOperatorMeta(config.type);
             if (!meta.isAvailable) {
                 throw std::runtime_error(
-                    "Solver '" + std::string(meta.name) + "' is not available. "
-                                                          "Available solvers: "
-                    + joinSolverNames());
+                    "Operator '" + std::string(meta.name) + "' is not available.");
             }
 
-            LOG_DEBUG << "Creating solver: " << meta.name;
+            std::unique_ptr<LinearOperator> op = createByType(config.type);
 
-            // Create solver instance
-            auto solver = createSolverByType(type);
+            // Apply parameters
+            applyParameters(op.get(), config);
 
-            // Apply configuration
-            solver->setMaxIterations(config.solver.maxIterations);
-            solver->setTolerance(config.solver.tolerance);
-            solver->setPrintLevel(config.solver.printLevel);
+            // Create and attach nested preconditioner
+            if (config.preconditioner) {
+                auto pc = create(*config.preconditioner);
+                op->set_preconditioner(std::move(pc));
+            }
 
-            // Apply solver-specific configuration
-            solver->applyConfig(config);
-
-            return solver;
+            return op;
         }
 
-        /**
-         * @brief Create a preconditioner instance.
-         * @param config Preconditioner configuration
-         * @return Unique pointer to the preconditioner, or nullptr if not implemented
-         *         (AdditiveSchwarz) or type is None
-         */
-        static std::unique_ptr<Preconditioner> createPreconditioner(const PreconditionerConfig& config)
+        /// Create operator by type
+        static std::unique_ptr<LinearOperator> createByType(OperatorType type)
         {
-            const PreconditionerType type = config.type;
-
-            // AdditiveSchwarz require hierarchical setup - not implemented here
-            if (type == PreconditionerType::AdditiveSchwarz) {
-                LOG_WARN << "AdditiveSchwarz preconditioner requires hierarchical setup; "
-                         << "returning nullptr. Use HierarchicalSolver instead.";
-                return nullptr;
+            switch (type) {
+            case OperatorType::SparseLU:
+                return std::make_unique<EigenSparseLUOperator>();
+            case OperatorType::CG:
+                return std::make_unique<CgOperator>();
+            case OperatorType::DGMRES:
+                return std::make_unique<GmresOperator>();
+            case OperatorType::Diagonal:
+                return std::make_unique<DiagonalOperator>();
+            case OperatorType::ICC:
+                return std::make_unique<IccOperator>();
+            case OperatorType::ILU:
+                return std::make_unique<IluOperator>();
+            case OperatorType::AdditiveSchwarz:
+                return std::make_unique<AdditiveSchwarzOperator>();
+            case OperatorType::Pardiso:
+#ifdef MPFEM_USE_MKL
+                return std::make_unique<PardisoSolver>();
+#else
+                throw std::runtime_error("PardisoOperator: MKL not available");
+#endif
+            case OperatorType::Umfpack:
+#ifdef MPFEM_USE_SUITESPARSE
+                return std::make_unique<UmfpackSolver>();
+#else
+                throw std::runtime_error("UmfpackOperator: SuiteSparse not available");
+#endif
+            default:
+                throw std::runtime_error("Unsupported operator type");
             }
-
-            // Use registry for simple types (None, Diagonal, ICC, ILU)
-            auto precond = PreconditionerRegistry::create(type);
-            if (precond && !config.parameters.empty()) {
-                precond->setParameters(config.parameters);
-            }
-            return precond;
-        }
-
-        /**
-         * @brief Create a composed solver with optional preconditioner.
-         * @param config Full solver configuration with solver type and preconditioner
-         * @return Unique pointer to the solver with preconditioner attached
-         * @throws std::runtime_error if solver is not available or preconditioner
-         *         is not supported (direct solvers don't support preconditioners)
-         */
-        static std::unique_ptr<LinearSolver> create(const SolverConfig& config)
-        {
-            // Create solver
-            auto solver = createSolver(config);
-
-            // Create preconditioner if requested
-            if (config.preconditioner.type != PreconditionerType::None) {
-                auto preconditioner = createPreconditioner(config.preconditioner);
-                if (preconditioner) {
-                    solver->setPreconditioner(std::move(preconditioner));
-                }
-            }
-
-            return solver;
         }
 
     private:
-        static std::string normalizeToken(std::string_view text)
+        static void applyParameters(LinearOperator* op, const LinearOperatorConfig& config)
         {
-            std::string normalized;
-            normalized.reserve(text.size());
-            for (char ch : text) {
-                const unsigned char value = static_cast<unsigned char>(ch);
-                if (std::isalnum(value)) {
-                    normalized.push_back(static_cast<char>(std::tolower(value)));
+            const auto& params = config.parameters;
+
+            if (auto* cg = dynamic_cast<CgOperator*>(op)) {
+                if (auto it = params.find("MaxIterations"); it != params.end()) {
+                    cg->set_max_iterations(static_cast<int>(it->second));
+                }
+                if (auto it = params.find("Tolerance"); it != params.end()) {
+                    cg->set_tolerance(it->second);
                 }
             }
-            return normalized;
-        }
-
-        static std::unique_ptr<LinearSolver> createSolverByType(LinearSolverType type)
-        {
-            switch (type) {
-            // Eigen solvers (always available)
-            case LinearSolverType::Eigen_SparseLU:
-                return std::make_unique<EigenSparseLUSolver>();
-            case LinearSolverType::Eigen_CG:
-                return std::make_unique<EigenCGSolver>();
-            case LinearSolverType::Eigen_DGMRES:
-                return std::make_unique<EigenDGMRESSolver>();
-
-            // MKL PARDISO
-            case LinearSolverType::MKL_Pardiso:
-                return std::make_unique<PardisoSolver>();
-
-            // SuiteSparse UMFPACK
-            case LinearSolverType::UMFPACK_LU:
-                return std::make_unique<UmfpackSolver>();
-
-            default:
-                throw std::runtime_error("Unsupported solver type");
+            else if (auto* gmres = dynamic_cast<GmresOperator*>(op)) {
+                if (auto it = params.find("MaxIterations"); it != params.end()) {
+                    gmres->set_max_iterations(static_cast<int>(it->second));
+                }
+                if (auto it = params.find("Tolerance"); it != params.end()) {
+                    gmres->set_tolerance(it->second);
+                }
             }
-        }
-
-        static std::string joinSolverNames()
-        {
-            auto names = availableLinearSolverNames();
-            std::string result;
-            for (size_t i = 0; i < names.size(); ++i) {
-                if (i > 0)
-                    result += ", ";
-                result += names[i];
+            else if (auto* icc = dynamic_cast<IccOperator*>(op)) {
+                if (auto it = params.find("Shift"); it != params.end()) {
+                    icc->set_shift(it->second);
+                }
             }
-            return result;
         }
     };
+
+    // Backward compatibility alias
+    using SolverFactory = OperatorFactory;
 
 } // namespace mpfem
 

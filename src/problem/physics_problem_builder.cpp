@@ -192,9 +192,9 @@ namespace mpfem {
     namespace PhysicsProblemBuilder {
         void buildSolvers(Problem& problem);
         void setupCoupling(Problem& problem);
-        void buildElectrostatics(Problem& problem, const CaseDefinition::Physics& physics);
-        void buildHeatTransfer(Problem& problem, const CaseDefinition::Physics& physics);
-        void buildStructural(Problem& problem, const CaseDefinition::Physics& physics);
+        void buildElectrostatics(Problem& problem, CaseDefinition::Physics& physics);
+        void buildHeatTransfer(Problem& problem, CaseDefinition::Physics& physics);
+        void buildStructural(Problem& problem, CaseDefinition::Physics& physics);
 
         std::unique_ptr<Problem> build(const std::string& caseDir,
             const ProblemInputLoader& inputLoader)
@@ -257,9 +257,9 @@ namespace mpfem {
 
         void buildSolvers(Problem& problem)
         {
-            const auto& caseDef = problem.caseDef;
+            auto& caseDef = problem.caseDef;
 
-            for (const auto& [kind, physics] : caseDef.physics) {
+            for (auto& [kind, physics] : caseDef.physics) {
                 if (kind == "electrostatics") {
                     buildElectrostatics(problem, physics);
                     continue;
@@ -278,11 +278,11 @@ namespace mpfem {
             }
         }
 
-        void buildElectrostatics(Problem& problem, const CaseDefinition::Physics& physics)
+        void buildElectrostatics(Problem& problem, CaseDefinition::Physics& physics)
         {
             LOG_INFO << "Building electrostatics solver, order = " << physics.order;
             problem.electrostatics = std::make_unique<ElectrostaticsSolver>(physics.order);
-            problem.electrostatics->setSolverConfig(physics.solver);
+            problem.electrostatics->setSolverConfig(std::move(physics.solver));
 
             double icValue = getInitialCondition(problem.caseDef, kPhysicsElectrostatics, 0.0);
             problem.electrostatics->initialize(*problem.mesh, problem.fieldValues, physics.order, icValue);
@@ -304,11 +304,11 @@ namespace mpfem {
             }
         }
 
-        void buildHeatTransfer(Problem& problem, const CaseDefinition::Physics& physics)
+        void buildHeatTransfer(Problem& problem, CaseDefinition::Physics& physics)
         {
             LOG_INFO << "Building heat transfer solver, order = " << physics.order;
             problem.heatTransfer = std::make_unique<HeatTransferSolver>(physics.order);
-            problem.heatTransfer->setSolverConfig(physics.solver);
+            problem.heatTransfer->setSolverConfig(std::move(physics.solver));
 
             double icValue = getInitialCondition(problem.caseDef, kPhysicsHeatTransfer, 293.15);
             problem.heatTransfer->initialize(*problem.mesh, problem.fieldValues, physics.order, icValue);
@@ -345,11 +345,11 @@ namespace mpfem {
             }
         }
 
-        void buildStructural(Problem& problem, const CaseDefinition::Physics& physics)
+        void buildStructural(Problem& problem, CaseDefinition::Physics& physics)
         {
             LOG_INFO << "Building structural solver, order = " << physics.order;
             problem.structural = std::make_unique<StructuralSolver>(physics.order);
-            problem.structural->setSolverConfig(physics.solver);
+            problem.structural->setSolverConfig(std::move(physics.solver));
 
             double icValue = getInitialCondition(problem.caseDef, kPhysicsSolidMechanics, 0.0);
             problem.structural->initialize(*problem.mesh, problem.fieldValues, physics.order, icValue);
