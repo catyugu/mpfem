@@ -1,10 +1,8 @@
 #ifndef MPFEM_HEAT_TRANSFER_SOLVER_HPP
 #define MPFEM_HEAT_TRANSFER_SOLVER_HPP
 
-#include "assembly_change_tracker.hpp"
 #include "fe/coefficient.hpp"
 #include "physics_field_solver.hpp"
-#include <cstdint>
 #include <set>
 #include <vector>
 
@@ -84,64 +82,26 @@ namespace mpfem {
         struct TemperatureBinding {
             std::set<int> boundaryIds;
             const Coefficient* temperature = nullptr;
-
-            std::uint64_t stateTag() const
-            {
-                return combineTag(stateTagOf(boundaryIds), stateTagOf(temperature));
-            }
         };
 
         struct ConvectionBinding {
             std::set<int> boundaryIds;
             const Coefficient* h = nullptr;
             const Coefficient* Tinf = nullptr;
-
-            std::uint64_t stiffnessTag() const
-            {
-                return combineTag(stateTagOf(boundaryIds), stateTagOf(h));
-            }
-
-            std::uint64_t loadTag() const
-            {
-                return combineTag(stateTagOf(boundaryIds), combineTag(stateTagOf(h), stateTagOf(Tinf)));
-            }
-
-            std::uint64_t stateTag() const
-            {
-                return loadTag();
-            }
         };
 
         struct ConductivityBinding {
             std::set<int> domains;
             const MatrixCoefficient* conductivity = nullptr;
-
-            std::uint64_t stateTag() const
-            {
-                return combineTag(stateTagOf(domains), stateTagOf(conductivity));
-            }
         };
         struct HeatSourceBinding {
             std::set<int> domains;
             const Coefficient* source = nullptr;
-
-            std::uint64_t stateTag() const
-            {
-                return combineTag(stateTagOf(domains), stateTagOf(source));
-            }
         };
         struct MassBinding {
             std::set<int> domains;
             const Coefficient* density = nullptr;
             const Coefficient* specificHeat = nullptr;
-
-            std::uint64_t stateTag() const
-            {
-                auto tag = stateTagOf(domains);
-                tag = combineTag(tag, stateTagOf(density));
-                tag = combineTag(tag, stateTagOf(specificHeat));
-                return tag;
-            }
         };
 
         std::vector<ConductivityBinding> conductivityBindings_;
@@ -151,7 +111,6 @@ namespace mpfem {
         std::vector<ConvectionBinding> convectionBindings_;
         SparseMatrix massMatrix_;
         bool massMatrixAssembled_ = false;
-        AssemblyTagCache massAssemblyState_;
 
         /// @brief Stiffness matrix before BC application (for transient time integrators)
         SparseMatrix stiffnessMatrixBeforeBC_;
@@ -162,10 +121,6 @@ namespace mpfem {
         // Reusable buffers for transient linear systems after BC application.
         SparseMatrix systemMatrix_;
         Vector systemRhs_;
-
-        AssemblyTagCache stiffnessAssemblyState_;
-        AssemblyTagCache loadAssemblyState_;
-        AssemblyTagCache bcAssemblyState_;
     };
 
 } // namespace mpfem

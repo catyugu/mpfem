@@ -29,13 +29,7 @@ namespace mpfem {
             MPFEM_ASSERT(vecAsm_ != nullptr, "Vector assembler not configured");
             MPFEM_ASSERT(fieldValues_ != nullptr, "FieldValues not set");
 
-            // Two-stage lifecycle: setup then apply
-            // Re-setup if matrix fingerprint changed (matrix was rebuilt)
-            const auto currentFingerprint = matAsm_->matrix().fingerprint();
-            if (!solver_->is_setup() || currentFingerprint != matrixFingerprint_) {
-                solver_->setup(&matAsm_->matrix());
-                matrixFingerprint_ = currentFingerprint;
-            }
+            solver_->setup(&matAsm_->matrix());
             solver_->apply(vecAsm_->vector(), field().values());
 
             field().markUpdated();
@@ -78,7 +72,6 @@ namespace mpfem {
 
         int order_ = 1;
         std::unique_ptr<LinearOperatorConfig> solverConfig_;
-        std::uint64_t matrixFingerprint_ = 0;
 
         const Mesh* mesh_ = nullptr;
         FieldValues* fieldValues_ = nullptr;

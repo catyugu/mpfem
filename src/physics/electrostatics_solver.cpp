@@ -44,14 +44,6 @@ namespace mpfem {
             return;
         }
 
-        const std::uint64_t currentTag = combineTag(
-            stateTagOfRange(conductivityBindings_),
-            stateTagOfRange(voltageBindings_));
-        if (stiffnessAssemblyState_.isUnchanged(currentTag)) {
-            LOG_DEBUG << "Electrostatics assemble skipped (coefficients unchanged)";
-            return;
-        }
-
         clearAssemblers();
 
         for (const auto& binding : conductivityBindings_) {
@@ -69,8 +61,6 @@ namespace mpfem {
         }
         applyDirichletBC(matAsm_->matrix(), vecAsm_->vector(), field().values(), *fes_, *mesh_, voltageBCs);
         matAsm_->finalize();
-
-        stiffnessAssemblyState_.update(currentTag);
     }
 
 } // namespace mpfem

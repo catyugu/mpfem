@@ -53,8 +53,6 @@ public:
         std::unique_ptr<Impl> impl_;
     };
 
-    static ExpressionParser& instance();
-
     ExpressionParser(const ExpressionParser&) = delete;
     ExpressionParser& operator=(const ExpressionParser&) = delete;
 

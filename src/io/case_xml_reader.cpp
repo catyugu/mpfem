@@ -136,11 +136,12 @@ namespace mpfem {
         }
 
         std::map<std::string, double> variableValues;
-        auto evalExpr = [&variableValues](const char* text, double defaultValue) -> double {
+        ExpressionParser parser;
+        auto evalExpr = [&parser, &variableValues](const char* text, double defaultValue) -> double {
             if (!text) {
                 return defaultValue;
             }
-            return ExpressionParser::instance().evaluate(text, variableValues);
+            return parser.evaluate(text, variableValues);
         };
 
         auto readParameterMap = [&](const tinyxml2::XMLElement* parametersElement) {

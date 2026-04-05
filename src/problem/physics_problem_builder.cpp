@@ -1,6 +1,7 @@
 #include "physics_problem_builder.hpp"
 #include "core/exception.hpp"
 #include "core/logger.hpp"
+#include "expr/variable_graph.hpp"
 #include "fe/element_transform.hpp"
 #include "fe/grid_function.hpp"
 #include "io/problem_input_loader.hpp"
@@ -101,68 +102,60 @@ namespace mpfem {
                 makeScalarExpressionCoefficient(problem, expression));
         }
 
-        struct RuntimeSymbolBinding {
-            const GridFunction* field = nullptr;
+        enum class RuntimeFieldKind {
+            Unknown,
+            Temperature,
+            Voltage,
         };
 
-        RuntimeSymbolBinding resolveRuntimeSymbolBinding(const Problem& problem, std::string_view symbol)
+        RuntimeFieldKind classifyRuntimeField(std::string_view symbol)
         {
             if (symbol == "T") {
-                return RuntimeSymbolBinding {problem.heatTransfer ? &problem.heatTransfer->field() : nullptr};
+                return RuntimeFieldKind::Temperature;
             }
             if (symbol == "V") {
-                return RuntimeSymbolBinding {problem.electrostatics ? &problem.electrostatics->field() : nullptr};
+                return RuntimeFieldKind::Voltage;
             }
-            return RuntimeSymbolBinding {};
+            return RuntimeFieldKind::Unknown;
         }
 
-        template <typename PointerMap>
-        std::uint64_t combinePointerMapStateTags(std::uint64_t seed, const PointerMap& pointerMap)
+        const GridFunction* resolveRuntimeField(const Problem& problem, RuntimeFieldKind kind)
         {
-            std::uint64_t tag = seed;
-            for (const auto& [_, ptr] : pointerMap) {
-                if (ptr) {
-                    tag = combineTag(tag, ptr->stateTag());
-                }
+            if (kind == RuntimeFieldKind::Temperature) {
+                return problem.heatTransfer ? &problem.heatTransfer->field() : nullptr;
             }
-            return tag;
-        }
-
-        std::uint64_t combineFieldRevisionTag(std::uint64_t seed, const GridFunction* field)
-        {
-            if (!field) {
-                return seed;
+            if (kind == RuntimeFieldKind::Voltage) {
+                return problem.electrostatics ? &problem.electrostatics->field() : nullptr;
             }
-            return combineTag(seed, field->revision());
+            return nullptr;
         }
 
         RuntimeExpressionResolvers makeRuntimeExpressionResolvers(Problem& problem)
         {
             RuntimeExpressionResolvers resolvers;
 
-            resolvers.symbolResolver =
-                [&problem](std::string_view symbol,
-                    ElementTransform& trans,
-                    Real,
-                    double& value) {
-                    const RuntimeSymbolBinding binding = resolveRuntimeSymbolBinding(problem, symbol);
-                    if (!binding.field) {
-                        return false;
+            resolvers.symbolBinder =
+                [&problem](std::string_view symbol) -> ExternalRuntimeSymbolResolver {
+                    const RuntimeFieldKind kind = classifyRuntimeField(symbol);
+                    if (kind == RuntimeFieldKind::Unknown) {
+                        return {};
                     }
 
-                    const auto& ip = trans.integrationPoint();
-                    value = binding.field->eval(trans.elementIndex(), &ip.xi);
-                    return true;
+                    return [&problem, kind](const EvaluationContext& ctx,
+                                            size_t,
+                                                   double& value) -> bool {
+                        const GridFunction* field = resolveRuntimeField(problem, kind);
+                        if (!field) {
+                            return false;
+                        }
+                        if (!ctx.transform) {
+                            return false;
+                        }
+                        const auto& ip = ctx.transform->integrationPoint();
+                        value = field->eval(ctx.transform->elementIndex(), &ip.xi);
+                        return true;
+                    };
                 };
-
-            resolvers.stateTagResolver =
-                [&problem](std::string_view symbol) -> std::uint64_t {
-                const RuntimeSymbolBinding binding = resolveRuntimeSymbolBinding(problem, symbol);
-                if (!binding.field) {
-                    return DynamicCoefficientTag;
-                }
-                return binding.field->revision();
-            };
 
             return resolvers;
         }
@@ -381,11 +374,6 @@ namespace mpfem {
                     sigmaCoef->eval(trans, sigma_mat, t);
                     Vector3 g = V_field->gradient(trans.elementIndex(), &trans.integrationPoint().xi, trans);
                     result = g.transpose() * sigma_mat * g;
-                },
-                [&problem, sigmaByDomain]() -> std::uint64_t {
-                    std::uint64_t tag = combineFieldRevisionTag(kFNVOffsetBasis,
-                        problem.electrostatics ? &problem.electrostatics->field() : nullptr);
-                    return combinePointerMapStateTags(tag, sigmaByDomain);
                 });
 
             const Coefficient* joule = problem.ownScalarCoef(std::move(jouleHeat));
@@ -441,13 +429,6 @@ namespace mpfem {
 
                     result = 2.0 * mu * epsSym;
                     result.diagonal().array() += lambda * epsSym.trace();
-                },
-                [&problem, alphaByDomain, youngByDomain, nuByDomain]() -> std::uint64_t {
-                    std::uint64_t tag = combineFieldRevisionTag(kFNVOffsetBasis,
-                        problem.heatTransfer ? &problem.heatTransfer->field() : nullptr);
-                    tag = combinePointerMapStateTags(tag, alphaByDomain);
-                    tag = combinePointerMapStateTags(tag, youngByDomain);
-                    return combinePointerMapStateTags(tag, nuByDomain);
                 });
 
             const MatrixCoefficient* stressCoef = problem.ownMatrixCoef(std::move(coef));

@@ -75,13 +75,15 @@ void MaterialPropertyModel::setLabel(std::string label) {
 double MaterialPropertyModel::getScalar(
     const std::string& name,
     const std::map<std::string, double>& variables) const {
-    return ExpressionParser::instance().evaluate(scalarExpression(name), variables);
+    ExpressionParser parser;
+    return parser.evaluate(scalarExpression(name), variables);
 }
 
 Matrix3 MaterialPropertyModel::getMatrix(
     const std::string& name,
     const std::map<std::string, double>& variables) const {
-    return ExpressionParser::instance().evaluateMatrix(matrixExpression(name), variables);
+    ExpressionParser parser;
+    return parser.evaluateMatrix(matrixExpression(name), variables);
 }
 
 const std::string& MaterialPropertyModel::scalarExpression(const std::string& name) const {

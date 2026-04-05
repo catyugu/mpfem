@@ -33,23 +33,15 @@ namespace mpfem {
                 throw std::runtime_error("UmfpackSolver: null matrix in setup");
             }
 
-            const std::uint64_t currentFingerprint = A->fingerprint();
-            const bool needRefactor = !hasFactorCache_ || (currentFingerprint != lastMatrixFingerprint_);
+            solver_.analyzePattern(A->eigen());
+            if (solver_.info() != Eigen::Success) {
+                throw std::runtime_error("UmfpackSolver: symbolic analysis failed");
+            }
 
-            if (needRefactor) {
-                solver_.analyzePattern(A->eigen());
-                if (solver_.info() != Eigen::Success) {
-                    throw std::runtime_error("UmfpackSolver: symbolic analysis failed");
-                }
+            solver_.factorize(A->eigen());
 
-                solver_.factorize(A->eigen());
-
-                if (solver_.info() != Eigen::Success) {
-                    throw std::runtime_error("UmfpackSolver: factorization failed");
-                }
-
-                hasFactorCache_ = true;
-                lastMatrixFingerprint_ = currentFingerprint;
+            if (solver_.info() != Eigen::Success) {
+                throw std::runtime_error("UmfpackSolver: factorization failed");
             }
 
             set_matrix(A);
@@ -77,8 +69,6 @@ namespace mpfem {
 
     private:
         Eigen::UmfPackLU<SparseMatrix::Storage> solver_;
-        bool hasFactorCache_ = false;
-        std::uint64_t lastMatrixFingerprint_ = 0;
         int iterations_ = 1;
         Real residual_ = 0.0;
     };

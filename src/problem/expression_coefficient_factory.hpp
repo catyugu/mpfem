@@ -13,15 +13,16 @@
 
 namespace mpfem {
 
-using ExternalRuntimeSymbolResolver =
-    std::function<bool(std::string_view, ElementTransform&, Real, double&)>;
+struct EvaluationContext;
 
-using ExternalRuntimeStateTagResolver =
-    std::function<std::uint64_t(std::string_view)>;
+using ExternalRuntimeSymbolResolver =
+    std::function<bool(const EvaluationContext&, size_t, double&)>;
+
+using ExternalRuntimeSymbolBinder =
+    std::function<ExternalRuntimeSymbolResolver(std::string_view)>;
 
 struct RuntimeExpressionResolvers {
-    ExternalRuntimeSymbolResolver symbolResolver;
-    ExternalRuntimeStateTagResolver stateTagResolver;
+    ExternalRuntimeSymbolBinder symbolBinder;
 };
 
 std::unique_ptr<Coefficient> createRuntimeScalarExpressionCoefficient(

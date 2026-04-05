@@ -57,48 +57,27 @@ namespace mpfem {
             return;
         }
 
-        const std::uint64_t currentStiffnessTag = stateTagOfRange(elasticityBindings_);
-        const std::uint64_t currentLoadTag = stateTagOfRange(strainLoadBindings_);
-        const std::uint64_t currentBcTag = stateTagOfRange(displacementBindings_);
+        matAsm_->clear();
+        matAsm_->clearIntegrators();
 
-        const bool rebuildStiffness = stiffnessAssemblyState_.needsRebuild(currentStiffnessTag);
-        const bool rebuildLoad = loadAssemblyState_.needsRebuild(currentLoadTag);
-        const bool bcChanged = bcAssemblyState_.needsRebuild(currentBcTag);
-
-        if (!rebuildStiffness && !rebuildLoad && !bcChanged) {
-            LOG_DEBUG << "Structural assemble skipped (coefficients unchanged)";
-            return;
+        for (const auto& binding : elasticityBindings_) {
+            matAsm_->addDomainIntegrator(
+                std::make_unique<ElasticityIntegrator>(binding.E, binding.nu, fes_->vdim()),
+                binding.domains);
         }
+        matAsm_->assemble();
+        stiffnessMatrixBeforeBC_ = matAsm_->matrix();
 
-        if (rebuildStiffness) {
-            matAsm_->clear();
-            matAsm_->clearIntegrators();
+        vecAsm_->clear();
+        vecAsm_->clearIntegrators();
 
-            for (const auto& binding : elasticityBindings_) {
-                matAsm_->addDomainIntegrator(
-                    std::make_unique<ElasticityIntegrator>(binding.E, binding.nu, fes_->vdim()),
-                    binding.domains);
-            }
-            matAsm_->assemble();
-            stiffnessMatrixBeforeBC_ = matAsm_->matrix();
+        for (const auto& binding : strainLoadBindings_) {
+            vecAsm_->addDomainIntegrator(std::make_unique<StrainLoadIntegrator>(
+                                             binding.stress, fes_->vdim()),
+                binding.domains);
         }
-        // Skip copy-back when rebuildStiffness=false - applyDirichletBC will modify in-place anyway
-
-        if (rebuildLoad) {
-            vecAsm_->clear();
-            vecAsm_->clearIntegrators();
-
-            for (const auto& binding : strainLoadBindings_) {
-                vecAsm_->addDomainIntegrator(std::make_unique<StrainLoadIntegrator>(
-                                                 binding.stress, fes_->vdim()),
-                    binding.domains);
-            }
-            vecAsm_->assemble();
-            rhsBeforeBC_ = vecAsm_->vector();
-        }
-        else {
-            vecAsm_->vector() = rhsBeforeBC_;
-        }
+        vecAsm_->assemble();
+        rhsBeforeBC_ = vecAsm_->vector();
 
         // Flatten displacementBindings_ to map for applyDirichletBC
         std::map<int, const VectorCoefficient*> displacementBCs;
@@ -109,10 +88,6 @@ namespace mpfem {
         }
         applyDirichletBC(matAsm_->matrix(), vecAsm_->vector(), field().values(), *fes_, *mesh_, displacementBCs, 3);
         matAsm_->finalize();
-
-        stiffnessAssemblyState_.update(currentStiffnessTag);
-        loadAssemblyState_.update(currentLoadTag);
-        bcAssemblyState_.update(currentBcTag);
     }
 
 } // namespace mpfem

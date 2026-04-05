@@ -74,8 +74,7 @@ namespace mpfem {
                     if (binding.specificHeat)
                         binding.specificHeat->eval(trans, Cp, t);
                     result = rho * Cp;
-                },
-                binding.stateTag()));
+                }));
 
             massAsm->addDomainIntegrator(
                 std::make_unique<MassIntegrator>(rhoCpCoefficients.back().get()),
@@ -108,75 +107,43 @@ namespace mpfem {
             return;
         }
 
-        const std::uint64_t currentMassTag = stateTagOfRange(massBindings_);
-
-        // Rebuild mass matrix only when rho/cp dependent coefficients changed.
-        if (!massBindings_.empty() && (!massMatrixAssembled_ || massAssemblyState_.needsRebuild(currentMassTag))) {
+        if (!massBindings_.empty()) {
             assembleMassMatrix();
-            massAssemblyState_.update(currentMassTag);
+        }
+        matAsm_->clear();
+        matAsm_->clearIntegrators();
+
+        for (const auto& binding : conductivityBindings_) {
+            matAsm_->addDomainIntegrator(
+                std::make_unique<DiffusionIntegrator>(binding.conductivity),
+                binding.domains);
         }
 
-        const std::uint64_t currentStiffnessTag = combineTag(
-            stateTagOfRange(conductivityBindings_),
-            stateTagOfRange(convectionBindings_, [](const auto& binding) { return binding.stiffnessTag(); }));
-
-        const std::uint64_t currentLoadTag = combineTag(
-            stateTagOfRange(heatSourceBindings_),
-            stateTagOfRange(convectionBindings_, [](const auto& binding) { return binding.loadTag(); }));
-
-        const std::uint64_t currentBcTag = stateTagOfRange(temperatureBindings_);
-
-        const bool rebuildStiffness = stiffnessAssemblyState_.needsRebuild(currentStiffnessTag);
-        const bool rebuildLoad = loadAssemblyState_.needsRebuild(currentLoadTag);
-        const bool bcChanged = bcAssemblyState_.needsRebuild(currentBcTag);
-
-        if (!rebuildStiffness && !rebuildLoad && !bcChanged) {
-            LOG_DEBUG << "HeatTransfer assemble skipped (coefficients unchanged)";
-            return;
-        }
-
-        if (rebuildStiffness) {
-            matAsm_->clear();
-            matAsm_->clearIntegrators();
-
-            for (const auto& binding : conductivityBindings_) {
-                matAsm_->addDomainIntegrator(
-                    std::make_unique<DiffusionIntegrator>(binding.conductivity),
-                    binding.domains);
+        for (const auto& binding : convectionBindings_) {
+            for (int bid : binding.boundaryIds) {
+                matAsm_->addBoundaryIntegrator(std::make_unique<ConvectionMassIntegrator>(binding.h), bid);
             }
-
-            for (const auto& binding : convectionBindings_) {
-                for (int bid : binding.boundaryIds) {
-                    matAsm_->addBoundaryIntegrator(std::make_unique<ConvectionMassIntegrator>(binding.h), bid);
-                }
-            }
-
-            matAsm_->assemble();
-            stiffnessMatrixBeforeBC_ = matAsm_->matrix();
         }
-        // Skip copy-back when rebuildStiffness=false - applyDirichletBC will modify in-place anyway
 
-        if (rebuildLoad) {
-            vecAsm_->clear();
-            vecAsm_->clearIntegrators();
+        matAsm_->assemble();
+        stiffnessMatrixBeforeBC_ = matAsm_->matrix();
 
-            for (const auto& binding : convectionBindings_) {
-                for (int bid : binding.boundaryIds) {
-                    vecAsm_->addBoundaryIntegrator(std::make_unique<ConvectionLFIntegrator>(binding.h, binding.Tinf), bid);
-                }
+        vecAsm_->clear();
+        vecAsm_->clearIntegrators();
+
+        for (const auto& binding : convectionBindings_) {
+            for (int bid : binding.boundaryIds) {
+                vecAsm_->addBoundaryIntegrator(std::make_unique<ConvectionLFIntegrator>(binding.h, binding.Tinf), bid);
             }
+        }
 
-            for (const auto& binding : heatSourceBindings_) {
-                vecAsm_->addDomainIntegrator(
-                    std::make_unique<DomainLFIntegrator>(binding.source),
-                    binding.domains);
-            }
-            vecAsm_->assemble();
-            rhsBeforeBC_ = vecAsm_->vector();
+        for (const auto& binding : heatSourceBindings_) {
+            vecAsm_->addDomainIntegrator(
+                std::make_unique<DomainLFIntegrator>(binding.source),
+                binding.domains);
         }
-        else {
-            vecAsm_->vector() = rhsBeforeBC_;
-        }
+        vecAsm_->assemble();
+        rhsBeforeBC_ = vecAsm_->vector();
 
         // Flatten temperatureBindings_ to map for applyDirichletBC
         std::map<int, const Coefficient*> temperatureBCs;
@@ -185,12 +152,8 @@ namespace mpfem {
                 temperatureBCs[bid] = binding.temperature;
             }
         }
-        applyDirichletBC(matAsm_->matrix(), vecAsm_->vector(), field().values(), *fes_, *mesh_, temperatureBCs);
+        applyDirichletBC(matAsm_->matrix(), vecAsm_->vector(), this->field().values(), *fes_, *mesh_, temperatureBCs);
         matAsm_->finalize();
-
-        stiffnessAssemblyState_.update(currentStiffnessTag);
-        loadAssemblyState_.update(currentLoadTag);
-        bcAssemblyState_.update(currentBcTag);
     }
 
     bool HeatTransferSolver::solveLinearSystem(SparseMatrix& A, Vector& x, const Vector& b)
@@ -219,8 +182,8 @@ namespace mpfem {
         solver_->setup(&A);
         solver_->apply(systemRhs_, x);
 
-        field().markUpdated();
-        LOG_INFO << fieldName() << " linear solve converged in " << iterations() << " iterations";
+        this->field().markUpdated();
+        LOG_INFO << fieldName() << " linear solve converged in " << this->iterations() << " iterations";
 
         return true;
     }

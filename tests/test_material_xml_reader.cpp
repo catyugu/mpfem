@@ -58,8 +58,9 @@ TEST_F(MaterialXmlReaderTest, DomainScalarPropertyAccess) {
     const std::string& eExpr = database.scalarExpressionByDomain(1, "E");
     const std::string& nuExpr = database.scalarExpressionByDomain(1, "nu");
 
-    const double E = ExpressionParser::instance().evaluate(eExpr, {});
-    const double nu = ExpressionParser::instance().evaluate(nuExpr, {});
+    ExpressionParser parser;
+    const double E = parser.evaluate(eExpr, {});
+    const double nu = parser.evaluate(nuExpr, {});
 
     EXPECT_GT(E, 0.0);
     EXPECT_GT(nu, 0.0);
@@ -77,10 +78,11 @@ TEST_F(MaterialXmlReaderTest, TemperatureDependentConductivityByDomain) {
 
     std::map<std::string, double> vars;
     vars["T"] = 293.15;
-    Matrix3 sigma293 = ExpressionParser::instance().evaluateMatrix(sigmaExpr, vars);
+    ExpressionParser parser;
+    Matrix3 sigma293 = parser.evaluateMatrix(sigmaExpr, vars);
 
     vars["T"] = 373.15;
-    Matrix3 sigma373 = ExpressionParser::instance().evaluateMatrix(sigmaExpr, vars);
+    Matrix3 sigma373 = parser.evaluateMatrix(sigmaExpr, vars);
 
     EXPECT_GT(sigma293(0, 0), 0.0);
     EXPECT_GT(sigma293(1, 1), 0.0);
@@ -123,7 +125,8 @@ TEST_F(MaterialXmlReaderTest, ConstantConductivityByDomain) {
 
     const std::string& sigmaExpr = database.matrixExpressionByDomain(2, "electricconductivity");
 
-    Matrix3 sigma = ExpressionParser::instance().evaluateMatrix(sigmaExpr, {});
+    ExpressionParser parser;
+    Matrix3 sigma = parser.evaluateMatrix(sigmaExpr, {});
 
     EXPECT_GT(sigma(0, 0), 0.0);
     EXPECT_NEAR(sigma(0, 0), sigma(1, 1), 1e-10);

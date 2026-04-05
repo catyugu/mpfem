@@ -1,10 +1,8 @@
 #ifndef MPFEM_STRUCTURAL_SOLVER_HPP
 #define MPFEM_STRUCTURAL_SOLVER_HPP
 
-#include "assembly_change_tracker.hpp"
 #include "fe/coefficient.hpp"
 #include "physics_field_solver.hpp"
-#include <cstdint>
 #include <set>
 #include <vector>
 
@@ -44,32 +42,15 @@ namespace mpfem {
             std::set<int> domains;
             const Coefficient* E = nullptr;
             const Coefficient* nu = nullptr;
-
-            std::uint64_t stateTag() const
-            {
-                return combineTag(
-                    stateTagOf(domains),
-                    combineTag(stateTagOf(E), stateTagOf(nu)));
-            }
         };
         struct StrainLoadBinding {
             std::set<int> domains;
             const MatrixCoefficient* stress = nullptr;
-
-            std::uint64_t stateTag() const
-            {
-                return combineTag(stateTagOf(domains), stateTagOf(stress));
-            }
         };
 
         struct DisplacementBinding {
             std::set<int> boundaryIds;
             const VectorCoefficient* displacement = nullptr;
-
-            std::uint64_t stateTag() const
-            {
-                return combineTag(stateTagOf(boundaryIds), stateTagOf(displacement));
-            }
         };
 
         std::vector<ElasticityBinding> elasticityBindings_;
@@ -78,9 +59,6 @@ namespace mpfem {
 
         SparseMatrix stiffnessMatrixBeforeBC_;
         Vector rhsBeforeBC_;
-        AssemblyTagCache stiffnessAssemblyState_;
-        AssemblyTagCache loadAssemblyState_;
-        AssemblyTagCache bcAssemblyState_;
     };
 
 } // namespace mpfem

@@ -1,12 +1,9 @@
 #ifndef MPFEM_COEFFICIENT_HPP
 #define MPFEM_COEFFICIENT_HPP
 
-#include "core/hash.hpp"
 #include "core/types.hpp"
 #include <cstdint>
-#include <cstring>
 #include <functional>
-#include <limits>
 #include <memory>
 
 namespace mpfem {
@@ -22,21 +19,18 @@ namespace mpfem {
     public:
         virtual ~Coefficient() = default;
         virtual void eval(ElementTransform& trans, Real& result, Real t = 0.0) const = 0;
-        virtual std::uint64_t stateTag() const { return DynamicCoefficientTag; }
     };
 
     class VectorCoefficient {
     public:
         virtual ~VectorCoefficient() = default;
         virtual void eval(ElementTransform& trans, Vector3& result, Real t = 0.0) const = 0;
-        virtual std::uint64_t stateTag() const { return DynamicCoefficientTag; }
     };
 
     class MatrixCoefficient {
     public:
         virtual ~MatrixCoefficient() = default;
         virtual void eval(ElementTransform& trans, Matrix3& result, Real t = 0.0) const = 0;
-        virtual std::uint64_t stateTag() const { return DynamicCoefficientTag; }
     };
 
     // =============================================================================
@@ -46,58 +40,40 @@ namespace mpfem {
     class FunctionCoefficient : public Coefficient {
     public:
         using Func = std::function<void(ElementTransform&, Real&, Real)>;
-        using TagFunc = std::function<std::uint64_t()>;
 
-        explicit FunctionCoefficient(Func f, TagFunc tagFunc = [] { return DynamicCoefficientTag; })
-            : func_(std::move(f)), tagFunc_(std::move(tagFunc)) { }
-
-        FunctionCoefficient(Func f, std::uint64_t fixedTag)
-            : func_(std::move(f)), tagFunc_([fixedTag] { return fixedTag; }) { }
+        explicit FunctionCoefficient(Func f)
+            : func_(std::move(f)) { }
 
         void eval(ElementTransform& trans, Real& result, Real t) const override { func_(trans, result, t); }
-        std::uint64_t stateTag() const override { return tagFunc_(); }
 
     private:
         Func func_;
-        TagFunc tagFunc_;
     };
 
     class VectorFunctionCoefficient : public VectorCoefficient {
     public:
         using Func = std::function<void(ElementTransform&, Vector3&, Real)>;
-        using TagFunc = std::function<std::uint64_t()>;
 
-        explicit VectorFunctionCoefficient(Func f, TagFunc tagFunc = [] { return DynamicCoefficientTag; })
-            : func_(std::move(f)), tagFunc_(std::move(tagFunc)) { }
-
-        VectorFunctionCoefficient(Func f, std::uint64_t fixedTag)
-            : func_(std::move(f)), tagFunc_([fixedTag] { return fixedTag; }) { }
+        explicit VectorFunctionCoefficient(Func f)
+            : func_(std::move(f)) { }
 
         void eval(ElementTransform& trans, Vector3& result, Real t) const override { func_(trans, result, t); }
-        std::uint64_t stateTag() const override { return tagFunc_(); }
 
     private:
         Func func_;
-        TagFunc tagFunc_;
     };
 
     class MatrixFunctionCoefficient : public MatrixCoefficient {
     public:
         using Func = std::function<void(ElementTransform&, Matrix3&, Real)>;
-        using TagFunc = std::function<std::uint64_t()>;
 
-        explicit MatrixFunctionCoefficient(Func f, TagFunc tagFunc = [] { return DynamicCoefficientTag; })
-            : func_(std::move(f)), tagFunc_(std::move(tagFunc)) { }
-
-        MatrixFunctionCoefficient(Func f, std::uint64_t fixedTag)
-            : func_(std::move(f)), tagFunc_([fixedTag] { return fixedTag; }) { }
+        explicit MatrixFunctionCoefficient(Func f)
+            : func_(std::move(f)) { }
 
         void eval(ElementTransform& trans, Matrix3& result, Real t) const override { func_(trans, result, t); }
-        std::uint64_t stateTag() const override { return tagFunc_(); }
 
     private:
         Func func_;
-        TagFunc tagFunc_;
     };
 
     // =============================================================================
@@ -106,33 +82,20 @@ namespace mpfem {
 
     inline std::unique_ptr<Coefficient> constantCoefficient(Real value)
     {
-        const std::uint64_t tag = hashRealTag(value);
         return std::make_unique<FunctionCoefficient>(
-            [value](ElementTransform&, Real& r, Real) { r = value; },
-            tag);
+            [value](ElementTransform&, Real& r, Real) { r = value; });
     }
 
     inline std::unique_ptr<VectorCoefficient> constantVectorCoefficient(Real x, Real y, Real z)
     {
-        std::uint64_t tag = hashRealTag(x);
-        tag = combineTag(tag, hashRealTag(y));
-        tag = combineTag(tag, hashRealTag(z));
         return std::make_unique<VectorFunctionCoefficient>(
-            [x, y, z](ElementTransform&, Vector3& r, Real) { r << x, y, z; },
-            tag);
+            [x, y, z](ElementTransform&, Vector3& r, Real) { r << x, y, z; });
     }
 
     inline std::unique_ptr<MatrixCoefficient> constantMatrixCoefficient(const Matrix3& mat)
     {
-        std::uint64_t tag = 1469598103934665603ull;
-        for (int r = 0; r < mat.rows(); ++r) {
-            for (int c = 0; c < mat.cols(); ++c) {
-                tag = combineTag(tag, hashRealTag(mat(r, c)));
-            }
-        }
         return std::make_unique<MatrixFunctionCoefficient>(
-            [mat](ElementTransform&, Matrix3& r, Real) { r = mat; },
-            tag);
+            [mat](ElementTransform&, Matrix3& r, Real) { r = mat; });
     }
 
 } // namespace mpfem

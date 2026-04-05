@@ -1,10 +1,8 @@
 #ifndef MPFEM_ELECTROSTATICS_SOLVER_HPP
 #define MPFEM_ELECTROSTATICS_SOLVER_HPP
 
-#include "assembly_change_tracker.hpp"
 #include "fe/coefficient.hpp"
 #include "physics_field_solver.hpp"
-#include <cstdint>
 #include <set>
 #include <vector>
 
@@ -39,26 +37,15 @@ namespace mpfem {
         struct ConductivityBinding {
             std::set<int> domains;
             const MatrixCoefficient* sigma = nullptr;
-
-            std::uint64_t stateTag() const
-            {
-                return combineTag(stateTagOf(domains), stateTagOf(sigma));
-            }
         };
 
         struct VoltageBinding {
             std::set<int> boundaryIds;
             const Coefficient* voltage = nullptr;
-
-            std::uint64_t stateTag() const
-            {
-                return combineTag(stateTagOf(boundaryIds), stateTagOf(voltage));
-            }
         };
 
         std::vector<ConductivityBinding> conductivityBindings_;
         std::vector<VoltageBinding> voltageBindings_;
-        AssemblyTagCache stiffnessAssemblyState_;
     };
 
 } // namespace mpfem
