@@ -330,14 +330,10 @@ namespace mpfem {
         ExpressionParser::ScalarProgram program = parser.compileScalar(expressionText);
 
         // If expression has no dependencies (pure constant), create ConstantScalarNode directly
-        if (program.dependencies().empty()) {
-            double value = program.evaluate({});
-            nodes_[std::move(name)] = std::make_unique<ConstantScalarNode>(value);
-        }
-        else {
-            // Has dependencies - register as scalar expression
-            registerScalarExpression(std::move(name), std::move(expressionText), {});
-        }
+        MPFEM_ASSERT(program.dependencies().empty(), "Expected constant expression to have no dependencies."); 
+        double value = program.evaluate({});
+        nodes_[std::move(name)] = std::make_unique<ConstantScalarNode>(value);
+
         graphDirty_ = true;
     }
 
