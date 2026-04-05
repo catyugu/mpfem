@@ -2,12 +2,14 @@
 #define MPFEM_DIRICHLET_BC_HPP
 
 #include "core/types.hpp"
-#include "fe/coefficient.hpp"
+#include "core/exception.hpp"
+#include "expr/variable_graph.hpp"
 #include "fe/element_transform.hpp"
 #include "fe/facet_element_transform.hpp"
 #include "fe/fe_space.hpp"
 #include "mesh/mesh.hpp"
 #include "solver/sparse_matrix.hpp"
+#include <array>
 #include <map>
 #include <vector>
 
@@ -15,7 +17,7 @@ namespace mpfem {
 
     inline void applyDirichletBC(SparseMatrix& mat, Vector& rhs, Vector& sol,
         const FESpace& fes, const Mesh& mesh,
-        const std::map<int, const Coefficient*>& bcValues)
+        const std::map<int, const VariableNode*>& bcValues)
     {
         const Index numDofs = fes.numDofs();
         if (numDofs == 0)
@@ -63,8 +65,24 @@ namespace mpfem {
 
                     trans.setIntegrationPoint(xi);
                     Real value = 0.0;
-                    if (coef)
-                        coef->eval(trans, value);
+                    if (coef) {
+                        if (coef->shape() != VariableShape::Scalar) {
+                            MPFEM_THROW(ArgumentException, "Dirichlet scalar BC expects scalar variable node.");
+                        }
+                        std::array<Vector3, 1> refPts{Vector3(xi[0], xi[1], xi[2])};
+                        std::array<Vector3, 1> physPts;
+                        const IntegrationPoint& ip = trans.integrationPoint();
+                        trans.transform(ip, physPts[0]);
+                        EvaluationContext ctx;
+                        ctx.domainId = static_cast<int>(trans.attribute());
+                        ctx.elementId = trans.elementIndex();
+                        ctx.referencePoints = std::span<const Vector3>(refPts.data(), refPts.size());
+                        ctx.physicalPoints = std::span<const Vector3>(physPts.data(), physPts.size());
+                        ctx.transform = &trans;
+                        std::array<double, 1> out{0.0};
+                        coef->evaluate(ctx, std::span<double>(out.data(), out.size()));
+                        value = static_cast<Real>(out[0]);
+                    }
 
                     dofVals[d] = value;
                     hasVal[d] = 1;
@@ -80,7 +98,7 @@ namespace mpfem {
 
     inline void applyDirichletBC(SparseMatrix& mat, Vector& rhs, Vector& sol,
         const FESpace& fes, const Mesh& mesh,
-        const std::map<int, const VectorCoefficient*>& bcValues,
+        const std::map<int, Vector3>& bcValues,
         int vdim)
     {
         const Index numDofs = fes.numDofs();
@@ -124,9 +142,7 @@ namespace mpfem {
                     }
 
                     trans.setIntegrationPoint(xi);
-                    Vector3 disp = Vector3::Zero();
-                    if (coef)
-                        coef->eval(trans, disp);
+                    const Vector3 disp = coef;
 
                     for (int c = 0; c < vdim; ++c) {
                         Index d = dofs[i * vdim + c];

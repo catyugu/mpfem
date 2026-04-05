@@ -29,18 +29,18 @@ namespace mpfem {
     }
 
     void StructuralSolver::addElasticity(const std::set<int>& domains,
-        const Coefficient* E,
-        const Coefficient* nu)
+        const VariableNode* E,
+        const VariableNode* nu)
     {
         elasticityBindings_.push_back({domains, E, nu});
     }
 
-    void StructuralSolver::setStrainLoad(const std::set<int>& domains, const MatrixCoefficient* stress)
+    void StructuralSolver::setStrainLoad(const std::set<int>& domains, const VariableNode* stress)
     {
         strainLoadBindings_.push_back({domains, stress});
     }
 
-    void StructuralSolver::addFixedDisplacementBC(const std::set<int>& boundaryIds, const VectorCoefficient* displacement)
+    void StructuralSolver::addFixedDisplacementBC(const std::set<int>& boundaryIds, const Vector3& displacement)
     {
         displacementBindings_.push_back({boundaryIds, displacement});
     }
@@ -80,7 +80,7 @@ namespace mpfem {
         rhsBeforeBC_ = vecAsm_->vector();
 
         // Flatten displacementBindings_ to map for applyDirichletBC
-        std::map<int, const VectorCoefficient*> displacementBCs;
+        std::map<int, Vector3> displacementBCs;
         for (const auto& binding : displacementBindings_) {
             for (int bid : binding.boundaryIds) {
                 displacementBCs[bid] = binding.displacement;

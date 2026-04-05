@@ -6,6 +6,48 @@
 
 namespace mpfem {
 
+namespace {
+
+class ProductScalarNode final : public VariableNode {
+public:
+    ProductScalarNode(const VariableNode* lhs, const VariableNode* rhs)
+        : lhs_(lhs), rhs_(rhs)
+    {
+        if (!lhs_ || !rhs_) {
+            MPFEM_THROW(ArgumentException, "ProductScalarNode requires non-null inputs.");
+        }
+        if (lhs_->shape() != VariableShape::Scalar || rhs_->shape() != VariableShape::Scalar) {
+            MPFEM_THROW(ArgumentException, "ProductScalarNode inputs must be scalar.");
+        }
+    }
+
+    VariableShape shape() const override { return VariableShape::Scalar; }
+
+    std::pair<int, int> dimensions() const override { return {1, 1}; }
+
+    void evaluate(const EvaluationContext& ctx, std::span<double> dest) const override
+    {
+        std::vector<double> lhsValues(dest.size());
+        std::vector<double> rhsValues(dest.size());
+        lhs_->evaluate(ctx, std::span<double>(lhsValues.data(), lhsValues.size()));
+        rhs_->evaluate(ctx, std::span<double>(rhsValues.data(), rhsValues.size()));
+        for (size_t i = 0; i < dest.size(); ++i) {
+            dest[i] = lhsValues[i] * rhsValues[i];
+        }
+    }
+
+    std::vector<const VariableNode*> dependencies() const override
+    {
+        return {lhs_, rhs_};
+    }
+
+private:
+    const VariableNode* lhs_ = nullptr;
+    const VariableNode* rhs_ = nullptr;
+};
+
+} // namespace
+
     bool HeatTransferSolver::initialize(const Mesh& mesh, FieldValues& fieldValues, int order, double initialTemperature)
     {
         mesh_ = &mesh;
@@ -31,19 +73,19 @@ namespace mpfem {
         return true;
     }
 
-    void HeatTransferSolver::setThermalConductivity(const std::set<int>& domains, const MatrixCoefficient* k)
+    void HeatTransferSolver::setThermalConductivity(const std::set<int>& domains, const VariableNode* k)
     {
         conductivityBindings_.push_back({domains, k});
     }
 
-    void HeatTransferSolver::setHeatSource(const std::set<int>& domains, const Coefficient* Q)
+    void HeatTransferSolver::setHeatSource(const std::set<int>& domains, const VariableNode* Q)
     {
         heatSourceBindings_.push_back({domains, Q});
     }
 
     void HeatTransferSolver::setMassProperties(const std::set<int>& domains,
-        const Coefficient* rho,
-        const Coefficient* Cp)
+        const VariableNode* rho,
+        const VariableNode* Cp)
     {
         MassBinding binding;
         binding.domains = domains;
@@ -61,23 +103,14 @@ namespace mpfem {
         }
 
         auto massAsm = std::make_unique<BilinearFormAssembler>(fes_.get());
-        std::vector<std::unique_ptr<FunctionCoefficient>> rhoCpCoefficients;
-        rhoCpCoefficients.reserve(massBindings_.size());
+        std::vector<std::unique_ptr<ProductScalarNode>> rhoCpNodes;
+        rhoCpNodes.reserve(massBindings_.size());
 
         for (const auto& binding : massBindings_) {
-            // Keep composite coefficients alive until matrix assembly completes.
-            rhoCpCoefficients.push_back(std::make_unique<FunctionCoefficient>(
-                [&binding](ElementTransform& trans, Real& result, Real t) {
-                    Real rho = 1.0, Cp = 1.0;
-                    if (binding.density)
-                        binding.density->eval(trans, rho, t);
-                    if (binding.specificHeat)
-                        binding.specificHeat->eval(trans, Cp, t);
-                    result = rho * Cp;
-                }));
+            rhoCpNodes.push_back(std::make_unique<ProductScalarNode>(binding.density, binding.specificHeat));
 
             massAsm->addDomainIntegrator(
-                std::make_unique<MassIntegrator>(rhoCpCoefficients.back().get()),
+                std::make_unique<MassIntegrator>(rhoCpNodes.back().get()),
                 binding.domains);
         }
         massAsm->assemble();
@@ -88,12 +121,12 @@ namespace mpfem {
         LOG_INFO << "HeatTransferSolver: mass matrix assembled (" << massMatrix_.rows() << "x" << massMatrix_.cols() << ")";
     }
 
-    void HeatTransferSolver::addTemperatureBC(const std::set<int>& boundaryIds, const Coefficient* temperature)
+    void HeatTransferSolver::addTemperatureBC(const std::set<int>& boundaryIds, const VariableNode* temperature)
     {
         temperatureBindings_.push_back({boundaryIds, temperature});
     }
 
-    void HeatTransferSolver::addConvectionBC(const std::set<int>& boundaryIds, const Coefficient* h, const Coefficient* Tinf)
+    void HeatTransferSolver::addConvectionBC(const std::set<int>& boundaryIds, const VariableNode* h, const VariableNode* Tinf)
     {
         convectionBindings_.push_back({boundaryIds, h, Tinf});
     }
@@ -146,7 +179,7 @@ namespace mpfem {
         rhsBeforeBC_ = vecAsm_->vector();
 
         // Flatten temperatureBindings_ to map for applyDirichletBC
-        std::map<int, const Coefficient*> temperatureBCs;
+        std::map<int, const VariableNode*> temperatureBCs;
         for (const auto& binding : temperatureBindings_) {
             for (int bid : binding.boundaryIds) {
                 temperatureBCs[bid] = binding.temperature;
@@ -167,7 +200,7 @@ namespace mpfem {
         systemRhs_ = b;
 
         // Flatten temperatureBindings_ to map for applyDirichletBC
-        std::map<int, const Coefficient*> temperatureBCs;
+        std::map<int, const VariableNode*> temperatureBCs;
         for (const auto& binding : temperatureBindings_) {
             for (int bid : binding.boundaryIds) {
                 temperatureBCs[bid] = binding.temperature;

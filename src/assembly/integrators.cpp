@@ -1,6 +1,63 @@
 #include "integrators.hpp"
 
+#include <array>
+
 namespace mpfem {
+
+namespace {
+
+EvaluationContext makeSinglePointContext(ElementTransform& trans,
+                                         std::array<Vector3, 1>& refPts,
+                                         std::array<Vector3, 1>& physPts)
+{
+    const IntegrationPoint& ip = trans.integrationPoint();
+    refPts[0] = Vector3(ip.xi, ip.eta, ip.zeta);
+    trans.transform(ip, physPts[0]);
+
+    EvaluationContext ctx;
+    ctx.domainId = static_cast<int>(trans.attribute());
+    ctx.elementId = trans.elementIndex();
+    ctx.referencePoints = std::span<const Vector3>(refPts.data(), refPts.size());
+    ctx.physicalPoints = std::span<const Vector3>(physPts.data(), physPts.size());
+    ctx.transform = &trans;
+    return ctx;
+}
+
+Real evalScalarNode(const VariableNode* node, ElementTransform& trans)
+{
+    if (!node || node->shape() != VariableShape::Scalar) {
+        MPFEM_THROW(ArgumentException, "Expected scalar variable node.");
+    }
+    std::array<Vector3, 1> refPts;
+    std::array<Vector3, 1> physPts;
+    std::array<double, 1> value{0.0};
+    const EvaluationContext ctx = makeSinglePointContext(trans, refPts, physPts);
+    node->evaluate(ctx, std::span<double>(value.data(), value.size()));
+    return static_cast<Real>(value[0]);
+}
+
+Matrix3 evalMatrixNode(const VariableNode* node, ElementTransform& trans)
+{
+    if (!node || node->shape() != VariableShape::Matrix) {
+        MPFEM_THROW(ArgumentException, "Expected matrix variable node.");
+    }
+
+    std::array<Vector3, 1> refPts;
+    std::array<Vector3, 1> physPts;
+    std::array<double, 9> values{};
+    const EvaluationContext ctx = makeSinglePointContext(trans, refPts, physPts);
+    node->evaluate(ctx, std::span<double>(values.data(), values.size()));
+
+    Matrix3 result;
+    for (int r = 0; r < 3; ++r) {
+        for (int c = 0; c < 3; ++c) {
+            result(r, c) = static_cast<Real>(values[static_cast<size_t>(r * 3 + c)]);
+        }
+    }
+    return result;
+}
+
+} // namespace
 
 // =============================================================================
 // Diffusion integrator (matrix coefficient)
@@ -24,8 +81,7 @@ void DiffusionIntegrator::assembleElementMatrix(const ReferenceElement& ref,
         trans.setIntegrationPoint(xi);
         
         const Real w = ip.weight * trans.weight();
-        Matrix3 D;
-        coef_->eval(trans, D);
+        const Matrix3 D = evalMatrixNode(coef_, trans);
         
         const Vector3* refGrads = ref.shapeGradientsAtQuad(q);
         
@@ -58,8 +114,7 @@ void MassIntegrator::assembleElementMatrix(const ReferenceElement& ref,
         trans.setIntegrationPoint(xi);
         
         const Real w = ip.weight * trans.weight();
-        Real coef;
-        coef_->eval(trans, coef);
+        const Real coef = evalScalarNode(coef_, trans);
         
         const Real* phi = ref.shapeValuesAtQuad(q);
         Eigen::Map<const Eigen::VectorXd> phiMap(phi, nd);
@@ -86,8 +141,7 @@ void DomainLFIntegrator::assembleElementVector(const ReferenceElement& ref,
         trans.setIntegrationPoint(xi);
         
         const Real w = ip.weight * trans.weight();
-        Real f;
-        coef_->eval(trans, f);
+        const Real f = evalScalarNode(coef_, trans);
         
         const Real* phi = ref.shapeValuesAtQuad(q);
         Eigen::Map<const Eigen::VectorXd> phiMap(phi, nd);
@@ -114,8 +168,7 @@ void BoundaryLFIntegrator::assembleFaceVector(const ReferenceElement& ref,
         trans.setIntegrationPoint(xi);
         
         const Real w = ip.weight * trans.weight();
-        Real g;
-        coef_->eval(trans, g);
+        const Real g = evalScalarNode(coef_, trans);
         
         const Real* phi = ref.shapeValuesAtQuad(q);
         Eigen::Map<const Eigen::VectorXd> phiMap(phi, nd);
@@ -142,8 +195,7 @@ void ConvectionMassIntegrator::assembleFaceMatrix(const ReferenceElement& ref,
         trans.setIntegrationPoint(xi);
         
         const Real w = ip.weight * trans.weight();
-        Real h;
-        coef_->eval(trans, h);
+        const Real h = evalScalarNode(coef_, trans);
         
         const Real* phi = ref.shapeValuesAtQuad(q);
         Eigen::Map<const Eigen::VectorXd> phiMap(phi, nd);
@@ -166,10 +218,8 @@ void ConvectionLFIntegrator::assembleFaceVector(const ReferenceElement& ref,
         trans.setIntegrationPoint(xi);
         
         const Real w = ip.weight * trans.weight();
-        Real h;
-        coef_->eval(trans, h);
-        Real Tinf;
-        Tinf_->eval(trans, Tinf);
+        const Real h = evalScalarNode(coef_, trans);
+        const Real Tinf = evalScalarNode(Tinf_, trans);
         
         const Real* phi = ref.shapeValuesAtQuad(q);
         Eigen::Map<const Eigen::VectorXd> phiMap(phi, nd);
@@ -229,9 +279,8 @@ void ElasticityIntegrator::assembleElementMatrix(const ReferenceElement& ref,
     
     elmat.setZero(totalDofs, totalDofs);
     
-    Real E_val, nu_val;
-    E_->eval(trans, E_val);
-    nu_->eval(trans, nu_val);
+    const Real E_val = evalScalarNode(E_, trans);
+    const Real nu_val = evalScalarNode(nu_, trans);
     
     Real lambda = E_val * nu_val / ((1.0 + nu_val) * (1.0 - 2.0 * nu_val));
     Real mu = E_val / (2.0 * (1.0 + nu_val));
@@ -282,7 +331,7 @@ void StrainLoadIntegrator::assembleElementVector(const ReferenceElement& ref,
         
         const Real w = ip.weight * trans.weight();
         
-        stress_->eval(trans, stress);
+        stress = evalMatrixNode(stress_, trans);
 
         if (stress.norm() < 1e-20) continue;
 

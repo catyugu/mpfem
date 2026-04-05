@@ -1,7 +1,7 @@
 #ifndef MPFEM_HEAT_TRANSFER_SOLVER_HPP
 #define MPFEM_HEAT_TRANSFER_SOLVER_HPP
 
-#include "fe/coefficient.hpp"
+#include "expr/variable_graph.hpp"
 #include "physics_field_solver.hpp"
 #include <set>
 #include <vector>
@@ -24,10 +24,10 @@ namespace mpfem {
         bool initialize(const Mesh& mesh, FieldValues& fieldValues, int order, double initialTemperature = 293.15);
 
         // Material bindings
-        void setThermalConductivity(const std::set<int>& domains, const MatrixCoefficient* k);
+        void setThermalConductivity(const std::set<int>& domains, const VariableNode* k);
 
-        void setHeatSource(const std::set<int>& domains, const Coefficient* Q);
-        void setMassProperties(const std::set<int>& domains, const Coefficient* rho, const Coefficient* Cp);
+        void setHeatSource(const std::set<int>& domains, const VariableNode* Q);
+        void setMassProperties(const std::set<int>& domains, const VariableNode* rho, const VariableNode* Cp);
 
         // Mass matrix for transient terms: M = ∫ ρCp φᵢ φⱼ dΩ
         void assembleMassMatrix();
@@ -35,8 +35,8 @@ namespace mpfem {
         bool massMatrixAssembled() const { return massMatrixAssembled_; }
 
         // Boundary conditions
-        void addTemperatureBC(const std::set<int>& boundaryIds, const Coefficient* temperature);
-        void addConvectionBC(const std::set<int>& boundaryIds, const Coefficient* h, const Coefficient* Tinf);
+        void addTemperatureBC(const std::set<int>& boundaryIds, const VariableNode* temperature);
+        void addConvectionBC(const std::set<int>& boundaryIds, const VariableNode* h, const VariableNode* Tinf);
         void clearBoundaryConditions()
         {
             temperatureBindings_.clear();
@@ -81,27 +81,27 @@ namespace mpfem {
     private:
         struct TemperatureBinding {
             std::set<int> boundaryIds;
-            const Coefficient* temperature = nullptr;
+            const VariableNode* temperature = nullptr;
         };
 
         struct ConvectionBinding {
             std::set<int> boundaryIds;
-            const Coefficient* h = nullptr;
-            const Coefficient* Tinf = nullptr;
+            const VariableNode* h = nullptr;
+            const VariableNode* Tinf = nullptr;
         };
 
         struct ConductivityBinding {
             std::set<int> domains;
-            const MatrixCoefficient* conductivity = nullptr;
+            const VariableNode* conductivity = nullptr;
         };
         struct HeatSourceBinding {
             std::set<int> domains;
-            const Coefficient* source = nullptr;
+            const VariableNode* source = nullptr;
         };
         struct MassBinding {
             std::set<int> domains;
-            const Coefficient* density = nullptr;
-            const Coefficient* specificHeat = nullptr;
+            const VariableNode* density = nullptr;
+            const VariableNode* specificHeat = nullptr;
         };
 
         std::vector<ConductivityBinding> conductivityBindings_;

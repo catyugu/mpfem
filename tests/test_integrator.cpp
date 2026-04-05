@@ -6,12 +6,68 @@
 #include "fe/fe_collection.hpp"
 #include "fe/element_transform.hpp"
 #include "fe/quadrature.hpp"
-#include "fe/coefficient.hpp"
+#include "expr/variable_graph.hpp"
 #include "assembly/integrators.hpp"
 #include "assembly/assembler.hpp"
 #include "core/logger.hpp"
 
+#include <array>
+#include <stdexcept>
+
 using namespace mpfem;
+
+namespace {
+
+class ScalarConstantNode final : public VariableNode {
+public:
+    explicit ScalarConstantNode(double value) : value_(value) {}
+
+    VariableShape shape() const override { return VariableShape::Scalar; }
+    std::pair<int, int> dimensions() const override { return {1, 1}; }
+
+    void evaluate(const EvaluationContext& ctx, std::span<double> dest) const override
+    {
+        const size_t n = ctx.physicalPoints.empty() ? dest.size() : ctx.physicalPoints.size();
+        if (dest.size() != n) {
+            throw std::runtime_error("ScalarConstantNode destination size mismatch");
+        }
+        for (size_t i = 0; i < dest.size(); ++i) {
+            dest[i] = value_;
+        }
+    }
+
+private:
+    double value_ = 0.0;
+};
+
+class MatrixConstantNode final : public VariableNode {
+public:
+    explicit MatrixConstantNode(const Matrix3& value) : value_(value) {}
+
+    VariableShape shape() const override { return VariableShape::Matrix; }
+    std::pair<int, int> dimensions() const override { return {3, 3}; }
+
+    void evaluate(const EvaluationContext& ctx, std::span<double> dest) const override
+    {
+        const size_t n = ctx.physicalPoints.empty() ? (dest.size() / 9ull) : ctx.physicalPoints.size();
+        if (dest.size() != n * 9ull) {
+            throw std::runtime_error("MatrixConstantNode destination size mismatch");
+        }
+        for (size_t i = 0; i < n; ++i) {
+            const size_t base = i * 9ull;
+            for (int r = 0; r < 3; ++r) {
+                for (int c = 0; c < 3; ++c) {
+                    dest[base + static_cast<size_t>(r * 3 + c)] = value_(r, c);
+                }
+            }
+        }
+    }
+
+private:
+    Matrix3 value_ = Matrix3::Zero();
+};
+
+} // namespace
 
 class IntegratorTest : public ::testing::Test {
 protected:
@@ -27,23 +83,22 @@ protected:
         
         fes_ = std::make_unique<FESpace>(&mesh_, std::make_unique<FECollection>(1));
         
-        // Use new coefficient helper functions
-        k1_ = constantCoefficient(1.0);
-        k2_ = constantCoefficient(2.0);
+        k1_ = std::make_unique<ScalarConstantNode>(1.0);
+        k2_ = std::make_unique<ScalarConstantNode>(2.0);
         
         // Initialize matrix coefficients for diffusion tests
         Matrix3 D1 = Matrix3::Identity() * 1.0;
         Matrix3 D2 = Matrix3::Identity() * 2.0;
-        mat1_ = constantMatrixCoefficient(D1);
-        mat2_ = constantMatrixCoefficient(D2);
+        mat1_ = std::make_unique<MatrixConstantNode>(D1);
+        mat2_ = std::make_unique<MatrixConstantNode>(D2);
     }
     
     Mesh mesh_;
     std::unique_ptr<FESpace> fes_;
-    std::unique_ptr<Coefficient> k1_;
-    std::unique_ptr<Coefficient> k2_;
-    std::unique_ptr<MatrixCoefficient> mat1_;
-    std::unique_ptr<MatrixCoefficient> mat2_;
+    std::unique_ptr<VariableNode> k1_;
+    std::unique_ptr<VariableNode> k2_;
+    std::unique_ptr<VariableNode> mat1_;
+    std::unique_ptr<VariableNode> mat2_;
 };
 
 TEST_F(IntegratorTest, DiffusionElementMatrix) {
@@ -95,7 +150,7 @@ TEST_F(IntegratorTest, AnisotropicDiffusion) {
     
     // Create anisotropic matrix coefficient
     Matrix3 D = Matrix3::Identity() * 2.0;  // Diagonal = 2
-    auto matCoef = constantMatrixCoefficient(D);
+    auto matCoef = std::make_unique<MatrixConstantNode>(D);
     
     // DiffusionIntegrator now handles both isotropic and anisotropic cases
     DiffusionIntegrator integ(matCoef.get());
@@ -164,10 +219,10 @@ TEST_F(IntegratorTest, StrainLoadVectorScaling) {
     sigma1(1, 1) = 2.0;
     sigma1(2, 2) = 3.0;
     sigma1(0, 1) = sigma1(1, 0) = 0.5;
-    auto stress1 = constantMatrixCoefficient(sigma1);
+    auto stress1 = std::make_unique<MatrixConstantNode>(sigma1);
 
     Matrix3 sigma2 = 2.0 * sigma1;
-    auto stress2 = constantMatrixCoefficient(sigma2);
+    auto stress2 = std::make_unique<MatrixConstantNode>(sigma2);
 
     StrainLoadIntegrator integ1(stress1.get(), 3);
     StrainLoadIntegrator integ2(stress2.get(), 3);

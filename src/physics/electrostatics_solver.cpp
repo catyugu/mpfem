@@ -25,12 +25,12 @@ namespace mpfem {
         return true;
     }
 
-    void ElectrostaticsSolver::setElectricalConductivity(const std::set<int>& domains, const MatrixCoefficient* sigma)
+    void ElectrostaticsSolver::setElectricalConductivity(const std::set<int>& domains, const VariableNode* sigma)
     {
         conductivityBindings_.push_back({domains, sigma});
     }
 
-    void ElectrostaticsSolver::addVoltageBC(const std::set<int>& boundaryIds, const Coefficient* voltage)
+    void ElectrostaticsSolver::addVoltageBC(const std::set<int>& boundaryIds, const VariableNode* voltage)
     {
         voltageBindings_.push_back({boundaryIds, voltage});
     }
@@ -53,7 +53,7 @@ namespace mpfem {
         vecAsm_->assemble();
 
         // Flatten voltageBindings_ to map for applyDirichletBC
-        std::map<int, const Coefficient*> voltageBCs;
+        std::map<int, const VariableNode*> voltageBCs;
         for (const auto& binding : voltageBindings_) {
             for (int bid : binding.boundaryIds) {
                 voltageBCs[bid] = binding.voltage;

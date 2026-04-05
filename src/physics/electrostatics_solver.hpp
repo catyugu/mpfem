@@ -1,7 +1,7 @@
 #ifndef MPFEM_ELECTROSTATICS_SOLVER_HPP
 #define MPFEM_ELECTROSTATICS_SOLVER_HPP
 
-#include "fe/coefficient.hpp"
+#include "expr/variable_graph.hpp"
 #include "physics_field_solver.hpp"
 #include <set>
 #include <vector>
@@ -25,10 +25,10 @@ namespace mpfem {
         bool initialize(const Mesh& mesh, FieldValues& fieldValues, int order, double initialPotential = 0.0);
 
         // Material bindings
-        void setElectricalConductivity(const std::set<int>& domains, const MatrixCoefficient* sigma);
+        void setElectricalConductivity(const std::set<int>& domains, const VariableNode* sigma);
 
         // Boundary conditions
-        void addVoltageBC(const std::set<int>& boundaryIds, const Coefficient* voltage);
+        void addVoltageBC(const std::set<int>& boundaryIds, const VariableNode* voltage);
         void clearBoundaryConditions() { voltageBindings_.clear(); }
 
         void assemble() override;
@@ -36,12 +36,12 @@ namespace mpfem {
     private:
         struct ConductivityBinding {
             std::set<int> domains;
-            const MatrixCoefficient* sigma = nullptr;
+            const VariableNode* sigma = nullptr;
         };
 
         struct VoltageBinding {
             std::set<int> boundaryIds;
-            const Coefficient* voltage = nullptr;
+            const VariableNode* voltage = nullptr;
         };
 
         std::vector<ConductivityBinding> conductivityBindings_;

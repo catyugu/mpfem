@@ -3,7 +3,6 @@
 
 #include "assembly/assembler.hpp"
 #include "core/logger.hpp"
-#include "fe/coefficient.hpp"
 #include "fe/fe_space.hpp"
 #include "fe/grid_function.hpp"
 #include "mesh/mesh.hpp"

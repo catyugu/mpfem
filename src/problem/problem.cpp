@@ -1,4 +1,6 @@
 #include "problem/problem.hpp"
+
+#include "core/exception.hpp"
 #include "physics/electrostatics_solver.hpp"
 #include "physics/heat_transfer_solver.hpp"
 #include "physics/structural_solver.hpp"
@@ -6,56 +8,87 @@
 
 namespace mpfem {
 
+namespace {
+
+void registerCaseConstants(VariableManager& manager, const CaseDefinition& caseDef)
+{
+    for (const auto& entry : caseDef.getVariables()) {
+        manager.registerConstant(entry.name, entry.siValue);
+    }
+}
+
+} // namespace
+
     Problem::~Problem() = default;
 
-    const Coefficient* Problem::findDomainScalarCoef(std::string_view property, int domainId) const
+    const VariableNode* Problem::findDomainScalarNode(std::string_view property, int domainId) const
     {
         DomainPropertyKey key {std::string(property), domainId};
-        auto it = domainScalarCoefficients.find(key);
-        return it != domainScalarCoefficients.end() ? it->second.get() : nullptr;
+        auto it = domainScalarNodes.find(key);
+        return it != domainScalarNodes.end() ? it->second : nullptr;
     }
 
-    const MatrixCoefficient* Problem::findDomainMatrixCoef(std::string_view property, int domainId) const
+    const VariableNode* Problem::findDomainMatrixNode(std::string_view property, int domainId) const
     {
         DomainPropertyKey key {std::string(property), domainId};
-        auto it = domainMatrixCoefficients.find(key);
-        return it != domainMatrixCoefficients.end() ? it->second.get() : nullptr;
+        auto it = domainMatrixNodes.find(key);
+        return it != domainMatrixNodes.end() ? it->second : nullptr;
     }
 
-    const Coefficient* Problem::setDomainScalarCoef(std::string property,
-        int domainId,
-        std::unique_ptr<Coefficient> coef)
+    const VariableNode* Problem::setDomainScalarNode(std::string property,
+                                                     int domainId,
+                                                     const VariableNode* node)
     {
         DomainPropertyKey key {std::move(property), domainId};
-        auto [it, _] = domainScalarCoefficients.insert_or_assign(std::move(key), std::move(coef));
-        return it->second.get();
+        auto [it, _] = domainScalarNodes.insert_or_assign(std::move(key), node);
+        return it->second;
     }
 
-    const MatrixCoefficient* Problem::setDomainMatrixCoef(std::string property,
-        int domainId,
-        std::unique_ptr<MatrixCoefficient> coef)
+    const VariableNode* Problem::setDomainMatrixNode(std::string property,
+                                                     int domainId,
+                                                     const VariableNode* node)
     {
         DomainPropertyKey key {std::move(property), domainId};
-        auto [it, _] = domainMatrixCoefficients.insert_or_assign(std::move(key), std::move(coef));
-        return it->second.get();
+        auto [it, _] = domainMatrixNodes.insert_or_assign(std::move(key), node);
+        return it->second;
     }
 
-    const Coefficient* Problem::ownScalarCoef(std::unique_ptr<Coefficient> coef)
+    const VariableNode* Problem::ownNode(std::unique_ptr<VariableNode> node)
     {
-        ownedScalarCoefficients.push_back(std::move(coef));
-        return ownedScalarCoefficients.back().get();
+        ownedNodes.push_back(std::move(node));
+        return ownedNodes.back().get();
     }
 
-    const VectorCoefficient* Problem::ownVectorCoef(std::unique_ptr<VectorCoefficient> coef)
+    const VariableNode* Problem::ownScalarExpressionNode(std::string expression,
+                                                         GraphRuntimeResolvers resolvers)
     {
-        ownedVectorCoefficients.push_back(std::move(coef));
-        return ownedVectorCoefficients.back().get();
+        auto manager = std::make_unique<VariableManager>();
+        registerCaseConstants(*manager, caseDef);
+        constexpr const char* kNodeName = "$root_scalar";
+        manager->registerScalarExpression(kNodeName, std::move(expression), std::move(resolvers));
+        manager->compileGraph();
+        const VariableNode* node = manager->get(kNodeName);
+        if (!node) {
+            MPFEM_THROW(ArgumentException, "Failed to build scalar expression node.");
+        }
+        ownedNodeManagers.push_back(std::move(manager));
+        return node;
     }
 
-    const MatrixCoefficient* Problem::ownMatrixCoef(std::unique_ptr<MatrixCoefficient> coef)
+    const VariableNode* Problem::ownMatrixExpressionNode(std::string expression,
+                                                         GraphRuntimeResolvers resolvers)
     {
-        ownedMatrixCoefficients.push_back(std::move(coef));
-        return ownedMatrixCoefficients.back().get();
+        auto manager = std::make_unique<VariableManager>();
+        registerCaseConstants(*manager, caseDef);
+        constexpr const char* kNodeName = "$root_matrix";
+        manager->registerMatrixExpression(kNodeName, std::move(expression), std::move(resolvers));
+        manager->compileGraph();
+        const VariableNode* node = manager->get(kNodeName);
+        if (!node) {
+            MPFEM_THROW(ArgumentException, "Failed to build matrix expression node.");
+        }
+        ownedNodeManagers.push_back(std::move(manager));
+        return node;
     }
 
 } // namespace mpfem

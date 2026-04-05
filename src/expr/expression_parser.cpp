@@ -4,8 +4,10 @@
 #include "core/string_utils.hpp"
 #include "expr/unit_parser.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <unordered_set>
 #include <string_view>
 #include <unordered_map>
 #include <utility>
@@ -41,7 +43,7 @@ struct AstNode {
 
     Kind kind = Kind::Constant;
     double value = 0.0;
-    const double* variableRef = nullptr;
+    std::string variableName;
     std::unique_ptr<AstNode> lhs;
     std::unique_ptr<AstNode> rhs;
 };
@@ -66,6 +68,23 @@ std::vector<ExpressionParser::VariableBinding> makeBindings(VariableStorage& sto
         bindings.push_back(ExpressionParser::VariableBinding{name, &value});
     }
     return bindings;
+}
+
+void collectDependencies(const AstNode& node, std::unordered_set<std::string>& seen, std::vector<std::string>& deps)
+{
+    if (node.kind == AstNode::Kind::Variable) {
+        if (seen.insert(node.variableName).second) {
+            deps.push_back(node.variableName);
+        }
+        return;
+    }
+
+    if (node.lhs) {
+        collectDependencies(*node.lhs, seen, deps);
+    }
+    if (node.rhs) {
+        collectDependencies(*node.rhs, seen, deps);
+    }
 }
 
 bool isSeparator(char c)
@@ -290,7 +309,7 @@ private:
         const auto it = variables_.find(name);
         if (it != variables_.end()) {
             node->kind = AstNode::Kind::Variable;
-            node->variableRef = it->second;
+            node->variableName = name;
             return node;
         }
 
@@ -305,8 +324,9 @@ private:
             return node;
         }
 
-        MPFEM_THROW(ArgumentException,
-                    "Unbound variable in expression: " + name);
+        node->kind = AstNode::Kind::Variable;
+        node->variableName = name;
+        return node;
     }
 
     std::unique_ptr<AstNode> parseNumber()
@@ -400,44 +420,49 @@ private:
     size_t pos_ = 0;
 };
 
-double evalAstNode(const AstNode& node)
+double evalAstNode(const AstNode& node, const std::unordered_map<std::string, double>& values)
 {
     switch (node.kind) {
         case AstNode::Kind::Constant:
             return node.value;
         case AstNode::Kind::Variable:
-            MPFEM_ASSERT(node.variableRef != nullptr, "Variable node has null reference.");
-            return *node.variableRef;
+        {
+            const auto it = values.find(node.variableName);
+            if (it == values.end()) {
+                MPFEM_THROW(ArgumentException, "Unbound variable in expression: " + node.variableName);
+            }
+            return it->second;
+        }
         case AstNode::Kind::Add:
-            return evalAstNode(*node.lhs) + evalAstNode(*node.rhs);
+            return evalAstNode(*node.lhs, values) + evalAstNode(*node.rhs, values);
         case AstNode::Kind::Subtract:
-            return evalAstNode(*node.lhs) - evalAstNode(*node.rhs);
+            return evalAstNode(*node.lhs, values) - evalAstNode(*node.rhs, values);
         case AstNode::Kind::Multiply:
-            return evalAstNode(*node.lhs) * evalAstNode(*node.rhs);
+            return evalAstNode(*node.lhs, values) * evalAstNode(*node.rhs, values);
         case AstNode::Kind::Divide:
-            return evalAstNode(*node.lhs) / evalAstNode(*node.rhs);
+            return evalAstNode(*node.lhs, values) / evalAstNode(*node.rhs, values);
         case AstNode::Kind::Power:
-            return std::pow(evalAstNode(*node.lhs), evalAstNode(*node.rhs));
+            return std::pow(evalAstNode(*node.lhs, values), evalAstNode(*node.rhs, values));
         case AstNode::Kind::Negate:
-            return -evalAstNode(*node.lhs);
+            return -evalAstNode(*node.lhs, values);
         case AstNode::Kind::Sin:
-            return std::sin(evalAstNode(*node.lhs));
+            return std::sin(evalAstNode(*node.lhs, values));
         case AstNode::Kind::Cos:
-            return std::cos(evalAstNode(*node.lhs));
+            return std::cos(evalAstNode(*node.lhs, values));
         case AstNode::Kind::Tan:
-            return std::tan(evalAstNode(*node.lhs));
+            return std::tan(evalAstNode(*node.lhs, values));
         case AstNode::Kind::Exp:
-            return std::exp(evalAstNode(*node.lhs));
+            return std::exp(evalAstNode(*node.lhs, values));
         case AstNode::Kind::Log:
-            return std::log(evalAstNode(*node.lhs));
+            return std::log(evalAstNode(*node.lhs, values));
         case AstNode::Kind::Sqrt:
-            return std::sqrt(evalAstNode(*node.lhs));
+            return std::sqrt(evalAstNode(*node.lhs, values));
         case AstNode::Kind::Abs:
-            return std::abs(evalAstNode(*node.lhs));
+            return std::abs(evalAstNode(*node.lhs, values));
         case AstNode::Kind::Min:
-            return std::min(evalAstNode(*node.lhs), evalAstNode(*node.rhs));
+            return std::min(evalAstNode(*node.lhs, values), evalAstNode(*node.rhs, values));
         case AstNode::Kind::Max:
-            return std::max(evalAstNode(*node.lhs), evalAstNode(*node.rhs));
+            return std::max(evalAstNode(*node.lhs, values), evalAstNode(*node.rhs, values));
     }
 
     MPFEM_THROW(ArgumentException, "Unknown AST node kind.");
@@ -448,11 +473,13 @@ double evalAstNode(const AstNode& node)
 struct ExpressionParser::ScalarProgram::Impl {
     double multiplier = 1.0;
     std::unique_ptr<AstNode> root;
+    std::vector<std::string> dependencies;
 };
 
 struct ExpressionParser::MatrixProgram::Impl {
     bool literalMatrix = false;
     std::vector<ExpressionParser::ScalarProgram> components;
+    std::vector<std::string> dependencies;
 };
 
 ExpressionParser::ScalarProgram::ScalarProgram()
@@ -474,10 +501,16 @@ bool ExpressionParser::ScalarProgram::valid() const
     return impl_ && impl_->root != nullptr;
 }
 
-double ExpressionParser::ScalarProgram::evaluate() const
+const std::vector<std::string>& ExpressionParser::ScalarProgram::dependencies() const
+{
+    static const std::vector<std::string> empty;
+    return impl_ ? impl_->dependencies : empty;
+}
+
+double ExpressionParser::ScalarProgram::evaluate(const std::unordered_map<std::string, double>& values) const
 {
     MPFEM_ASSERT(valid(), "Attempting to evaluate an invalid scalar expression program.");
-    return evalAstNode(*impl_->root) * impl_->multiplier;
+    return evalAstNode(*impl_->root, values) * impl_->multiplier;
 }
 
 ExpressionParser::MatrixProgram::MatrixProgram()
@@ -499,12 +532,18 @@ bool ExpressionParser::MatrixProgram::valid() const
     return impl_ && !impl_->components.empty();
 }
 
-Matrix3 ExpressionParser::MatrixProgram::evaluate() const
+const std::vector<std::string>& ExpressionParser::MatrixProgram::dependencies() const
+{
+    static const std::vector<std::string> empty;
+    return impl_ ? impl_->dependencies : empty;
+}
+
+Matrix3 ExpressionParser::MatrixProgram::evaluate(const std::unordered_map<std::string, double>& values) const
 {
     MPFEM_ASSERT(valid(), "Attempting to evaluate an empty matrix expression program.");
 
     if (!impl_->literalMatrix || impl_->components.size() == 1) {
-        const double scalar = impl_->components.front().evaluate();
+        const double scalar = impl_->components.front().evaluate(values);
         return Matrix3::Identity() * scalar;
     }
 
@@ -512,9 +551,9 @@ Matrix3 ExpressionParser::MatrixProgram::evaluate() const
                  "Invalid matrix expression program: expected 1 or 9 components.");
 
     Matrix3 matrix;
-    matrix << impl_->components[0].evaluate(), impl_->components[3].evaluate(), impl_->components[6].evaluate(),
-        impl_->components[1].evaluate(), impl_->components[4].evaluate(), impl_->components[7].evaluate(),
-        impl_->components[2].evaluate(), impl_->components[5].evaluate(), impl_->components[8].evaluate();
+    matrix << impl_->components[0].evaluate(values), impl_->components[3].evaluate(values), impl_->components[6].evaluate(values),
+        impl_->components[1].evaluate(values), impl_->components[4].evaluate(values), impl_->components[7].evaluate(values),
+        impl_->components[2].evaluate(values), impl_->components[5].evaluate(values), impl_->components[8].evaluate(values);
     return matrix;
 }
 
@@ -551,6 +590,8 @@ ExpressionParser::ScalarProgram ExpressionParser::compileScalar(
     auto impl = std::make_unique<ScalarProgram::Impl>();
     impl->multiplier = unitResult.multiplier;
     impl->root = compiler.compile();
+    std::unordered_set<std::string> seen;
+    collectDependencies(*impl->root, seen, impl->dependencies);
     return ScalarProgram(std::move(impl));
 }
 
@@ -565,12 +606,18 @@ ExpressionParser::MatrixProgram ExpressionParser::compileMatrix(
 
     if (!matrixTemplate.literalMatrix) {
         impl->components.push_back(compileScalar(expression, bindings));
+        impl->dependencies = impl->components.front().dependencies();
         return MatrixProgram(std::move(impl));
     }
 
     impl->components.reserve(matrixTemplate.components.size());
     for (const std::string& componentExpression : matrixTemplate.components) {
         impl->components.push_back(compileScalar(componentExpression, bindings));
+        for (const std::string& dep : impl->components.back().dependencies()) {
+            if (std::find(impl->dependencies.begin(), impl->dependencies.end(), dep) == impl->dependencies.end()) {
+                impl->dependencies.push_back(dep);
+            }
+        }
     }
     return MatrixProgram(std::move(impl));
 }
@@ -582,7 +629,12 @@ double ExpressionParser::evaluate(
     VariableStorage storage = copyVariables(variables);
     auto bindings = makeBindings(storage);
     ScalarProgram program = compileScalar(expression, bindings);
-    return program.evaluate();
+    std::unordered_map<std::string, double> values;
+    values.reserve(storage.size());
+    for (const auto& [name, value] : storage) {
+        values.emplace(name, value);
+    }
+    return program.evaluate(values);
 }
 
 Matrix3 ExpressionParser::evaluateMatrix(
@@ -592,7 +644,12 @@ Matrix3 ExpressionParser::evaluateMatrix(
     VariableStorage storage = copyVariables(variables);
     auto bindings = makeBindings(storage);
     MatrixProgram program = compileMatrix(expression, bindings);
-    return program.evaluate();
+    std::unordered_map<std::string, double> values;
+    values.reserve(storage.size());
+    for (const auto& [name, value] : storage) {
+        values.emplace(name, value);
+    }
+    return program.evaluate(values);
 }
 
 }  // namespace mpfem

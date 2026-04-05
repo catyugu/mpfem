@@ -10,7 +10,6 @@
 #include "physics/heat_transfer_solver.hpp"
 #include "physics/structural_solver.hpp"
 #include "problem.hpp"
-#include "problem/expression_coefficient_factory.hpp"
 #include "steady_problem.hpp"
 #include "transient_problem.hpp"
 #include <array>
@@ -56,17 +55,17 @@ namespace mpfem {
             throw ArgumentException("Unsupported transient time scheme: " + scheme + ". Supported values: BDF1, BDF2.");
         }
 
-        std::unique_ptr<Coefficient> makeScalarExpressionCoefficient(Problem& problem,
+        const VariableNode* makeScalarExpressionNode(Problem& problem,
             const std::string& expression);
 
-        std::unique_ptr<MatrixCoefficient> makeMatrixExpressionCoefficient(Problem& problem,
+        const VariableNode* makeMatrixExpressionNode(Problem& problem,
             const std::string& expression);
 
-        template <typename CoefT, typename GetterFn>
-        std::unordered_map<int, const CoefT*> collectDomainCoefficients(const std::set<int>& domainIds,
+        template <typename GetterFn>
+        std::unordered_map<int, const VariableNode*> collectDomainNodes(const std::set<int>& domainIds,
             GetterFn getter)
         {
-            std::unordered_map<int, const CoefT*> byDomain;
+            std::unordered_map<int, const VariableNode*> byDomain;
             byDomain.reserve(domainIds.size());
             for (int domainId : domainIds) {
                 byDomain.emplace(domainId, getter(domainId));
@@ -74,32 +73,32 @@ namespace mpfem {
             return byDomain;
         }
 
-        const MatrixCoefficient* requireDomainMatrixCoefficient(Problem& problem,
+        const VariableNode* requireDomainMatrixNode(Problem& problem,
             int domainId,
             std::string_view property)
         {
-            if (const MatrixCoefficient* existing = problem.findDomainMatrixCoef(property, domainId)) {
+            if (const VariableNode* existing = problem.findDomainMatrixNode(property, domainId)) {
                 return existing;
             }
 
             const std::string& expression = problem.materials.matrixExpressionByDomain(domainId, property);
-            return problem.setDomainMatrixCoef(std::string(property),
+            return problem.setDomainMatrixNode(std::string(property),
                 domainId,
-                makeMatrixExpressionCoefficient(problem, expression));
+                makeMatrixExpressionNode(problem, expression));
         }
 
-        const Coefficient* requireDomainScalarCoefficient(Problem& problem,
+        const VariableNode* requireDomainScalarNode(Problem& problem,
             int domainId,
             std::string_view property)
         {
-            if (const Coefficient* existing = problem.findDomainScalarCoef(property, domainId)) {
+            if (const VariableNode* existing = problem.findDomainScalarNode(property, domainId)) {
                 return existing;
             }
 
             const std::string& expression = problem.materials.scalarExpressionByDomain(domainId, property);
-            return problem.setDomainScalarCoef(std::string(property),
+            return problem.setDomainScalarNode(std::string(property),
                 domainId,
-                makeScalarExpressionCoefficient(problem, expression));
+                makeScalarExpressionNode(problem, expression));
         }
 
         enum class RuntimeFieldKind {
@@ -130,12 +129,12 @@ namespace mpfem {
             return nullptr;
         }
 
-        RuntimeExpressionResolvers makeRuntimeExpressionResolvers(Problem& problem)
+        GraphRuntimeResolvers makeRuntimeExpressionResolvers(Problem& problem)
         {
-            RuntimeExpressionResolvers resolvers;
+            GraphRuntimeResolvers resolvers;
 
             resolvers.symbolBinder =
-                [&problem](std::string_view symbol) -> ExternalRuntimeSymbolResolver {
+                [&problem](std::string_view symbol) -> GraphExternalSymbolResolver {
                     const RuntimeFieldKind kind = classifyRuntimeField(symbol);
                     if (kind == RuntimeFieldKind::Unknown) {
                         return {};
@@ -160,23 +159,214 @@ namespace mpfem {
             return resolvers;
         }
 
-        std::unique_ptr<Coefficient> makeScalarExpressionCoefficient(Problem& problem,
+        const VariableNode* makeScalarExpressionNode(Problem& problem,
             const std::string& expression)
         {
-            return createRuntimeScalarExpressionCoefficient(
+            return problem.ownScalarExpressionNode(
                 expression,
-                problem.caseDef,
                 makeRuntimeExpressionResolvers(problem));
         }
 
-        std::unique_ptr<MatrixCoefficient> makeMatrixExpressionCoefficient(Problem& problem,
+        const VariableNode* makeMatrixExpressionNode(Problem& problem,
             const std::string& expression)
         {
-            return createRuntimeMatrixExpressionCoefficient(
+            return problem.ownMatrixExpressionNode(
                 expression,
-                problem.caseDef,
                 makeRuntimeExpressionResolvers(problem));
         }
+
+        class JouleHeatNode final : public VariableNode {
+        public:
+            JouleHeatNode(const GridFunction* voltageField,
+                          std::unordered_map<int, const VariableNode*> sigmaByDomain)
+                : voltageField_(voltageField), sigmaByDomain_(std::move(sigmaByDomain))
+            {
+                if (!voltageField_) {
+                    MPFEM_THROW(ArgumentException, "JouleHeatNode requires voltage field.");
+                }
+            }
+
+            VariableShape shape() const override { return VariableShape::Scalar; }
+            std::pair<int, int> dimensions() const override { return {1, 1}; }
+
+            void evaluate(const EvaluationContext& ctx, std::span<double> dest) const override
+            {
+                if (!ctx.transform) {
+                    MPFEM_THROW(ArgumentException, "JouleHeatNode requires ElementTransform in EvaluationContext.");
+                }
+                if (dest.size() != ctx.physicalPoints.size()) {
+                    MPFEM_THROW(ArgumentException, "JouleHeatNode destination size mismatch.");
+                }
+
+                const int domId = static_cast<int>(ctx.transform->attribute());
+                const auto it = sigmaByDomain_.find(domId);
+                if (it == sigmaByDomain_.end() || !it->second) {
+                    MPFEM_THROW(ArgumentException, "Missing conductivity node for domain.");
+                }
+                const VariableNode* sigmaNode = it->second;
+
+                for (size_t i = 0; i < dest.size(); ++i) {
+                    Vector3 refPoint = Vector3::Zero();
+                    Vector3 physPoint = Vector3::Zero();
+                    if (i < ctx.referencePoints.size()) {
+                        const Real xi[3] = {
+                            ctx.referencePoints[i].x(),
+                            ctx.referencePoints[i].y(),
+                            ctx.referencePoints[i].z(),
+                        };
+                        ctx.transform->setIntegrationPoint(xi);
+                        refPoint = ctx.referencePoints[i];
+                    } else {
+                        const auto& ip = ctx.transform->integrationPoint();
+                        refPoint = Vector3(ip.xi, ip.eta, ip.zeta);
+                    }
+                    if (i < ctx.physicalPoints.size()) {
+                        physPoint = ctx.physicalPoints[i];
+                    } else {
+                        const auto& ip = ctx.transform->integrationPoint();
+                        ctx.transform->transform(ip, physPoint);
+                    }
+
+                    std::array<Vector3, 1> refPts{refPoint};
+                    std::array<Vector3, 1> physPts{physPoint};
+                    EvaluationContext one;
+                    one.time = ctx.time;
+                    one.domainId = domId;
+                    one.elementId = ctx.elementId;
+                    one.referencePoints = std::span<const Vector3>(refPts.data(), refPts.size());
+                    one.physicalPoints = std::span<const Vector3>(physPts.data(), physPts.size());
+                    one.transform = ctx.transform;
+
+                    std::array<double, 9> sigmaValues{};
+                    sigmaNode->evaluate(one, std::span<double>(sigmaValues.data(), sigmaValues.size()));
+                    Matrix3 sigma = Matrix3::Zero();
+                    for (int r = 0; r < 3; ++r) {
+                        for (int c = 0; c < 3; ++c) {
+                            sigma(r, c) = static_cast<Real>(sigmaValues[static_cast<size_t>(r * 3 + c)]);
+                        }
+                    }
+
+                    const auto& ip = ctx.transform->integrationPoint();
+                    Vector3 g = voltageField_->gradient(ctx.transform->elementIndex(), &ip.xi, *ctx.transform);
+                    dest[i] = g.transpose() * sigma * g;
+                }
+            }
+
+        private:
+            const GridFunction* voltageField_ = nullptr;
+            std::unordered_map<int, const VariableNode*> sigmaByDomain_;
+        };
+
+        class ThermalExpansionStressNode final : public VariableNode {
+        public:
+            ThermalExpansionStressNode(const HeatTransferSolver* heat,
+                                       std::unordered_map<int, const VariableNode*> alphaByDomain,
+                                       std::unordered_map<int, const VariableNode*> youngByDomain,
+                                       std::unordered_map<int, const VariableNode*> nuByDomain,
+                                       Real tref)
+                : heat_(heat),
+                  alphaByDomain_(std::move(alphaByDomain)),
+                  youngByDomain_(std::move(youngByDomain)),
+                  nuByDomain_(std::move(nuByDomain)),
+                  tref_(tref)
+            {
+                if (!heat_) {
+                    MPFEM_THROW(ArgumentException, "ThermalExpansionStressNode requires heat solver.");
+                }
+            }
+
+            VariableShape shape() const override { return VariableShape::Matrix; }
+            std::pair<int, int> dimensions() const override { return {3, 3}; }
+
+            void evaluate(const EvaluationContext& ctx, std::span<double> dest) const override
+            {
+                if (!ctx.transform) {
+                    MPFEM_THROW(ArgumentException, "ThermalExpansionStressNode requires ElementTransform in EvaluationContext.");
+                }
+                if (dest.size() != ctx.physicalPoints.size() * 9ull) {
+                    MPFEM_THROW(ArgumentException, "ThermalExpansionStressNode destination size mismatch.");
+                }
+
+                const int domId = static_cast<int>(ctx.transform->attribute());
+                const VariableNode* alphaNode = alphaByDomain_.at(domId);
+                const VariableNode* eNode = youngByDomain_.at(domId);
+                const VariableNode* nuNode = nuByDomain_.at(domId);
+
+                const size_t pointCount = dest.size() / 9ull;
+                for (size_t i = 0; i < pointCount; ++i) {
+                    Vector3 refPoint = Vector3::Zero();
+                    Vector3 physPoint = Vector3::Zero();
+                    if (i < ctx.referencePoints.size()) {
+                        const Real xi[3] = {
+                            ctx.referencePoints[i].x(),
+                            ctx.referencePoints[i].y(),
+                            ctx.referencePoints[i].z(),
+                        };
+                        ctx.transform->setIntegrationPoint(xi);
+                        refPoint = ctx.referencePoints[i];
+                    } else {
+                        const auto& ip = ctx.transform->integrationPoint();
+                        refPoint = Vector3(ip.xi, ip.eta, ip.zeta);
+                    }
+                    if (i < ctx.physicalPoints.size()) {
+                        physPoint = ctx.physicalPoints[i];
+                    } else {
+                        const auto& ip = ctx.transform->integrationPoint();
+                        ctx.transform->transform(ip, physPoint);
+                    }
+
+                    std::array<Vector3, 1> refPts{refPoint};
+                    std::array<Vector3, 1> physPts{physPoint};
+                    EvaluationContext one;
+                    one.time = ctx.time;
+                    one.domainId = domId;
+                    one.elementId = ctx.elementId;
+                    one.referencePoints = std::span<const Vector3>(refPts.data(), refPts.size());
+                    one.physicalPoints = std::span<const Vector3>(physPts.data(), physPts.size());
+                    one.transform = ctx.transform;
+
+                    std::array<double, 9> alphaValues{};
+                    std::array<double, 1> eValues{0.0};
+                    std::array<double, 1> nuValues{0.0};
+                    alphaNode->evaluate(one, std::span<double>(alphaValues.data(), alphaValues.size()));
+                    eNode->evaluate(one, std::span<double>(eValues.data(), eValues.size()));
+                    nuNode->evaluate(one, std::span<double>(nuValues.data(), nuValues.size()));
+
+                    Matrix3 alpha = Matrix3::Zero();
+                    for (int r = 0; r < 3; ++r) {
+                        for (int c = 0; c < 3; ++c) {
+                            alpha(r, c) = static_cast<Real>(alphaValues[static_cast<size_t>(r * 3 + c)]);
+                        }
+                    }
+
+                    const auto& ip = ctx.transform->integrationPoint();
+                    const Real T = heat_->field().eval(ctx.transform->elementIndex(), &ip.xi);
+                    const Real E_val = static_cast<Real>(eValues[0]);
+                    const Real nu_val = static_cast<Real>(nuValues[0]);
+                    const Real lambda = E_val * nu_val / ((1.0 + nu_val) * (1.0 - 2.0 * nu_val));
+                    const Real mu = E_val / (2.0 * (1.0 + nu_val));
+
+                    const Matrix3 eps = alpha * (T - tref_);
+                    const Matrix3 epsSym = 0.5 * (eps + eps.transpose());
+                    Matrix3 sigma = 2.0 * mu * epsSym;
+                    sigma.diagonal().array() += lambda * epsSym.trace();
+
+                    const size_t base = i * 9ull;
+                    for (int r = 0; r < 3; ++r) {
+                        for (int c = 0; c < 3; ++c) {
+                            dest[base + static_cast<size_t>(r * 3 + c)] = sigma(r, c);
+                        }
+                    }
+                }
+            }
+
+        private:
+            const HeatTransferSolver* heat_ = nullptr;
+            std::unordered_map<int, const VariableNode*> alphaByDomain_;
+            std::unordered_map<int, const VariableNode*> youngByDomain_;
+            std::unordered_map<int, const VariableNode*> nuByDomain_;
+            Real tref_ = 0.0;
+        };
 
     } // namespace
 
@@ -279,7 +469,7 @@ namespace mpfem {
             problem.electrostatics->initialize(*problem.mesh, problem.fieldValues, physics.order, icValue);
 
             for (int domainId : problem.materials.domainIds()) {
-                const MatrixCoefficient* sigma = requireDomainMatrixCoefficient(
+                const VariableNode* sigma = requireDomainMatrixNode(
                     problem,
                     domainId,
                     kPropElectricConductivity);
@@ -288,8 +478,7 @@ namespace mpfem {
 
             for (const auto& bc : physics.boundaries) {
                 if (bc.type == "Voltage") {
-                    const Coefficient* voltage = problem.ownScalarCoef(
-                        makeScalarExpressionCoefficient(problem, bc.parameters.at("value")));
+                    const VariableNode* voltage = makeScalarExpressionNode(problem, bc.parameters.at("value"));
                     problem.electrostatics->addVoltageBC(bc.ids, voltage);
                 }
             }
@@ -305,28 +494,25 @@ namespace mpfem {
             problem.heatTransfer->initialize(*problem.mesh, problem.fieldValues, physics.order, icValue);
 
             for (int domainId : problem.materials.domainIds()) {
-                const MatrixCoefficient* k = requireDomainMatrixCoefficient(
+                const VariableNode* k = requireDomainMatrixNode(
                     problem,
                     domainId,
                     kPropThermalConductivity);
                 problem.heatTransfer->setThermalConductivity({domainId}, k);
 
-                const Coefficient* rho = requireDomainScalarCoefficient(problem, domainId, kPropDensity);
-                const Coefficient* cp = requireDomainScalarCoefficient(problem, domainId, kPropHeatCapacity);
+                const VariableNode* rho = requireDomainScalarNode(problem, domainId, kPropDensity);
+                const VariableNode* cp = requireDomainScalarNode(problem, domainId, kPropHeatCapacity);
                 problem.heatTransfer->setMassProperties({domainId}, rho, cp);
             }
 
             for (const auto& bc : physics.boundaries) {
                 if (bc.type == "Temperature") {
-                    const Coefficient* temperature = problem.ownScalarCoef(
-                        makeScalarExpressionCoefficient(problem, bc.parameters.at("value")));
+                    const VariableNode* temperature = makeScalarExpressionNode(problem, bc.parameters.at("value"));
                     problem.heatTransfer->addTemperatureBC(bc.ids, temperature);
                 }
                 else if (bc.type == "Convection") {
-                    const Coefficient* h = problem.ownScalarCoef(
-                        makeScalarExpressionCoefficient(problem, bc.parameters.at("h")));
-                    const Coefficient* tinf = problem.ownScalarCoef(
-                        makeScalarExpressionCoefficient(problem, bc.parameters.at("T_inf")));
+                    const VariableNode* h = makeScalarExpressionNode(problem, bc.parameters.at("h"));
+                    const VariableNode* tinf = makeScalarExpressionNode(problem, bc.parameters.at("T_inf"));
                     problem.heatTransfer->addConvectionBC(bc.ids, h, tinf);
                 }
             }
@@ -342,16 +528,14 @@ namespace mpfem {
             problem.structural->initialize(*problem.mesh, problem.fieldValues, physics.order, icValue);
 
             for (int domainId : problem.materials.domainIds()) {
-                const Coefficient* E = requireDomainScalarCoefficient(problem, domainId, kPropYoungModulus);
-                const Coefficient* nu = requireDomainScalarCoefficient(problem, domainId, kPropPoissonRatio);
+                const VariableNode* E = requireDomainScalarNode(problem, domainId, kPropYoungModulus);
+                const VariableNode* nu = requireDomainScalarNode(problem, domainId, kPropPoissonRatio);
                 problem.structural->addElasticity({domainId}, E, nu);
             }
 
             for (const auto& bc : physics.boundaries) {
                 if (bc.type == "Fixed") {
-                    const VectorCoefficient* disp = problem.ownVectorCoef(
-                        constantVectorCoefficient(0.0, 0.0, 0.0));
-                    problem.structural->addFixedDisplacementBC(bc.ids, disp);
+                    problem.structural->addFixedDisplacementBC(bc.ids, Vector3::Zero());
                 }
             }
         }
@@ -360,23 +544,14 @@ namespace mpfem {
         {
             const GridFunction* V_field = &problem.electrostatics->field();
             const std::set<int> activeDomains = cp.domainIds;
-            const auto sigmaByDomain = collectDomainCoefficients<MatrixCoefficient>(
+            const auto sigmaByDomain = collectDomainNodes(
                 activeDomains,
                 [&](int domainId) {
-                    return requireDomainMatrixCoefficient(problem, domainId, kPropElectricConductivity);
+                    return requireDomainMatrixNode(problem, domainId, kPropElectricConductivity);
                 });
 
-            auto jouleHeat = std::make_unique<FunctionCoefficient>(
-                [V_field, sigmaByDomain](ElementTransform& trans, Real& result, Real t) {
-                    const int domId = static_cast<int>(trans.attribute());
-                    const MatrixCoefficient* sigmaCoef = sigmaByDomain.at(domId);
-                    Matrix3 sigma_mat;
-                    sigmaCoef->eval(trans, sigma_mat, t);
-                    Vector3 g = V_field->gradient(trans.elementIndex(), &trans.integrationPoint().xi, trans);
-                    result = g.transpose() * sigma_mat * g;
-                });
-
-            const Coefficient* joule = problem.ownScalarCoef(std::move(jouleHeat));
+            const VariableNode* joule = problem.ownNode(
+                std::make_unique<JouleHeatNode>(V_field, sigmaByDomain));
             problem.heatTransfer->setHeatSource(activeDomains, joule);
             LOG_INFO << "Joule heating domains: " << activeDomains.size() << " domains";
         }
@@ -389,49 +564,29 @@ namespace mpfem {
             Real T_ref = physicsIt->second.referenceTemperature;
 
             const std::set<int> activeDomains = cp.domainIds;
-            const auto alphaByDomain = collectDomainCoefficients<MatrixCoefficient>(
+            const auto alphaByDomain = collectDomainNodes(
                 activeDomains,
                 [&](int domainId) {
-                    return requireDomainMatrixCoefficient(problem, domainId, kPropThermalExpansion);
+                    return requireDomainMatrixNode(problem, domainId, kPropThermalExpansion);
                 });
-            const auto youngByDomain = collectDomainCoefficients<Coefficient>(
+            const auto youngByDomain = collectDomainNodes(
                 activeDomains,
                 [&](int domainId) {
-                    return requireDomainScalarCoefficient(problem, domainId, kPropYoungModulus);
+                    return requireDomainScalarNode(problem, domainId, kPropYoungModulus);
                 });
-            const auto nuByDomain = collectDomainCoefficients<Coefficient>(
+            const auto nuByDomain = collectDomainNodes(
                 activeDomains,
                 [&](int domainId) {
-                    return requireDomainScalarCoefficient(problem, domainId, kPropPoissonRatio);
+                    return requireDomainScalarNode(problem, domainId, kPropPoissonRatio);
                 });
 
-            auto coef = std::make_unique<MatrixFunctionCoefficient>(
-                [&problem, alphaByDomain, youngByDomain, nuByDomain, T_ref](ElementTransform& trans, Matrix3& result, Real t) {
-                    const int domId = static_cast<int>(trans.attribute());
-                    const MatrixCoefficient* alphaCoef = alphaByDomain.at(domId);
-                    const Coefficient* eCoef = youngByDomain.at(domId);
-                    const Coefficient* nuCoef = nuByDomain.at(domId);
-                    Matrix3 alpha;
-                    alphaCoef->eval(trans, alpha, t);
-                    Real T = T_ref;
-                    const auto& ip = trans.integrationPoint();
-                    T = problem.heatTransfer->field().eval(trans.elementIndex(), &ip.xi);
-
-                    Real E_val = 0.0, nu_val = 0.0;
-                    eCoef->eval(trans, E_val, t);
-                    nuCoef->eval(trans, nu_val, t);
-
-                    const Real lambda = E_val * nu_val / ((1.0 + nu_val) * (1.0 - 2.0 * nu_val));
-                    const Real mu = E_val / (2.0 * (1.0 + nu_val));
-
-                    const Matrix3 eps = alpha * (T - T_ref);
-                    const Matrix3 epsSym = 0.5 * (eps + eps.transpose());
-
-                    result = 2.0 * mu * epsSym;
-                    result.diagonal().array() += lambda * epsSym.trace();
-                });
-
-            const MatrixCoefficient* stressCoef = problem.ownMatrixCoef(std::move(coef));
+            const VariableNode* stressCoef = problem.ownNode(
+                std::make_unique<ThermalExpansionStressNode>(
+                    problem.heatTransfer.get(),
+                    alphaByDomain,
+                    youngByDomain,
+                    nuByDomain,
+                    T_ref));
             problem.structural->setStrainLoad(activeDomains, stressCoef);
             LOG_INFO << "Thermal expansion coupling enabled (T_ref = " << T_ref << " K)";
         }

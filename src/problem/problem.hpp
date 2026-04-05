@@ -2,7 +2,7 @@
 #define MPFEM_PROBLEM_HPP
 
 #include "core/types.hpp"
-#include "fe/coefficient.hpp"
+#include "expr/variable_graph.hpp"
 #include "fe/grid_function.hpp"
 #include "mesh/mesh.hpp"
 #include "model/case_definition.hpp"
@@ -41,11 +41,10 @@ namespace mpfem {
             }
         };
 
-        std::unordered_map<DomainPropertyKey, std::unique_ptr<Coefficient>, DomainPropertyKeyHash> domainScalarCoefficients;
-        std::unordered_map<DomainPropertyKey, std::unique_ptr<MatrixCoefficient>, DomainPropertyKeyHash> domainMatrixCoefficients;
-        std::vector<std::unique_ptr<Coefficient>> ownedScalarCoefficients;
-        std::vector<std::unique_ptr<VectorCoefficient>> ownedVectorCoefficients;
-        std::vector<std::unique_ptr<MatrixCoefficient>> ownedMatrixCoefficients;
+        std::unordered_map<DomainPropertyKey, const VariableNode*, DomainPropertyKeyHash> domainScalarNodes;
+        std::unordered_map<DomainPropertyKey, const VariableNode*, DomainPropertyKeyHash> domainMatrixNodes;
+        std::vector<std::unique_ptr<VariableNode>> ownedNodes;
+        std::vector<std::unique_ptr<VariableManager>> ownedNodeManagers;
 
     public:
         virtual ~Problem();
@@ -73,18 +72,20 @@ namespace mpfem {
         CaseDefinition caseDef;
         FieldValues fieldValues;
 
-        const Coefficient* findDomainScalarCoef(std::string_view property, int domainId) const;
-        const MatrixCoefficient* findDomainMatrixCoef(std::string_view property, int domainId) const;
-        const Coefficient* setDomainScalarCoef(std::string property,
-            int domainId,
-            std::unique_ptr<Coefficient> coef);
-        const MatrixCoefficient* setDomainMatrixCoef(std::string property,
-            int domainId,
-            std::unique_ptr<MatrixCoefficient> coef);
+        const VariableNode* findDomainScalarNode(std::string_view property, int domainId) const;
+        const VariableNode* findDomainMatrixNode(std::string_view property, int domainId) const;
+        const VariableNode* setDomainScalarNode(std::string property,
+                                                int domainId,
+                                                const VariableNode* node);
+        const VariableNode* setDomainMatrixNode(std::string property,
+                                                int domainId,
+                                                const VariableNode* node);
 
-        const Coefficient* ownScalarCoef(std::unique_ptr<Coefficient> coef);
-        const VectorCoefficient* ownVectorCoef(std::unique_ptr<VectorCoefficient> coef);
-        const MatrixCoefficient* ownMatrixCoef(std::unique_ptr<MatrixCoefficient> coef);
+        const VariableNode* ownNode(std::unique_ptr<VariableNode> node);
+        const VariableNode* ownScalarExpressionNode(std::string expression,
+                                                    GraphRuntimeResolvers resolvers = {});
+        const VariableNode* ownMatrixExpressionNode(std::string expression,
+                                                    GraphRuntimeResolvers resolvers = {});
     };
 
 } // namespace mpfem
