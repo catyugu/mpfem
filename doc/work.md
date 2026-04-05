@@ -22,165 +22,142 @@
 
 ## 具体工作任务
 
-### 🚨 核心反模式诊断 (Anti-patterns)
+**目前的系统处于“半自动、半硬编码”的尴尬过渡期。** 终极意图是**完全用自动DAG+表达式解析的变量系统取代原始的数值解析系统**，但当前代码中充斥着严重的设计反模式，阻碍了这一目标的实现。
 
-#### 1. 性能杀手：在最内层积分点循环中动态分配 `std::unordered_map`
-**位置**：`variable_graph.cpp` 中的 `RuntimeScalarExpressionNode::evaluateBatch` 和 `makeValueMap`
-**问题**：
-```cpp
-for (size_t i = 0; i < n; ++i) { // 遍历物理/积分点
-    // 【致命反模式】：每次循环都新建一个哈希表并插入所有变量！
-    const std::unordered_map<std::string, double> values = makeValueMap(...); 
-    dest[i] = program_.evaluate(values);
-}
-```
-在 FEM 组装中，这会被调用数百万次。动态内存分配（`new`）、字符串哈希（Hash）、红黑树/哈希表插入的开销，将远远超过实际数学表达式（如 `+ - * /`）计算的开销（慢几个数量级）。
+以下是代码中存在的核心反模式及问题分析：
 
-#### 2. 标量化的 AST 递归求值 (Scalar Recursive AST Evaluation)
-**位置**：`expression_parser.cpp` 中的 `evalAstNode`
-**问题**：对每一个物理点，AST 都要进行一次深度的递归函数调用树遍历，并且伴随着巨大的 `switch-case` 开销和指针跳转。这种标量计算无法利用现代 CPU 的 SIMD/向量化指令。
-
-#### 3. 割裂的物理场与变量系统 (Fragmented Field vs. Variable System)
-**位置**：`field_values.hpp` vs `variable_graph.hpp`
-**问题**：`FieldValues` 孤立存在，只是一个管理 `GridFunction` 的容器。而 `VariableManager` 只是解析文本表达式。在多物理场中，**位移场、温度场本身也应该只是 DAG 中的一个节点**。现在的设计导致表达式无法直接、透明地获取和依赖实际的物理场。
-
-#### 4. 矩阵表达式只是 9 个孤立的标量表达式
-**位置**：`ExpressionParser::MatrixProgram`
-**问题**：如果用户写了 `{{ a*b, 0, 0 }, { 0, a*b, 0 }, ...}`，`a*b` 会被解析并计算多次。缺乏原生的 Tensor/Vector AST 支持。
-
-#### 5. 硬编码的“内建符号” (Hardcoded Built-ins)
-**位置**：`BuiltInSymbolKind` (`x`, `y`, `z`, `t`)
-**问题**：在纯粹的 DAG 系统中，不应该有“特殊”的变量。时间 $t$ 只是一个提供单值输出的常量节点，空间坐标 $(x, y, z)$ 只是提供几何映射的普通变量节点。硬编码破坏了一致性。
+1. **反模式：硬编码的物理领域耦合（God Builder & Circular Dependency）**
+   * **问题**：在 `physics_problem_builder.cpp` 中，`classifyRuntimeField` 硬编码了 `"T"` 和 `"V"`；`setupCoupling` 中手动编写了 `JouleHeatNode` 和 `ThermalExpansionStressNode` 这两个庞大的 C++ 类来计算物理公式。这完全违背了“表达式系统”的初衷。如果需要写几百行 C++ 代码来计算 $Q = \nabla V \cdot \sigma \cdot \nabla V$，那么表达式系统形同虚设。
+2. **反模式：热点路径（Hot-Path）中的堆内存分配**
+   * **问题**：`ProductScalarNode::evaluateBatch` 和 `RuntimeScalarExpressionNode::evaluateBatch` 中，每次求值（积分点的紧密循环）都会调用 `std::vector<double> lhsValues(dest.size());`。在 FEM 组装的底层紧密循环中动态分配堆内存，会导致灾难性的性能瓶颈（Cache Miss 和 Allocator 锁竞争）。
+3. **反模式：推模型（Push-Model）的属性注入**
+   * **问题**：`PhysicsProblemBuilder` 负责去材质库里查找特定名称（如 `kPropThermalConductivity`），然后显式调用 `solver->setThermalConductivity(...)`。这导致 Builder 必须知道每一个求解器的内部实现细节，后续扩展新的物理场时必须修改 Builder。
+4. **冗余：材质系统与变量系统的两层皮**
+   * **问题**：`MaterialDatabase` 存储了一遍字符串，然后 `ProblemBuilder` 又把这些字符串取出来编译成 `VariableNode`，存在两层状态同步问题。
 
 ---
 
-### 🛠️ 破坏式重构蓝图 (Refactoring Blueprint)
+### 破坏式重构步骤计划
 
-为了实现您“**完全用自动 DAG + 表达式系统取代**”的意图，建议彻底抛弃目前的字符串+哈希表运行时绑定，转向**编译期（Setup阶段）图链接 + 运行时平坦数组/向量化计算**。
+为了实现一个 **简洁、高效、一致的纯 DAG+表达式系统**，建议按照以下 5 个阶段进行“破坏式重构”。每一步都可独立验证编译。
 
-#### 重构步骤 1：统一所有实体为 `VariableNode` (DAG 核心化)
-放弃 `FieldValues` 独立管理的思路。时间和空间坐标也是 Node。
-一切皆 `Node`。
+#### 第一步：消除硬编码，实现“动态符号与场”注册中心 (Dynamic Registry)
+**目标**：彻底干掉 `classifyRuntimeField`、`BuiltInSymbolKind` 等带有硬编码 "x, y, T, V" 的枚举。
+
+1. **修改 `VariableManager`**：提供通用的运行时变量注册接口，而不是依赖外部传入的回调工厂 `GraphExternalSymbolBinder`。
+2. **重构**：允许将任何物理场（`GridFunction`）或内置坐标直接注册为节点。
 
 ```cpp
-// 基础抽象：批量（向量化）求值的 DAG 节点
-class VariableNode {
+// 1. 新增接口：提供场求值的基类
+class FieldProvider {
 public:
-    virtual ~VariableNode() = default;
-    
-    virtual VariableShape shape() const = 0;
-    
-    // 强制使用向量化接口：一次性计算所有积分点/物理点
-    // 输入 ctx 包含点信息，输出直接写入 dest
-    virtual void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const = 0;
-    
-    // 返回该节点依赖的其他节点
-    virtual std::vector<const VariableNode*> dependencies() const = 0;
+    virtual ~FieldProvider() = default;
+    virtual double evaluate(const EvaluationContext& ctx, size_t pointIndex) const = 0;
+    // 如果支持梯度
+    virtual Vector3 evaluateGradient(const EvaluationContext& ctx, size_t pointIndex) const = 0;
+};
+
+// 2. VariableManager 提供直接注册物理场的接口
+class VariableManager {
+public:
+    // ...
+    void registerField(std::string name, std::shared_ptr<FieldProvider> field);
+    void registerCoordinate(std::string name, int axis); // x=0, y=1, z=2
+    void registerTime(std::string name);
 };
 ```
+* **验证机制**：删除 `classifyRuntimeField` 和 `classifyBuiltInSymbol`。测试求解器是否能通过名称 `"T"` 正常获取温度场的值。
 
-**实现各种具体的 Node：**
-* `TimeNode`：无依赖，在 `evaluateBatch` 中用 `ctx.time` 填充 `dest`。
-* `CoordinateNode`：无依赖，用 `ctx.physicalPoints` 填充 `dest`。
-* `GridFunctionNode`：依赖几何映射，根据 `ctx.referencePoints` 和 `GridFunction` 插值出物理值。
-* `ExpressionNode`：依赖其子节点（从文本解析而来）。
+#### 第二步：消灭 C++ 物理耦合节点，升级表达式解析器 (Parser Upgrade)
+**目标**：彻底删除 `ProductScalarNode`、`JouleHeatNode` 和 `ThermalExpansionStressNode`。让解析器承担真正的 DAG 计算责任。
 
-#### 重构步骤 2：表达式系统脱离字符串绑定 (Flat Memory Model)
-`ExpressionParser` 解析后的 `ScalarProgram` **不应该**知道变量名叫什么，它只需要知道**变量在输入数组中的索引**。
-
-**旧设计**：`evaluate(unordered_map<string, double>)`
-**新设计**：`evaluate(const double* inputs)`
+1. **升级 `ExpressionParser`**：使你的数学解析库支持矩阵运算和微分算子（如 `grad(V)`, `dot(a, b)`, `trace(A)`, `sym(A)`）。
+2. **用表达式重写耦合逻辑**：将数百行的 C++ Coded Node 替换为一行注册代码。
 
 ```cpp
-// 重构后的标量程序
-class ScalarProgram {
-public:
-    // 运行时极速求值：不按点求值，而是直接传入批量的依赖数据，输出批量结果
-    // input_blocks 存放了其所有依赖节点的 evaluateBatch 结果
-    void evaluateBatch(const std::vector<std::span<const double>>& input_blocks, 
-                       std::span<double> dest) const;
-};
+// 以前的做法 (physics_problem_builder.cpp):
+// const VariableNode* joule = problem.ownNode(std::make_unique<JouleHeatNode>(V_field, sigmaByDomain));
+
+// 重构后的做法：完全基于 DAG 和表达式
+// 只需在问题初始化时注册焦耳热的数学表达式
+problem.varManager.registerScalarExpression(
+    "JouleHeat", 
+    "dot(grad(V), sigma * grad(V))"
+);
+problem.heatTransfer->setHeatSource(activeDomains, problem.varManager.get("JouleHeat"));
+
+// 热膨胀应力同理：
+problem.varManager.registerMatrixExpression(
+    "ThermalStrain",
+    "alpha * (T - T_ref)"
+);
+problem.varManager.registerMatrixExpression(
+    "ThermalStress",
+    "2 * mu * sym(ThermalStrain) + lambda * trace(ThermalStrain) * Identity"
+);
 ```
+* **验证机制**：删掉所有的 C++ 自定义算子类，代码行数大幅减少。多物理场耦合仅仅体现为往 DAG 中添加公式图节点。
 
-#### 重构步骤 3：AST 向量化求值 (Vectorized AST)
-修改 `AstNode` 的执行逻辑，不要递归计算单精度/双精度值，而是直接在数组上操作。
+#### 第三步：重构求值热路径，实现零动态内存分配 (Zero-Allocation Hot-Path)
+**目标**：在 `evaluateBatch` 中杜绝所有的 `std::vector` 动态分配。
 
-```cpp
-// 在 expression_parser.cpp 内部
-void evalAstNodeBatch(const AstNode& node, 
-                      const std::vector<std::span<const double>>& inputs, 
-                      std::span<double> dest) {
-    switch (node.kind) {
-        case AstNode::Kind::Variable: {
-            // 在编译图的阶段，已经把变量名映射成了 inputs 数组的索引
-            const auto& input_data = inputs[node.variable_index];
-            std::copy(input_data.begin(), input_data.end(), dest.begin());
-            break;
-        }
-        case AstNode::Kind::Add: {
-            // 分配临时缓冲区（或者利用内存池）
-            std::vector<double> lhs_val(dest.size());
-            std::vector<double> rhs_val(dest.size());
-            evalAstNodeBatch(*node.lhs, inputs, lhs_val);
-            evalAstNodeBatch(*node.rhs, inputs, rhs_val);
-            for(size_t i=0; i<dest.size(); ++i) {
-                dest[i] = lhs_val[i] + rhs_val[i];
-            }
-            break;
-        }
-        // ...
-    }
-}
-```
-*(注：如果想极致优化，可以将 AST 展平为**字节码 (Bytecode)**，例如转成逆波兰表达式 RPN 放在一个 `std::vector<Instruction>` 中执行，彻底消除递归。)*
-
-#### 重构步骤 4：VariableManager 作为计算图调度器 (DAG Scheduler)
-`VariableManager` 的核心任务变成：
-1. 注册所有的 Node（包括时间、空间、物理场、表达式）。
-2. `compileGraph()`：建立拓扑排序。**在这里完成所有字符串名字到数组索引的绑定**。
+1. **引入 `EvaluationWorkspace` / 提前预分配**：DAG 节点求值时，临时结果应该存放在预先分配的线性内存池（或线程局部缓存）中。
+2. **重写 Batch 签名**：
 
 ```cpp
-void VariableManager::compileGraph() {
-    // 1. 拓扑排序 (你已经实现了 dfsVisit，非常好)
-    executionPlan_ = topologicalSort(nodes_);
-
-    // 2. 建立绑定关系！
-    for (auto* node : executionPlan_) {
-        if (auto* exprNode = dynamic_cast<RuntimeScalarExpressionNode*>(node)) {
-            // 查找表达式依赖的名字，将它们转换为具体的 Node 指针或执行上下文索引
-            exprNode->bindDependencies(this);
-        }
-    }
-}
-```
-
-#### 重构步骤 5：求值管道 (Evaluation Pipeline)
-当求解器请求组装矩阵，需要求值时，工作流非常清晰，没有任何内存分配：
-
-```cpp
-void evaluateGraph(const EvaluationContext& ctx) {
-    // 假设本批次有 100 个积分点
-    size_t num_points = ctx.physicalPoints.size();
+// 传递一个可复用的上下文工作区，避免每次 new memory
+struct EvaluationWorkspace {
+    std::vector<double> scratchpad; 
+    size_t offset = 0;
     
-    // 为图中的每个节点分配一块连续的临时内存（可以使用线程局部的 Memory Pool 防止重复 new）
-    MemoryPool pool(num_points * executionPlan_.size()); 
+    std::span<double> allocate(size_t size) {
+        // 从 scratchpad 中快速划出一块内存（仅移动指针）
+    }
+    void reset() { offset = 0; }
+};
 
-    for (const VariableNode* node : executionPlan_) {
-        std::span<double> dest = pool.allocate(num_points * node->vdim());
-        
-        // 每个节点会自动去读它依赖节点的内存块，并写到自己的 dest 中
-        node->evaluateBatch(ctx, dest); 
+// VariableNode 签名修改
+virtual void evaluateBatch(const EvaluationContext& ctx, 
+                           EvaluationWorkspace& workspace, 
+                           std::span<double> dest) const = 0;
+```
+* **验证机制**：在 `evaluateBatch` 内部使用工具（如 Valgrind 或重载 global `new`）断言：在执行装配（`assemble()`）期间，内存分配次数必须为 0。
+
+#### 第四步：控制反转，求解器采用“拉取式”依赖 (Pull-based Dependency)
+**目标**：消除 `PhysicsProblemBuilder` 作为 "God Class" 的设计，将它变成纯粹的工厂，让各个 Solver 自己去 DAG 中寻找自己需要的参数。
+
+1. **解除 Builder 的负担**：Builder 不需要知道 `HeatTransferSolver` 需要 `rho` 和 `Cp`。
+2. **求解器自注册和拉取**：
+
+```cpp
+void HeatTransferSolver::initializeDependencies(const VariableManager& varMgr) {
+    // 求解器自己定义自己依赖的变量名称约定
+    this->k_node = varMgr.get("thermalconductivity");
+    this->rho_node = varMgr.get("density");
+    this->cp_node = varMgr.get("heatcapacity");
+    
+    if (!k_node) {
+        MPFEM_THROW("HeatTransfer requires 'thermalconductivity' to be defined in the expression graph.");
     }
 }
 ```
+* **验证机制**：删除 `PhysicsProblemBuilder` 中用于查找并调用 `setThermalConductivity` 等属性赋值的长串代码。Builder 只需要无脑解析 XML，把所有表达式丢进 `VariableManager`，然后让求解器自行校验 DAG。
 
----
+#### 第五步：合并材质系统与 DAG (Domain-Aware DAG)
+**目标**：处理按物理区域（Domain ID）变化的参数，废弃两层抽象的 `MaterialDatabase`。
 
-### 💡 总结与建议
+1. **区域条件表达式 (Piecewise / Select)**：对于多个区域具有不同材料参数的问题，应该在 DAG 中体现为一个**分支节点**或原生的条件表达式。
+2. **实现**：
 
-您当前代码最大的痛点在于**将 "描述（文本/字符串）" 泄露到了 "最底层的数值求值（Evaluation）" 环节**。
+可以在表达式语法中支持 `domain` 关键字或 `select` 函数：
+```text
+density = select(domain == 1: 7800, domain == 2: 1000)
+```
+或者在 C++ `VariableManager` 内部实现一个 `PiecewiseNode`，专门根据 `ctx.domainId` 路由到不同的子表达式节点。
+* **验证机制**：彻底删除 `MaterialDatabase` 类（它只需要简化为 XML 解析的一个过程），所有的材料属性最终都是 `VariableManager` 中的一个带 Domain 路由的节点。
 
-破坏式重构的核心法则：
-1. **彻底分离编译期和运行期**：所有根据 `std::string` 查找变量的行为，**必须且只能**发生在 `VariableManager::compileGraph()` 中。
-2. **消灭点级（Point-wise）接口**：强迫所有的节点使用 `evaluateBatch(std::span<double>)`，这不仅消除了循环内的临时变量创建，更自动为未来的 AVX/SIMD 向量化铺平了道路。
-3. **融合 Field 与 Variable**：`GridFunction`（或者包装它的代理类）本身就是 DAG 中的一个 Source Node。这样无论是 PDE 弱形式还是边界条件的表达式，都可以统一地写成 `expr("Temperature^4 * 5.67e-8")`，系统在图排序时自动将温度场节点链接给表达式节点。
+### 总结
+执行以上 5 步后，你的架构将变成纯粹的数据流：
+`XML输入 -> 表达式注册到 VariableManager -> DAG 图编译 (拓扑排序) -> 求解器直接从 DAG 取用变量 (零内存分配) -> 并行组装 -> 求解`。
+
+这不仅在代码量上能精简 40% 以上的样板逻辑，更将极大提升架构应对新增物理场及方程体系的通用性。
