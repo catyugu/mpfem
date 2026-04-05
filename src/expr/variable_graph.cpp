@@ -9,24 +9,11 @@
 #include <cstdint>
 #include <string>
 #include <unordered_map>
-#include <unordered_set>
 #include <utility>
 
 
 namespace mpfem {
     namespace {
-
-        struct RuntimeSymbolConfig {
-            std::vector<std::pair<std::string, double>> constants;
-            std::vector<std::string> dynamicSymbols;
-            std::vector<const VariableNode*> dependencies;
-        };
-
-        std::uint64_t nextProgramId()
-        {
-            static std::atomic<std::uint64_t> id {1};
-            return id.fetch_add(1, std::memory_order_relaxed);
-        }
 
         enum class BuiltInSymbolKind {
             None,
@@ -35,6 +22,26 @@ namespace mpfem {
             Y,
             Z,
         };
+
+        struct RuntimeSymbolBinding {
+            std::string symbol;
+            BuiltInSymbolKind kind = BuiltInSymbolKind::None;
+            const VariableNode* node = nullptr;
+            GraphExternalSymbolResolver resolver;
+            double constantValue = 0.0;
+            bool hasConstant = false;
+        };
+
+        struct RuntimeSymbolConfig {
+            std::vector<RuntimeSymbolBinding> bindings;
+            std::vector<const VariableNode*> dependencies;
+        };
+
+        std::uint64_t nextProgramId()
+        {
+            static std::atomic<std::uint64_t> id {1};
+            return id.fetch_add(1, std::memory_order_relaxed);
+        }
 
         BuiltInSymbolKind classifyBuiltInSymbol(std::string_view symbol)
         {
@@ -77,92 +84,104 @@ namespace mpfem {
             return out[0];
         }
 
-        RuntimeSymbolConfig buildSymbolConfig(const ExpressionParser::ScalarProgram& program,
-            const VariableManager::NodeStore& nodes)
+        RuntimeSymbolConfig buildSymbolConfig(const std::vector<std::string>& symbols,
+            const VariableManager::NodeStore& nodes,
+            const GraphRuntimeResolvers& resolvers)
         {
             RuntimeSymbolConfig config;
-            std::unordered_set<std::string> seen;
+            config.bindings.reserve(symbols.size());
+            config.dependencies.reserve(symbols.size());
 
-            for (const std::string& symbol : program.dependencies()) {
-                if (!seen.insert(symbol).second) {
+            for (const std::string& symbol : symbols) {
+                RuntimeSymbolBinding binding;
+                binding.symbol = symbol;
+                binding.kind = classifyBuiltInSymbol(symbol);
+
+                if (binding.kind != BuiltInSymbolKind::None) {
+                    config.bindings.push_back(std::move(binding));
                     continue;
                 }
 
                 const auto it = nodes.find(symbol);
                 if (it != nodes.end() && it->second && it->second->isConstant()) {
-                    const Real value = readScalarNode(it->second.get(), EvaluationContext {});
-                    config.constants.emplace_back(symbol, value);
+                    binding.hasConstant = true;
+                    binding.constantValue = readScalarNode(it->second.get(), EvaluationContext {});
                     config.dependencies.push_back(it->second.get());
+                    config.bindings.push_back(std::move(binding));
                     continue;
                 }
 
                 if (it != nodes.end() && it->second) {
+                    binding.node = it->second.get();
                     config.dependencies.push_back(it->second.get());
+                    config.bindings.push_back(std::move(binding));
+                    continue;
                 }
-                else {
-                    config.dynamicSymbols.push_back(symbol);
+
+                if (resolvers.symbolBinder) {
+                    binding.resolver = resolvers.symbolBinder(symbol);
                 }
+
+                config.bindings.push_back(std::move(binding));
             }
 
             return config;
         }
 
-        std::unordered_map<std::string, double> makeValueMap(const RuntimeSymbolConfig& config,
+        std::vector<std::vector<double>> evaluateDependencyBlocks(const RuntimeSymbolConfig& config,
             const EvaluationContext& ctx,
-            size_t pointIndex,
-            const std::vector<BuiltInSymbolKind>& kinds,
-            const std::vector<GraphExternalSymbolResolver>& resolvers,
-            const std::vector<std::string>& dynamicSymbols)
+            size_t numPoints)
         {
-            std::unordered_map<std::string, double> values;
-            values.reserve(config.constants.size() + dynamicSymbols.size() + 4);
+            std::vector<std::vector<double>> blocks(config.bindings.size());
 
-            for (const auto& [name, value] : config.constants) {
-                values.emplace(name, value);
-            }
-
-            values.emplace("t", ctx.time);
-
-            if (pointIndex < ctx.physicalPoints.size()) {
-                const Vector3& p = ctx.physicalPoints[pointIndex];
-                values.emplace("x", p.x());
-                values.emplace("y", p.y());
-                values.emplace("z", p.z());
-            }
-
-            for (size_t i = 0; i < dynamicSymbols.size(); ++i) {
-                const std::string& symbol = dynamicSymbols[i];
-                double value = 0.0;
-                switch (kinds[i]) {
-                case BuiltInSymbolKind::Time:
-                    value = ctx.time;
-                    break;
-                case BuiltInSymbolKind::X:
-                    value = ctx.physicalPoints[pointIndex].x();
-                    break;
-                case BuiltInSymbolKind::Y:
-                    value = ctx.physicalPoints[pointIndex].y();
-                    break;
-                case BuiltInSymbolKind::Z:
-                    value = ctx.physicalPoints[pointIndex].z();
-                    break;
-                case BuiltInSymbolKind::None:
-                    if (i < resolvers.size() && resolvers[i]) {
-                        double resolved = 0.0;
-                        if (!resolvers[i](ctx, pointIndex, resolved)) {
-                            MPFEM_THROW(ArgumentException, "Runtime symbol resolver failed for symbol: " + symbol);
-                        }
-                        value = resolved;
-                    }
-                    else {
-                        MPFEM_THROW(ArgumentException, "Unbound runtime symbol in expression: " + symbol);
-                    }
-                    break;
+            for (size_t slot = 0; slot < config.bindings.size(); ++slot) {
+                const RuntimeSymbolBinding& binding = config.bindings[slot];
+                if (!binding.node || binding.hasConstant) {
+                    continue;
                 }
-                values.insert_or_assign(symbol, value);
+                blocks[slot].assign(numPoints, 0.0);
+                binding.node->evaluateBatch(ctx, std::span<double>(blocks[slot].data(), blocks[slot].size()));
             }
 
-            return values;
+            return blocks;
+        }
+
+        double resolveSymbolValue(const RuntimeSymbolBinding& binding,
+            const std::vector<std::vector<double>>& dependencyBlocks,
+            const EvaluationContext& ctx,
+            size_t slot,
+            size_t pointIndex)
+        {
+            switch (binding.kind) {
+            case BuiltInSymbolKind::Time:
+                return ctx.time;
+            case BuiltInSymbolKind::X:
+                return ctx.physicalPoints[pointIndex].x();
+            case BuiltInSymbolKind::Y:
+                return ctx.physicalPoints[pointIndex].y();
+            case BuiltInSymbolKind::Z:
+                return ctx.physicalPoints[pointIndex].z();
+            case BuiltInSymbolKind::None:
+                break;
+            }
+
+            if (binding.hasConstant) {
+                return binding.constantValue;
+            }
+
+            if (binding.node) {
+                return dependencyBlocks[slot][pointIndex];
+            }
+
+            if (binding.resolver) {
+                double resolved = 0.0;
+                if (!binding.resolver(ctx, pointIndex, resolved)) {
+                    MPFEM_THROW(ArgumentException, "Runtime symbol resolver failed for symbol: " + binding.symbol);
+                }
+                return resolved;
+            }
+
+            MPFEM_THROW(ArgumentException, "Unbound runtime symbol in expression: " + binding.symbol);
         }
 
         class ConstantScalarNode final : public VariableNode {
@@ -196,12 +215,9 @@ namespace mpfem {
         public:
             RuntimeScalarExpressionNode(std::string expression,
                 RuntimeSymbolConfig config,
-                std::vector<std::string> dynamicSymbols,
-                std::vector<BuiltInSymbolKind> builtInKinds,
-                std::vector<GraphExternalSymbolResolver> resolvers,
                 std::vector<const VariableNode*> dependencies,
                 ExpressionParser::ScalarProgram program)
-                : expression_(std::move(expression)), config_(std::move(config)), dynamicSymbols_(std::move(dynamicSymbols)), builtInKinds_(std::move(builtInKinds)), resolvers_(std::move(resolvers)), dependencies_(std::move(dependencies)), program_(std::move(program)), id_(nextProgramId())
+                : expression_(std::move(expression)), config_(std::move(config)), dependencies_(std::move(dependencies)), program_(std::move(program)), id_(nextProgramId())
             {
             }
 
@@ -215,6 +231,9 @@ namespace mpfem {
                     MPFEM_THROW(ArgumentException, "RuntimeScalarExpressionNode evaluate destination size mismatch.");
                 }
 
+                const std::vector<std::vector<double>> dependencyBlocks = evaluateDependencyBlocks(config_, ctx, n);
+                std::vector<double> inputValues(config_.bindings.size(), 0.0);
+
                 for (size_t i = 0; i < n; ++i) {
                     if (ctx.transform && i < ctx.referencePoints.size()) {
                         const Real xi[3] = {
@@ -225,14 +244,17 @@ namespace mpfem {
                         ctx.transform->setIntegrationPoint(xi);
                     }
 
-                    const std::unordered_map<std::string, double> values = makeValueMap(config_, ctx, i, builtInKinds_, resolvers_, dynamicSymbols_);
-                    dest[i] = program_.evaluate(values);
+                    for (size_t slot = 0; slot < config_.bindings.size(); ++slot) {
+                        inputValues[slot] = resolveSymbolValue(config_.bindings[slot], dependencyBlocks, ctx, slot, i);
+                    }
+                    dest[i] = program_.evaluate(std::span<const double>(inputValues.data(), inputValues.size()));
                 }
             }
 
             bool isTimeDependent() const override
             {
-                for (const BuiltInSymbolKind kind : builtInKinds_) {
+                for (const RuntimeSymbolBinding& binding : config_.bindings) {
+                    const BuiltInSymbolKind kind = binding.kind;
                     if (kind == BuiltInSymbolKind::Time) {
                         return true;
                     }
@@ -242,7 +264,8 @@ namespace mpfem {
 
             bool isSpaceDependent() const override
             {
-                for (const BuiltInSymbolKind kind : builtInKinds_) {
+                for (const RuntimeSymbolBinding& binding : config_.bindings) {
+                    const BuiltInSymbolKind kind = binding.kind;
                     if (kind == BuiltInSymbolKind::X || kind == BuiltInSymbolKind::Y || kind == BuiltInSymbolKind::Z) {
                         return true;
                     }
@@ -258,9 +281,6 @@ namespace mpfem {
         private:
             std::string expression_;
             RuntimeSymbolConfig config_;
-            std::vector<std::string> dynamicSymbols_;
-            std::vector<BuiltInSymbolKind> builtInKinds_;
-            std::vector<GraphExternalSymbolResolver> resolvers_;
             std::vector<const VariableNode*> dependencies_;
             ExpressionParser::ScalarProgram program_;
             std::uint64_t id_ = 0;
@@ -270,12 +290,9 @@ namespace mpfem {
         public:
             RuntimeMatrixExpressionNode(std::string expression,
                 RuntimeSymbolConfig config,
-                std::vector<std::string> dynamicSymbols,
-                std::vector<BuiltInSymbolKind> builtInKinds,
-                std::vector<GraphExternalSymbolResolver> resolvers,
                 std::vector<const VariableNode*> dependencies,
                 ExpressionParser::MatrixProgram program)
-                : expression_(std::move(expression)), config_(std::move(config)), dynamicSymbols_(std::move(dynamicSymbols)), builtInKinds_(std::move(builtInKinds)), resolvers_(std::move(resolvers)), dependencies_(std::move(dependencies)), program_(std::move(program)), id_(nextProgramId())
+                : expression_(std::move(expression)), config_(std::move(config)), dependencies_(std::move(dependencies)), program_(std::move(program)), id_(nextProgramId())
             {
             }
 
@@ -289,6 +306,9 @@ namespace mpfem {
                     MPFEM_THROW(ArgumentException, "RuntimeMatrixExpressionNode evaluate destination size mismatch.");
                 }
 
+                const std::vector<std::vector<double>> dependencyBlocks = evaluateDependencyBlocks(config_, ctx, n);
+                std::vector<double> inputValues(config_.bindings.size(), 0.0);
+
                 for (size_t i = 0; i < n; ++i) {
                     if (ctx.transform && i < ctx.referencePoints.size()) {
                         const Real xi[3] = {
@@ -299,8 +319,10 @@ namespace mpfem {
                         ctx.transform->setIntegrationPoint(xi);
                     }
 
-                    const std::unordered_map<std::string, double> values = makeValueMap(config_, ctx, i, builtInKinds_, resolvers_, dynamicSymbols_);
-                    const Matrix3 mat = program_.evaluate(values);
+                    for (size_t slot = 0; slot < config_.bindings.size(); ++slot) {
+                        inputValues[slot] = resolveSymbolValue(config_.bindings[slot], dependencyBlocks, ctx, slot, i);
+                    }
+                    const Matrix3 mat = program_.evaluate(std::span<const double>(inputValues.data(), inputValues.size()));
                     const size_t base = i * 9ull;
                     for (int r = 0; r < 3; ++r) {
                         for (int c = 0; c < 3; ++c) {
@@ -312,7 +334,8 @@ namespace mpfem {
 
             bool isTimeDependent() const override
             {
-                for (const BuiltInSymbolKind kind : builtInKinds_) {
+                for (const RuntimeSymbolBinding& binding : config_.bindings) {
+                    const BuiltInSymbolKind kind = binding.kind;
                     if (kind == BuiltInSymbolKind::Time) {
                         return true;
                     }
@@ -322,7 +345,8 @@ namespace mpfem {
 
             bool isSpaceDependent() const override
             {
-                for (const BuiltInSymbolKind kind : builtInKinds_) {
+                for (const RuntimeSymbolBinding& binding : config_.bindings) {
+                    const BuiltInSymbolKind kind = binding.kind;
                     if (kind == BuiltInSymbolKind::X || kind == BuiltInSymbolKind::Y || kind == BuiltInSymbolKind::Z) {
                         return true;
                     }
@@ -338,9 +362,6 @@ namespace mpfem {
         private:
             std::string expression_;
             RuntimeSymbolConfig config_;
-            std::vector<std::string> dynamicSymbols_;
-            std::vector<BuiltInSymbolKind> builtInKinds_;
-            std::vector<GraphExternalSymbolResolver> resolvers_;
             std::vector<const VariableNode*> dependencies_;
             ExpressionParser::MatrixProgram program_;
             std::uint64_t id_ = 0;
@@ -360,35 +381,12 @@ namespace mpfem {
     {
         ExpressionParser parser;
         ExpressionParser::ScalarProgram program = parser.compileScalar(expression);
-        RuntimeSymbolConfig config = buildSymbolConfig(program, nodes_);
-
-        std::vector<std::string> dynamicSymbols = config.dynamicSymbols;
+        RuntimeSymbolConfig config = buildSymbolConfig(program.dependencies(), nodes_, resolvers);
         std::vector<const VariableNode*> dependencies = config.dependencies;
-        std::vector<BuiltInSymbolKind> builtInKinds;
-        std::vector<GraphExternalSymbolResolver> boundResolvers;
-        builtInKinds.reserve(dynamicSymbols.size());
-        boundResolvers.reserve(dynamicSymbols.size());
-
-        for (const std::string& symbol : dynamicSymbols) {
-            const BuiltInSymbolKind kind = classifyBuiltInSymbol(symbol);
-            builtInKinds.push_back(kind);
-            if (kind != BuiltInSymbolKind::None) {
-                boundResolvers.push_back({});
-            }
-            else if (resolvers.symbolBinder) {
-                boundResolvers.push_back(resolvers.symbolBinder(symbol));
-            }
-            else {
-                boundResolvers.push_back({});
-            }
-        }
 
         nodes_[std::move(name)] = std::make_unique<RuntimeScalarExpressionNode>(
             std::move(expression),
             std::move(config),
-            std::move(dynamicSymbols),
-            std::move(builtInKinds),
-            std::move(boundResolvers),
             std::move(dependencies),
             std::move(program));
         graphDirty_ = true;
@@ -400,58 +398,12 @@ namespace mpfem {
     {
         ExpressionParser parser;
         ExpressionParser::MatrixProgram program = parser.compileMatrix(expression);
-        RuntimeSymbolConfig config;
-
-        std::unordered_set<std::string> seen;
-
-        for (const std::string& symbol : program.dependencies()) {
-            if (!seen.insert(symbol).second) {
-                continue;
-            }
-
-            const auto it = nodes_.find(symbol);
-            if (it != nodes_.end() && it->second && it->second->isConstant()) {
-                const Real value = readScalarNode(it->second.get(), EvaluationContext {});
-                config.constants.emplace_back(symbol, value);
-                config.dependencies.push_back(it->second.get());
-                continue;
-            }
-
-            if (it != nodes_.end() && it->second) {
-                config.dependencies.push_back(it->second.get());
-            }
-            else {
-                config.dynamicSymbols.push_back(symbol);
-            }
-        }
-
-        std::vector<std::string> dynamicSymbols = config.dynamicSymbols;
+        RuntimeSymbolConfig config = buildSymbolConfig(program.dependencies(), nodes_, resolvers);
         std::vector<const VariableNode*> dependencies = config.dependencies;
-        std::vector<BuiltInSymbolKind> builtInKinds;
-        std::vector<GraphExternalSymbolResolver> boundResolvers;
-        builtInKinds.reserve(dynamicSymbols.size());
-        boundResolvers.reserve(dynamicSymbols.size());
-
-        for (const std::string& symbol : dynamicSymbols) {
-            const BuiltInSymbolKind kind = classifyBuiltInSymbol(symbol);
-            builtInKinds.push_back(kind);
-            if (kind != BuiltInSymbolKind::None) {
-                boundResolvers.push_back({});
-            }
-            else if (resolvers.symbolBinder) {
-                boundResolvers.push_back(resolvers.symbolBinder(symbol));
-            }
-            else {
-                boundResolvers.push_back({});
-            }
-        }
 
         nodes_[std::move(name)] = std::make_unique<RuntimeMatrixExpressionNode>(
             std::move(expression),
             std::move(config),
-            std::move(dynamicSymbols),
-            std::move(builtInKinds),
-            std::move(boundResolvers),
             std::move(dependencies),
             std::move(program));
         graphDirty_ = true;

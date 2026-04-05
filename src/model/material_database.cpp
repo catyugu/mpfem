@@ -28,6 +28,23 @@ const MaterialPropertyModel& requireMaterialByDomain(
     return materialIt->second;
 }
 
+std::vector<double> buildInputValues(const std::vector<std::string>& dependencies,
+    const std::map<std::string, double>& variables)
+{
+    std::vector<double> inputs;
+    inputs.reserve(dependencies.size());
+
+    for (const std::string& symbol : dependencies) {
+        const auto it = variables.find(symbol);
+        if (it == variables.end()) {
+            MPFEM_THROW(ArgumentException, "Unbound variable in material expression: " + symbol);
+        }
+        inputs.push_back(it->second);
+    }
+
+    return inputs;
+}
+
 } // namespace
 
 struct MaterialPropertyModel::Impl {
@@ -76,24 +93,18 @@ double MaterialPropertyModel::getScalar(
     const std::string& name,
     const std::map<std::string, double>& variables) const {
     ExpressionParser parser;
-    std::unordered_map<std::string, double> values;
-    values.reserve(variables.size());
-    for (const auto& [key, value] : variables) {
-        values.emplace(key, value);
-    }
-    return parser.compileScalar(scalarExpression(name)).evaluate(values);
+    ExpressionParser::ScalarProgram program = parser.compileScalar(scalarExpression(name));
+    const std::vector<double> inputs = buildInputValues(program.dependencies(), variables);
+    return program.evaluate(std::span<const double>(inputs.data(), inputs.size()));
 }
 
 Matrix3 MaterialPropertyModel::getMatrix(
     const std::string& name,
     const std::map<std::string, double>& variables) const {
     ExpressionParser parser;
-    std::unordered_map<std::string, double> values;
-    values.reserve(variables.size());
-    for (const auto& [key, value] : variables) {
-        values.emplace(key, value);
-    }
-    return parser.compileMatrix(matrixExpression(name)).evaluate(values);
+    ExpressionParser::MatrixProgram program = parser.compileMatrix(matrixExpression(name));
+    const std::vector<double> inputs = buildInputValues(program.dependencies(), variables);
+    return program.evaluate(std::span<const double>(inputs.data(), inputs.size()));
 }
 
 const std::string& MaterialPropertyModel::scalarExpression(const std::string& name) const {

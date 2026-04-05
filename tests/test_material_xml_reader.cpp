@@ -4,6 +4,29 @@
 #include "expr/expression_parser.hpp"
 #include "core/logger.hpp"
 
+#include <map>
+#include <stdexcept>
+#include <vector>
+
+namespace {
+
+std::vector<double> buildInputs(const std::vector<std::string>& dependencies,
+    const std::map<std::string, double>& vars)
+{
+    std::vector<double> inputs;
+    inputs.reserve(dependencies.size());
+    for (const std::string& symbol : dependencies) {
+        const auto it = vars.find(symbol);
+        if (it == vars.end()) {
+            throw std::runtime_error("Missing test variable: " + symbol);
+        }
+        inputs.push_back(it->second);
+    }
+    return inputs;
+}
+
+} // namespace
+
 using namespace mpfem;
 
 class MaterialXmlReaderTest : public ::testing::Test {
@@ -61,8 +84,10 @@ TEST_F(MaterialXmlReaderTest, DomainScalarPropertyAccess) {
     ExpressionParser parser;
     const auto eProgram = parser.compileScalar(eExpr);
     const auto nuProgram = parser.compileScalar(nuExpr);
-    const double E = eProgram.evaluate({});
-    const double nu = nuProgram.evaluate({});
+    const std::vector<double> eInputs = buildInputs(eProgram.dependencies(), {});
+    const std::vector<double> nuInputs = buildInputs(nuProgram.dependencies(), {});
+    const double E = eProgram.evaluate(std::span<const double>(eInputs.data(), eInputs.size()));
+    const double nu = nuProgram.evaluate(std::span<const double>(nuInputs.data(), nuInputs.size()));
 
     EXPECT_GT(E, 0.0);
     EXPECT_GT(nu, 0.0);
@@ -78,14 +103,16 @@ TEST_F(MaterialXmlReaderTest, TemperatureDependentConductivityByDomain) {
 
     const std::string& sigmaExpr = database.matrixExpressionByDomain(1, "electricconductivity");
 
-    std::unordered_map<std::string, double> vars;
+    std::map<std::string, double> vars;
     vars["T"] = 293.15;
     ExpressionParser parser;
     const auto sigmaProgram = parser.compileMatrix(sigmaExpr);
-    Matrix3 sigma293 = sigmaProgram.evaluate(vars);
+    std::vector<double> inputs = buildInputs(sigmaProgram.dependencies(), vars);
+    Matrix3 sigma293 = sigmaProgram.evaluate(std::span<const double>(inputs.data(), inputs.size()));
 
     vars["T"] = 373.15;
-    Matrix3 sigma373 = sigmaProgram.evaluate(vars);
+    inputs = buildInputs(sigmaProgram.dependencies(), vars);
+    Matrix3 sigma373 = sigmaProgram.evaluate(std::span<const double>(inputs.data(), inputs.size()));
 
     EXPECT_GT(sigma293(0, 0), 0.0);
     EXPECT_GT(sigma293(1, 1), 0.0);
@@ -130,7 +157,8 @@ TEST_F(MaterialXmlReaderTest, ConstantConductivityByDomain) {
 
     ExpressionParser parser;
     const auto sigmaProgram = parser.compileMatrix(sigmaExpr);
-    Matrix3 sigma = sigmaProgram.evaluate({});
+    const std::vector<double> inputs = buildInputs(sigmaProgram.dependencies(), {});
+    Matrix3 sigma = sigmaProgram.evaluate(std::span<const double>(inputs.data(), inputs.size()));
 
     EXPECT_GT(sigma(0, 0), 0.0);
     EXPECT_NEAR(sigma(0, 0), sigma(1, 1), 1e-10);

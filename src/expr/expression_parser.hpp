@@ -4,8 +4,8 @@
 #include "core/types.hpp"
 
 #include <memory>
+#include <span>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 
@@ -26,7 +26,7 @@ namespace mpfem {
 
             bool valid() const;
             const std::vector<std::string>& dependencies() const;
-            double evaluate(const std::unordered_map<std::string, double>& values) const;
+            double evaluate(std::span<const double> values) const;
 
         private:
             std::unique_ptr<Impl> impl_;
@@ -45,7 +45,7 @@ namespace mpfem {
 
             bool valid() const;
             const std::vector<std::string>& dependencies() const;
-            Matrix3 evaluate(const std::unordered_map<std::string, double>& values) const;
+            Matrix3 evaluate(std::span<const double> values) const;
 
         private:
             std::unique_ptr<Impl> impl_;

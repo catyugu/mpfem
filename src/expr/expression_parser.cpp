@@ -7,9 +7,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
-#include <unordered_set>
+#include <span>
 #include <string_view>
-#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 namespace mpfem {
@@ -44,6 +44,7 @@ struct AstNode {
     Kind kind = Kind::Constant;
     double value = 0.0;
     std::string variableName;
+    int variableIndex = -1;
     std::unique_ptr<AstNode> lhs;
     std::unique_ptr<AstNode> rhs;
 };
@@ -388,17 +389,36 @@ private:
     size_t pos_ = 0;
 };
 
-double evalAstNode(const AstNode& node, const std::unordered_map<std::string, double>& values){
+void bindAstVariableIndices(AstNode& node, const std::vector<std::string>& dependencies)
+{
+    if (node.kind == AstNode::Kind::Variable) {
+        const auto it = std::find(dependencies.begin(), dependencies.end(), node.variableName);
+        if (it == dependencies.end()) {
+            MPFEM_THROW(ArgumentException, "Variable index binding failed: " + node.variableName);
+        }
+        node.variableIndex = static_cast<int>(std::distance(dependencies.begin(), it));
+        return;
+    }
+
+    if (node.lhs) {
+        bindAstVariableIndices(*node.lhs, dependencies);
+    }
+    if (node.rhs) {
+        bindAstVariableIndices(*node.rhs, dependencies);
+    }
+}
+
+double evalAstNode(const AstNode& node, std::span<const double> values)
+{
     switch (node.kind) {
         case AstNode::Kind::Constant:
             return node.value;
         case AstNode::Kind::Variable:
         {
-            const auto it = values.find(node.variableName);
-            if (it == values.end()) {
-                MPFEM_THROW(ArgumentException, "Unbound variable in expression: " + node.variableName);
+            if (node.variableIndex < 0 || static_cast<size_t>(node.variableIndex) >= values.size()) {
+                MPFEM_THROW(ArgumentException, "Unbound variable index in expression: " + node.variableName);
             }
-            return it->second;
+            return values[static_cast<size_t>(node.variableIndex)];
         }
         case AstNode::Kind::Add:
             return evalAstNode(*node.lhs, values) + evalAstNode(*node.rhs, values);
@@ -447,6 +467,7 @@ struct ExpressionParser::MatrixProgram::Impl {
     bool literalMatrix = false;
     std::vector<ExpressionParser::ScalarProgram> components;
     std::vector<std::string> dependencies;
+    std::vector<std::vector<size_t>> componentDependencySlots;
 };
 
 ExpressionParser::ScalarProgram::ScalarProgram()
@@ -474,9 +495,11 @@ const std::vector<std::string>& ExpressionParser::ScalarProgram::dependencies() 
     return impl_ ? impl_->dependencies : empty;
 }
 
-double ExpressionParser::ScalarProgram::evaluate(const std::unordered_map<std::string, double>& values) const
+double ExpressionParser::ScalarProgram::evaluate(std::span<const double> values) const
 {
     MPFEM_ASSERT(valid(), "Attempting to evaluate an invalid scalar expression program.");
+    MPFEM_ASSERT(values.size() == impl_->dependencies.size(),
+        "Expression input size does not match dependency size.");
     return evalAstNode(*impl_->root, values) * impl_->multiplier;
 }
 
@@ -505,12 +528,25 @@ const std::vector<std::string>& ExpressionParser::MatrixProgram::dependencies() 
     return impl_ ? impl_->dependencies : empty;
 }
 
-Matrix3 ExpressionParser::MatrixProgram::evaluate(const std::unordered_map<std::string, double>& values) const
+Matrix3 ExpressionParser::MatrixProgram::evaluate(std::span<const double> values) const
 {
     MPFEM_ASSERT(valid(), "Attempting to evaluate an empty matrix expression program.");
+    MPFEM_ASSERT(values.size() == impl_->dependencies.size(),
+        "Matrix expression input size does not match dependency size.");
+
+    auto evalComponent = [this, values](size_t componentIndex) -> double {
+        const ExpressionParser::ScalarProgram& component = impl_->components[componentIndex];
+        const std::vector<size_t>& slots = impl_->componentDependencySlots[componentIndex];
+        std::vector<double> componentInputs;
+        componentInputs.reserve(slots.size());
+        for (const size_t slot : slots) {
+            componentInputs.push_back(values[slot]);
+        }
+        return component.evaluate(std::span<const double>(componentInputs.data(), componentInputs.size()));
+    };
 
     if (!impl_->literalMatrix || impl_->components.size() == 1) {
-        const double scalar = impl_->components.front().evaluate(values);
+        const double scalar = evalComponent(0);
         return Matrix3::Identity() * scalar;
     }
 
@@ -518,9 +554,9 @@ Matrix3 ExpressionParser::MatrixProgram::evaluate(const std::unordered_map<std::
                  "Invalid matrix expression program: expected 1 or 9 components.");
 
     Matrix3 matrix;
-    matrix << impl_->components[0].evaluate(values), impl_->components[3].evaluate(values), impl_->components[6].evaluate(values),
-        impl_->components[1].evaluate(values), impl_->components[4].evaluate(values), impl_->components[7].evaluate(values),
-        impl_->components[2].evaluate(values), impl_->components[5].evaluate(values), impl_->components[8].evaluate(values);
+    matrix << evalComponent(0), evalComponent(3), evalComponent(6),
+        evalComponent(1), evalComponent(4), evalComponent(7),
+        evalComponent(2), evalComponent(5), evalComponent(8);
     return matrix;
 }
 
@@ -543,6 +579,7 @@ ExpressionParser::ScalarProgram ExpressionParser::compileScalar(const std::strin
     impl->root = compiler.compile();
     std::unordered_set<std::string> seen;
     collectDependencies(*impl->root, seen, impl->dependencies);
+    bindAstVariableIndices(*impl->root, impl->dependencies);
     return ScalarProgram(std::move(impl));
 }
 
@@ -556,17 +593,33 @@ ExpressionParser::MatrixProgram ExpressionParser::compileMatrix(const std::strin
     if (!matrixTemplate.literalMatrix) {
         impl->components.push_back(compileScalar(expression));
         impl->dependencies = impl->components.front().dependencies();
+        impl->componentDependencySlots.push_back({});
+        impl->componentDependencySlots.front().reserve(impl->dependencies.size());
+        for (size_t i = 0; i < impl->dependencies.size(); ++i) {
+            impl->componentDependencySlots.front().push_back(i);
+        }
         return MatrixProgram(std::move(impl));
     }
 
     impl->components.reserve(matrixTemplate.components.size());
+    impl->componentDependencySlots.reserve(matrixTemplate.components.size());
     for (const std::string& componentExpression : matrixTemplate.components) {
         impl->components.push_back(compileScalar(componentExpression));
-        for (const std::string& dep : impl->components.back().dependencies()) {
+        const std::vector<std::string>& componentDeps = impl->components.back().dependencies();
+        for (const std::string& dep : componentDeps) {
             if (std::find(impl->dependencies.begin(), impl->dependencies.end(), dep) == impl->dependencies.end()) {
                 impl->dependencies.push_back(dep);
             }
         }
+
+        std::vector<size_t> slots;
+        slots.reserve(componentDeps.size());
+        for (const std::string& dep : componentDeps) {
+            const auto it = std::find(impl->dependencies.begin(), impl->dependencies.end(), dep);
+            MPFEM_ASSERT(it != impl->dependencies.end(), "Matrix dependency mapping failed.");
+            slots.push_back(static_cast<size_t>(std::distance(impl->dependencies.begin(), it)));
+        }
+        impl->componentDependencySlots.push_back(std::move(slots));
     }
     return MatrixProgram(std::move(impl));
 }

@@ -10,7 +10,6 @@
 #include <cctype>
 #include <cstdlib>
 #include <functional>
-#include <unordered_map>
 #include <sstream>
 
 namespace mpfem {
@@ -142,12 +141,18 @@ namespace mpfem {
             if (!text) {
                 return defaultValue;
             }
-            std::unordered_map<std::string, double> values;
-            values.reserve(variableValues.size());
-            for (const auto& [name, value] : variableValues) {
-                values.emplace(name, value);
+
+            ExpressionParser::ScalarProgram program = parser.compileScalar(text);
+            std::vector<double> inputs;
+            inputs.reserve(program.dependencies().size());
+            for (const std::string& symbol : program.dependencies()) {
+                const auto it = variableValues.find(symbol);
+                if (it == variableValues.end()) {
+                    MPFEM_THROW(ArgumentException, "Unbound variable in case expression: " + symbol);
+                }
+                inputs.push_back(it->second);
             }
-            return parser.compileScalar(text).evaluate(values);
+            return program.evaluate(std::span<const double>(inputs.data(), inputs.size()));
         };
 
         auto readParameterMap = [&](const tinyxml2::XMLElement* parametersElement) {
