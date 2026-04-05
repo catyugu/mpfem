@@ -22,162 +22,165 @@
 
 ## 具体工作任务
 
-从你提供的代码来看，系统正处于从**传统面向对象的回调式解析（Coefficient体系）**向**现代基于DAG（有向无环图）的计算图解析（Variable体系）**过渡的尴尬阶段。这两者在设计哲学上是冲突的，导致了代码中存在明显的失配和性能隐患。 宁可采取破坏式重构而非向后兼容，意图是**完全用自动DAG解析取代原始系统**，以下是代码中存在的明显反模式（Anti-patterns）以及大刀阔斧的重构建议。
+### 🚨 核心反模式诊断 (Anti-patterns)
 
-### 🚨 核心反模式 (Anti-Patterns) 诊断
+#### 1. 性能杀手：在最内层积分点循环中动态分配 `std::unordered_map`
+**位置**：`variable_graph.cpp` 中的 `RuntimeScalarExpressionNode::evaluateBatch` 和 `makeValueMap`
+**问题**：
+```cpp
+for (size_t i = 0; i < n; ++i) { // 遍历物理/积分点
+    // 【致命反模式】：每次循环都新建一个哈希表并插入所有变量！
+    const std::unordered_map<std::string, double> values = makeValueMap(...); 
+    dest[i] = program_.evaluate(values);
+}
+```
+在 FEM 组装中，这会被调用数百万次。动态内存分配（`new`）、字符串哈希（Hash）、红黑树/哈希表插入的开销，将远远超过实际数学表达式（如 `+ - * /`）计算的开销（慢几个数量级）。
 
-#### 1. 运行时字符串求值与动态解析（致命性能损耗）
-* **问题位置**：`GraphExternalSymbolResolver` 的签名设计为 `std::function<bool(std::string_view, ElementTransform&, Real, double&)>`。
-* **反模式**：在求解偏微分方程（FEM）时，求值函数会被在**每一个单元的每一个积分点**上调用数百万次。如果在热点循环（Tight Loop）中通过字符串 (`std::string_view`) 去动态查找变量状态，这会带来灾难性的性能开销。
-* **重构方向**：**编译期绑定（AOT Binding）**取代**运行时查找（Runtime Lookup）**。变量的内存地址偏移或数据指针必须在 `compileGraph()` 阶段就确定好，求值时只读内存。
+#### 2. 标量化的 AST 递归求值 (Scalar Recursive AST Evaluation)
+**位置**：`expression_parser.cpp` 中的 `evalAstNode`
+**问题**：对每一个物理点，AST 都要进行一次深度的递归函数调用树遍历，并且伴随着巨大的 `switch-case` 开销和指针跳转。这种标量计算无法利用现代 CPU 的 SIMD/向量化指令。
 
-#### 2. 深层虚函数与 `std::function` 嵌套的逐点求值 (Point-wise Evaluation)
-* **问题位置**：`fe/coefficient.hpp` 中的 `FunctionCoefficient` 包装了 `std::function<void(ElementTransform&, Real&, Real)>`。
-* **反模式**：这是典型的旧式 FEM 库设计。为了应对多变的物理场参数，使用了最昂贵的抽象。一次积分点计算 = 1次虚函数调用 (`eval`) + 1次 `std::function` 堆栈调用。无法利用 SIMD 和缓存局部性。
-* **重构方向**：**向量化/批量求值（Vectorized/Batched Evaluation）**。直接废弃 `Coefficient` 类，使用 `VariableNode` 的 `std::span<double>` 批量求值接口。
+#### 3. 割裂的物理场与变量系统 (Fragmented Field vs. Variable System)
+**位置**：`field_values.hpp` vs `variable_graph.hpp`
+**问题**：`FieldValues` 孤立存在，只是一个管理 `GridFunction` 的容器。而 `VariableManager` 只是解析文本表达式。在多物理场中，**位移场、温度场本身也应该只是 DAG 中的一个节点**。现在的设计导致表达式无法直接、透明地获取和依赖实际的物理场。
 
-#### 3. 冗余的适配器桥接（Adapter Bloat）
-* **问题位置**：`expression_coefficient_factory.hpp`。
-* **反模式**：试图把现代的字符串表达式解析器塞进陈旧的 `Coefficient` 壳子里。这保留了旧系统的所有性能缺点，同时又增加了新系统的复杂性。
-* **重构方向**：直接**删除** `fe/coefficient.hpp` 和 `expression_coefficient_factory.hpp`。让所有物理场、积分器 (Integrators) 直接持有 `VariableNode*` 或直接从 `EvaluationContext` 读取数据。
+#### 4. 矩阵表达式只是 9 个孤立的标量表达式
+**位置**：`ExpressionParser::MatrixProgram`
+**问题**：如果用户写了 `{{ a*b, 0, 0 }, { 0, a*b, 0 }, ...}`，`a*b` 会被解析并计算多次。缺乏原生的 Tensor/Vector AST 支持。
 
-#### 4. 全局单例 (Global Singleton) 滥用
-* **问题位置**：`ExpressionParser::instance()`。
-* **反模式**：表达式解析器被设计成了单例。这不仅破坏了线程安全（多线程并发编译表达式时可能加锁或崩溃），还阻碍了上下文隔离。
-* **重构方向**：将 `ExpressionParser` 实例绑定到 `VariableManager` 中，或者作为普通的纯局部工具类实例化。
+#### 5. 硬编码的“内建符号” (Hardcoded Built-ins)
+**位置**：`BuiltInSymbolKind` (`x`, `y`, `z`, `t`)
+**问题**：在纯粹的 DAG 系统中，不应该有“特殊”的变量。时间 $t$ 只是一个提供单值输出的常量节点，空间坐标 $(x, y, z)$ 只是提供几何映射的普通变量节点。硬编码破坏了一致性。
 
 ---
 
-### 🛠️ 破坏性重构方案 (Architectural Redesign)
+### 🛠️ 破坏式重构蓝图 (Refactoring Blueprint)
 
-#### 步骤一：彻底删除旧的 Coefficient 体系
-删除 `fe/coefficient.hpp`、`expression_coefficient_factory.hpp`。
-FEM 中的有限元组装器 (Assemblers) 或积分器 (Integrators) 不再接收 `std::unique_ptr<Coefficient>`。它们应该直接通过名称或 ID 向 `VariableManager` 请求计算好的数据。
+为了实现您“**完全用自动 DAG + 表达式系统取代**”的意图，建议彻底抛弃目前的字符串+哈希表运行时绑定，转向**编译期（Setup阶段）图链接 + 运行时平坦数组/向量化计算**。
 
-#### 步骤二：改造 VariableGraph 采用“数据驱动”的设计
-将 `VariableManager` 作为核心的数据总线。所有的外部状态（如坐标、时间、物理场U）在计算前**一次性推入/绑定**，而不是在求值时回调获取。
+#### 重构步骤 1：统一所有实体为 `VariableNode` (DAG 核心化)
+放弃 `FieldValues` 独立管理的思路。时间和空间坐标也是 Node。
+一切皆 `Node`。
 
 ```cpp
-// 建议的 variable_graph.hpp 重构
-
-namespace mpfem {
-
-// 1. 批量求值上下文（完全数据驱动，不包含任何回调）
-struct EvaluationContext {
-    double time = 0.0;
-    // 使用 SOA (Structure of Arrays) 或扁平连续内存，便于 SIMD
-    std::span<const double> x_coords; 
-    std::span<const double> y_coords;
-    std::span<const double> z_coords;
-    // 单元相关数据
-    std::span<const int> element_ids; 
-    std::span<const int> domain_ids;
-    
-    // 外部提供的场变量 (例如: 温度场, 位移场)，在组装前预先提取好并传入
-    std::unordered_map<std::string_view, std::span<const double>> external_fields;
-
-    // 批量大小
-    size_t batch_size() const { return x_coords.size(); }
-};
-
-// 2. 节点设计：只负责批量计算
+// 基础抽象：批量（向量化）求值的 DAG 节点
 class VariableNode {
 public:
     virtual ~VariableNode() = default;
-
-    virtual VariableShape shape() const = 0;
-    // 注意：不再需要 stateTag() 和 isConstant()！
-    // DAG 本身知道谁依赖谁。如果常数节点不更新，其输出缓存自然不变。
-
-    // 核心接口：接收上下文，向 dest 输出计算结果。dest 预先分配好了 batch_size 大小。
-    virtual void evaluate(const EvaluationContext& ctx, std::span<double> dest) const = 0;
     
+    virtual VariableShape shape() const = 0;
+    
+    // 强制使用向量化接口：一次性计算所有积分点/物理点
+    // 输入 ctx 包含点信息，输出直接写入 dest
+    virtual void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const = 0;
+    
+    // 返回该节点依赖的其他节点
     virtual std::vector<const VariableNode*> dependencies() const = 0;
 };
+```
 
-class VariableManager {
+**实现各种具体的 Node：**
+* `TimeNode`：无依赖，在 `evaluateBatch` 中用 `ctx.time` 填充 `dest`。
+* `CoordinateNode`：无依赖，用 `ctx.physicalPoints` 填充 `dest`。
+* `GridFunctionNode`：依赖几何映射，根据 `ctx.referencePoints` 和 `GridFunction` 插值出物理值。
+* `ExpressionNode`：依赖其子节点（从文本解析而来）。
+
+#### 重构步骤 2：表达式系统脱离字符串绑定 (Flat Memory Model)
+`ExpressionParser` 解析后的 `ScalarProgram` **不应该**知道变量名叫什么，它只需要知道**变量在输入数组中的索引**。
+
+**旧设计**：`evaluate(unordered_map<string, double>)`
+**新设计**：`evaluate(const double* inputs)`
+
+```cpp
+// 重构后的标量程序
+class ScalarProgram {
 public:
-    // ...
-
-    // 核心改变：编译期解析所有表达式并分配好内存空间
-    void compileGraph();
-
-    // 组装/积分阶段的核心调用
-    // 给定上下文，批量计算所有节点。
-    // 计算顺序由前序拓扑排序 (executionPlan_) 决定。
-    void evaluateAll(const EvaluationContext& ctx);
-
-    // 积分器直接获取某一个变量计算后的连续内存结果 (无需在循环内再次计算)
-    std::span<const double> getEvaluatedData(std::string_view name) const;
-
-private:
-    // 扁平化数据存储：每个变量节点对应一块缓存内存
-    std::unordered_map<const VariableNode*, std::vector<double>> node_buffers_;
-    std::vector<const VariableNode*> executionPlan_;
+    // 运行时极速求值：不按点求值，而是直接传入批量的依赖数据，输出批量结果
+    // input_blocks 存放了其所有依赖节点的 evaluateBatch 结果
+    void evaluateBatch(const std::vector<std::span<const double>>& input_blocks, 
+                       std::span<double> dest) const;
 };
+```
 
+#### 重构步骤 3：AST 向量化求值 (Vectorized AST)
+修改 `AstNode` 的执行逻辑，不要递归计算单精度/双精度值，而是直接在数组上操作。
+
+```cpp
+// 在 expression_parser.cpp 内部
+void evalAstNodeBatch(const AstNode& node, 
+                      const std::vector<std::span<const double>>& inputs, 
+                      std::span<double> dest) {
+    switch (node.kind) {
+        case AstNode::Kind::Variable: {
+            // 在编译图的阶段，已经把变量名映射成了 inputs 数组的索引
+            const auto& input_data = inputs[node.variable_index];
+            std::copy(input_data.begin(), input_data.end(), dest.begin());
+            break;
+        }
+        case AstNode::Kind::Add: {
+            // 分配临时缓冲区（或者利用内存池）
+            std::vector<double> lhs_val(dest.size());
+            std::vector<double> rhs_val(dest.size());
+            evalAstNodeBatch(*node.lhs, inputs, lhs_val);
+            evalAstNodeBatch(*node.rhs, inputs, rhs_val);
+            for(size_t i=0; i<dest.size(); ++i) {
+                dest[i] = lhs_val[i] + rhs_val[i];
+            }
+            break;
+        }
+        // ...
+    }
+}
+```
+*(注：如果想极致优化，可以将 AST 展平为**字节码 (Bytecode)**，例如转成逆波兰表达式 RPN 放在一个 `std::vector<Instruction>` 中执行，彻底消除递归。)*
+
+#### 重构步骤 4：VariableManager 作为计算图调度器 (DAG Scheduler)
+`VariableManager` 的核心任务变成：
+1. 注册所有的 Node（包括时间、空间、物理场、表达式）。
+2. `compileGraph()`：建立拓扑排序。**在这里完成所有字符串名字到数组索引的绑定**。
+
+```cpp
+void VariableManager::compileGraph() {
+    // 1. 拓扑排序 (你已经实现了 dfsVisit，非常好)
+    executionPlan_ = topologicalSort(nodes_);
+
+    // 2. 建立绑定关系！
+    for (auto* node : executionPlan_) {
+        if (auto* exprNode = dynamic_cast<RuntimeScalarExpressionNode*>(node)) {
+            // 查找表达式依赖的名字，将它们转换为具体的 Node 指针或执行上下文索引
+            exprNode->bindDependencies(this);
+        }
+    }
 }
 ```
 
-#### 步骤三：消除运行时字符串回调 (Resolver 重构)
-如果你需要外部符号（比如用户自定义表达式中写了 `sin(x) + Pressure`，`Pressure` 需要从别的物理场拿），千万不要在求值时查字典。
-
-**旧做法（错误）：**
-`sin(x) + resolver("Pressure", trans, ...)` 每次求值都触发 string 比较。
-
-**新做法（正确）：**
-在 `compileGraph` 时，如果遇到解析不了的外部变量 `Pressure`，将其转化为一个 **`ExternalInputNode`** 存入 DAG。
-当调用 `evaluateAll(ctx)` 时，`ExternalInputNode` 会直接将 `ctx.external_fields["Pressure"]` 的数据 `memcpy`（或者通过指针引用）到自己的缓存中，下游的表达式节点直接从连续的数组缓存里读数据。
-
-#### 步骤四：改造 ExpressionParser
-取消单例。使用 JIT 或 AST 的解析器应该在绑定内存时直接操作数据指针或数组引用。
+#### 重构步骤 5：求值管道 (Evaluation Pipeline)
+当求解器请求组装矩阵，需要求值时，工作流非常清晰，没有任何内存分配：
 
 ```cpp
-// 取消单例
-class ExpressionParser {
-public:
-    // 构造函数，不再是 instance()
-    ExpressionParser() = default;
+void evaluateGraph(const EvaluationContext& ctx) {
+    // 假设本批次有 100 个积分点
+    size_t num_points = ctx.physicalPoints.size();
+    
+    // 为图中的每个节点分配一块连续的临时内存（可以使用线程局部的 Memory Pool 防止重复 new）
+    MemoryPool pool(num_points * executionPlan_.size()); 
 
-    // 变量绑定不再是双指针，而是批量求值的连续数组地址，或者偏移量
-    struct VectorizedBinding {
-        std::string name;
-        const double* data_ptr; // 指向外部数组或 upstream 节点的 buffer
-        size_t stride;
-    };
-
-    ScalarProgram compileScalarBatched(const std::string& expression,
-                                       const std::vector<VectorizedBinding>& bindings);
-};
+    for (const VariableNode* node : executionPlan_) {
+        std::span<double> dest = pool.allocate(num_points * node->vdim());
+        
+        // 每个节点会自动去读它依赖节点的内存块，并写到自己的 dest 中
+        node->evaluateBatch(ctx, dest); 
+    }
+}
 ```
 
-### 🎯 重构后的实际应用流 (Workflow)
+---
 
-重构后，一次典型的 FEM 矩阵组装流程将变得极其简洁和高效：
+### 💡 总结与建议
 
-1. **Setup Phase (初始化)**:
-   用户输入配置: `Material_E = "2.0 * T + 100"`.
-   `VariableManager` 解析表达式，建立 DAG: `T(External) -> Node(2.0*T) -> Node(+100) -> E(Output)`.
-   执行 `compileGraph()`，拓扑排序确定执行顺序，并为每个节点分配 `batch_size`（比如一次计算一个 Element 的所有积分点，或者一次计算 1024 个积分点）大小的内存。
+您当前代码最大的痛点在于**将 "描述（文本/字符串）" 泄露到了 "最底层的数值求值（Evaluation）" 环节**。
 
-2. **Assembly Phase (紧凑循环 / 组装)**:
-   ```cpp
-   // 在积分器或组装器中：
-   EvaluationContext ctx;
-   ctx.x_coords = ...; // 填充当前批次的积分点坐标
-   ctx.external_fields["T"] = ...; // 填入当前批次提取的温度场数据
-
-   // 1. DAG 一键全量求值 (无任何字符串操作，无虚函数逐点调用，全是数组到数组的运算)
-   var_manager.evaluateAll(ctx);
-
-   // 2. 获取结果并进行矩阵组装
-   std::span<const double> E_values = var_manager.getEvaluatedData("Material_E");
-   
-   for(size_t i = 0; i < ctx.batch_size(); ++i) {
-       // 直接使用 E_values[i] 组装局部刚度矩阵 Ke
-       // 完全移除了曾经在积分点循环里调用的 coef->eval() !
-   }
-   ```
-
-### 总结
-你现有的代码卡在“用面向对象的壳包装数据驱动的心”。打破向后兼容，**彻底抛弃 `fe/coefficient.hpp`**，将一切基于变量图的计算转化为**“批次输入 -> 图拓扑排序执行 -> 连续内存输出”**的数据流模型。这不仅将大幅减少抽象开销，还会让缓存命中率和执行效率实现质的飞跃。
+破坏式重构的核心法则：
+1. **彻底分离编译期和运行期**：所有根据 `std::string` 查找变量的行为，**必须且只能**发生在 `VariableManager::compileGraph()` 中。
+2. **消灭点级（Point-wise）接口**：强迫所有的节点使用 `evaluateBatch(std::span<double>)`，这不仅消除了循环内的临时变量创建，更自动为未来的 AVX/SIMD 向量化铺平了道路。
+3. **融合 Field 与 Variable**：`GridFunction`（或者包装它的代理类）本身就是 DAG 中的一个 Source Node。这样无论是 PDE 弱形式还是边界条件的表达式，都可以统一地写成 `expr("Temperature^4 * 5.67e-8")`，系统在图排序时自动将温度场节点链接给表达式节点。
