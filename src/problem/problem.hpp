@@ -44,7 +44,12 @@ namespace mpfem {
         std::unordered_map<DomainPropertyKey, const VariableNode*, DomainPropertyKeyHash> domainScalarNodes;
         std::unordered_map<DomainPropertyKey, const VariableNode*, DomainPropertyKeyHash> domainMatrixNodes;
         std::vector<std::unique_ptr<VariableNode>> ownedNodes;
-        std::vector<std::unique_ptr<VariableManager>> ownedNodeManagers;
+
+        /// @brief Unified variable manager for the entire problem
+        VariableManager globalVariables_;
+
+        /// @brief Isolated managers for one-off expressions that shouldn't pollute global namespace
+        std::vector<std::unique_ptr<VariableManager>> expressionManagers_;
 
     public:
         virtual ~Problem();
@@ -75,17 +80,17 @@ namespace mpfem {
         const VariableNode* findDomainScalarNode(std::string_view property, int domainId) const;
         const VariableNode* findDomainMatrixNode(std::string_view property, int domainId) const;
         const VariableNode* setDomainScalarNode(std::string property,
-                                                int domainId,
-                                                const VariableNode* node);
+            int domainId,
+            const VariableNode* node);
         const VariableNode* setDomainMatrixNode(std::string property,
-                                                int domainId,
-                                                const VariableNode* node);
+            int domainId,
+            const VariableNode* node);
 
         const VariableNode* ownNode(std::unique_ptr<VariableNode> node);
         const VariableNode* ownScalarExpressionNode(std::string expression,
-                                                    GraphRuntimeResolvers resolvers = {});
+            GraphRuntimeResolvers resolvers = {});
         const VariableNode* ownMatrixExpressionNode(std::string expression,
-                                                    GraphRuntimeResolvers resolvers = {});
+            GraphRuntimeResolvers resolvers = {});
     };
 
 } // namespace mpfem

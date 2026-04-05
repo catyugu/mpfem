@@ -46,10 +46,7 @@ namespace mpfem {
         virtual VariableShape shape() const = 0;
         virtual std::pair<int, int> dimensions() const = 0;
         virtual void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const = 0;
-
         virtual bool isConstant() const { return false; }
-        virtual bool isTimeDependent() const { return false; }
-        virtual bool isSpaceDependent() const { return false; }
         virtual std::vector<const VariableNode*> dependencies() const { return {}; }
     };
 
@@ -59,7 +56,12 @@ namespace mpfem {
 
         VariableManager() = default;
 
-        void registerConstant(std::string name, double value);
+        /**
+         * @brief Register a constant expression.
+         * @details If expression has no dependencies (pure constant), creates ConstantScalarNode.
+         *         Otherwise creates RuntimeScalarExpressionNode.
+         */
+        void registerConstantExpression(std::string name, std::string expressionText);
 
         void registerScalarExpression(std::string name,
             std::string expression,

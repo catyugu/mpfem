@@ -8,16 +8,16 @@
 
 namespace mpfem {
 
-namespace {
+    namespace {
 
-void registerCaseConstants(VariableManager& manager, const CaseDefinition& caseDef)
-{
-    for (const auto& entry : caseDef.getVariables()) {
-        manager.registerConstant(entry.name, entry.siValue);
-    }
-}
+        void registerCaseDefinitionVariables(VariableManager& manager, const CaseDefinition& caseDef)
+        {
+            for (const auto& entry : caseDef.getVariables()) {
+                manager.registerConstantExpression(entry.name, entry.valueText);
+            }
+        }
 
-} // namespace
+    } // namespace
 
     Problem::~Problem() = default;
 
@@ -36,8 +36,8 @@ void registerCaseConstants(VariableManager& manager, const CaseDefinition& caseD
     }
 
     const VariableNode* Problem::setDomainScalarNode(std::string property,
-                                                     int domainId,
-                                                     const VariableNode* node)
+        int domainId,
+        const VariableNode* node)
     {
         DomainPropertyKey key {std::move(property), domainId};
         auto [it, _] = domainScalarNodes.insert_or_assign(std::move(key), node);
@@ -45,8 +45,8 @@ void registerCaseConstants(VariableManager& manager, const CaseDefinition& caseD
     }
 
     const VariableNode* Problem::setDomainMatrixNode(std::string property,
-                                                     int domainId,
-                                                     const VariableNode* node)
+        int domainId,
+        const VariableNode* node)
     {
         DomainPropertyKey key {std::move(property), domainId};
         auto [it, _] = domainMatrixNodes.insert_or_assign(std::move(key), node);
@@ -60,10 +60,10 @@ void registerCaseConstants(VariableManager& manager, const CaseDefinition& caseD
     }
 
     const VariableNode* Problem::ownScalarExpressionNode(std::string expression,
-                                                         GraphRuntimeResolvers resolvers)
+        GraphRuntimeResolvers resolvers)
     {
         auto manager = std::make_unique<VariableManager>();
-        registerCaseConstants(*manager, caseDef);
+        registerCaseDefinitionVariables(*manager, caseDef);
         constexpr const char* kNodeName = "$root_scalar";
         manager->registerScalarExpression(kNodeName, std::move(expression), std::move(resolvers));
         manager->compileGraph();
@@ -71,15 +71,15 @@ void registerCaseConstants(VariableManager& manager, const CaseDefinition& caseD
         if (!node) {
             MPFEM_THROW(ArgumentException, "Failed to build scalar expression node.");
         }
-        ownedNodeManagers.push_back(std::move(manager));
+        expressionManagers_.push_back(std::move(manager));
         return node;
     }
 
     const VariableNode* Problem::ownMatrixExpressionNode(std::string expression,
-                                                         GraphRuntimeResolvers resolvers)
+        GraphRuntimeResolvers resolvers)
     {
         auto manager = std::make_unique<VariableManager>();
-        registerCaseConstants(*manager, caseDef);
+        registerCaseDefinitionVariables(*manager, caseDef);
         constexpr const char* kNodeName = "$root_matrix";
         manager->registerMatrixExpression(kNodeName, std::move(expression), std::move(resolvers));
         manager->compileGraph();
@@ -87,7 +87,7 @@ void registerCaseConstants(VariableManager& manager, const CaseDefinition& caseD
         if (!node) {
             MPFEM_THROW(ArgumentException, "Failed to build matrix expression node.");
         }
-        ownedNodeManagers.push_back(std::move(manager));
+        expressionManagers_.push_back(std::move(manager));
         return node;
     }
 

@@ -11,7 +11,6 @@
 #include <unordered_map>
 #include <utility>
 
-
 namespace mpfem {
     namespace {
 
@@ -251,28 +250,6 @@ namespace mpfem {
                 }
             }
 
-            bool isTimeDependent() const override
-            {
-                for (const RuntimeSymbolBinding& binding : config_.bindings) {
-                    const BuiltInSymbolKind kind = binding.kind;
-                    if (kind == BuiltInSymbolKind::Time) {
-                        return true;
-                    }
-                }
-                return false;
-            }
-
-            bool isSpaceDependent() const override
-            {
-                for (const RuntimeSymbolBinding& binding : config_.bindings) {
-                    const BuiltInSymbolKind kind = binding.kind;
-                    if (kind == BuiltInSymbolKind::X || kind == BuiltInSymbolKind::Y || kind == BuiltInSymbolKind::Z) {
-                        return true;
-                    }
-                }
-                return false;
-            }
-
             std::vector<const VariableNode*> dependencies() const override
             {
                 return dependencies_;
@@ -332,28 +309,6 @@ namespace mpfem {
                 }
             }
 
-            bool isTimeDependent() const override
-            {
-                for (const RuntimeSymbolBinding& binding : config_.bindings) {
-                    const BuiltInSymbolKind kind = binding.kind;
-                    if (kind == BuiltInSymbolKind::Time) {
-                        return true;
-                    }
-                }
-                return false;
-            }
-
-            bool isSpaceDependent() const override
-            {
-                for (const RuntimeSymbolBinding& binding : config_.bindings) {
-                    const BuiltInSymbolKind kind = binding.kind;
-                    if (kind == BuiltInSymbolKind::X || kind == BuiltInSymbolKind::Y || kind == BuiltInSymbolKind::Z) {
-                        return true;
-                    }
-                }
-                return false;
-            }
-
             std::vector<const VariableNode*> dependencies() const override
             {
                 return dependencies_;
@@ -369,9 +324,20 @@ namespace mpfem {
 
     } // namespace
 
-    void VariableManager::registerConstant(std::string name, double value)
+    void VariableManager::registerConstantExpression(std::string name, std::string expressionText)
     {
-        nodes_[std::move(name)] = std::make_unique<ConstantScalarNode>(value);
+        ExpressionParser parser;
+        ExpressionParser::ScalarProgram program = parser.compileScalar(expressionText);
+
+        // If expression has no dependencies (pure constant), create ConstantScalarNode directly
+        if (program.dependencies().empty()) {
+            double value = program.evaluate({});
+            nodes_[std::move(name)] = std::make_unique<ConstantScalarNode>(value);
+        }
+        else {
+            // Has dependencies - register as scalar expression
+            registerScalarExpression(std::move(name), std::move(expressionText), {});
+        }
         graphDirty_ = true;
     }
 

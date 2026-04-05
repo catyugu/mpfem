@@ -52,15 +52,15 @@ TEST_F(CaseXmlReaderTest, ReadBusbarCase)
     for (const auto& v : caseDef.variables) {
         if (v.name == "Vtot") {
             foundVtot = true;
-            EXPECT_DOUBLE_EQ(v.siValue, 0.02);
+            EXPECT_EQ(v.valueText, "20[mV]");
         }
         if (v.name == "L") {
             foundL = true;
-            EXPECT_DOUBLE_EQ(v.siValue, 0.09);
+            EXPECT_EQ(v.valueText, "9[cm]");
         }
         if (v.name == "htc") {
             foundHtc = true;
-            EXPECT_DOUBLE_EQ(v.siValue, 5.0);
+            EXPECT_EQ(v.valueText, "5[W/m^2/K]");
         }
     }
     EXPECT_TRUE(foundVtot);
@@ -130,13 +130,12 @@ TEST_F(CaseXmlReaderTest, VariableLookup)
     CaseDefinition caseDef;
     CaseXmlReader::readFromFile(dataPath("cases/busbar_steady/case.xml"), caseDef);
 
-    EXPECT_TRUE(caseDef.hasVariable("Vtot"));
-    EXPECT_TRUE(caseDef.hasVariable("L"));
-    EXPECT_TRUE(caseDef.hasVariable("htc"));
+    EXPECT_EQ(caseDef.getVariableExpression("Vtot"), "20[mV]");
+    EXPECT_EQ(caseDef.getVariableExpression("L"), "9[cm]");
+    EXPECT_EQ(caseDef.getVariableExpression("htc"), "5[W/m^2/K]");
 
-    EXPECT_DOUBLE_EQ(caseDef.getVariable("Vtot"), 0.02);
-    EXPECT_DOUBLE_EQ(caseDef.getVariable("L"), 0.09);
-    EXPECT_DOUBLE_EQ(caseDef.getVariable("htc"), 5.0);
+    // Non-existent variable returns empty string
+    EXPECT_EQ(caseDef.getVariableExpression("nonexistent"), "");
 }
 
 TEST_F(CaseXmlReaderTest, BoundaryConditionParsing)
