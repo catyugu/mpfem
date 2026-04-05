@@ -25,7 +25,7 @@ public:
     VariableShape shape() const override { return VariableShape::Scalar; }
     std::pair<int, int> dimensions() const override { return {1, 1}; }
 
-    void evaluate(const EvaluationContext& ctx, std::span<double> dest) const override
+    void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override
     {
         const size_t n = ctx.physicalPoints.empty() ? dest.size() : ctx.physicalPoints.size();
         if (dest.size() != n) {
@@ -47,7 +47,7 @@ public:
     VariableShape shape() const override { return VariableShape::Matrix; }
     std::pair<int, int> dimensions() const override { return {3, 3}; }
 
-    void evaluate(const EvaluationContext& ctx, std::span<double> dest) const override
+    void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override
     {
         const size_t n = ctx.physicalPoints.empty() ? (dest.size() / 9ull) : ctx.physicalPoints.size();
         if (dest.size() != n * 9ull) {

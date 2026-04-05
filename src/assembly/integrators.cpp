@@ -32,7 +32,7 @@ Real evalScalarNode(const VariableNode* node, ElementTransform& trans)
     std::array<Vector3, 1> physPts;
     std::array<double, 1> value{0.0};
     const EvaluationContext ctx = makeSinglePointContext(trans, refPts, physPts);
-    node->evaluate(ctx, std::span<double>(value.data(), value.size()));
+    node->evaluateBatch(ctx, std::span<double>(value.data(), value.size()));
     return static_cast<Real>(value[0]);
 }
 
@@ -46,7 +46,7 @@ Matrix3 evalMatrixNode(const VariableNode* node, ElementTransform& trans)
     std::array<Vector3, 1> physPts;
     std::array<double, 9> values{};
     const EvaluationContext ctx = makeSinglePointContext(trans, refPts, physPts);
-    node->evaluate(ctx, std::span<double>(values.data(), values.size()));
+    node->evaluateBatch(ctx, std::span<double>(values.data(), values.size()));
 
     Matrix3 result;
     for (int r = 0; r < 3; ++r) {

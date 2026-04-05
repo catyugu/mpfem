@@ -76,14 +76,24 @@ double MaterialPropertyModel::getScalar(
     const std::string& name,
     const std::map<std::string, double>& variables) const {
     ExpressionParser parser;
-    return parser.evaluate(scalarExpression(name), variables);
+    std::unordered_map<std::string, double> values;
+    values.reserve(variables.size());
+    for (const auto& [key, value] : variables) {
+        values.emplace(key, value);
+    }
+    return parser.compileScalar(scalarExpression(name)).evaluate(values);
 }
 
 Matrix3 MaterialPropertyModel::getMatrix(
     const std::string& name,
     const std::map<std::string, double>& variables) const {
     ExpressionParser parser;
-    return parser.evaluateMatrix(matrixExpression(name), variables);
+    std::unordered_map<std::string, double> values;
+    values.reserve(variables.size());
+    for (const auto& [key, value] : variables) {
+        values.emplace(key, value);
+    }
+    return parser.compileMatrix(matrixExpression(name)).evaluate(values);
 }
 
 const std::string& MaterialPropertyModel::scalarExpression(const std::string& name) const {

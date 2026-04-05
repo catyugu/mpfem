@@ -189,7 +189,7 @@ namespace mpfem {
             VariableShape shape() const override { return VariableShape::Scalar; }
             std::pair<int, int> dimensions() const override { return {1, 1}; }
 
-            void evaluate(const EvaluationContext& ctx, std::span<double> dest) const override
+            void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override
             {
                 if (!ctx.transform) {
                     MPFEM_THROW(ArgumentException, "JouleHeatNode requires ElementTransform in EvaluationContext.");
@@ -238,7 +238,7 @@ namespace mpfem {
                     one.transform = ctx.transform;
 
                     std::array<double, 9> sigmaValues{};
-                    sigmaNode->evaluate(one, std::span<double>(sigmaValues.data(), sigmaValues.size()));
+                    sigmaNode->evaluateBatch(one, std::span<double>(sigmaValues.data(), sigmaValues.size()));
                     Matrix3 sigma = Matrix3::Zero();
                     for (int r = 0; r < 3; ++r) {
                         for (int c = 0; c < 3; ++c) {
@@ -278,7 +278,7 @@ namespace mpfem {
             VariableShape shape() const override { return VariableShape::Matrix; }
             std::pair<int, int> dimensions() const override { return {3, 3}; }
 
-            void evaluate(const EvaluationContext& ctx, std::span<double> dest) const override
+            void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override
             {
                 if (!ctx.transform) {
                     MPFEM_THROW(ArgumentException, "ThermalExpansionStressNode requires ElementTransform in EvaluationContext.");
@@ -328,9 +328,9 @@ namespace mpfem {
                     std::array<double, 9> alphaValues{};
                     std::array<double, 1> eValues{0.0};
                     std::array<double, 1> nuValues{0.0};
-                    alphaNode->evaluate(one, std::span<double>(alphaValues.data(), alphaValues.size()));
-                    eNode->evaluate(one, std::span<double>(eValues.data(), eValues.size()));
-                    nuNode->evaluate(one, std::span<double>(nuValues.data(), nuValues.size()));
+                    alphaNode->evaluateBatch(one, std::span<double>(alphaValues.data(), alphaValues.size()));
+                    eNode->evaluateBatch(one, std::span<double>(eValues.data(), eValues.size()));
+                    nuNode->evaluateBatch(one, std::span<double>(nuValues.data(), nuValues.size()));
 
                     Matrix3 alpha = Matrix3::Zero();
                     for (int r = 0; r < 3; ++r) {

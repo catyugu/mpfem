@@ -10,6 +10,7 @@
 #include <cctype>
 #include <cstdlib>
 #include <functional>
+#include <unordered_map>
 #include <sstream>
 
 namespace mpfem {
@@ -141,7 +142,12 @@ namespace mpfem {
             if (!text) {
                 return defaultValue;
             }
-            return parser.evaluate(text, variableValues);
+            std::unordered_map<std::string, double> values;
+            values.reserve(variableValues.size());
+            for (const auto& [name, value] : variableValues) {
+                values.emplace(name, value);
+            }
+            return parser.compileScalar(text).evaluate(values);
         };
 
         auto readParameterMap = [&](const tinyxml2::XMLElement* parametersElement) {

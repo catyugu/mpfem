@@ -3,7 +3,6 @@
 
 #include "core/types.hpp"
 
-#include <map>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -14,11 +13,6 @@ namespace mpfem {
 
     class ExpressionParser {
     public:
-        struct VariableBinding {
-            std::string name;
-            double* ref = nullptr;
-        };
-
         class ScalarProgram {
         public:
             struct Impl;
@@ -32,7 +26,7 @@ namespace mpfem {
 
             bool valid() const;
             const std::vector<std::string>& dependencies() const;
-            double evaluate(const std::unordered_map<std::string, double>& values = {}) const;
+            double evaluate(const std::unordered_map<std::string, double>& values) const;
 
         private:
             std::unique_ptr<Impl> impl_;
@@ -51,7 +45,7 @@ namespace mpfem {
 
             bool valid() const;
             const std::vector<std::string>& dependencies() const;
-            Matrix3 evaluate(const std::unordered_map<std::string, double>& values = {}) const;
+            Matrix3 evaluate(const std::unordered_map<std::string, double>& values) const;
 
         private:
             std::unique_ptr<Impl> impl_;
@@ -63,16 +57,8 @@ namespace mpfem {
         ExpressionParser();
         ~ExpressionParser();
 
-        ScalarProgram compileScalar(const std::string& expression,
-            const std::vector<VariableBinding>& bindings) const;
-        MatrixProgram compileMatrix(const std::string& expression,
-            const std::vector<VariableBinding>& bindings) const;
-
-        // Convenience one-shot APIs for configuration parsing.
-        double evaluate(const std::string& expression,
-            const std::map<std::string, double>& variables = {});
-        Matrix3 evaluateMatrix(const std::string& expression,
-            const std::map<std::string, double>& variables = {});
+        ScalarProgram compileScalar(const std::string& expression) const;
+        MatrixProgram compileMatrix(const std::string& expression) const;
     };
 
 } // namespace mpfem

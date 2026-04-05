@@ -45,7 +45,7 @@ namespace mpfem {
 
         virtual VariableShape shape() const = 0;
         virtual std::pair<int, int> dimensions() const = 0;
-        virtual void evaluate(const EvaluationContext& ctx, std::span<double> dest) const = 0;
+        virtual void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const = 0;
 
         virtual bool isConstant() const { return false; }
         virtual bool isTimeDependent() const { return false; }

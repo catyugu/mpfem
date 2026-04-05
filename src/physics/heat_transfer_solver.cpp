@@ -25,12 +25,12 @@ public:
 
     std::pair<int, int> dimensions() const override { return {1, 1}; }
 
-    void evaluate(const EvaluationContext& ctx, std::span<double> dest) const override
+    void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override
     {
         std::vector<double> lhsValues(dest.size());
         std::vector<double> rhsValues(dest.size());
-        lhs_->evaluate(ctx, std::span<double>(lhsValues.data(), lhsValues.size()));
-        rhs_->evaluate(ctx, std::span<double>(rhsValues.data(), rhsValues.size()));
+        lhs_->evaluateBatch(ctx, std::span<double>(lhsValues.data(), lhsValues.size()));
+        rhs_->evaluateBatch(ctx, std::span<double>(rhsValues.data(), rhsValues.size()));
         for (size_t i = 0; i < dest.size(); ++i) {
             dest[i] = lhsValues[i] * rhsValues[i];
         }

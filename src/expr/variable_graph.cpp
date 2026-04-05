@@ -73,7 +73,7 @@ namespace mpfem {
             onePointCtx.physicalPoints = std::span<const Vector3>(physPoints.data(), 1);
 
             std::array<double, 1> out {0.0};
-            node->evaluate(onePointCtx, std::span<double>(out.data(), out.size()));
+            node->evaluateBatch(onePointCtx, std::span<double>(out.data(), out.size()));
             return out[0];
         }
 
@@ -175,7 +175,7 @@ namespace mpfem {
             VariableShape shape() const override { return VariableShape::Scalar; }
             std::pair<int, int> dimensions() const override { return {1, 1}; }
 
-            void evaluate(const EvaluationContext& ctx, std::span<double> dest) const override
+            void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override
             {
                 const size_t n = ctx.physicalPoints.empty() ? dest.size() : ctx.physicalPoints.size();
                 if (dest.size() != n) {
@@ -208,7 +208,7 @@ namespace mpfem {
             VariableShape shape() const override { return VariableShape::Scalar; }
             std::pair<int, int> dimensions() const override { return {1, 1}; }
 
-            void evaluate(const EvaluationContext& ctx, std::span<double> dest) const override
+            void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override
             {
                 const size_t n = ctx.physicalPoints.size();
                 if (dest.size() != n) {
@@ -282,7 +282,7 @@ namespace mpfem {
             VariableShape shape() const override { return VariableShape::Matrix; }
             std::pair<int, int> dimensions() const override { return {3, 3}; }
 
-            void evaluate(const EvaluationContext& ctx, std::span<double> dest) const override
+            void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override
             {
                 const size_t n = ctx.physicalPoints.size();
                 if (dest.size() != n * 9ull) {
@@ -359,7 +359,7 @@ namespace mpfem {
         GraphRuntimeResolvers resolvers)
     {
         ExpressionParser parser;
-        ExpressionParser::ScalarProgram program = parser.compileScalar(expression, {});
+        ExpressionParser::ScalarProgram program = parser.compileScalar(expression);
         RuntimeSymbolConfig config = buildSymbolConfig(program, nodes_);
 
         std::vector<std::string> dynamicSymbols = config.dynamicSymbols;
@@ -399,7 +399,7 @@ namespace mpfem {
         GraphRuntimeResolvers resolvers)
     {
         ExpressionParser parser;
-        ExpressionParser::MatrixProgram program = parser.compileMatrix(expression, {});
+        ExpressionParser::MatrixProgram program = parser.compileMatrix(expression);
         RuntimeSymbolConfig config;
 
         std::unordered_set<std::string> seen;

@@ -26,7 +26,7 @@ TEST_F(VariableNodeTest, ConstantScalarNodeEvaluation) {
     EvaluationContext ctx;
     ctx.physicalPoints = std::span<const Vector3>(points.data(), points.size());
     std::array<double, 2> out{0.0, 0.0};
-    node->evaluate(ctx, std::span<double>(out.data(), out.size()));
+    node->evaluateBatch(ctx, std::span<double>(out.data(), out.size()));
 
     EXPECT_NEAR(out[0], 3.14, 1e-12);
     EXPECT_NEAR(out[1], 3.14, 1e-12);
@@ -46,7 +46,7 @@ TEST_F(VariableNodeTest, ScalarExpressionNodeEvaluation) {
     EvaluationContext ctx;
     ctx.physicalPoints = std::span<const Vector3>(points.data(), points.size());
     std::array<double, 2> out{0.0, 0.0};
-    node->evaluate(ctx, std::span<double>(out.data(), out.size()));
+    node->evaluateBatch(ctx, std::span<double>(out.data(), out.size()));
 
     EXPECT_NEAR(out[0], 1.0, 1e-12);
     EXPECT_NEAR(out[1], 5.0, 1e-12);

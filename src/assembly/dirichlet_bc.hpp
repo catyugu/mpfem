@@ -80,7 +80,7 @@ namespace mpfem {
                         ctx.physicalPoints = std::span<const Vector3>(physPts.data(), physPts.size());
                         ctx.transform = &trans;
                         std::array<double, 1> out{0.0};
-                        coef->evaluate(ctx, std::span<double>(out.data(), out.size()));
+                        coef->evaluateBatch(ctx, std::span<double>(out.data(), out.size()));
                         value = static_cast<Real>(out[0]);
                     }
 

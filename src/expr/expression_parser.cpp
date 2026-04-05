@@ -48,28 +48,6 @@ struct AstNode {
     std::unique_ptr<AstNode> rhs;
 };
 
-using VariableStorage = std::vector<std::pair<std::string, double>>;
-
-VariableStorage copyVariables(const std::map<std::string, double>& variables)
-{
-    VariableStorage storage;
-    storage.reserve(variables.size());
-    for (const auto& [name, value] : variables) {
-        storage.emplace_back(name, value);
-    }
-    return storage;
-}
-
-std::vector<ExpressionParser::VariableBinding> makeBindings(VariableStorage& storage)
-{
-    std::vector<ExpressionParser::VariableBinding> bindings;
-    bindings.reserve(storage.size());
-    for (auto& [name, value] : storage) {
-        bindings.push_back(ExpressionParser::VariableBinding{name, &value});
-    }
-    return bindings;
-}
-
 void collectDependencies(const AstNode& node, std::unordered_set<std::string>& seen, std::vector<std::string>& deps)
 {
     if (node.kind == AstNode::Kind::Variable) {
@@ -145,10 +123,8 @@ MatrixTemplate parseMatrixTemplate(std::string_view expression)
 
 class ScalarAstCompiler {
 public:
-    ScalarAstCompiler(std::string_view text,
-                      const std::unordered_map<std::string, const double*>& variables)
-        : text_(text),
-          variables_(variables)
+    explicit ScalarAstCompiler(std::string_view text)
+        : text_(text)
     {
     }
 
@@ -306,13 +282,6 @@ private:
     {
         auto node = std::make_unique<AstNode>();
 
-        const auto it = variables_.find(name);
-        if (it != variables_.end()) {
-            node->kind = AstNode::Kind::Variable;
-            node->variableName = name;
-            return node;
-        }
-
         if (name == "pi") {
             node->kind = AstNode::Kind::Constant;
             node->value = 3.141592653589793238462643383279502884;
@@ -416,12 +385,10 @@ private:
     bool eof() const { return pos_ >= text_.size(); }
 
     std::string_view text_;
-    const std::unordered_map<std::string, const double*>& variables_;
     size_t pos_ = 0;
 };
 
-double evalAstNode(const AstNode& node, const std::unordered_map<std::string, double>& values)
-{
+double evalAstNode(const AstNode& node, const std::unordered_map<std::string, double>& values){
     switch (node.kind) {
         case AstNode::Kind::Constant:
             return node.value;
@@ -560,9 +527,7 @@ Matrix3 ExpressionParser::MatrixProgram::evaluate(const std::unordered_map<std::
 ExpressionParser::ExpressionParser() = default;
 ExpressionParser::~ExpressionParser() = default;
 
-ExpressionParser::ScalarProgram ExpressionParser::compileScalar(
-    const std::string& expression,
-    const std::vector<VariableBinding>& bindings) const
+ExpressionParser::ScalarProgram ExpressionParser::compileScalar(const std::string& expression) const
 {
     UnitRegistry registry;
     const UnitParseResult unitResult = registry.stripUnit(expression);
@@ -571,21 +536,7 @@ ExpressionParser::ScalarProgram ExpressionParser::compileScalar(
         MPFEM_THROW(ArgumentException, "Expression is empty after unit stripping: " + expression);
     }
 
-    std::unordered_map<std::string, const double*> variableMap;
-    variableMap.reserve(bindings.size());
-
-    for (const auto& binding : bindings) {
-        if (binding.ref == nullptr) {
-            MPFEM_THROW(ArgumentException, "Variable binding has null reference for variable: " + binding.name);
-        }
-        const auto [_, inserted] = variableMap.emplace(binding.name, binding.ref);
-        if (!inserted) {
-            MPFEM_THROW(ArgumentException,
-                        "Duplicate variable binding for expression compilation: " + binding.name);
-        }
-    }
-
-    ScalarAstCompiler compiler(expressionText, variableMap);
+    ScalarAstCompiler compiler(expressionText);
 
     auto impl = std::make_unique<ScalarProgram::Impl>();
     impl->multiplier = unitResult.multiplier;
@@ -595,9 +546,7 @@ ExpressionParser::ScalarProgram ExpressionParser::compileScalar(
     return ScalarProgram(std::move(impl));
 }
 
-ExpressionParser::MatrixProgram ExpressionParser::compileMatrix(
-    const std::string& expression,
-    const std::vector<VariableBinding>& bindings) const
+ExpressionParser::MatrixProgram ExpressionParser::compileMatrix(const std::string& expression) const
 {
     MatrixTemplate matrixTemplate = parseMatrixTemplate(expression);
 
@@ -605,14 +554,14 @@ ExpressionParser::MatrixProgram ExpressionParser::compileMatrix(
     impl->literalMatrix = matrixTemplate.literalMatrix;
 
     if (!matrixTemplate.literalMatrix) {
-        impl->components.push_back(compileScalar(expression, bindings));
+        impl->components.push_back(compileScalar(expression));
         impl->dependencies = impl->components.front().dependencies();
         return MatrixProgram(std::move(impl));
     }
 
     impl->components.reserve(matrixTemplate.components.size());
     for (const std::string& componentExpression : matrixTemplate.components) {
-        impl->components.push_back(compileScalar(componentExpression, bindings));
+        impl->components.push_back(compileScalar(componentExpression));
         for (const std::string& dep : impl->components.back().dependencies()) {
             if (std::find(impl->dependencies.begin(), impl->dependencies.end(), dep) == impl->dependencies.end()) {
                 impl->dependencies.push_back(dep);
@@ -620,36 +569,6 @@ ExpressionParser::MatrixProgram ExpressionParser::compileMatrix(
         }
     }
     return MatrixProgram(std::move(impl));
-}
-
-double ExpressionParser::evaluate(
-    const std::string& expression,
-    const std::map<std::string, double>& variables)
-{
-    VariableStorage storage = copyVariables(variables);
-    auto bindings = makeBindings(storage);
-    ScalarProgram program = compileScalar(expression, bindings);
-    std::unordered_map<std::string, double> values;
-    values.reserve(storage.size());
-    for (const auto& [name, value] : storage) {
-        values.emplace(name, value);
-    }
-    return program.evaluate(values);
-}
-
-Matrix3 ExpressionParser::evaluateMatrix(
-    const std::string& expression,
-    const std::map<std::string, double>& variables)
-{
-    VariableStorage storage = copyVariables(variables);
-    auto bindings = makeBindings(storage);
-    MatrixProgram program = compileMatrix(expression, bindings);
-    std::unordered_map<std::string, double> values;
-    values.reserve(storage.size());
-    for (const auto& [name, value] : storage) {
-        values.emplace(name, value);
-    }
-    return program.evaluate(values);
 }
 
 }  // namespace mpfem
