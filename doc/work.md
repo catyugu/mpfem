@@ -5,6 +5,7 @@
 
 ## 原则
 
+* 从难度最低，收益最高的部分开始，如果有些任务过于困难，你可以选择性放弃。
 * 严格禁止向后兼容。
 * 任何情况下，逻辑嵌套必须少于三层。
 * 代码越精简越好，抹除不必要的抽象。
@@ -26,23 +27,77 @@
 
 你当前代码中最大的**设计反模式**是：**双轨制（Dual-System）与生命周期碎片化**。虽然引入了 `VariableManager` 和 `ExpressionParser`，但大量的物理场逻辑仍在绕过它，采用硬编码的 C++ 节点（如 `JouleHeatNode`）和复杂的回调（如 `GraphRuntimeResolvers`）。
 
-以下是具体识别出的反模式，以及彻底转向 **纯DAG+表达式解析变量系统** 的破坏式重构步骤。
-
-### 🚨 识别出的设计反模式
-
-1. **生命周期碎片化 (Scattered Lifecycle)**: `Problem` 类中同时存在 `globalVariables_`、`expressionManagers_`（存储临时变量管理器的 `vector`）、`ownedNodes`（手动管理的 C++ 节点）以及 `domainScalarNodes/domainMatrixNodes` 缓存。这让“谁拥有这个变量”变得极其混乱。
-2. **破坏开闭原则的硬编码解析 (Hardcoded Symbol Resolution)**: 在 `physics_problem_builder.cpp` 中，`classifyRuntimeField` 函数硬编码了 `"T"` 和 `"V"`。如果未来加入流体力学求解器（需要 `"U"`, `"P"`），你必须修改构建器代码。
-3. **退化的 C++ 硬编码表达式节点 (Hardcoded Expression Nodes)**: `JouleHeatNode`、`ThermalExpansionStressNode` 以及 `HeatTransferSolver` 内部的 `ProductScalarNode`。既然已经有了表达式解析器，像 $\rho \cdot C_p$ 这样的逻辑应该直接解析为表达式，而不是在 C++ 中手动拼接 AST（抽象语法树）。
-4. **冗余的 Domain 缓存 (Redundant Domain Caching)**: `DomainPropertyKey` 和其相关的 Map 完全是多余的。DAG 本身的作用就是复用节点，基于 Domain 的差异应该通过在统一的全局 DAG 中注册不同的变量名（如 `density_dom1`）来解决。
-
-
----
-
 ### 🛠️ 步骤化破坏式重构方案
 
 每一步都保证系统处于可编译、可运行的完整状态，宁可采用破坏性修改也不保留向后兼容的包袱。
 
-#### 第一步：引入场自注册机制，废弃硬编码解析器
+#### 统一数据载体，消灭标量与矩阵的类型分裂 (Unify Tensor Backend)
+
+**目标**: 将 `double` 和 `Matrix3` 统一为泛型的张量变体，合并所有 `compileX` 方法。
+
+1.  **引入 `Value` 变体类型**: 在 `core/types.hpp` 中引入统一的表达式值类型：
+    ```cpp
+    // src/core/types.hpp
+    #include <variant>
+    namespace mpfem {
+        using ExprValue = std::variant<double, Vector3, Matrix3>;
+        // 辅助函数用于获取类型和维度
+    }
+    ```
+2.  **合并 Program**: 在 `expression_parser.hpp` 中，删除 `ScalarProgram` 和 `MatrixProgram`，统一为一个 `ExpressionProgram`。
+    ```cpp
+    class ExpressionProgram {
+    public:
+        VariableShape shape() const; 
+        ExprValue evaluate(std::span<const ExprValue> values) const;
+    };
+    // compileScalar 和 compileMatrix 合并为：
+    ExpressionProgram compile(const std::string& expression) const;
+    ```
+3.  **合并 Node**: 在 `variable_graph.hpp` 中，删除 `ConstantScalarNode`, `RuntimeScalarExpressionNode`, `RuntimeMatrixExpressionNode`。只保留一个通用的 `ExpressionNode`。
+    * **验证标准**: 此时所有的测试用例应该能通过新的单一接口 `compile("...")` 运行，无需外部指定它是标量还是矩阵。
+
+#### 净化 DAG，移除内置符号硬编码 (Purify DAG Leaves)
+
+**目标**: 移除 `BuiltInSymbolKind`，将物理场和时空坐标转变为标准的 DAG 节点。
+
+1.  **移除硬编码**: 删除 `variable_graph.cpp` 中的 `BuiltInSymbolKind` 及其 `switch` 逻辑。
+2.  **实现专用叶子节点**:
+    ```cpp
+    class SpatialCoordinateNode : public VariableNode {
+        // shape = Vector3, evaluateBatch 时直接从 ctx.physicalPoints 拷贝
+    };
+    class TimeNode : public VariableNode {
+        // shape = Scalar, evaluateBatch 时返回 ctx.time
+    };
+    class FieldEvaluationNode : public VariableNode {
+        // 专门处理其他物理场（如 T, V）的求值
+    };
+    ```
+3.  **预注册**: 修改 `VariableManager` 的构造函数，默认自动注册 `x`, `y`, `z`, `t` 作为内部保留节点。例如，注册 `x` 的表达式为提取 `SpatialCoordinateNode` 的第 0 个分量。
+    * **验证标准**: 表达式 `"x + t * 2"` 仍然可以求值，但是调度不再经过任何 `if(symbol == "t")` 分支，而是纯粹的 DAG 依赖传递。
+
+#### 增强解析器，实现公式化的多物理场耦合 (Formula-based Coupling)
+
+**目标**: 淘汰 `JouleHeatNode` 和 `ThermalExpansionStressNode`，用原生表达式取代。
+
+1.  **扩展 AST 支持算子**: 在 `expression_parser.cpp` 中支持空间微分算子和张量算子，例如 `grad(field)`, `dot(A, B)`, `sym(A)`。
+2.  **重写耦合逻辑**: 在构建耦合时，直接向 `VariableManager` 注册字符串表达式。
+    * **重构前**:
+        ```cpp
+        // src/problem/physics_problem_builder.cpp
+        const VariableNode* joule = problem.ownNode(
+            std::make_unique<JouleHeatNode>(V_field, sigmaByDomain));
+        ```
+    * **重构后 (破坏式)**:
+        ```cpp
+        // 直接编译公式，解析器负责推导 grad(V) 并在执行时通过 FieldEvaluationNode 获取梯度
+        problem.materials.registerExpression("Q_joule", "dot(grad(V), sigma * grad(V))");
+        ```
+3.  **删除旧类**: 彻底删除 `physics_problem_builder.cpp` 中的 `JouleHeatNode` 和 `ThermalExpansionStressNode`。
+    * **验证标准**: 稳态或瞬态的焦耳热计算结果与旧版本完全一致，但代码量锐减。
+
+#### 引入场自注册机制，废弃硬编码解析器
 **目标**：消除 `GraphRuntimeResolvers` 和 `classifyRuntimeField`，让求解器将其结果作为 DAG 节点直接注入到全局变量图中。
 
 1. **新增基础节点**：在 `variable_graph.hpp` 中添加 `GridFunctionNode`。
@@ -68,7 +123,7 @@
    - 彻底删除 `physics_problem_builder.cpp` 中的 `classifyRuntimeField`、`resolveRuntimeField` 和 `makeRuntimeExpressionResolvers`。
    - `VariableManager::registerScalarExpression` 的签名移除 `GraphRuntimeResolvers` 参数，因为此时 `"T"` 已经是 DAG 中的一个合法前置节点。
 
-#### 第二步：统一全局 DAG，消灭临时管理器与域缓存
+#### 统一全局 DAG，消灭临时管理器与域缓存
 **目标**：让 `VariableManager` 成为唯一的事实来源（Single Source of Truth）。
 
 1. **重构 Problem 类**：
@@ -90,7 +145,7 @@
    ```
    **编译验证**：此时所有的变量和表达式都位于同一个 DAG 中，并且按名称索引，无需外部缓存。
 
-#### 第三步：用动态解析替换局部硬编码 AST (消灭 `ProductScalarNode`)
+#### 用动态解析替换局部硬编码 AST (消灭 `ProductScalarNode`)
 **目标**：清理具体求解器中手写的 AST 组合。
 
 1. **修改 HeatTransferSolver**：
@@ -108,35 +163,3 @@
    problem.heatTransfer->setMassProperties({domainId}, problem.globalVariables_.get(massPropName));
    ```
    *注意：这一步不仅使得代码行数锐减，而且如果将来表达式系统增加了常数折叠（Constant Folding）或公共子表达式消除优化，这些逻辑将自动受益。*
-
-#### 第四步：抽象场操作符，消灭 C++ 物理耦合节点 (JouleHeating / ThermalExpansion)
-**目标**：删除 `JouleHeatNode` 和 `ThermalExpansionStressNode`。这是最硬核的解耦。
-
-1. **引入算子节点 (Operator Nodes)**：
-   当前的解析器可以解析基础的数学运算，但 FEM 中涉及到场的梯度算子（$\nabla$）。
-   在 `variable_graph.hpp` 中增加 `FieldGradientNode`：
-   ```cpp
-   class FieldGradientNode final : public VariableNode {
-       // 返回形状：VariableShape::Vector
-       // 内部调用 voltageField_->gradient(...) 计算真实梯度
-   };
-   ```
-2. **暴露到表达式空间**：
-   让 `VariableManager` 或 `ExpressionParser` 支持特殊变量名，例如在注入场时：
-   ```cpp
-   varManager.registerNode("grad_V", std::make_unique<FieldGradientNode>(&electrostatics->field()));
-   ```
-3. **在 Builder 中使用纯表达式实现耦合**：
-   删除 `JouleHeatNode.cpp`。在 `setupJouleHeating` 中，完全用字符串描述焦耳热：
-   ```cpp
-   std::string q_joule_expr = "dot(grad_V, sigma_dom" + std::to_string(domId) + " * grad_V)";
-   problem.globalVariables_.registerScalarExpression("Q_joule_dom" + std::to_string(domId), q_joule_expr);
-   problem.heatTransfer->setHeatSource(activeDomains, problem.globalVariables_.get("Q_joule_dom" + std::to_string(domId)));
-   ```
-   对于 `ThermalExpansionStressNode` 同理，将 $\alpha \cdot (T - T_{ref})$ 以及拉梅常数的计算写进一串表达式中，或者拆分成几条注册到 DAG 的中间变量中。
-
-### 阶段性总结
-
-经过这四步破坏性重构，你的系统将发生如下蜕变：
-* **前**：Builder 需要了解热胀冷缩的公式并用 C++ 拼接 AST，维护 5 种不同生命周期的节点 Map。
-* **后**：Builder 完全退化为一个 **依赖注入/接线员**。它读取 `case.xml` 的字符串，并将它们注册到全局唯一的 `VariableManager` 中。`VariableManager.compileGraph()` 负责所有的依赖排序和合法性检查。代码量预计减少 30% 到 40%，且扩展新物理场（如流体、相变）时，仅需增加几行字符串注册代码，无需增加任何新的 C++ `Node` 派生类。
