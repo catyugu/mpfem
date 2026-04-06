@@ -13,8 +13,8 @@
 #include "steady_problem.hpp"
 #include "transient_problem.hpp"
 #include <array>
-#include <cstdint>
 #include <atomic>
+#include <cstdint>
 #include <string_view>
 #include <unordered_map>
 
@@ -59,7 +59,6 @@ namespace mpfem {
         const VariableNode* makeScalarExpressionNode(Problem& problem,
             const std::string& expression);
 
-
         template <typename GetterFn>
         std::unordered_map<int, const VariableNode*> collectDomainNodes(const std::set<int>& domainIds,
             GetterFn getter)
@@ -70,64 +69,6 @@ namespace mpfem {
                 byDomain.emplace(domainId, getter(domainId));
             }
             return byDomain;
-        }
-
-        enum class RuntimeFieldKind {
-            Unknown,
-            Temperature,
-            Voltage,
-        };
-
-        RuntimeFieldKind classifyRuntimeField(std::string_view symbol)
-        {
-            if (symbol == "T") {
-                return RuntimeFieldKind::Temperature;
-            }
-            if (symbol == "V") {
-                return RuntimeFieldKind::Voltage;
-            }
-            return RuntimeFieldKind::Unknown;
-        }
-
-        const GridFunction* resolveRuntimeField(const Problem& problem, RuntimeFieldKind kind)
-        {
-            if (kind == RuntimeFieldKind::Temperature) {
-                return problem.heatTransfer ? &problem.heatTransfer->field() : nullptr;
-            }
-            if (kind == RuntimeFieldKind::Voltage) {
-                return problem.electrostatics ? &problem.electrostatics->field() : nullptr;
-            }
-            return nullptr;
-        }
-
-        GraphRuntimeResolvers makeRuntimeExpressionResolvers(Problem& problem)
-        {
-            GraphRuntimeResolvers resolvers;
-
-            resolvers.symbolBinder =
-                [&problem](std::string_view symbol) -> GraphExternalSymbolResolver {
-                const RuntimeFieldKind kind = classifyRuntimeField(symbol);
-                if (kind == RuntimeFieldKind::Unknown) {
-                    return {};
-                }
-
-                return [&problem, kind](const EvaluationContext& ctx,
-                           size_t,
-                           double& value) -> bool {
-                    const GridFunction* field = resolveRuntimeField(problem, kind);
-                    if (!field) {
-                        return false;
-                    }
-                    if (!ctx.transform) {
-                        return false;
-                    }
-                    const auto& ip = ctx.transform->integrationPoint();
-                    value = field->eval(ctx.transform->elementIndex(), &ip.xi);
-                    return true;
-                };
-            };
-
-            return resolvers;
         }
 
         const VariableNode* requireDomainMatrixNode(Problem& problem,
@@ -141,10 +82,7 @@ namespace mpfem {
             }
 
             const std::string& expression = problem.materials.matrixExpressionByDomain(domainId, property);
-            problem.globalVariables_.registerMatrixExpression(
-                name,
-                expression,
-                makeRuntimeExpressionResolvers(problem));
+            problem.globalVariables_.registerMatrixExpression(name, expression);
 
             return problem.globalVariables_.get(name);
         }
@@ -160,10 +98,7 @@ namespace mpfem {
             }
 
             const std::string& expression = problem.materials.scalarExpressionByDomain(domainId, property);
-            problem.globalVariables_.registerScalarExpression(
-                name,
-                expression,
-                makeRuntimeExpressionResolvers(problem));
+            problem.globalVariables_.registerScalarExpression(name, expression);
 
             return problem.globalVariables_.get(name);
         }
@@ -173,10 +108,7 @@ namespace mpfem {
         {
             static std::atomic<std::uint64_t> id {0};
             std::string name = "$expr_scalar_" + std::to_string(id++);
-            problem.globalVariables_.registerScalarExpression(
-                name,
-                expression,
-                makeRuntimeExpressionResolvers(problem));
+            problem.globalVariables_.registerScalarExpression(name, expression);
             return problem.globalVariables_.get(name);
         }
 
@@ -448,18 +380,24 @@ namespace mpfem {
         {
             auto& caseDef = problem.caseDef;
 
+            // Build heat_transfer first because electrostatics material properties may depend on temperature "T"
+            for (auto& [kind, physics] : caseDef.physics) {
+                if (kind == "heat_transfer") {
+                    buildHeatTransfer(problem, physics);
+                    break;
+                }
+            }
+
             for (auto& [kind, physics] : caseDef.physics) {
                 if (kind == "electrostatics") {
                     buildElectrostatics(problem, physics);
                     continue;
                 }
-                if (kind == "heat_transfer") {
-                    buildHeatTransfer(problem, physics);
-                    continue;
-                }
                 if (kind == "solid_mechanics") {
                     buildStructural(problem, physics);
+                    continue;
                 }
+                // heat_transfer already handled above
             }
 
             if (problem.hasJouleHeating() || problem.hasThermalExpansion()) {
@@ -475,6 +413,11 @@ namespace mpfem {
 
             double icValue = getInitialCondition(problem.caseDef, kPhysicsElectrostatics, 0.0);
             problem.electrostatics->initialize(*problem.mesh, problem.fieldValues, physics.order, icValue);
+
+            // Register the electrostatics field as a DAG node for expression dependencies
+            problem.globalVariables_.registerGridFunction("Electrostatics", &problem.electrostatics->field());
+            // Also register "V" as an alias for backward compatibility with expressions using "V"
+            problem.globalVariables_.registerGridFunction("V", &problem.electrostatics->field());
 
             for (int domainId : problem.materials.domainIds()) {
                 const VariableNode* sigma = requireDomainMatrixNode(
@@ -500,6 +443,11 @@ namespace mpfem {
 
             double icValue = getInitialCondition(problem.caseDef, kPhysicsHeatTransfer, 293.15);
             problem.heatTransfer->initialize(*problem.mesh, problem.fieldValues, physics.order, icValue);
+
+            // Register the heat transfer field as a DAG node for expression dependencies
+            problem.globalVariables_.registerGridFunction("HeatTransfer", &problem.heatTransfer->field());
+            // Also register "T" as an alias for backward compatibility with expressions using "T"
+            problem.globalVariables_.registerGridFunction("T", &problem.heatTransfer->field());
 
             for (int domainId : problem.materials.domainIds()) {
                 const VariableNode* k = requireDomainMatrixNode(
@@ -534,6 +482,11 @@ namespace mpfem {
 
             double icValue = getInitialCondition(problem.caseDef, kPhysicsSolidMechanics, 0.0);
             problem.structural->initialize(*problem.mesh, problem.fieldValues, physics.order, icValue);
+
+            // Register the structural field as a DAG node for expression dependencies
+            problem.globalVariables_.registerGridFunction("Structural", &problem.structural->field());
+            // Also register "u" as an alias for backward compatibility with expressions using "u"
+            problem.globalVariables_.registerGridFunction("u", &problem.structural->field());
 
             for (int domainId : problem.materials.domainIds()) {
                 const VariableNode* E = requireDomainScalarNode(problem, domainId, kPropYoungModulus);

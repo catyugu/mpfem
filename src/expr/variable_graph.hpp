@@ -26,14 +26,6 @@ namespace mpfem {
         ElementTransform* transform = nullptr;
     };
 
-    using GraphExternalSymbolResolver = std::function<bool(const EvaluationContext&, size_t, double&)>;
-
-    using GraphExternalSymbolBinder = std::function<GraphExternalSymbolResolver(std::string_view)>;
-
-    struct GraphRuntimeResolvers {
-        GraphExternalSymbolBinder symbolBinder;
-    };
-
     class VariableNode {
     public:
         virtual ~VariableNode() = default;
@@ -60,13 +52,9 @@ namespace mpfem {
          */
         void registerConstantExpression(std::string name, std::string expressionText);
 
-        void registerScalarExpression(std::string name,
-            std::string expression,
-            GraphRuntimeResolvers resolvers = {});
+        void registerScalarExpression(std::string name, std::string expression);
 
-        void registerMatrixExpression(std::string name,
-            std::string expression,
-            GraphRuntimeResolvers resolvers = {});
+        void registerMatrixExpression(std::string name, std::string expression);
 
         const VariableNode* get(std::string_view name) const;
 
