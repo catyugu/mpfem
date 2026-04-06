@@ -1,8 +1,8 @@
 #ifndef MPFEM_DIRICHLET_BC_HPP
 #define MPFEM_DIRICHLET_BC_HPP
 
-#include "core/types.hpp"
 #include "core/exception.hpp"
+#include "core/types.hpp"
 #include "expr/variable_graph.hpp"
 #include "fe/element_transform.hpp"
 #include "fe/facet_element_transform.hpp"
@@ -66,10 +66,10 @@ namespace mpfem {
                     trans.setIntegrationPoint(xi);
                     Real value = 0.0;
                     if (coef) {
-                        if (coef->shape() != VariableShape::Scalar) {
+                        if (!coef->shape().isScalar()) {
                             MPFEM_THROW(ArgumentException, "Dirichlet scalar BC expects scalar variable node.");
                         }
-                        std::array<Vector3, 1> refPts{Vector3(xi[0], xi[1], xi[2])};
+                        std::array<Vector3, 1> refPts {Vector3(xi[0], xi[1], xi[2])};
                         std::array<Vector3, 1> physPts;
                         const IntegrationPoint& ip = trans.integrationPoint();
                         trans.transform(ip, physPts[0]);
@@ -79,7 +79,7 @@ namespace mpfem {
                         ctx.referencePoints = std::span<const Vector3>(refPts.data(), refPts.size());
                         ctx.physicalPoints = std::span<const Vector3>(physPts.data(), physPts.size());
                         ctx.transform = &trans;
-                        std::array<double, 1> out{0.0};
+                        std::array<double, 1> out {0.0};
                         coef->evaluateBatch(ctx, std::span<double>(out.data(), out.size()));
                         value = static_cast<Real>(out[0]);
                     }

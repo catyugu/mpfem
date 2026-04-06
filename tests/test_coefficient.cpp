@@ -22,7 +22,7 @@ TEST_F(VariableNodeTest, ConstantScalarNodeEvaluation)
 
     const VariableNode* node = manager.get("k");
     ASSERT_NE(node, nullptr);
-    ASSERT_EQ(node->shape(), VariableShape::Scalar);
+    ASSERT_TRUE(node->shape().isScalar());
 
     std::array<Vector3, 2> points {Vector3(0.0, 0.0, 0.0), Vector3(1.0, 0.0, 0.0)};
     EvaluationContext ctx;
@@ -43,7 +43,7 @@ TEST_F(VariableNodeTest, ScalarExpressionNodeEvaluation)
 
     const VariableNode* node = manager.get("f");
     ASSERT_NE(node, nullptr);
-    ASSERT_EQ(node->shape(), VariableShape::Scalar);
+    ASSERT_TRUE(node->shape().isScalar());
 
     std::array<Vector3, 2> points {Vector3(0.0, 0.0, 0.0), Vector3(2.0, 0.0, 0.0)};
     EvaluationContext ctx;

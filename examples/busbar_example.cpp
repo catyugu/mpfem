@@ -55,8 +55,8 @@ int main(int argc, char* argv[])
                 LOG_INFO << "Potential range: [" << V.values().minCoeff()
                          << ", " << V.values().maxCoeff() << "] V";
             }
-            if (result.fields.hasField("HeatTransfer")) {
-                const auto& T = result.fields.current("HeatTransfer");
+            if (result.fields.hasField("T")) {
+                const auto& T = result.fields.current("T");
                 Real minT = T.values().minCoeff();
                 Real maxT = T.values().maxCoeff();
                 LOG_INFO << "Temperature range: [" << minT << ", " << maxT << "] K";

@@ -123,8 +123,7 @@ namespace mpfem {
                 }
             }
 
-            VariableShape shape() const override { return VariableShape::Scalar; }
-            std::pair<int, int> dimensions() const override { return {1, 1}; }
+            TensorShape shape() const override { return TensorShape::scalar(); }
 
             void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override
             {
@@ -210,8 +209,7 @@ namespace mpfem {
                 }
             }
 
-            VariableShape shape() const override { return VariableShape::Matrix; }
-            std::pair<int, int> dimensions() const override { return {3, 3}; }
+            TensorShape shape() const override { return TensorShape::matrix(3, 3); }
 
             void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override
             {

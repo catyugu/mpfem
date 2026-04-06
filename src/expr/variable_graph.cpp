@@ -28,8 +28,7 @@ namespace mpfem {
             {
             }
 
-            VariableShape shape() const override { return VariableShape::Scalar; }
-            std::pair<int, int> dimensions() const override { return {1, 1}; }
+            TensorShape shape() const override { return TensorShape::scalar(); }
 
             void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override
             {
@@ -53,8 +52,7 @@ namespace mpfem {
             GridFunctionNode(std::string name, const GridFunction* field)
                 : name_(std::move(name)), field_(field) { }
 
-            VariableShape shape() const override { return VariableShape::Scalar; }
-            std::pair<int, int> dimensions() const override { return {1, 1}; }
+            TensorShape shape() const override { return TensorShape::scalar(); }
 
             void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override
             {
@@ -92,8 +90,7 @@ namespace mpfem {
             ExternalDataNode(std::string name, ValueExtractor extractor)
                 : name_(std::move(name)), extractor_(std::move(extractor)) { }
 
-            VariableShape shape() const override { return VariableShape::Scalar; }
-            std::pair<int, int> dimensions() const override { return {1, 1}; }
+            TensorShape shape() const override { return TensorShape::scalar(); }
 
             void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override
             {
@@ -119,8 +116,7 @@ namespace mpfem {
             {
             }
 
-            VariableShape shape() const override { return VariableShape::Scalar; }
-            std::pair<int, int> dimensions() const override { return {1, 1}; }
+            TensorShape shape() const override { return TensorShape::scalar(); }
 
             void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override
             {
@@ -177,8 +173,7 @@ namespace mpfem {
             {
             }
 
-            VariableShape shape() const override { return VariableShape::Matrix; }
-            std::pair<int, int> dimensions() const override { return {3, 3}; }
+            TensorShape shape() const override { return TensorShape::matrix(3, 3); }
 
             void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override
             {
@@ -294,20 +289,21 @@ namespace mpfem {
         }
 
         // Create node based on expression shape (inferred from compilation result)
-        switch (program.shape()) {
-        case VariableShape::Scalar:
+        // Note: program.shape() returns VariableShape, convert to TensorShape
+        TensorShape shape = TensorShape::fromEnum(program.shape());
+        if (shape.isScalar()) {
             nodes_[std::move(name)] = std::make_unique<RuntimeScalarExpressionNode>(
                 std::move(expression),
                 std::move(dependencies),
                 std::move(program));
-            break;
-        case VariableShape::Matrix:
+        }
+        else if (shape.isMatrix()) {
             nodes_[std::move(name)] = std::make_unique<RuntimeMatrixExpressionNode>(
                 std::move(expression),
                 std::move(dependencies),
                 std::move(program));
-            break;
-        default:
+        }
+        else {
             MPFEM_THROW(ArgumentException, "Unsupported expression shape in registerExpression.");
         }
         graphDirty_ = true;

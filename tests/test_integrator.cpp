@@ -1,15 +1,15 @@
-#include <gtest/gtest.h>
-#include <cmath>
-#include "mesh/mesh.hpp"
-#include "mesh/geometry.hpp"
-#include "fe/fe_space.hpp"
-#include "fe/fe_collection.hpp"
-#include "fe/element_transform.hpp"
-#include "fe/quadrature.hpp"
-#include "expr/variable_graph.hpp"
-#include "assembly/integrators.hpp"
 #include "assembly/assembler.hpp"
+#include "assembly/integrators.hpp"
 #include "core/logger.hpp"
+#include "expr/variable_graph.hpp"
+#include "fe/element_transform.hpp"
+#include "fe/fe_collection.hpp"
+#include "fe/fe_space.hpp"
+#include "fe/quadrature.hpp"
+#include "mesh/geometry.hpp"
+#include "mesh/mesh.hpp"
+#include <cmath>
+#include <gtest/gtest.h>
 
 #include <array>
 #include <stdexcept>
@@ -18,81 +18,80 @@ using namespace mpfem;
 
 namespace {
 
-class ScalarConstantNode final : public VariableNode {
-public:
-    explicit ScalarConstantNode(double value) : value_(value) {}
+    class ScalarConstantNode final : public VariableNode {
+    public:
+        explicit ScalarConstantNode(double value) : value_(value) { }
 
-    VariableShape shape() const override { return VariableShape::Scalar; }
-    std::pair<int, int> dimensions() const override { return {1, 1}; }
+        TensorShape shape() const override { return TensorShape::scalar(); }
 
-    void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override
-    {
-        const size_t n = ctx.physicalPoints.empty() ? dest.size() : ctx.physicalPoints.size();
-        if (dest.size() != n) {
-            throw std::runtime_error("ScalarConstantNode destination size mismatch");
+        void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override
+        {
+            const size_t n = ctx.physicalPoints.empty() ? dest.size() : ctx.physicalPoints.size();
+            if (dest.size() != n) {
+                throw std::runtime_error("ScalarConstantNode destination size mismatch");
+            }
+            for (size_t i = 0; i < dest.size(); ++i) {
+                dest[i] = value_;
+            }
         }
-        for (size_t i = 0; i < dest.size(); ++i) {
-            dest[i] = value_;
-        }
-    }
 
-private:
-    double value_ = 0.0;
-};
+    private:
+        double value_ = 0.0;
+    };
 
-class MatrixConstantNode final : public VariableNode {
-public:
-    explicit MatrixConstantNode(const Matrix3& value) : value_(value) {}
+    class MatrixConstantNode final : public VariableNode {
+    public:
+        explicit MatrixConstantNode(const Matrix3& value) : value_(value) { }
 
-    VariableShape shape() const override { return VariableShape::Matrix; }
-    std::pair<int, int> dimensions() const override { return {3, 3}; }
+        TensorShape shape() const override { return TensorShape::matrix(3, 3); }
 
-    void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override
-    {
-        const size_t n = ctx.physicalPoints.empty() ? (dest.size() / 9ull) : ctx.physicalPoints.size();
-        if (dest.size() != n * 9ull) {
-            throw std::runtime_error("MatrixConstantNode destination size mismatch");
-        }
-        for (size_t i = 0; i < n; ++i) {
-            const size_t base = i * 9ull;
-            for (int r = 0; r < 3; ++r) {
-                for (int c = 0; c < 3; ++c) {
-                    dest[base + static_cast<size_t>(r * 3 + c)] = value_(r, c);
+        void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override
+        {
+            const size_t n = ctx.physicalPoints.empty() ? (dest.size() / 9ull) : ctx.physicalPoints.size();
+            if (dest.size() != n * 9ull) {
+                throw std::runtime_error("MatrixConstantNode destination size mismatch");
+            }
+            for (size_t i = 0; i < n; ++i) {
+                const size_t base = i * 9ull;
+                for (int r = 0; r < 3; ++r) {
+                    for (int c = 0; c < 3; ++c) {
+                        dest[base + static_cast<size_t>(r * 3 + c)] = value_(r, c);
+                    }
                 }
             }
         }
-    }
 
-private:
-    Matrix3 value_ = Matrix3::Zero();
-};
+    private:
+        Matrix3 value_ = Matrix3::Zero();
+    };
 
 } // namespace
 
 class IntegratorTest : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void SetUp() override
+    {
         Logger::setLevel(LogLevel::Warning);
-        
+
         mesh_.setDim(3);
         mesh_.addVertex(0.0, 0.0, 0.0);
         mesh_.addVertex(1.0, 0.0, 0.0);
         mesh_.addVertex(0.0, 1.0, 0.0);
         mesh_.addVertex(0.0, 0.0, 1.0);
         mesh_.addElement(Geometry::Tetrahedron, {0, 1, 2, 3}, 1, 1);
-        
+
         fes_ = std::make_unique<FESpace>(&mesh_, std::make_unique<FECollection>(1));
-        
+
         k1_ = std::make_unique<ScalarConstantNode>(1.0);
         k2_ = std::make_unique<ScalarConstantNode>(2.0);
-        
+
         // Initialize matrix coefficients for diffusion tests
         Matrix3 D1 = Matrix3::Identity() * 1.0;
         Matrix3 D2 = Matrix3::Identity() * 2.0;
         mat1_ = std::make_unique<MatrixConstantNode>(D1);
         mat2_ = std::make_unique<MatrixConstantNode>(D2);
     }
-    
+
     Mesh mesh_;
     std::unique_ptr<FESpace> fes_;
     std::unique_ptr<VariableNode> k1_;
@@ -101,42 +100,44 @@ protected:
     std::unique_ptr<VariableNode> mat2_;
 };
 
-TEST_F(IntegratorTest, DiffusionElementMatrix) {
+TEST_F(IntegratorTest, DiffusionElementMatrix)
+{
     ElementTransform trans(&mesh_, 0);
     const ReferenceElement* refElem = fes_->elementRefElement(0);
-    
+
     DiffusionIntegrator integ(mat1_.get());
-    
+
     Matrix elmat;
     integ.assembleElementMatrix(*refElem, trans, elmat);
-    
+
     EXPECT_EQ(elmat.rows(), 4);
     EXPECT_EQ(elmat.cols(), 4);
-    
+
     // Check symmetry
     for (int i = 0; i < 4; ++i) {
         for (int j = i + 1; j < 4; ++j) {
             EXPECT_NEAR(elmat(i, j), elmat(j, i), 1e-12);
         }
     }
-    
+
     // Check diagonal positive
     for (int i = 0; i < 4; ++i) {
         EXPECT_GT(elmat(i, i), 0.0);
     }
 }
 
-TEST_F(IntegratorTest, DiffusionMatrixScaling) {
+TEST_F(IntegratorTest, DiffusionMatrixScaling)
+{
     ElementTransform trans(&mesh_, 0);
     const ReferenceElement* refElem = fes_->elementRefElement(0);
-    
+
     DiffusionIntegrator integ1(mat1_.get());
     DiffusionIntegrator integ2(mat2_.get());
-    
+
     Matrix elmat1, elmat2;
     integ1.assembleElementMatrix(*refElem, trans, elmat1);
     integ2.assembleElementMatrix(*refElem, trans, elmat2);
-    
+
     for (int i = 0; i < 4; ++i) {
         for (int j = 0; j < 4; ++j) {
             EXPECT_NEAR(elmat2(i, j), 2.0 * elmat1(i, j), 1e-12);
@@ -144,73 +145,77 @@ TEST_F(IntegratorTest, DiffusionMatrixScaling) {
     }
 }
 
-TEST_F(IntegratorTest, AnisotropicDiffusion) {
+TEST_F(IntegratorTest, AnisotropicDiffusion)
+{
     ElementTransform trans(&mesh_, 0);
     const ReferenceElement* refElem = fes_->elementRefElement(0);
-    
+
     // Create anisotropic matrix coefficient
-    Matrix3 D = Matrix3::Identity() * 2.0;  // Diagonal = 2
+    Matrix3 D = Matrix3::Identity() * 2.0; // Diagonal = 2
     auto matCoef = std::make_unique<MatrixConstantNode>(D);
-    
+
     // DiffusionIntegrator now handles both isotropic and anisotropic cases
     DiffusionIntegrator integ(matCoef.get());
-    
+
     Matrix elmat;
     integ.assembleElementMatrix(*refElem, trans, elmat);
-    
+
     EXPECT_EQ(elmat.rows(), 4);
     EXPECT_EQ(elmat.cols(), 4);
-    
+
     // Check symmetry
     for (int i = 0; i < 4; ++i) {
         for (int j = i + 1; j < 4; ++j) {
             EXPECT_NEAR(elmat(i, j), elmat(j, i), 1e-12);
         }
     }
-    
+
     // Diagonal should be positive
     for (int i = 0; i < 4; ++i) {
         EXPECT_GT(elmat(i, i), 0.0);
     }
 }
 
-TEST_F(IntegratorTest, MassElementMatrix) {
+TEST_F(IntegratorTest, MassElementMatrix)
+{
     ElementTransform trans(&mesh_, 0);
     const ReferenceElement* refElem = fes_->elementRefElement(0);
-    
+
     MassIntegrator integ(k1_.get());
-    
+
     Matrix elmat;
     integ.assembleElementMatrix(*refElem, trans, elmat);
-    
+
     EXPECT_EQ(elmat.rows(), 4);
     EXPECT_EQ(elmat.cols(), 4);
-    
+
     for (int i = 0; i < 4; ++i) {
         for (int j = i + 1; j < 4; ++j) {
             EXPECT_NEAR(elmat(i, j), elmat(j, i), 1e-12);
         }
     }
-    
+
     for (int i = 0; i < 4; ++i) {
         EXPECT_GT(elmat(i, i), 0.0);
     }
 }
 
-TEST_F(IntegratorTest, DomainLoadVector) {
+TEST_F(IntegratorTest, DomainLoadVector)
+{
     ElementTransform trans(&mesh_, 0);
     const ReferenceElement* refElem = fes_->elementRefElement(0);
-    
+
     DomainLFIntegrator integ(k1_.get());
-    
+
     Vector elvec;
     integ.assembleElementVector(*refElem, trans, elvec);
-    
+
     EXPECT_EQ(elvec.size(), 4);
     EXPECT_GT(elvec.sum(), 0.0);
 }
 
-TEST_F(IntegratorTest, StrainLoadVectorScaling) {
+TEST_F(IntegratorTest, StrainLoadVectorScaling)
+{
     ElementTransform trans(&mesh_, 0);
     const ReferenceElement* refElem = fes_->elementRefElement(0);
 
@@ -240,32 +245,35 @@ TEST_F(IntegratorTest, StrainLoadVectorScaling) {
     }
 }
 
-TEST_F(IntegratorTest, BilinearFormAssembler) {
+TEST_F(IntegratorTest, BilinearFormAssembler)
+{
     BilinearFormAssembler assembler(fes_.get());
-    
+
     assembler.addDomainIntegrator(std::make_unique<DiffusionIntegrator>(mat1_.get()));
     assembler.assemble();
-    
+
     SparseMatrix& A = assembler.matrix();
-    
+
     EXPECT_EQ(A.rows(), 4);
     EXPECT_EQ(A.cols(), 4);
     EXPECT_GT(A.nonZeros(), 0);
 }
 
-TEST_F(IntegratorTest, LinearFormAssembler) {
+TEST_F(IntegratorTest, LinearFormAssembler)
+{
     LinearFormAssembler assembler(fes_.get());
-    
+
     assembler.addDomainIntegrator(std::make_unique<DomainLFIntegrator>(k1_.get()));
     assembler.assemble();
-    
+
     Vector& b = assembler.vector();
-    
+
     EXPECT_EQ(b.size(), 4);
     EXPECT_GT(b.norm(), 0.0);
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char** argv)
+{
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }
