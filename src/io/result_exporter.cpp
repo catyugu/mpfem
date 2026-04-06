@@ -72,14 +72,14 @@ namespace mpfem {
         std::vector<const GridFunction*> uFields(snapshots.size(), nullptr);
         for (size_t i = 0; i < snapshots.size(); ++i) {
             const auto& fields = snapshots[i];
-            if (fields.hasField("Electrostatics")) {
-                vFields[i] = &fields.current("Electrostatics");
+            if (fields.hasField("V")) {
+                vFields[i] = &fields.current("V");
             }
-            if (fields.hasField("HeatTransfer")) {
-                tFields[i] = &fields.current("HeatTransfer");
+            if (fields.hasField("T")) {
+                tFields[i] = &fields.current("T");
             }
-            if (fields.hasField("Structural")) {
-                uFields[i] = &fields.current("Structural");
+            if (fields.hasField("u")) {
+                uFields[i] = &fields.current("u");
             }
         }
 
@@ -151,14 +151,14 @@ namespace mpfem {
         file << "% Length unit:        m\n";
         file << "x                       y                        z                       V (V)                     T (K)                     disp (m)\n";
 
-        const GridFunction* V = fields.hasField("Electrostatics")
-            ? &fields.current("Electrostatics")
+        const GridFunction* V = fields.hasField("V")
+            ? &fields.current("V")
             : nullptr;
-        const GridFunction* T = fields.hasField("HeatTransfer")
-            ? &fields.current("HeatTransfer")
+        const GridFunction* T = fields.hasField("T")
+            ? &fields.current("T")
             : nullptr;
-        const GridFunction* u = fields.hasField("Structural")
-            ? &fields.current("Structural")
+        const GridFunction* u = fields.hasField("u")
+            ? &fields.current("u")
             : nullptr;
 
         // Data
@@ -239,14 +239,14 @@ namespace mpfem {
         file << "<Piece NumberOfPoints=\"" << numExportPoints
              << "\" NumberOfCells=\"" << mesh.numElements() << "\">\n";
 
-        const GridFunction* V = fields.hasField("Electrostatics")
-            ? &fields.current("Electrostatics")
+        const GridFunction* V = fields.hasField("V")
+            ? &fields.current("V")
             : nullptr;
-        const GridFunction* T = fields.hasField("HeatTransfer")
-            ? &fields.current("HeatTransfer")
+        const GridFunction* T = fields.hasField("T")
+            ? &fields.current("T")
             : nullptr;
-        const GridFunction* u = fields.hasField("Structural")
-            ? &fields.current("Structural")
+        const GridFunction* u = fields.hasField("u")
+            ? &fields.current("u")
             : nullptr;
 
         // Point data - scalar fields

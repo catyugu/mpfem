@@ -19,7 +19,7 @@ namespace mpfem {
         StructuralSolver() = default;
         explicit StructuralSolver(int order) { order_ = order; }
 
-        std::string fieldName() const override { return "Structural"; }
+        std::string fieldName() const override { return "u"; }
 
         bool initialize(const Mesh& mesh, FieldValues& fieldValues, int order, double initialDisplacement = 0.0);
 

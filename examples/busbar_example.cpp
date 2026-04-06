@@ -50,8 +50,8 @@ int main(int argc, char* argv[])
             }
 
             // Print summary
-            if (result.fields.hasField("Electrostatics")) {
-                const auto& V = result.fields.current("Electrostatics");
+            if (result.fields.hasField("V")) {
+                const auto& V = result.fields.current("V");
                 LOG_INFO << "Potential range: [" << V.values().minCoeff()
                          << ", " << V.values().maxCoeff() << "] V";
             }
@@ -63,8 +63,8 @@ int main(int argc, char* argv[])
                 LOG_INFO << "Temperature range: [" << (minT - 273.15) << ", "
                          << (maxT - 273.15) << "] C";
             }
-            if (result.fields.hasField("Structural")) {
-                const auto& u = result.fields.current("Structural");
+            if (result.fields.hasField("u")) {
+                const auto& u = result.fields.current("u");
                 Real maxDisp = 0.0;
                 for (Index i = 0; i < u.numDofs() / 3; ++i) {
                     Real dx = u(i * 3);

@@ -15,10 +15,10 @@ namespace mpfem {
         auto fec = std::make_unique<FECollection>(order_, FECollection::Type::H1);
         fes_ = std::make_unique<FESpace>(&mesh, std::move(fec), 3);
 
-        fieldValues.createVectorField("Structural", fes_.get(), 3);
+        fieldValues.createVectorField("u", fes_.get(), 3);
 
         // Set initial displacement value for all components
-        fieldValues.current("Structural").values().setConstant(initialDisplacement);
+        fieldValues.current("u").values().setConstant(initialDisplacement);
 
         matAsm_ = std::make_unique<BilinearFormAssembler>(fes_.get());
         vecAsm_ = std::make_unique<LinearFormAssembler>(fes_.get());
