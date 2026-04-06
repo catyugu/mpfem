@@ -10,8 +10,6 @@
 #include "physics/field_values.hpp"
 #include <string>
 #include <string_view>
-#include <unordered_map>
-#include <vector>
 
 namespace mpfem {
 
@@ -20,38 +18,12 @@ namespace mpfem {
     class StructuralSolver;
 
     class Problem {
-    protected:
-        struct DomainPropertyKey {
-            std::string property;
-            int domainId = -1;
-
-            bool operator==(const DomainPropertyKey& other) const
-            {
-                return domainId == other.domainId && property == other.property;
-            }
-        };
-
-        struct DomainPropertyKeyHash {
-            std::size_t operator()(const DomainPropertyKey& key) const
-            {
-                constexpr std::size_t kMix = 0x9e3779b97f4a7c15ull;
-                const std::size_t h1 = std::hash<std::string> {}(key.property);
-                const std::size_t h2 = std::hash<int> {}(key.domainId);
-                return h1 ^ (h2 + kMix + (h1 << 6) + (h1 >> 2));
-            }
-        };
-
-        std::unordered_map<DomainPropertyKey, const VariableNode*, DomainPropertyKeyHash> domainScalarNodes;
-        std::unordered_map<DomainPropertyKey, const VariableNode*, DomainPropertyKeyHash> domainMatrixNodes;
-        std::vector<std::unique_ptr<VariableNode>> ownedNodes;
-
+    public:
         /// @brief Unified variable manager for the entire problem
         VariableManager globalVariables_;
 
-        /// @brief Isolated managers for one-off expressions that shouldn't pollute global namespace
-        std::vector<std::unique_ptr<VariableManager>> expressionManagers_;
+        void registerCaseDefinitionVariables();
 
-    public:
         virtual ~Problem();
         virtual bool isTransient() const { return false; }
 
@@ -76,21 +48,6 @@ namespace mpfem {
         MaterialDatabase materials;
         CaseDefinition caseDef;
         FieldValues fieldValues;
-
-        const VariableNode* findDomainScalarNode(std::string_view property, int domainId) const;
-        const VariableNode* findDomainMatrixNode(std::string_view property, int domainId) const;
-        const VariableNode* setDomainScalarNode(std::string property,
-            int domainId,
-            const VariableNode* node);
-        const VariableNode* setDomainMatrixNode(std::string property,
-            int domainId,
-            const VariableNode* node);
-
-        const VariableNode* ownNode(std::unique_ptr<VariableNode> node);
-        const VariableNode* ownScalarExpressionNode(std::string expression,
-            GraphRuntimeResolvers resolvers = {});
-        const VariableNode* ownMatrixExpressionNode(std::string expression,
-            GraphRuntimeResolvers resolvers = {});
     };
 
 } // namespace mpfem

@@ -25,26 +25,6 @@
 
 每一步都保证系统处于可编译、可运行的完整状态，宁可采用破坏性修改也不保留向后兼容的包袱。
 
-### 增强解析器，实现公式化的多物理场耦合 (Formula-based Coupling)
-
-**目标**: 淘汰 `JouleHeatNode` 和 `ThermalExpansionStressNode`，用原生表达式取代。
-
-1.  **扩展 AST 支持算子**: 在 `expression_parser.cpp` 中支持空间微分算子和张量算子，例如 `grad(field)`, `dot(A, B)`, `sym(A)`。
-2.  **重写耦合逻辑**: 在构建耦合时，直接向 `VariableManager` 注册字符串表达式。
-    * **重构前**:
-        ```cpp
-        // src/problem/physics_problem_builder.cpp
-        const VariableNode* joule = problem.ownNode(
-            std::make_unique<JouleHeatNode>(V_field, sigmaByDomain));
-        ```
-    * **重构后 (破坏式)**:
-        ```cpp
-        // 直接编译公式，解析器负责推导 grad(V) 并在执行时通过 FieldEvaluationNode 获取梯度
-        problem.materials.registerExpression("Q_joule", "dot(grad(V), sigma * grad(V))");
-        ```
-3.  **删除旧类**: 彻底删除 `physics_problem_builder.cpp` 中的 `JouleHeatNode` 和 `ThermalExpansionStressNode`。
-    * **验证标准**: 稳态或瞬态的焦耳热计算结果与旧版本完全一致，但代码量锐减。
-
 ### 引入场自注册机制，废弃硬编码解析器
 **目标**：消除 `GraphRuntimeResolvers` 和 `classifyRuntimeField`，让求解器将其结果作为 DAG 节点直接注入到全局变量图中。
 
@@ -203,21 +183,3 @@
 3.  **精简 Node 的求值：**
     `ExpressionNode::evaluateBatch` 现在只需要直接从 `workspace.buffers[dependencyNode]` 中读取数据作为输入，不再调用任何子节点的 evaluate。
 *验证*：打印求值日志，验证每个节点严格只被求值一次，没有重复计算。
-
-#### 物理场属性绑定泛化
-**目标**：剥离 `t, x, y, z` 这类硬编码，将其抽象为"全局输入槽位"（Global Input Slots）或特殊节点。
-
-1.  **废弃 `BuiltInSymbolKind`：**
-    不要在语法树解析阶段区分 `t` 还是普通变量。所有东西都是变量。
-2.  **注册环境常量/变量节点：**
-    在系统初始化时，自动向 `VariableManager` 注册名为 `x`, `y`, `z`, `t` 的特殊外部数据节点（ExternalDataNode）。
-    ```cpp
-    // 伪代码：在组装器初始化时
-    variableManager.registerExternalSource("t", [](const EvaluationContext& ctx, int ptIdx) { return ctx.time; });
-    variableManager.registerExternalSource("x", [](const EvaluationContext& ctx, int ptIdx) { return ctx.physicalPoints[ptIdx].x(); });
-    ```
-    这样，在用户输入 `sin(x*t)` 时，系统只需按照普通的依赖关系将其连接到 `x` 和 `t` 的 ExternalDataNode 上，而不需要在解析器里写死对 `classifyBuiltInSymbol` 的判断。
-3.  **统一的物理场绑定：**
-    对于位移场 `u`、温度场 `T` 等有限元解，同样使用 `registerExternalSource` 绑定。使得**内置坐标、时间、计算出的物理场，在图引擎看来没有任何区别**。
-
-*验证*：代码大幅减少，原有的所有硬编码判断分支消失。所有上下文通过统一的图输入节点流入计算引擎。

@@ -14,6 +14,7 @@
 #include "transient_problem.hpp"
 #include <array>
 #include <cstdint>
+#include <atomic>
 #include <string_view>
 #include <unordered_map>
 
@@ -58,8 +59,6 @@ namespace mpfem {
         const VariableNode* makeScalarExpressionNode(Problem& problem,
             const std::string& expression);
 
-        const VariableNode* makeMatrixExpressionNode(Problem& problem,
-            const std::string& expression);
 
         template <typename GetterFn>
         std::unordered_map<int, const VariableNode*> collectDomainNodes(const std::set<int>& domainIds,
@@ -71,34 +70,6 @@ namespace mpfem {
                 byDomain.emplace(domainId, getter(domainId));
             }
             return byDomain;
-        }
-
-        const VariableNode* requireDomainMatrixNode(Problem& problem,
-            int domainId,
-            std::string_view property)
-        {
-            if (const VariableNode* existing = problem.findDomainMatrixNode(property, domainId)) {
-                return existing;
-            }
-
-            const std::string& expression = problem.materials.matrixExpressionByDomain(domainId, property);
-            return problem.setDomainMatrixNode(std::string(property),
-                domainId,
-                makeMatrixExpressionNode(problem, expression));
-        }
-
-        const VariableNode* requireDomainScalarNode(Problem& problem,
-            int domainId,
-            std::string_view property)
-        {
-            if (const VariableNode* existing = problem.findDomainScalarNode(property, domainId)) {
-                return existing;
-            }
-
-            const std::string& expression = problem.materials.scalarExpressionByDomain(domainId, property);
-            return problem.setDomainScalarNode(std::string(property),
-                domainId,
-                makeScalarExpressionNode(problem, expression));
         }
 
         enum class RuntimeFieldKind {
@@ -135,50 +106,84 @@ namespace mpfem {
 
             resolvers.symbolBinder =
                 [&problem](std::string_view symbol) -> GraphExternalSymbolResolver {
-                    const RuntimeFieldKind kind = classifyRuntimeField(symbol);
-                    if (kind == RuntimeFieldKind::Unknown) {
-                        return {};
-                    }
+                const RuntimeFieldKind kind = classifyRuntimeField(symbol);
+                if (kind == RuntimeFieldKind::Unknown) {
+                    return {};
+                }
 
-                    return [&problem, kind](const EvaluationContext& ctx,
-                                            size_t,
-                                                   double& value) -> bool {
-                        const GridFunction* field = resolveRuntimeField(problem, kind);
-                        if (!field) {
-                            return false;
-                        }
-                        if (!ctx.transform) {
-                            return false;
-                        }
-                        const auto& ip = ctx.transform->integrationPoint();
-                        value = field->eval(ctx.transform->elementIndex(), &ip.xi);
-                        return true;
-                    };
+                return [&problem, kind](const EvaluationContext& ctx,
+                           size_t,
+                           double& value) -> bool {
+                    const GridFunction* field = resolveRuntimeField(problem, kind);
+                    if (!field) {
+                        return false;
+                    }
+                    if (!ctx.transform) {
+                        return false;
+                    }
+                    const auto& ip = ctx.transform->integrationPoint();
+                    value = field->eval(ctx.transform->elementIndex(), &ip.xi);
+                    return true;
                 };
+            };
 
             return resolvers;
+        }
+
+        const VariableNode* requireDomainMatrixNode(Problem& problem,
+            int domainId,
+            std::string_view property)
+        {
+            std::string name = std::string(property) + "_" + std::to_string(domainId);
+
+            if (const VariableNode* existing = problem.globalVariables_.get(name)) {
+                return existing;
+            }
+
+            const std::string& expression = problem.materials.matrixExpressionByDomain(domainId, property);
+            problem.globalVariables_.registerMatrixExpression(
+                name,
+                expression,
+                makeRuntimeExpressionResolvers(problem));
+
+            return problem.globalVariables_.get(name);
+        }
+
+        const VariableNode* requireDomainScalarNode(Problem& problem,
+            int domainId,
+            std::string_view property)
+        {
+            std::string name = std::string(property) + "_" + std::to_string(domainId);
+
+            if (const VariableNode* existing = problem.globalVariables_.get(name)) {
+                return existing;
+            }
+
+            const std::string& expression = problem.materials.scalarExpressionByDomain(domainId, property);
+            problem.globalVariables_.registerScalarExpression(
+                name,
+                expression,
+                makeRuntimeExpressionResolvers(problem));
+
+            return problem.globalVariables_.get(name);
         }
 
         const VariableNode* makeScalarExpressionNode(Problem& problem,
             const std::string& expression)
         {
-            return problem.ownScalarExpressionNode(
+            static std::atomic<std::uint64_t> id {0};
+            std::string name = "$expr_scalar_" + std::to_string(id++);
+            problem.globalVariables_.registerScalarExpression(
+                name,
                 expression,
                 makeRuntimeExpressionResolvers(problem));
-        }
-
-        const VariableNode* makeMatrixExpressionNode(Problem& problem,
-            const std::string& expression)
-        {
-            return problem.ownMatrixExpressionNode(
-                expression,
-                makeRuntimeExpressionResolvers(problem));
+            return problem.globalVariables_.get(name);
         }
 
         class JouleHeatNode final : public VariableNode {
         public:
             JouleHeatNode(const GridFunction* voltageField,
-                          std::unordered_map<int, const VariableNode*> sigmaByDomain)
+                std::unordered_map<int, const VariableNode*> sigmaByDomain)
                 : voltageField_(voltageField), sigmaByDomain_(std::move(sigmaByDomain))
             {
                 if (!voltageField_) {
@@ -216,19 +221,21 @@ namespace mpfem {
                         };
                         ctx.transform->setIntegrationPoint(xi);
                         refPoint = ctx.referencePoints[i];
-                    } else {
+                    }
+                    else {
                         const auto& ip = ctx.transform->integrationPoint();
                         refPoint = Vector3(ip.xi, ip.eta, ip.zeta);
                     }
                     if (i < ctx.physicalPoints.size()) {
                         physPoint = ctx.physicalPoints[i];
-                    } else {
+                    }
+                    else {
                         const auto& ip = ctx.transform->integrationPoint();
                         ctx.transform->transform(ip, physPoint);
                     }
 
-                    std::array<Vector3, 1> refPts{refPoint};
-                    std::array<Vector3, 1> physPts{physPoint};
+                    std::array<Vector3, 1> refPts {refPoint};
+                    std::array<Vector3, 1> physPts {physPoint};
                     EvaluationContext one;
                     one.time = ctx.time;
                     one.domainId = domId;
@@ -237,7 +244,7 @@ namespace mpfem {
                     one.physicalPoints = std::span<const Vector3>(physPts.data(), physPts.size());
                     one.transform = ctx.transform;
 
-                    std::array<double, 9> sigmaValues{};
+                    std::array<double, 9> sigmaValues {};
                     sigmaNode->evaluateBatch(one, std::span<double>(sigmaValues.data(), sigmaValues.size()));
                     Matrix3 sigma = Matrix3::Zero();
                     for (int r = 0; r < 3; ++r) {
@@ -260,15 +267,11 @@ namespace mpfem {
         class ThermalExpansionStressNode final : public VariableNode {
         public:
             ThermalExpansionStressNode(const HeatTransferSolver* heat,
-                                       std::unordered_map<int, const VariableNode*> alphaByDomain,
-                                       std::unordered_map<int, const VariableNode*> youngByDomain,
-                                       std::unordered_map<int, const VariableNode*> nuByDomain,
-                                       Real tref)
-                : heat_(heat),
-                  alphaByDomain_(std::move(alphaByDomain)),
-                  youngByDomain_(std::move(youngByDomain)),
-                  nuByDomain_(std::move(nuByDomain)),
-                  tref_(tref)
+                std::unordered_map<int, const VariableNode*> alphaByDomain,
+                std::unordered_map<int, const VariableNode*> youngByDomain,
+                std::unordered_map<int, const VariableNode*> nuByDomain,
+                Real tref)
+                : heat_(heat), alphaByDomain_(std::move(alphaByDomain)), youngByDomain_(std::move(youngByDomain)), nuByDomain_(std::move(nuByDomain)), tref_(tref)
             {
                 if (!heat_) {
                     MPFEM_THROW(ArgumentException, "ThermalExpansionStressNode requires heat solver.");
@@ -304,19 +307,21 @@ namespace mpfem {
                         };
                         ctx.transform->setIntegrationPoint(xi);
                         refPoint = ctx.referencePoints[i];
-                    } else {
+                    }
+                    else {
                         const auto& ip = ctx.transform->integrationPoint();
                         refPoint = Vector3(ip.xi, ip.eta, ip.zeta);
                     }
                     if (i < ctx.physicalPoints.size()) {
                         physPoint = ctx.physicalPoints[i];
-                    } else {
+                    }
+                    else {
                         const auto& ip = ctx.transform->integrationPoint();
                         ctx.transform->transform(ip, physPoint);
                     }
 
-                    std::array<Vector3, 1> refPts{refPoint};
-                    std::array<Vector3, 1> physPts{physPoint};
+                    std::array<Vector3, 1> refPts {refPoint};
+                    std::array<Vector3, 1> physPts {physPoint};
                     EvaluationContext one;
                     one.time = ctx.time;
                     one.domainId = domId;
@@ -325,9 +330,9 @@ namespace mpfem {
                     one.physicalPoints = std::span<const Vector3>(physPts.data(), physPts.size());
                     one.transform = ctx.transform;
 
-                    std::array<double, 9> alphaValues{};
-                    std::array<double, 1> eValues{0.0};
-                    std::array<double, 1> nuValues{0.0};
+                    std::array<double, 9> alphaValues {};
+                    std::array<double, 1> eValues {0.0};
+                    std::array<double, 1> nuValues {0.0};
                     alphaNode->evaluateBatch(one, std::span<double>(alphaValues.data(), alphaValues.size()));
                     eNode->evaluateBatch(one, std::span<double>(eValues.data(), eValues.size()));
                     nuNode->evaluateBatch(one, std::span<double>(nuValues.data(), nuValues.size()));
@@ -416,6 +421,9 @@ namespace mpfem {
             problem->mesh = std::move(input.mesh);
             problem->materials = std::move(input.materials);
             problem->materials.buildDomainIndex(problem->caseDef.materialAssignments);
+
+            // Register case variables to globalVariables_ before building expressions
+            problem->registerCaseDefinitionVariables();
 
             buildSolvers(*problem);
 
@@ -550,8 +558,11 @@ namespace mpfem {
                     return requireDomainMatrixNode(problem, domainId, kPropElectricConductivity);
                 });
 
-            const VariableNode* joule = problem.ownNode(
-                std::make_unique<JouleHeatNode>(V_field, sigmaByDomain));
+            static std::atomic<std::uint64_t> id {0};
+            std::string name = "JouleHeat_" + std::to_string(id++);
+            auto jouleNode = std::make_unique<JouleHeatNode>(V_field, sigmaByDomain);
+            problem.globalVariables_.adoptNode(std::move(jouleNode), name);
+            const VariableNode* joule = problem.globalVariables_.get(name);
             problem.heatTransfer->setHeatSource(activeDomains, joule);
             LOG_INFO << "Joule heating domains: " << activeDomains.size() << " domains";
         }
@@ -580,13 +591,16 @@ namespace mpfem {
                     return requireDomainScalarNode(problem, domainId, kPropPoissonRatio);
                 });
 
-            const VariableNode* stressCoef = problem.ownNode(
-                std::make_unique<ThermalExpansionStressNode>(
-                    problem.heatTransfer.get(),
-                    alphaByDomain,
-                    youngByDomain,
-                    nuByDomain,
-                    T_ref));
+            static std::atomic<std::uint64_t> id {0};
+            std::string name = "ThermalExpansionStress_" + std::to_string(id++);
+            auto stressNode = std::make_unique<ThermalExpansionStressNode>(
+                problem.heatTransfer.get(),
+                alphaByDomain,
+                youngByDomain,
+                nuByDomain,
+                T_ref);
+            problem.globalVariables_.adoptNode(std::move(stressNode), name);
+            const VariableNode* stressCoef = problem.globalVariables_.get(name);
             problem.structural->setStrainLoad(activeDomains, stressCoef);
             LOG_INFO << "Thermal expansion coupling enabled (T_ref = " << T_ref << " K)";
         }

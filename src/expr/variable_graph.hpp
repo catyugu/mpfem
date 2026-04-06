@@ -75,6 +75,8 @@ namespace mpfem {
         void registerExternalSource(std::string name,
             std::function<double(const EvaluationContext&, size_t pointIndex)> extractor);
 
+        void adoptNode(std::unique_ptr<VariableNode> node, std::string name);
+
         void compileGraph();
 
     private:

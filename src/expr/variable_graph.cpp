@@ -430,6 +430,12 @@ namespace mpfem {
         graphDirty_ = true;
     }
 
+    void VariableManager::adoptNode(std::unique_ptr<VariableNode> node, std::string name)
+    {
+        nodes_[std::move(name)] = std::move(node);
+        graphDirty_ = true;
+    }
+
     const VariableNode* VariableManager::get(std::string_view name) const
     {
         const auto it = nodes_.find(std::string(name));
