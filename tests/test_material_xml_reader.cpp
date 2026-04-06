@@ -1,8 +1,8 @@
 #include <gtest/gtest.h>
 
-#include "io/material_xml_reader.hpp"
-#include "expr/expression_parser.hpp"
 #include "core/logger.hpp"
+#include "expr/expression_parser.hpp"
+#include "io/material_xml_reader.hpp"
 
 #include <map>
 #include <stdexcept>
@@ -10,20 +10,20 @@
 
 namespace {
 
-std::vector<double> buildInputs(const std::vector<std::string>& dependencies,
-    const std::map<std::string, double>& vars)
-{
-    std::vector<double> inputs;
-    inputs.reserve(dependencies.size());
-    for (const std::string& symbol : dependencies) {
-        const auto it = vars.find(symbol);
-        if (it == vars.end()) {
-            throw std::runtime_error("Missing test variable: " + symbol);
+    std::vector<double> buildInputs(const std::vector<std::string>& dependencies,
+        const std::map<std::string, double>& vars)
+    {
+        std::vector<double> inputs;
+        inputs.reserve(dependencies.size());
+        for (const std::string& symbol : dependencies) {
+            const auto it = vars.find(symbol);
+            if (it == vars.end()) {
+                throw std::runtime_error("Missing test variable: " + symbol);
+            }
+            inputs.push_back(it->second);
         }
-        inputs.push_back(it->second);
+        return inputs;
     }
-    return inputs;
-}
 
 } // namespace
 
@@ -31,11 +31,13 @@ using namespace mpfem;
 
 class MaterialXmlReaderTest : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void SetUp() override
+    {
         Logger::setLevel(LogLevel::Warning);
     }
 
-    static std::string dataPath(const std::string& relativePath) {
+    static std::string dataPath(const std::string& relativePath)
+    {
 #ifdef MPFEM_PROJECT_ROOT
         return std::string(MPFEM_PROJECT_ROOT) + "/" + relativePath;
 #else
@@ -43,15 +45,17 @@ protected:
 #endif
     }
 
-    static void buildSimpleDomainIndex(MaterialDatabase& database) {
+    static void buildSimpleDomainIndex(MaterialDatabase& database)
+    {
         std::vector<MaterialAssignment> assignments;
-        assignments.push_back(MaterialAssignment{std::set<int>{1}, "mat1"});
-        assignments.push_back(MaterialAssignment{std::set<int>{2}, "mat2"});
+        assignments.push_back(MaterialAssignment {std::set<int> {1}, "mat1"});
+        assignments.push_back(MaterialAssignment {std::set<int> {2}, "mat2"});
         database.buildDomainIndex(assignments);
     }
 };
 
-TEST_F(MaterialXmlReaderTest, ReadBusbarMaterials) {
+TEST_F(MaterialXmlReaderTest, ReadBusbarMaterials)
+{
     MaterialDatabase database;
 
     ASSERT_NO_THROW({
@@ -73,7 +77,8 @@ TEST_F(MaterialXmlReaderTest, ReadBusbarMaterials) {
     });
 }
 
-TEST_F(MaterialXmlReaderTest, DomainScalarPropertyAccess) {
+TEST_F(MaterialXmlReaderTest, DomainScalarPropertyAccess)
+{
     MaterialDatabase database;
     MaterialXmlReader::readFromFile(dataPath("cases/busbar_steady/material.xml"), database);
     buildSimpleDomainIndex(database);
@@ -82,12 +87,12 @@ TEST_F(MaterialXmlReaderTest, DomainScalarPropertyAccess) {
     const std::string& nuExpr = database.scalarExpressionByDomain(1, "nu");
 
     ExpressionParser parser;
-    const auto eProgram = parser.compileScalar(eExpr);
-    const auto nuProgram = parser.compileScalar(nuExpr);
+    const auto eProgram = parser.compile(eExpr);
+    const auto nuProgram = parser.compile(nuExpr);
     const std::vector<double> eInputs = buildInputs(eProgram.dependencies(), {});
     const std::vector<double> nuInputs = buildInputs(nuProgram.dependencies(), {});
-    const double E = eProgram.evaluate(std::span<const double>(eInputs.data(), eInputs.size()));
-    const double nu = nuProgram.evaluate(std::span<const double>(nuInputs.data(), nuInputs.size()));
+    const double E = std::get<double>(eProgram.evaluate(std::span<const double>(eInputs.data(), eInputs.size())));
+    const double nu = std::get<double>(nuProgram.evaluate(std::span<const double>(nuInputs.data(), nuInputs.size())));
 
     EXPECT_GT(E, 0.0);
     EXPECT_GT(nu, 0.0);
@@ -96,7 +101,8 @@ TEST_F(MaterialXmlReaderTest, DomainScalarPropertyAccess) {
     EXPECT_THROW(static_cast<void>(database.scalarExpressionByDomain(1, "nonexistent_property")), ArgumentException);
 }
 
-TEST_F(MaterialXmlReaderTest, TemperatureDependentConductivityByDomain) {
+TEST_F(MaterialXmlReaderTest, TemperatureDependentConductivityByDomain)
+{
     MaterialDatabase database;
     MaterialXmlReader::readFromFile(dataPath("cases/busbar_steady/material.xml"), database);
     buildSimpleDomainIndex(database);
@@ -106,13 +112,13 @@ TEST_F(MaterialXmlReaderTest, TemperatureDependentConductivityByDomain) {
     std::map<std::string, double> vars;
     vars["T"] = 293.15;
     ExpressionParser parser;
-    const auto sigmaProgram = parser.compileMatrix(sigmaExpr);
+    const auto sigmaProgram = parser.compile(sigmaExpr);
     std::vector<double> inputs = buildInputs(sigmaProgram.dependencies(), vars);
-    Matrix3 sigma293 = sigmaProgram.evaluate(std::span<const double>(inputs.data(), inputs.size()));
+    Matrix3 sigma293 = std::get<Matrix3>(sigmaProgram.evaluate(std::span<const double>(inputs.data(), inputs.size())));
 
     vars["T"] = 373.15;
     inputs = buildInputs(sigmaProgram.dependencies(), vars);
-    Matrix3 sigma373 = sigmaProgram.evaluate(std::span<const double>(inputs.data(), inputs.size()));
+    Matrix3 sigma373 = std::get<Matrix3>(sigmaProgram.evaluate(std::span<const double>(inputs.data(), inputs.size())));
 
     EXPECT_GT(sigma293(0, 0), 0.0);
     EXPECT_GT(sigma293(1, 1), 0.0);
@@ -124,7 +130,8 @@ TEST_F(MaterialXmlReaderTest, TemperatureDependentConductivityByDomain) {
     EXPECT_GT(sigma293(0, 0), sigma373(0, 0));
 }
 
-TEST_F(MaterialXmlReaderTest, InvalidDomainOrPropertyThrows) {
+TEST_F(MaterialXmlReaderTest, InvalidDomainOrPropertyThrows)
+{
     MaterialDatabase database;
     MaterialXmlReader::readFromFile(dataPath("cases/busbar_steady/material.xml"), database);
     buildSimpleDomainIndex(database);
@@ -134,7 +141,8 @@ TEST_F(MaterialXmlReaderTest, InvalidDomainOrPropertyThrows) {
     EXPECT_THROW(static_cast<void>(database.matrixExpressionByDomain(2, "nonexistent_matrix")), ArgumentException);
 }
 
-TEST_F(MaterialXmlReaderTest, ReadOrder2Materials) {
+TEST_F(MaterialXmlReaderTest, ReadOrder2Materials)
+{
     MaterialDatabase database;
 
     ASSERT_NO_THROW({
@@ -148,7 +156,8 @@ TEST_F(MaterialXmlReaderTest, ReadOrder2Materials) {
     EXPECT_NO_THROW(static_cast<void>(database.matrixExpressionByDomain(2, "thermalconductivity")));
 }
 
-TEST_F(MaterialXmlReaderTest, ConstantConductivityByDomain) {
+TEST_F(MaterialXmlReaderTest, ConstantConductivityByDomain)
+{
     MaterialDatabase database;
     MaterialXmlReader::readFromFile(dataPath("cases/busbar_steady/material.xml"), database);
     buildSimpleDomainIndex(database);
@@ -156,9 +165,9 @@ TEST_F(MaterialXmlReaderTest, ConstantConductivityByDomain) {
     const std::string& sigmaExpr = database.matrixExpressionByDomain(2, "electricconductivity");
 
     ExpressionParser parser;
-    const auto sigmaProgram = parser.compileMatrix(sigmaExpr);
+    const auto sigmaProgram = parser.compile(sigmaExpr);
     const std::vector<double> inputs = buildInputs(sigmaProgram.dependencies(), {});
-    Matrix3 sigma = sigmaProgram.evaluate(std::span<const double>(inputs.data(), inputs.size()));
+    Matrix3 sigma = std::get<Matrix3>(sigmaProgram.evaluate(std::span<const double>(inputs.data(), inputs.size())));
 
     EXPECT_GT(sigma(0, 0), 0.0);
     EXPECT_NEAR(sigma(0, 0), sigma(1, 1), 1e-10);

@@ -215,7 +215,7 @@ namespace mpfem {
             RuntimeScalarExpressionNode(std::string expression,
                 RuntimeSymbolConfig config,
                 std::vector<const VariableNode*> dependencies,
-                ExpressionParser::ScalarProgram program)
+                ExpressionParser::ExpressionProgram program)
                 : expression_(std::move(expression)), config_(std::move(config)), dependencies_(std::move(dependencies)), program_(std::move(program)), id_(nextProgramId())
             {
             }
@@ -246,7 +246,8 @@ namespace mpfem {
                     for (size_t slot = 0; slot < config_.bindings.size(); ++slot) {
                         inputValues[slot] = resolveSymbolValue(config_.bindings[slot], dependencyBlocks, ctx, slot, i);
                     }
-                    dest[i] = program_.evaluate(std::span<const double>(inputValues.data(), inputValues.size()));
+                    ExprValue exprResult = program_.evaluate(std::span<const double>(inputValues.data(), inputValues.size()));
+                    dest[i] = std::get<double>(exprResult);
                 }
             }
 
@@ -259,7 +260,7 @@ namespace mpfem {
             std::string expression_;
             RuntimeSymbolConfig config_;
             std::vector<const VariableNode*> dependencies_;
-            ExpressionParser::ScalarProgram program_;
+            ExpressionParser::ExpressionProgram program_;
             std::uint64_t id_ = 0;
         };
 
@@ -268,7 +269,7 @@ namespace mpfem {
             RuntimeMatrixExpressionNode(std::string expression,
                 RuntimeSymbolConfig config,
                 std::vector<const VariableNode*> dependencies,
-                ExpressionParser::MatrixProgram program)
+                ExpressionParser::ExpressionProgram program)
                 : expression_(std::move(expression)), config_(std::move(config)), dependencies_(std::move(dependencies)), program_(std::move(program)), id_(nextProgramId())
             {
             }
@@ -299,7 +300,8 @@ namespace mpfem {
                     for (size_t slot = 0; slot < config_.bindings.size(); ++slot) {
                         inputValues[slot] = resolveSymbolValue(config_.bindings[slot], dependencyBlocks, ctx, slot, i);
                     }
-                    const Matrix3 mat = program_.evaluate(std::span<const double>(inputValues.data(), inputValues.size()));
+                    const ExprValue exprResult = program_.evaluate(std::span<const double>(inputValues.data(), inputValues.size()));
+                    const Matrix3 mat = std::get<Matrix3>(exprResult);
                     const size_t base = i * 9ull;
                     for (int r = 0; r < 3; ++r) {
                         for (int c = 0; c < 3; ++c) {
@@ -318,7 +320,7 @@ namespace mpfem {
             std::string expression_;
             RuntimeSymbolConfig config_;
             std::vector<const VariableNode*> dependencies_;
-            ExpressionParser::MatrixProgram program_;
+            ExpressionParser::ExpressionProgram program_;
             std::uint64_t id_ = 0;
         };
 
@@ -327,11 +329,11 @@ namespace mpfem {
     void VariableManager::registerConstantExpression(std::string name, std::string expressionText)
     {
         ExpressionParser parser;
-        ExpressionParser::ScalarProgram program = parser.compileScalar(expressionText);
+        ExpressionParser::ExpressionProgram program = parser.compile(expressionText);
 
         // If expression has no dependencies (pure constant), create ConstantScalarNode directly
-        MPFEM_ASSERT(program.dependencies().empty(), "Expected constant expression to have no dependencies."); 
-        double value = program.evaluate({});
+        MPFEM_ASSERT(program.dependencies().empty(), "Expected constant expression to have no dependencies.");
+        double value = std::get<double>(program.evaluate({}));
         nodes_[std::move(name)] = std::make_unique<ConstantScalarNode>(value);
 
         graphDirty_ = true;
@@ -342,7 +344,7 @@ namespace mpfem {
         GraphRuntimeResolvers resolvers)
     {
         ExpressionParser parser;
-        ExpressionParser::ScalarProgram program = parser.compileScalar(expression);
+        ExpressionParser::ExpressionProgram program = parser.compile(expression);
         RuntimeSymbolConfig config = buildSymbolConfig(program.dependencies(), nodes_, resolvers);
         std::vector<const VariableNode*> dependencies = config.dependencies;
 
@@ -359,7 +361,7 @@ namespace mpfem {
         GraphRuntimeResolvers resolvers)
     {
         ExpressionParser parser;
-        ExpressionParser::MatrixProgram program = parser.compileMatrix(expression);
+        ExpressionParser::ExpressionProgram program = parser.compile(expression);
         RuntimeSymbolConfig config = buildSymbolConfig(program.dependencies(), nodes_, resolvers);
         std::vector<const VariableNode*> dependencies = config.dependencies;
 

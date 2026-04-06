@@ -23,61 +23,9 @@
 
 ## 具体工作任务
 
-这是一个非常典型的“半重构状态”代码库。代码中显然正在经历从“传统的硬编码数值计算/回调系统”向“现代的基于DAG（有向无环图）的表达式系统”过渡的阵痛期。
-
-你当前代码中最大的**设计反模式**是：**双轨制（Dual-System）与生命周期碎片化**。虽然引入了 `VariableManager` 和 `ExpressionParser`，但大量的物理场逻辑仍在绕过它，采用硬编码的 C++ 节点（如 `JouleHeatNode`）和复杂的回调（如 `GraphRuntimeResolvers`）。
-
-### 🛠️ 步骤化破坏式重构方案
-
 每一步都保证系统处于可编译、可运行的完整状态，宁可采用破坏性修改也不保留向后兼容的包袱。
 
-#### 统一数据载体，消灭标量与矩阵的类型分裂 (Unify Tensor Backend)
-
-**目标**: 将 `double` 和 `Matrix3` 统一为泛型的张量变体，合并所有 `compileX` 方法。
-
-1.  **引入 `Value` 变体类型**: 在 `core/types.hpp` 中引入统一的表达式值类型：
-    ```cpp
-    // src/core/types.hpp
-    #include <variant>
-    namespace mpfem {
-        using ExprValue = std::variant<double, Vector3, Matrix3>;
-        // 辅助函数用于获取类型和维度
-    }
-    ```
-2.  **合并 Program**: 在 `expression_parser.hpp` 中，删除 `ScalarProgram` 和 `MatrixProgram`，统一为一个 `ExpressionProgram`。
-    ```cpp
-    class ExpressionProgram {
-    public:
-        VariableShape shape() const; 
-        ExprValue evaluate(std::span<const ExprValue> values) const;
-    };
-    // compileScalar 和 compileMatrix 合并为：
-    ExpressionProgram compile(const std::string& expression) const;
-    ```
-3.  **合并 Node**: 在 `variable_graph.hpp` 中，删除 `ConstantScalarNode`, `RuntimeScalarExpressionNode`, `RuntimeMatrixExpressionNode`。只保留一个通用的 `ExpressionNode`。
-    * **验证标准**: 此时所有的测试用例应该能通过新的单一接口 `compile("...")` 运行，无需外部指定它是标量还是矩阵。
-
-#### 净化 DAG，移除内置符号硬编码 (Purify DAG Leaves)
-
-**目标**: 移除 `BuiltInSymbolKind`，将物理场和时空坐标转变为标准的 DAG 节点。
-
-1.  **移除硬编码**: 删除 `variable_graph.cpp` 中的 `BuiltInSymbolKind` 及其 `switch` 逻辑。
-2.  **实现专用叶子节点**:
-    ```cpp
-    class SpatialCoordinateNode : public VariableNode {
-        // shape = Vector3, evaluateBatch 时直接从 ctx.physicalPoints 拷贝
-    };
-    class TimeNode : public VariableNode {
-        // shape = Scalar, evaluateBatch 时返回 ctx.time
-    };
-    class FieldEvaluationNode : public VariableNode {
-        // 专门处理其他物理场（如 T, V）的求值
-    };
-    ```
-3.  **预注册**: 修改 `VariableManager` 的构造函数，默认自动注册 `x`, `y`, `z`, `t` 作为内部保留节点。例如，注册 `x` 的表达式为提取 `SpatialCoordinateNode` 的第 0 个分量。
-    * **验证标准**: 表达式 `"x + t * 2"` 仍然可以求值，但是调度不再经过任何 `if(symbol == "t")` 分支，而是纯粹的 DAG 依赖传递。
-
-#### 增强解析器，实现公式化的多物理场耦合 (Formula-based Coupling)
+### 增强解析器，实现公式化的多物理场耦合 (Formula-based Coupling)
 
 **目标**: 淘汰 `JouleHeatNode` 和 `ThermalExpansionStressNode`，用原生表达式取代。
 
@@ -97,7 +45,7 @@
 3.  **删除旧类**: 彻底删除 `physics_problem_builder.cpp` 中的 `JouleHeatNode` 和 `ThermalExpansionStressNode`。
     * **验证标准**: 稳态或瞬态的焦耳热计算结果与旧版本完全一致，但代码量锐减。
 
-#### 引入场自注册机制，废弃硬编码解析器
+### 引入场自注册机制，废弃硬编码解析器
 **目标**：消除 `GraphRuntimeResolvers` 和 `classifyRuntimeField`，让求解器将其结果作为 DAG 节点直接注入到全局变量图中。
 
 1. **新增基础节点**：在 `variable_graph.hpp` 中添加 `GridFunctionNode`。
@@ -123,7 +71,7 @@
    - 彻底删除 `physics_problem_builder.cpp` 中的 `classifyRuntimeField`、`resolveRuntimeField` 和 `makeRuntimeExpressionResolvers`。
    - `VariableManager::registerScalarExpression` 的签名移除 `GraphRuntimeResolvers` 参数，因为此时 `"T"` 已经是 DAG 中的一个合法前置节点。
 
-#### 统一全局 DAG，消灭临时管理器与域缓存
+### 统一全局 DAG，消灭临时管理器与域缓存
 **目标**：让 `VariableManager` 成为唯一的事实来源（Single Source of Truth）。
 
 1. **重构 Problem 类**：
@@ -145,7 +93,7 @@
    ```
    **编译验证**：此时所有的变量和表达式都位于同一个 DAG 中，并且按名称索引，无需外部缓存。
 
-#### 用动态解析替换局部硬编码 AST (消灭 `ProductScalarNode`)
+### 用动态解析替换局部硬编码 AST (消灭 `ProductScalarNode`)
 **目标**：清理具体求解器中手写的 AST 组合。
 
 1. **修改 HeatTransferSolver**：
@@ -163,3 +111,113 @@
    problem.heatTransfer->setMassProperties({domainId}, problem.globalVariables_.get(massPropName));
    ```
    *注意：这一步不仅使得代码行数锐减，而且如果将来表达式系统增加了常数折叠（Constant Folding）或公共子表达式消除优化，这些逻辑将自动受益。*
+
+### 重构表达式后端（从 AST 树到线性化指令流）
+**目标**：消除递归求值，引入基于栈（Stack-based VM）或扁平数组的指令流，极大提升单点求值性能。
+
+1.  **定义操作码（OpCode）和指令：**
+    ```cpp
+    enum class OpCode : uint8_t { Constant, LoadVar, Add, Sub, Mul, Div, Pow, Sin, Cos /*...*/ };
+    struct Instruction {
+        OpCode op;
+        double value; // 用于 Constant
+        int index;    // 用于 LoadVar
+    };
+    ```
+2.  **修改编译器：**
+    在 `ScalarAstCompiler::compile()` 后增加一个步骤（或者直接在解析时生成），将 AST 遍历一遍，转换为 `std::vector<Instruction>`（后缀表达式形式）。
+3.  **重写 Evaluate 函数：**
+    ```cpp
+    // 替换掉原来的 evalAstNode 递归调用
+    double ExpressionProgram::evaluate_single(std::span<const double> vars) const {
+        std::vector<double> stack; // 实际实现中可用固定大小的 std::array 或小端优化以避免堆分配
+        for (const auto& inst : instructions_) {
+            switch (inst.op) {
+                case OpCode::Constant: stack.push_back(inst.value); break;
+                case OpCode::LoadVar: stack.push_back(vars[inst.index]); break;
+                case OpCode::Add: {
+                    double b = stack.back(); stack.pop_back();
+                    stack.back() += b; 
+                    break;
+                }
+                // ... 其他操作
+            }
+        }
+        return stack.back() * multiplier_;
+    }
+    ```
+*验证*：原有的所有标量表达式单元测试应该无缝通过，且性能提升。
+
+### 泛化变量形态（统一标量、向量与矩阵）
+**目标**：删除 `RuntimeScalarExpressionNode` 和 `RuntimeMatrixExpressionNode`，用单一类处理任意维度（Shape）。
+
+1.  **统一 VariableShape 和 Dimensions：**
+    ```cpp
+    // 废弃 enum class VariableShape，改用动态或固定的 Shape 结构
+    struct TensorShape {
+        std::vector<int> dims; // [] 为标量, [3] 为向量, [3,3] 为矩阵
+        size_t flatSize() const; // 返回总组件数
+    };
+    ```
+2.  **合并 Node 类为统一的 `ExpressionNode`：**
+    让 `ExpressionNode` 内部持有一个 `std::vector<ExpressionProgram>`，对应张量的每一个展平（Flattened）的分量。
+    ```cpp
+    class ExpressionNode final : public VariableNode {
+    public:
+        // 无论是标量(1个程序), 向量(3个程序), 还是矩阵(9个程序)，都用统一逻辑
+        void evaluateBatch(...) override {
+             // 逻辑简化为遍历 programs 数组并写入对应的内存偏移
+        }
+    private:
+        TensorShape shape_;
+        std::vector<ExpressionProgram> componentPrograms_; 
+    };
+    ```
+*验证*：替换原有 API 后，标量和矩阵的行为在外部表现一致，同时天然获得了对向量的支持。
+
+### 真正激活 DAG（全局工作区模型）
+**目标**：消除 `evaluateDependencyBlocks` 的局部递归，启用全局的 `executionPlan_`。
+
+1.  **引入 VariableWorkspace（求值工作区）：**
+    在图开始评估前，分配一块连续内存，用于存放当前所有节点的输出。
+    ```cpp
+    struct VariableWorkspace {
+        // key 为 Node 指针，value 为该 Node 对应所有点的计算结果数组
+        std::unordered_map<const VariableNode*, std::vector<double>> buffers;
+    };
+    ```
+2.  **重写 VariableManager 的求值逻辑：**
+    由 Manager 负责驱动（而不是 Node 驱动）。
+    ```cpp
+    void VariableManager::evaluateGraph(const EvaluationContext& ctx, VariableWorkspace& workspace) {
+        // 必须按拓扑排序执行！
+        for (const VariableNode* node : executionPlan_) {
+            auto& outputBuffer = workspace.buffers[node];
+            outputBuffer.resize(ctx.physicalPoints.size() * node->shape().flatSize());
+            
+            // 节点不再负责去 resolve 自己的依赖，它的依赖肯定已经在这个循环前面计算好并存在 workspace 中了！
+            node->evaluateBatch(ctx, workspace, outputBuffer); 
+        }
+    }
+    ```
+3.  **精简 Node 的求值：**
+    `ExpressionNode::evaluateBatch` 现在只需要直接从 `workspace.buffers[dependencyNode]` 中读取数据作为输入，不再调用任何子节点的 evaluate。
+*验证*：打印求值日志，验证每个节点严格只被求值一次，没有重复计算。
+
+#### 物理场属性绑定泛化
+**目标**：剥离 `t, x, y, z` 这类硬编码，将其抽象为"全局输入槽位"（Global Input Slots）或特殊节点。
+
+1.  **废弃 `BuiltInSymbolKind`：**
+    不要在语法树解析阶段区分 `t` 还是普通变量。所有东西都是变量。
+2.  **注册环境常量/变量节点：**
+    在系统初始化时，自动向 `VariableManager` 注册名为 `x`, `y`, `z`, `t` 的特殊外部数据节点（ExternalDataNode）。
+    ```cpp
+    // 伪代码：在组装器初始化时
+    variableManager.registerExternalSource("t", [](const EvaluationContext& ctx, int ptIdx) { return ctx.time; });
+    variableManager.registerExternalSource("x", [](const EvaluationContext& ctx, int ptIdx) { return ctx.physicalPoints[ptIdx].x(); });
+    ```
+    这样，在用户输入 `sin(x*t)` 时，系统只需按照普通的依赖关系将其连接到 `x` 和 `t` 的 ExternalDataNode 上，而不需要在解析器里写死对 `classifyBuiltInSymbol` 的判断。
+3.  **统一的物理场绑定：**
+    对于位移场 `u`、温度场 `T` 等有限元解，同样使用 `registerExternalSource` 绑定。使得**内置坐标、时间、计算出的物理场，在图引擎看来没有任何区别**。
+
+*验证*：代码大幅减少，原有的所有硬编码判断分支消失。所有上下文通过统一的图输入节点流入计算引擎。

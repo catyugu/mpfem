@@ -16,12 +16,6 @@ namespace mpfem {
 
     class ElementTransform;
 
-    enum class VariableShape {
-        Scalar,
-        Vector,
-        Matrix,
-    };
-
     struct EvaluationContext {
         double time = 0.0;
         int domainId = -1;

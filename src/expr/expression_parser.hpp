@@ -8,44 +8,25 @@
 #include <string>
 #include <vector>
 
-
 namespace mpfem {
 
     class ExpressionParser {
     public:
-        class ScalarProgram {
+        class ExpressionProgram {
         public:
             struct Impl;
-            ScalarProgram();
-            explicit ScalarProgram(std::unique_ptr<Impl> impl) noexcept;
-            ~ScalarProgram();
-            ScalarProgram(ScalarProgram&&) noexcept;
-            ScalarProgram& operator=(ScalarProgram&&) noexcept;
-            ScalarProgram(const ScalarProgram&) = delete;
-            ScalarProgram& operator=(const ScalarProgram&) = delete;
+            ExpressionProgram();
+            explicit ExpressionProgram(std::unique_ptr<Impl> impl) noexcept;
+            ~ExpressionProgram();
+            ExpressionProgram(ExpressionProgram&&) noexcept;
+            ExpressionProgram& operator=(ExpressionProgram&&) noexcept;
+            ExpressionProgram(const ExpressionProgram&) = delete;
+            ExpressionProgram& operator=(const ExpressionProgram&) = delete;
 
             bool valid() const;
+            VariableShape shape() const;
             const std::vector<std::string>& dependencies() const;
-            double evaluate(std::span<const double> values) const;
-
-        private:
-            std::unique_ptr<Impl> impl_;
-        };
-
-        class MatrixProgram {
-        public:
-            struct Impl;
-            MatrixProgram();
-            explicit MatrixProgram(std::unique_ptr<Impl> impl) noexcept;
-            ~MatrixProgram();
-            MatrixProgram(MatrixProgram&&) noexcept;
-            MatrixProgram& operator=(MatrixProgram&&) noexcept;
-            MatrixProgram(const MatrixProgram&) = delete;
-            MatrixProgram& operator=(const MatrixProgram&) = delete;
-
-            bool valid() const;
-            const std::vector<std::string>& dependencies() const;
-            Matrix3 evaluate(std::span<const double> values) const;
+            ExprValue evaluate(std::span<const double> values) const;
 
         private:
             std::unique_ptr<Impl> impl_;
@@ -57,8 +38,7 @@ namespace mpfem {
         ExpressionParser();
         ~ExpressionParser();
 
-        ScalarProgram compileScalar(const std::string& expression) const;
-        MatrixProgram compileMatrix(const std::string& expression) const;
+        ExpressionProgram compile(const std::string& expression) const;
     };
 
 } // namespace mpfem
