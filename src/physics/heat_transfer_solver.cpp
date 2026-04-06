@@ -6,47 +6,47 @@
 
 namespace mpfem {
 
-namespace {
+    namespace {
 
-class ProductScalarNode final : public VariableNode {
-public:
-    ProductScalarNode(const VariableNode* lhs, const VariableNode* rhs)
-        : lhs_(lhs), rhs_(rhs)
-    {
-        if (!lhs_ || !rhs_) {
-            MPFEM_THROW(ArgumentException, "ProductScalarNode requires non-null inputs.");
-        }
-        if (lhs_->shape() != VariableShape::Scalar || rhs_->shape() != VariableShape::Scalar) {
-            MPFEM_THROW(ArgumentException, "ProductScalarNode inputs must be scalar.");
-        }
-    }
+        class ProductScalarNode final : public VariableNode {
+        public:
+            ProductScalarNode(const VariableNode* lhs, const VariableNode* rhs)
+                : lhs_(lhs), rhs_(rhs)
+            {
+                if (!lhs_ || !rhs_) {
+                    MPFEM_THROW(ArgumentException, "ProductScalarNode requires non-null inputs.");
+                }
+                if (lhs_->shape() != VariableShape::Scalar || rhs_->shape() != VariableShape::Scalar) {
+                    MPFEM_THROW(ArgumentException, "ProductScalarNode inputs must be scalar.");
+                }
+            }
 
-    VariableShape shape() const override { return VariableShape::Scalar; }
+            VariableShape shape() const override { return VariableShape::Scalar; }
 
-    std::pair<int, int> dimensions() const override { return {1, 1}; }
+            std::pair<int, int> dimensions() const override { return {1, 1}; }
 
-    void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override
-    {
-        std::vector<double> lhsValues(dest.size());
-        std::vector<double> rhsValues(dest.size());
-        lhs_->evaluateBatch(ctx, std::span<double>(lhsValues.data(), lhsValues.size()));
-        rhs_->evaluateBatch(ctx, std::span<double>(rhsValues.data(), rhsValues.size()));
-        for (size_t i = 0; i < dest.size(); ++i) {
-            dest[i] = lhsValues[i] * rhsValues[i];
-        }
-    }
+            void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override
+            {
+                std::vector<double> lhsValues(dest.size());
+                std::vector<double> rhsValues(dest.size());
+                lhs_->evaluateBatch(ctx, std::span<double>(lhsValues.data(), lhsValues.size()));
+                rhs_->evaluateBatch(ctx, std::span<double>(rhsValues.data(), rhsValues.size()));
+                for (size_t i = 0; i < dest.size(); ++i) {
+                    dest[i] = lhsValues[i] * rhsValues[i];
+                }
+            }
 
-    std::vector<const VariableNode*> dependencies() const override
-    {
-        return {lhs_, rhs_};
-    }
+            std::vector<const VariableNode*> dependencies() const override
+            {
+                return {lhs_, rhs_};
+            }
 
-private:
-    const VariableNode* lhs_ = nullptr;
-    const VariableNode* rhs_ = nullptr;
-};
+        private:
+            const VariableNode* lhs_ = nullptr;
+            const VariableNode* rhs_ = nullptr;
+        };
 
-} // namespace
+    } // namespace
 
     bool HeatTransferSolver::initialize(const Mesh& mesh, FieldValues& fieldValues, int order, double initialTemperature)
     {
@@ -57,7 +57,7 @@ private:
         auto fec = std::make_unique<FECollection>(order_, FECollection::Type::H1);
         fes_ = std::make_unique<FESpace>(&mesh, std::move(fec));
 
-        fieldValues.createScalarField(FieldId::Temperature, fes_.get(), initialTemperature);
+        fieldValues.createScalarField("HeatTransfer", fes_.get(), initialTemperature);
 
         matAsm_ = std::make_unique<BilinearFormAssembler>(fes_.get());
         vecAsm_ = std::make_unique<LinearFormAssembler>(fes_.get());

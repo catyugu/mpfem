@@ -18,7 +18,6 @@ namespace mpfem {
         virtual ~PhysicsFieldSolver() = default;
 
         virtual std::string fieldName() const = 0;
-        virtual FieldId fieldId() const = 0;
         virtual void assemble() = 0;
 
         void solve()
@@ -39,12 +38,12 @@ namespace mpfem {
         const GridFunction& field() const
         {
             MPFEM_ASSERT(fieldValues_ != nullptr, "FieldValues not set");
-            return fieldValues_->current(fieldId());
+            return fieldValues_->current(fieldName());
         }
         GridFunction& field()
         {
             MPFEM_ASSERT(fieldValues_ != nullptr, "FieldValues not set");
-            return fieldValues_->current(fieldId());
+            return fieldValues_->current(fieldName());
         }
 
         const FESpace& feSpace() const { return *fes_; }

@@ -19,7 +19,6 @@ namespace mpfem {
         HeatTransferSolver() = default;
         explicit HeatTransferSolver(int order) { order_ = order; }
         std::string fieldName() const override { return "HeatTransfer"; }
-        FieldId fieldId() const override { return FieldId::Temperature; }
 
         bool initialize(const Mesh& mesh, FieldValues& fieldValues, int order, double initialTemperature = 293.15);
 

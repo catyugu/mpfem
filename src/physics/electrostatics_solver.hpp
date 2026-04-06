@@ -20,7 +20,6 @@ namespace mpfem {
         explicit ElectrostaticsSolver(int order) { order_ = order; }
 
         std::string fieldName() const override { return "Electrostatics"; }
-        FieldId fieldId() const override { return FieldId::ElectricPotential; }
 
         bool initialize(const Mesh& mesh, FieldValues& fieldValues, int order, double initialPotential = 0.0);
 
