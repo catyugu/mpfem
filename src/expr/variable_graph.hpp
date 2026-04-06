@@ -52,9 +52,11 @@ namespace mpfem {
          */
         void registerConstantExpression(std::string name, std::string expressionText);
 
-        void registerScalarExpression(std::string name, std::string expression);
-
-        void registerMatrixExpression(std::string name, std::string expression);
+        /**
+         * @brief Register an expression (scalar, vector, or matrix).
+         * @details Infers the shape from the expression itself via ExpressionProgram::shape().
+         */
+        void registerExpression(std::string name, std::string expression);
 
         const VariableNode* get(std::string_view name) const;
 

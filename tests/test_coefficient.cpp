@@ -38,7 +38,7 @@ TEST_F(VariableNodeTest, ScalarExpressionNodeEvaluation)
 {
     VariableManager manager;
     manager.registerConstantExpression("k", "2.0");
-    manager.registerScalarExpression("f", "k * x + 1.0");
+    manager.registerExpression("f", "k * x + 1.0");
     manager.compileGraph();
 
     const VariableNode* node = manager.get("f");

@@ -277,7 +277,7 @@ namespace mpfem {
         graphDirty_ = true;
     }
 
-    void VariableManager::registerScalarExpression(std::string name, std::string expression)
+    void VariableManager::registerExpression(std::string name, std::string expression)
     {
         ExpressionParser parser;
         ExpressionParser::ExpressionProgram program = parser.compile(expression);
@@ -293,33 +293,23 @@ namespace mpfem {
             dependencies.push_back(it->second.get());
         }
 
-        nodes_[std::move(name)] = std::make_unique<RuntimeScalarExpressionNode>(
-            std::move(expression),
-            std::move(dependencies),
-            std::move(program));
-        graphDirty_ = true;
-    }
-
-    void VariableManager::registerMatrixExpression(std::string name, std::string expression)
-    {
-        ExpressionParser parser;
-        ExpressionParser::ExpressionProgram program = parser.compile(expression);
-
-        // Resolve all symbol dependencies from the node store
-        std::vector<const VariableNode*> dependencies;
-        dependencies.reserve(program.dependencies().size());
-
-        for (const std::string& symbol : program.dependencies()) {
-            const auto it = nodes_.find(symbol);
-            MPFEM_ASSERT(it != nodes_.end() && it->second != nullptr,
-                "Unbound symbol in expression: " + symbol);
-            dependencies.push_back(it->second.get());
+        // Create node based on expression shape (inferred from compilation result)
+        switch (program.shape()) {
+        case VariableShape::Scalar:
+            nodes_[std::move(name)] = std::make_unique<RuntimeScalarExpressionNode>(
+                std::move(expression),
+                std::move(dependencies),
+                std::move(program));
+            break;
+        case VariableShape::Matrix:
+            nodes_[std::move(name)] = std::make_unique<RuntimeMatrixExpressionNode>(
+                std::move(expression),
+                std::move(dependencies),
+                std::move(program));
+            break;
+        default:
+            MPFEM_THROW(ArgumentException, "Unsupported expression shape in registerExpression.");
         }
-
-        nodes_[std::move(name)] = std::make_unique<RuntimeMatrixExpressionNode>(
-            std::move(expression),
-            std::move(dependencies),
-            std::move(program));
         graphDirty_ = true;
     }
 
