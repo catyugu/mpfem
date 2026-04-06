@@ -15,6 +15,7 @@
 namespace mpfem {
 
     class ElementTransform;
+    class GridFunction;
 
     struct EvaluationContext {
         double time = 0.0;
@@ -48,7 +49,9 @@ namespace mpfem {
     public:
         using NodeStore = std::unordered_map<std::string, std::unique_ptr<VariableNode>>;
 
-        VariableManager() = default;
+        VariableManager();
+
+        ~VariableManager() = default;
 
         /**
          * @brief Register a constant expression.
@@ -66,6 +69,11 @@ namespace mpfem {
             GraphRuntimeResolvers resolvers = {});
 
         const VariableNode* get(std::string_view name) const;
+
+        void registerGridFunction(std::string name, const GridFunction* field);
+
+        void registerExternalSource(std::string name,
+            std::function<double(const EvaluationContext&, size_t pointIndex)> extractor);
 
         void compileGraph();
 

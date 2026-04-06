@@ -3,6 +3,7 @@
 #include "core/exception.hpp"
 #include "expr/expression_parser.hpp"
 #include "fe/element_transform.hpp"
+#include "fe/grid_function.hpp"
 
 #include <array>
 #include <atomic>
@@ -14,17 +15,8 @@
 namespace mpfem {
     namespace {
 
-        enum class BuiltInSymbolKind {
-            None,
-            Time,
-            X,
-            Y,
-            Z,
-        };
-
         struct RuntimeSymbolBinding {
             std::string symbol;
-            BuiltInSymbolKind kind = BuiltInSymbolKind::None;
             const VariableNode* node = nullptr;
             GraphExternalSymbolResolver resolver;
             double constantValue = 0.0;
@@ -40,23 +32,6 @@ namespace mpfem {
         {
             static std::atomic<std::uint64_t> id {1};
             return id.fetch_add(1, std::memory_order_relaxed);
-        }
-
-        BuiltInSymbolKind classifyBuiltInSymbol(std::string_view symbol)
-        {
-            if (symbol == "t") {
-                return BuiltInSymbolKind::Time;
-            }
-            if (symbol == "x") {
-                return BuiltInSymbolKind::X;
-            }
-            if (symbol == "y") {
-                return BuiltInSymbolKind::Y;
-            }
-            if (symbol == "z") {
-                return BuiltInSymbolKind::Z;
-            }
-            return BuiltInSymbolKind::None;
         }
 
         double readScalarNode(const VariableNode* node, const EvaluationContext& ctx)
@@ -94,12 +69,6 @@ namespace mpfem {
             for (const std::string& symbol : symbols) {
                 RuntimeSymbolBinding binding;
                 binding.symbol = symbol;
-                binding.kind = classifyBuiltInSymbol(symbol);
-
-                if (binding.kind != BuiltInSymbolKind::None) {
-                    config.bindings.push_back(std::move(binding));
-                    continue;
-                }
 
                 const auto it = nodes.find(symbol);
                 if (it != nodes.end() && it->second && it->second->isConstant()) {
@@ -151,19 +120,6 @@ namespace mpfem {
             size_t slot,
             size_t pointIndex)
         {
-            switch (binding.kind) {
-            case BuiltInSymbolKind::Time:
-                return ctx.time;
-            case BuiltInSymbolKind::X:
-                return ctx.physicalPoints[pointIndex].x();
-            case BuiltInSymbolKind::Y:
-                return ctx.physicalPoints[pointIndex].y();
-            case BuiltInSymbolKind::Z:
-                return ctx.physicalPoints[pointIndex].z();
-            case BuiltInSymbolKind::None:
-                break;
-            }
-
             if (binding.hasConstant) {
                 return binding.constantValue;
             }
@@ -208,6 +164,68 @@ namespace mpfem {
 
         private:
             double value_ = 0.0;
+        };
+
+        class GridFunctionNode final : public VariableNode {
+        public:
+            GridFunctionNode(std::string name, const GridFunction* field)
+                : name_(std::move(name)), field_(field) { }
+
+            VariableShape shape() const override { return VariableShape::Scalar; }
+            std::pair<int, int> dimensions() const override { return {1, 1}; }
+
+            void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override
+            {
+                if (!field_) {
+                    std::fill(dest.begin(), dest.end(), 0.0);
+                    return;
+                }
+                if (!ctx.transform) {
+                    MPFEM_THROW(ArgumentException, "GridFunctionNode requires ElementTransform in EvaluationContext.");
+                }
+                const size_t n = ctx.physicalPoints.size();
+                for (size_t i = 0; i < n; ++i) {
+                    const Real* xi = nullptr;
+                    if (i < ctx.referencePoints.size()) {
+                        xi = &ctx.referencePoints[i].x();
+                    }
+                    else {
+                        xi = &ctx.transform->integrationPoint().xi;
+                    }
+                    dest[i] = field_->eval(ctx.transform->elementIndex(), xi);
+                }
+            }
+
+            std::vector<const VariableNode*> dependencies() const override { return {}; }
+
+        private:
+            std::string name_;
+            const GridFunction* field_ = nullptr;
+        };
+
+        class ExternalDataNode final : public VariableNode {
+        public:
+            using ValueExtractor = std::function<double(const EvaluationContext&, size_t pointIndex)>;
+
+            ExternalDataNode(std::string name, ValueExtractor extractor)
+                : name_(std::move(name)), extractor_(std::move(extractor)) { }
+
+            VariableShape shape() const override { return VariableShape::Scalar; }
+            std::pair<int, int> dimensions() const override { return {1, 1}; }
+
+            void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override
+            {
+                const size_t n = ctx.physicalPoints.size();
+                for (size_t i = 0; i < n; ++i) {
+                    dest[i] = extractor_(ctx, i);
+                }
+            }
+
+            std::vector<const VariableNode*> dependencies() const override { return {}; }
+
+        private:
+            std::string name_;
+            ValueExtractor extractor_;
         };
 
         class RuntimeScalarExpressionNode final : public VariableNode {
@@ -326,6 +344,32 @@ namespace mpfem {
 
     } // namespace
 
+    VariableManager::VariableManager()
+    {
+        // Register built-in spatial coordinates x, y, z and time t as ExternalDataNode
+        nodes_["x"] = std::make_unique<ExternalDataNode>("x",
+            [](const EvaluationContext& ctx, size_t pointIndex) -> double {
+                return ctx.physicalPoints[pointIndex].x();
+            });
+
+        nodes_["y"] = std::make_unique<ExternalDataNode>("y",
+            [](const EvaluationContext& ctx, size_t pointIndex) -> double {
+                return ctx.physicalPoints[pointIndex].y();
+            });
+
+        nodes_["z"] = std::make_unique<ExternalDataNode>("z",
+            [](const EvaluationContext& ctx, size_t pointIndex) -> double {
+                return ctx.physicalPoints[pointIndex].z();
+            });
+
+        nodes_["t"] = std::make_unique<ExternalDataNode>("t",
+            [](const EvaluationContext& ctx, size_t) -> double {
+                return ctx.time;
+            });
+
+        graphDirty_ = true;
+    }
+
     void VariableManager::registerConstantExpression(std::string name, std::string expressionText)
     {
         ExpressionParser parser;
@@ -370,6 +414,19 @@ namespace mpfem {
             std::move(config),
             std::move(dependencies),
             std::move(program));
+        graphDirty_ = true;
+    }
+
+    void VariableManager::registerGridFunction(std::string name, const GridFunction* field)
+    {
+        nodes_[std::move(name)] = std::make_unique<GridFunctionNode>(name, field);
+        graphDirty_ = true;
+    }
+
+    void VariableManager::registerExternalSource(std::string name,
+        std::function<double(const EvaluationContext&, size_t pointIndex)> extractor)
+    {
+        nodes_[std::move(name)] = std::make_unique<ExternalDataNode>(name, std::move(extractor));
         graphDirty_ = true;
     }
 
