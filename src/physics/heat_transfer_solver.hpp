@@ -26,7 +26,7 @@ namespace mpfem {
         void setThermalConductivity(const std::set<int>& domains, const VariableNode* k);
 
         void setHeatSource(const std::set<int>& domains, const VariableNode* Q);
-        void setMassProperties(const std::set<int>& domains, const VariableNode* rho, const VariableNode* Cp);
+        void setMassProperties(const std::set<int>& domains, const VariableNode* rhoCp);
 
         // Mass matrix for transient terms: M = ∫ ρCp φᵢ φⱼ dΩ
         void assembleMassMatrix();
@@ -99,8 +99,7 @@ namespace mpfem {
         };
         struct MassBinding {
             std::set<int> domains;
-            const VariableNode* density = nullptr;
-            const VariableNode* specificHeat = nullptr;
+            const VariableNode* thermalMass = nullptr;
         };
 
         std::vector<ConductivityBinding> conductivityBindings_;

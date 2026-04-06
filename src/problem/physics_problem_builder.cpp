@@ -452,9 +452,17 @@ namespace mpfem {
                     kPropThermalConductivity);
                 problem.heatTransfer->setThermalConductivity({domainId}, k);
 
-                const VariableNode* rho = requireDomainScalarNode(problem, domainId, kPropDensity);
-                const VariableNode* cp = requireDomainScalarNode(problem, domainId, kPropHeatCapacity);
-                problem.heatTransfer->setMassProperties({domainId}, rho, cp);
+                // Ensure rho_<id> and cp_<id> are registered first
+                requireDomainScalarNode(problem, domainId, kPropDensity);
+                requireDomainScalarNode(problem, domainId, kPropHeatCapacity);
+
+                // Register thermal mass expression: rho_<domainId> * cp_<domainId>
+                std::string thermalMassName = "ThermalMass_" + std::to_string(domainId);
+                std::string rhoName = std::string(kPropDensity) + "_" + std::to_string(domainId);
+                std::string cpName = std::string(kPropHeatCapacity) + "_" + std::to_string(domainId);
+                problem.globalVariables_.registerExpression(thermalMassName, rhoName + " * " + cpName);
+                const VariableNode* rhoCpNode = problem.globalVariables_.get(thermalMassName);
+                problem.heatTransfer->setMassProperties({domainId}, rhoCpNode);
             }
 
             for (const auto& bc : physics.boundaries) {

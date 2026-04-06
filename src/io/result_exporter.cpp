@@ -151,14 +151,14 @@ namespace mpfem {
         file << "% Length unit:        m\n";
         file << "x                       y                        z                       V (V)                     T (K)                     disp (m)\n";
 
-        const GridFunction* V = fields.hasField("ElectricPotential")
-            ? &fields.current("ElectricPotential")
+        const GridFunction* V = fields.hasField("Electrostatics")
+            ? &fields.current("Electrostatics")
             : nullptr;
-        const GridFunction* T = fields.hasField("Temperature")
-            ? &fields.current("Temperature")
+        const GridFunction* T = fields.hasField("HeatTransfer")
+            ? &fields.current("HeatTransfer")
             : nullptr;
-        const GridFunction* u = fields.hasField("Displacement")
-            ? &fields.current("Displacement")
+        const GridFunction* u = fields.hasField("Structural")
+            ? &fields.current("Structural")
             : nullptr;
 
         // Data
@@ -239,14 +239,14 @@ namespace mpfem {
         file << "<Piece NumberOfPoints=\"" << numExportPoints
              << "\" NumberOfCells=\"" << mesh.numElements() << "\">\n";
 
-        const GridFunction* V = fields.hasField("ElectricPotential")
-            ? &fields.current("ElectricPotential")
+        const GridFunction* V = fields.hasField("Electrostatics")
+            ? &fields.current("Electrostatics")
             : nullptr;
-        const GridFunction* T = fields.hasField("Temperature")
-            ? &fields.current("Temperature")
+        const GridFunction* T = fields.hasField("HeatTransfer")
+            ? &fields.current("HeatTransfer")
             : nullptr;
-        const GridFunction* u = fields.hasField("Displacement")
-            ? &fields.current("Displacement")
+        const GridFunction* u = fields.hasField("Structural")
+            ? &fields.current("Structural")
             : nullptr;
 
         // Point data - scalar fields

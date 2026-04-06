@@ -23,7 +23,7 @@ namespace mpfem {
         const SparseMatrix& K = heatSolver->stiffnessMatrixBeforeBC();
         const Vector& Q = heatSolver->rhsBeforeBC();
         GridFunction& Tcurr = heatSolver->field();
-        const GridFunction& Tprev = problem.history("Temperature", 1);
+        const GridFunction& Tprev = problem.history("HeatTransfer", 1);
         const Real dt = problem.timeStep;
 
         ensureSize(M.rows(), M.cols());
