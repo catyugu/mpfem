@@ -11,8 +11,7 @@
 * 代码越精简越好，抹除不必要的抽象。
 * 尽可能少做判断，只在最接近用户层的地方做判断，减少热循环中分支预测代价。
 * 所有同质功能的接口只保留一个性能最高、最易用的，使代码更清晰，不易误用。
-* 禁止使用const_cast（除非为了调用外部求解器的局部使用），mutable（除非为了缓存或者锁），friend，dynamic_cast，shared_ptr等关键字或功能。
-* 删除冗余的成员变量、接口等。
+* 禁止使用const_cast（除非为了调用外部求解器的局部使用），mutable（除非为了缓存或者锁），friend，dynamic_cast，shared_ptr等关键字或功能。。
 * 把工作任务分成多个子任务，从最容易的子任务开始，完成一块子任务后：
   * 确保编译通过。
   * 确保回归测试通过。
@@ -23,163 +22,100 @@
 
 ## 具体工作任务
 
-每一步都保证系统处于可编译、可运行的完整状态，宁可采用破坏性修改也不保留向后兼容的包袱。
+### 识别出的设计反模式 (Anti-patterns)
 
-### 引入场自注册机制，废弃硬编码解析器
-**目标**：消除 `GraphRuntimeResolvers` 和 `classifyRuntimeField`，让求解器将其结果作为 DAG 节点直接注入到全局变量图中。
+1. **硬编码的物理场枚举与分类（向后兼容的毒瘤）**
+   * **表现**: `field_values.hpp` 中存在硬编码的 `enum class FieldId { Temperature, ElectricPotential, Displacement }`；`physics_problem_builder.cpp` 中存在 `RuntimeFieldKind`。
+   * **问题**: 违反开闭原则（OCP）。新增一个物理场（如流体速度）需要修改基础架构文件。
+2. **表达式系统的“外挂式”解析（循环依赖与冗余）**
+   * **表现**: `GraphRuntimeResolvers` 和 `symbolBinder`。为了让表达式能读取当前的温度 `T` 或电压 `V`，使用了一个极其复杂的闭包回调系统。
+   * **问题**: 物理场值（GridFunction）本来就应该是变量图（DAG）中的一等公民（`GridFunctionNode`），不应该作为“外部符号”被特殊对待。
+3. **手动构建特定物理节点（违背自动 DAG 的初衷）**
+   * **表现**: `JouleHeatNode` 和 `ThermalExpansionStressNode` 是手写的 C++ 类，且包含大量手写的求导和矩阵乘法逻辑。
+   * **问题**: 焦耳热就是 $(\nabla V)^T \cdot \sigma \cdot \nabla V$。这本该由表达式系统和 DAG 自动处理，现在却退化回了硬编码，使得变量系统名存实亡。
+4. **标量与矩阵的类型割裂（冗长代码）**
+   * **表现**: `registerScalarExpression` vs `registerMatrixExpression`，`RuntimeScalarExpressionNode` vs `RuntimeMatrixExpressionNode`。
+   * **问题**: 表达式程序（`ExpressionProgram`）自身已经知道其 `VariableShape`，但在外部管理者中却被强制分流，导致代码重复。
+5. **巨型上帝工厂类（高耦合）**
+   * **表现**: `PhysicsProblemBuilder` 的 `buildSolvers` 包含了所有物理场的初始化逻辑，且 `Problem` 类硬编码了 `electrostatics`, `heatTransfer` 等指针。
 
-1. **新增基础节点**：在 `variable_graph.hpp` 中添加 `GridFunctionNode`。
+---
+
+### 步骤化重构建议 (Step-by-Step Refactoring Plan)
+
+目标：**一切皆节点（Everything is a Node），全自动 DAG 求值**。每一步都保证可编译、可验证。
+
+#### Step 1: 废除 `FieldId` 枚举，实现物理场字符串注册 (依赖倒置)
+**动作**: 将所有基于 Enum 的物理场标识替换为字符串。
+1. 删除 `enum class FieldId` 及其 `toString` 方法。
+2. 修改 `FieldValues`，将其内部的 `std::map<FieldId, FieldEntry>` 改为 `std::unordered_map<std::string, FieldEntry>`。
+3. 修改 `PhysicsFieldSolver` 接口，将 `virtual FieldId fieldId() const = 0;` 改为 `virtual std::string fieldName() const = 0;`。
+4. **验证**: 编译所有 solver，确保通过 `fieldValues_->current("V")` 获取电压场。不再需要为了加一个场去改核心头文件。
+
+#### Step 2: 物理场回归 DAG 一等公民，彻底删除 `GraphRuntimeResolvers`
+**动作**: 消除表达式解析时对外挂回调的依赖，将物理场直接注册到 `VariableManager`。
+1. 删除 `variable_graph.hpp` 中的 `GraphExternalSymbolResolver`, `GraphExternalSymbolBinder`, `GraphRuntimeResolvers` 等结构。
+2. 在每个 Solver 初始化时（如 `ElectrostaticsSolver::initialize`），主动向全局的 `VariableManager` 注册自己：
    ```cpp
-   class GridFunctionNode final : public VariableNode {
-   public:
-       explicit GridFunctionNode(const GridFunction* field) : field_(field) {}
-       VariableShape shape() const override { return VariableShape::Scalar; } // 或根据场决定
-       std::pair<int, int> dimensions() const override { return {1, 1}; }
-       void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override {
-           // 利用 ctx.transform 和 ctx.referencePoints 直接从 field_ 中采样计算
+   // 在 solver 初始化后立刻执行
+   problem.globalVariables_.registerGridFunction("V", &this->field());
+   ```
+3. 修改 `RuntimeSymbolConfig buildSymbolConfig(...)` 函数：遇到符号时，直接在 `VariableManager` 的已注册节点中查找。如果找不到，报错（而不是求助 resolver）。
+4. **验证**: 焦耳热或材料属性对 `T` 和 `V` 的依赖现在自然地通过 DAG 解析，不再需要恶心的回调闭包。
+
+#### Step 3: 统一表达式节点注册（消除类型分裂）
+**动作**: 让 `VariableManager` 依靠 `ExpressionProgram` 自身的元数据决定分配什么节点。
+1. 删除 `registerScalarExpression` 和 `registerMatrixExpression`，合并为单一的 `void registerExpression(std::string name, std::string exprText)`。
+2. 合并 `RuntimeScalarExpressionNode` 和 `RuntimeMatrixExpressionNode` 为统一的 `RuntimeExpressionNode`：
+   ```cpp
+   class RuntimeExpressionNode final : public VariableNode {
+       // ...
+       VariableShape shape() const override { return program_.shape(); }
+       std::pair<int, int> dimensions() const override { 
+           return (program_.shape() == VariableShape::Matrix) ? std::pair{3, 3} : std::pair{1, 1}; 
        }
-   private:
-       const GridFunction* field_;
+       void evaluateBatch(...) const override {
+           // 内部根据 shape 决定写 1 个值还是 9 个值
+       }
    };
    ```
-2. **求解器自注册**：修改 `HeatTransferSolver::initialize` 和 `ElectrostaticsSolver::initialize`，要求传入全局的 `VariableManager&`。
+3. **验证**: `PhysicsProblemBuilder` 中不再需要判断调用哪个注册函数，只需一把梭 `registerExpression`。
+
+#### Step 4: 引入空间梯度节点，屠杀手写物理节点 (核心破坏式重构)
+**动作**: 用 DAG 节点替代 `JouleHeatNode` 和 `ThermalExpansionStressNode`。
+1. 在 `variable_graph.cpp` 中新增 `GridFunctionGradientNode`：
    ```cpp
-   // 在求解器初始化完毕后：
-   globalVarManager.registerNode("T", std::make_unique<GridFunctionNode>(&this->field()));
+   class GridFunctionGradientNode final : public VariableNode {
+       // 接受一个 GridFunction，shape 返回 Vector (或 3x1 Matrix)。
+       // evaluateBatch 时调用 field_->gradient(...)
+   };
    ```
-3. **删减冗余代码**：
-   - 彻底删除 `physics_problem_builder.cpp` 中的 `classifyRuntimeField`、`resolveRuntimeField` 和 `makeRuntimeExpressionResolvers`。
-   - `VariableManager::registerScalarExpression` 的签名移除 `GraphRuntimeResolvers` 参数，因为此时 `"T"` 已经是 DAG 中的一个合法前置节点。
-
-### 统一全局 DAG，消灭临时管理器与域缓存
-**目标**：让 `VariableManager` 成为唯一的事实来源（Single Source of Truth）。
-
-1. **重构 Problem 类**：
-   - **删除** `domainScalarNodes`、`domainMatrixNodes`。
-   - **删除** `expressionManagers_`（极大的反模式，不应该为每个小表达式创建一个 Manager）。
-   - **删除** `ownedNodes`。
-   - 保留唯一的 `VariableManager globalVariables_;`。
-2. **规范化命名方案**：在 `physics_problem_builder.cpp` 中，当需要获取某个 Domain 的属性时，利用名称组合而不是 Map 缓存。
+2. 为 `VariableManager` 增加基础张量运算的支持（这要求你更新你的 `ExpressionParser`，使其支持向量/矩阵的内积、点积等运算；如果暂时不支持解析器层面的张量运算，可以退而求其次，在 DAG 层面实现 `TensorDotNode` 等基础算子节点）。
+3. **重写焦耳热** (`setupJouleHeating`)：
    ```cpp
-   // 替代原有的 requireDomainScalarNode
-   const VariableNode* requireDomainScalarNode(Problem& problem, int domainId, std::string_view property) {
-       std::string nodeName = std::string(property) + "_dom" + std::to_string(domainId);
-       if (auto* node = problem.globalVariables_.get(nodeName)) return node;
-       
-       const std::string& expr = problem.materials.scalarExpressionByDomain(domainId, property);
-       problem.globalVariables_.registerScalarExpression(nodeName, expr);
-       return problem.globalVariables_.get(nodeName);
+   // 不再使用硬编码的 JouleHeatNode
+   problem.globalVariables_.registerGradient("grad_V", "V"); // 自动求导节点
+   // 利用表达式系统计算焦耳热：Q = dot(grad_V, sigma * grad_V)
+   problem.globalVariables_.registerExpression("JouleHeat", "dot(grad_V, sigma * grad_V)");
+   ```
+4. **验证**: 删除 `JouleHeatNode` 类。此时你的变量系统已经实现了真正的图计算。
+
+#### Step 5: 剥离 `PhysicsProblemBuilder` 的硬编码装配（插件化）
+**动作**: 把 `Problem` 和 Builder 变成真正的框架，对具体的物理场无感。
+1. 在 `Problem` 中删除特定的成员变量：
+   ```cpp
+   // 删除：
+   // std::unique_ptr<ElectrostaticsSolver> electrostatics;
+   // std::unique_ptr<HeatTransferSolver> heatTransfer;
+   // 改为：
+   std::unordered_map<std::string, std::unique_ptr<PhysicsFieldSolver>> solvers_;
+   ```
+2. 引入一个简单的注册表（Registry 模式）或通过约定的工厂模式来实例化 Solver：
+   ```cpp
+   for (auto& [kind, physics] : caseDef.physics) {
+       auto solver = SolverFactory::create(kind, physics.order);
+       solver->initialize(*mesh, fieldValues, ...);
+       solvers_[kind] = std::move(solver);
    }
    ```
-   **编译验证**：此时所有的变量和表达式都位于同一个 DAG 中，并且按名称索引，无需外部缓存。
-
-### 用动态解析替换局部硬编码 AST (消灭 `ProductScalarNode`)
-**目标**：清理具体求解器中手写的 AST 组合。
-
-1. **修改 HeatTransferSolver**：
-   打开 `heat_transfer_solver.cpp`，定位到 `ProductScalarNode` 类。
-   **删除它**。
-2. **重构组装逻辑**：在 `HeatTransferSolver::assembleMassMatrix` 中，我们不需要自己写乘法节点，而是委托给 DAG。
-   在给 `HeatTransferSolver` 赋值时，不传入指针，而是传入变量名称。或者让 Builder 生成乘积表达式：
-   ```cpp
-   // 在 builder 中
-   std::string rhoName = "density_dom" + std::to_string(domainId);
-   std::string cpName  = "heatcapacity_dom" + std::to_string(domainId);
-   std::string massPropName = "mass_prop_dom" + std::to_string(domainId);
-   problem.globalVariables_.registerScalarExpression(massPropName, rhoName + " * " + cpName);
-   
-   problem.heatTransfer->setMassProperties({domainId}, problem.globalVariables_.get(massPropName));
-   ```
-   *注意：这一步不仅使得代码行数锐减，而且如果将来表达式系统增加了常数折叠（Constant Folding）或公共子表达式消除优化，这些逻辑将自动受益。*
-
-### 重构表达式后端（从 AST 树到线性化指令流）
-**目标**：消除递归求值，引入基于栈（Stack-based VM）或扁平数组的指令流，极大提升单点求值性能。
-
-1.  **定义操作码（OpCode）和指令：**
-    ```cpp
-    enum class OpCode : uint8_t { Constant, LoadVar, Add, Sub, Mul, Div, Pow, Sin, Cos /*...*/ };
-    struct Instruction {
-        OpCode op;
-        double value; // 用于 Constant
-        int index;    // 用于 LoadVar
-    };
-    ```
-2.  **修改编译器：**
-    在 `ScalarAstCompiler::compile()` 后增加一个步骤（或者直接在解析时生成），将 AST 遍历一遍，转换为 `std::vector<Instruction>`（后缀表达式形式）。
-3.  **重写 Evaluate 函数：**
-    ```cpp
-    // 替换掉原来的 evalAstNode 递归调用
-    double ExpressionProgram::evaluate_single(std::span<const double> vars) const {
-        std::vector<double> stack; // 实际实现中可用固定大小的 std::array 或小端优化以避免堆分配
-        for (const auto& inst : instructions_) {
-            switch (inst.op) {
-                case OpCode::Constant: stack.push_back(inst.value); break;
-                case OpCode::LoadVar: stack.push_back(vars[inst.index]); break;
-                case OpCode::Add: {
-                    double b = stack.back(); stack.pop_back();
-                    stack.back() += b; 
-                    break;
-                }
-                // ... 其他操作
-            }
-        }
-        return stack.back() * multiplier_;
-    }
-    ```
-*验证*：原有的所有标量表达式单元测试应该无缝通过，且性能提升。
-
-### 泛化变量形态（统一标量、向量与矩阵）
-**目标**：删除 `RuntimeScalarExpressionNode` 和 `RuntimeMatrixExpressionNode`，用单一类处理任意维度（Shape）。
-
-1.  **统一 VariableShape 和 Dimensions：**
-    ```cpp
-    // 废弃 enum class VariableShape，改用动态或固定的 Shape 结构
-    struct TensorShape {
-        std::vector<int> dims; // [] 为标量, [3] 为向量, [3,3] 为矩阵
-        size_t flatSize() const; // 返回总组件数
-    };
-    ```
-2.  **合并 Node 类为统一的 `ExpressionNode`：**
-    让 `ExpressionNode` 内部持有一个 `std::vector<ExpressionProgram>`，对应张量的每一个展平（Flattened）的分量。
-    ```cpp
-    class ExpressionNode final : public VariableNode {
-    public:
-        // 无论是标量(1个程序), 向量(3个程序), 还是矩阵(9个程序)，都用统一逻辑
-        void evaluateBatch(...) override {
-             // 逻辑简化为遍历 programs 数组并写入对应的内存偏移
-        }
-    private:
-        TensorShape shape_;
-        std::vector<ExpressionProgram> componentPrograms_; 
-    };
-    ```
-*验证*：替换原有 API 后，标量和矩阵的行为在外部表现一致，同时天然获得了对向量的支持。
-
-### 真正激活 DAG（全局工作区模型）
-**目标**：消除 `evaluateDependencyBlocks` 的局部递归，启用全局的 `executionPlan_`。
-
-1.  **引入 VariableWorkspace（求值工作区）：**
-    在图开始评估前，分配一块连续内存，用于存放当前所有节点的输出。
-    ```cpp
-    struct VariableWorkspace {
-        // key 为 Node 指针，value 为该 Node 对应所有点的计算结果数组
-        std::unordered_map<const VariableNode*, std::vector<double>> buffers;
-    };
-    ```
-2.  **重写 VariableManager 的求值逻辑：**
-    由 Manager 负责驱动（而不是 Node 驱动）。
-    ```cpp
-    void VariableManager::evaluateGraph(const EvaluationContext& ctx, VariableWorkspace& workspace) {
-        // 必须按拓扑排序执行！
-        for (const VariableNode* node : executionPlan_) {
-            auto& outputBuffer = workspace.buffers[node];
-            outputBuffer.resize(ctx.physicalPoints.size() * node->shape().flatSize());
-            
-            // 节点不再负责去 resolve 自己的依赖，它的依赖肯定已经在这个循环前面计算好并存在 workspace 中了！
-            node->evaluateBatch(ctx, workspace, outputBuffer); 
-        }
-    }
-    ```
-3.  **精简 Node 的求值：**
-    `ExpressionNode::evaluateBatch` 现在只需要直接从 `workspace.buffers[dependencyNode]` 中读取数据作为输入，不再调用任何子节点的 evaluate。
-*验证*：打印求值日志，验证每个节点严格只被求值一次，没有重复计算。
+3. **验证**: 现在 `PhysicsProblemBuilder` 对“静电场”、“固体力学”一无所知。新增物理场只需新增一个派生自 `PhysicsFieldSolver` 的类并在工厂注册即可。

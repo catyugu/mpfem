@@ -15,6 +15,32 @@
 namespace mpfem {
     namespace {
 
+        enum class OpCode : uint8_t {
+            Constant, // push literal (value in Instruction::value)
+            LoadVar, // push variable (index in Instruction::index)
+            Add,
+            Sub,
+            Mul,
+            Div,
+            Pow, // binary ops
+            Neg,
+            Sin,
+            Cos,
+            Tan,
+            Exp,
+            Log,
+            Sqrt,
+            Abs,
+            Min,
+            Max, // unary ops
+        };
+
+        struct Instruction {
+            OpCode op;
+            double value; // for Constant
+            int index; // for LoadVar
+        };
+
         struct MatrixTemplate {
             bool literalMatrix = false;
             std::vector<std::string> components;
@@ -414,50 +440,192 @@ namespace mpfem {
             }
         }
 
-        double evalAstNode(const AstNode& node, std::span<const double> values)
+        void linearize(const AstNode* node, std::vector<Instruction>& out)
         {
-            switch (node.kind) {
+            switch (node->kind) {
             case AstNode::Kind::Constant:
-                return node.value;
-            case AstNode::Kind::Variable: {
-                if (node.variableIndex < 0 || static_cast<size_t>(node.variableIndex) >= values.size()) {
-                    MPFEM_THROW(ArgumentException, "Unbound variable index in expression: " + node.variableName);
-                }
-                return values[static_cast<size_t>(node.variableIndex)];
-            }
+                out.push_back({OpCode::Constant, node->value, -1});
+                break;
+            case AstNode::Kind::Variable:
+                out.push_back({OpCode::LoadVar, 0.0, node->variableIndex});
+                break;
             case AstNode::Kind::Add:
-                return evalAstNode(*node.lhs, values) + evalAstNode(*node.rhs, values);
+                linearize(node->lhs.get(), out);
+                linearize(node->rhs.get(), out);
+                out.push_back({OpCode::Add, 0.0, -1});
+                break;
             case AstNode::Kind::Subtract:
-                return evalAstNode(*node.lhs, values) - evalAstNode(*node.rhs, values);
+                linearize(node->lhs.get(), out);
+                linearize(node->rhs.get(), out);
+                out.push_back({OpCode::Sub, 0.0, -1});
+                break;
             case AstNode::Kind::Multiply:
-                return evalAstNode(*node.lhs, values) * evalAstNode(*node.rhs, values);
+                linearize(node->lhs.get(), out);
+                linearize(node->rhs.get(), out);
+                out.push_back({OpCode::Mul, 0.0, -1});
+                break;
             case AstNode::Kind::Divide:
-                return evalAstNode(*node.lhs, values) / evalAstNode(*node.rhs, values);
+                linearize(node->lhs.get(), out);
+                linearize(node->rhs.get(), out);
+                out.push_back({OpCode::Div, 0.0, -1});
+                break;
             case AstNode::Kind::Power:
-                return std::pow(evalAstNode(*node.lhs, values), evalAstNode(*node.rhs, values));
+                linearize(node->lhs.get(), out);
+                linearize(node->rhs.get(), out);
+                out.push_back({OpCode::Pow, 0.0, -1});
+                break;
             case AstNode::Kind::Negate:
-                return -evalAstNode(*node.lhs, values);
+                linearize(node->lhs.get(), out);
+                out.push_back({OpCode::Neg, 0.0, -1});
+                break;
             case AstNode::Kind::Sin:
-                return std::sin(evalAstNode(*node.lhs, values));
+                linearize(node->lhs.get(), out);
+                out.push_back({OpCode::Sin, 0.0, -1});
+                break;
             case AstNode::Kind::Cos:
-                return std::cos(evalAstNode(*node.lhs, values));
+                linearize(node->lhs.get(), out);
+                out.push_back({OpCode::Cos, 0.0, -1});
+                break;
             case AstNode::Kind::Tan:
-                return std::tan(evalAstNode(*node.lhs, values));
+                linearize(node->lhs.get(), out);
+                out.push_back({OpCode::Tan, 0.0, -1});
+                break;
             case AstNode::Kind::Exp:
-                return std::exp(evalAstNode(*node.lhs, values));
+                linearize(node->lhs.get(), out);
+                out.push_back({OpCode::Exp, 0.0, -1});
+                break;
             case AstNode::Kind::Log:
-                return std::log(evalAstNode(*node.lhs, values));
+                linearize(node->lhs.get(), out);
+                out.push_back({OpCode::Log, 0.0, -1});
+                break;
             case AstNode::Kind::Sqrt:
-                return std::sqrt(evalAstNode(*node.lhs, values));
+                linearize(node->lhs.get(), out);
+                out.push_back({OpCode::Sqrt, 0.0, -1});
+                break;
             case AstNode::Kind::Abs:
-                return std::abs(evalAstNode(*node.lhs, values));
+                linearize(node->lhs.get(), out);
+                out.push_back({OpCode::Abs, 0.0, -1});
+                break;
             case AstNode::Kind::Min:
-                return std::min(evalAstNode(*node.lhs, values), evalAstNode(*node.rhs, values));
+                linearize(node->lhs.get(), out);
+                linearize(node->rhs.get(), out);
+                out.push_back({OpCode::Min, 0.0, -1});
+                break;
             case AstNode::Kind::Max:
-                return std::max(evalAstNode(*node.lhs, values), evalAstNode(*node.rhs, values));
+                linearize(node->lhs.get(), out);
+                linearize(node->rhs.get(), out);
+                out.push_back({OpCode::Max, 0.0, -1});
+                break;
             }
+        }
 
-            MPFEM_THROW(ArgumentException, "Unknown AST node kind.");
+        double evaluate_single_vm(std::span<const double> vars, const std::vector<Instruction>& instructions, double multiplier)
+        {
+            std::vector<double> stack;
+            stack.reserve(16);
+
+            for (const Instruction& insn : instructions) {
+                switch (insn.op) {
+                case OpCode::Constant:
+                    stack.push_back(insn.value);
+                    break;
+                case OpCode::LoadVar:
+                    stack.push_back(vars[static_cast<size_t>(insn.index)]);
+                    break;
+                case OpCode::Add: {
+                    double b = stack.back();
+                    stack.pop_back();
+                    double a = stack.back();
+                    stack.pop_back();
+                    stack.push_back(a + b);
+                    break;
+                }
+                case OpCode::Sub: {
+                    double b = stack.back();
+                    stack.pop_back();
+                    double a = stack.back();
+                    stack.pop_back();
+                    stack.push_back(a - b);
+                    break;
+                }
+                case OpCode::Mul: {
+                    double b = stack.back();
+                    stack.pop_back();
+                    double a = stack.back();
+                    stack.pop_back();
+                    stack.push_back(a * b);
+                    break;
+                }
+                case OpCode::Div: {
+                    double b = stack.back();
+                    stack.pop_back();
+                    double a = stack.back();
+                    stack.pop_back();
+                    stack.push_back(a / b);
+                    break;
+                }
+                case OpCode::Pow: {
+                    double b = stack.back();
+                    stack.pop_back();
+                    double a = stack.back();
+                    stack.pop_back();
+                    stack.push_back(std::pow(a, b));
+                    break;
+                }
+                case OpCode::Neg: {
+                    stack.back() = -stack.back();
+                    break;
+                }
+                case OpCode::Sin: {
+                    stack.back() = std::sin(stack.back());
+                    break;
+                }
+                case OpCode::Cos: {
+                    stack.back() = std::cos(stack.back());
+                    break;
+                }
+                case OpCode::Tan: {
+                    stack.back() = std::tan(stack.back());
+                    break;
+                }
+                case OpCode::Exp: {
+                    stack.back() = std::exp(stack.back());
+                    break;
+                }
+                case OpCode::Log: {
+                    stack.back() = std::log(stack.back());
+                    break;
+                }
+                case OpCode::Sqrt: {
+                    stack.back() = std::sqrt(stack.back());
+                    break;
+                }
+                case OpCode::Abs: {
+                    stack.back() = std::abs(stack.back());
+                    break;
+                }
+                case OpCode::Min: {
+                    double b = stack.back();
+                    stack.pop_back();
+                    double a = stack.back();
+                    stack.pop_back();
+                    stack.push_back(std::min(a, b));
+                    break;
+                }
+                case OpCode::Max: {
+                    double b = stack.back();
+                    stack.pop_back();
+                    double a = stack.back();
+                    stack.pop_back();
+                    stack.push_back(std::max(a, b));
+                    break;
+                }
+                default:
+                    MPFEM_THROW(ArgumentException, "Unknown opcode");
+                }
+            }
+            MPFEM_ASSERT(stack.size() == 1, "Stack mismatch after evaluation");
+            return stack.back() * multiplier;
         }
 
     } // namespace
@@ -470,6 +638,7 @@ namespace mpfem {
         std::vector<ExpressionParser::ExpressionProgram> components;
         std::vector<std::string> dependencies;
         std::vector<std::vector<size_t>> componentDependencySlots;
+        std::vector<Instruction> instructions_; // Linearized VM instruction stream
     };
 
     ExpressionParser::ExpressionProgram::ExpressionProgram()
@@ -515,7 +684,7 @@ namespace mpfem {
             "Expression input size does not match dependency size.");
 
         if (impl_->shape == VariableShape::Scalar) {
-            return evalAstNode(*impl_->root, values) * impl_->multiplier;
+            return evaluate_single_vm(values, impl_->instructions_, impl_->multiplier);
         }
 
         auto evalComponent = [this, values](size_t componentIndex) -> double {
@@ -567,6 +736,7 @@ namespace mpfem {
             std::unordered_set<std::string> seen;
             collectDependencies(*impl->root, seen, impl->dependencies);
             bindAstVariableIndices(*impl->root, impl->dependencies);
+            linearize(impl->root.get(), impl->instructions_);
             return ExpressionProgram(std::move(impl));
         }
 
@@ -589,6 +759,7 @@ namespace mpfem {
             std::unordered_set<std::string> seen;
             collectDependencies(*scalarImpl->root, seen, scalarImpl->dependencies);
             bindAstVariableIndices(*scalarImpl->root, scalarImpl->dependencies);
+            linearize(scalarImpl->root.get(), scalarImpl->instructions_);
 
             ExpressionProgram scalarProg(std::move(scalarImpl));
             impl->components.push_back(std::move(scalarProg));
@@ -617,6 +788,7 @@ namespace mpfem {
             std::unordered_set<std::string> seen;
             collectDependencies(*scalarImpl->root, seen, scalarImpl->dependencies);
             bindAstVariableIndices(*scalarImpl->root, scalarImpl->dependencies);
+            linearize(scalarImpl->root.get(), scalarImpl->instructions_);
 
             impl->components.push_back(ExpressionProgram(std::move(scalarImpl)));
             const std::vector<std::string>& componentDeps = impl->components.back().dependencies();
