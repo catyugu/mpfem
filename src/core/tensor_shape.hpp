@@ -9,7 +9,7 @@
 namespace mpfem {
 
     /**
-     * @brief通用张量形状描述
+     * @brief 通用张量形状描述
      *
      * 支持任意维度的张量：
      * - 标量: dims = {} 或 dims = {1}
@@ -28,18 +28,6 @@ namespace mpfem {
         static TensorShape scalar() { return TensorShape(); }
         static TensorShape vector(int n) { return TensorShape({n}); }
         static TensorShape matrix(int rows, int cols) { return TensorShape({rows, cols}); }
-        static TensorShape fromEnum(VariableShape shape)
-        {
-            switch (shape) {
-            case VariableShape::Scalar:
-                return scalar();
-            case VariableShape::Vector:
-                return vector(3);
-            case VariableShape::Matrix:
-                return matrix(3, 3);
-            }
-            return scalar();
-        }
 
         /// 计算总元素数量
         size_t size() const

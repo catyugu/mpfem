@@ -289,8 +289,7 @@ namespace mpfem {
         }
 
         // Create node based on expression shape (inferred from compilation result)
-        // Note: program.shape() returns VariableShape, convert to TensorShape
-        TensorShape shape = TensorShape::fromEnum(program.shape());
+        TensorShape shape = program.shape();
         if (shape.isScalar()) {
             nodes_[std::move(name)] = std::make_unique<RuntimeScalarExpressionNode>(
                 std::move(expression),

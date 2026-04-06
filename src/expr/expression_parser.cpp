@@ -633,7 +633,7 @@ namespace mpfem {
     struct ExpressionParser::ExpressionProgram::Impl {
         double multiplier = 1.0;
         bool literalMatrix = false;
-        VariableShape shape = VariableShape::Scalar;
+        TensorShape shape = TensorShape::scalar();
         std::unique_ptr<AstNode> root;
         std::vector<ExpressionParser::ExpressionProgram> components;
         std::vector<std::string> dependencies;
@@ -660,15 +660,15 @@ namespace mpfem {
         if (!impl_) {
             return false;
         }
-        if (impl_->shape == VariableShape::Scalar) {
+        if (impl_->shape.isScalar()) {
             return impl_->root != nullptr;
         }
         return !impl_->components.empty();
     }
 
-    VariableShape ExpressionParser::ExpressionProgram::shape() const
+    TensorShape ExpressionParser::ExpressionProgram::shape() const
     {
-        return impl_ ? impl_->shape : VariableShape::Scalar;
+        return impl_ ? impl_->shape : TensorShape::scalar();
     }
 
     const std::vector<std::string>& ExpressionParser::ExpressionProgram::dependencies() const
@@ -683,7 +683,7 @@ namespace mpfem {
         MPFEM_ASSERT(values.size() == impl_->dependencies.size(),
             "Expression input size does not match dependency size.");
 
-        if (impl_->shape == VariableShape::Scalar) {
+        if (impl_->shape.isScalar()) {
             return evaluate_single_vm(values, impl_->instructions_, impl_->multiplier);
         }
 
@@ -729,7 +729,7 @@ namespace mpfem {
             }
 
             auto impl = std::make_unique<ExpressionProgram::Impl>();
-            impl->shape = VariableShape::Scalar;
+            impl->shape = TensorShape::scalar();
             impl->multiplier = unitResult.multiplier;
             ScalarAstCompiler compiler(expressionText);
             impl->root = compiler.compile();
@@ -741,7 +741,7 @@ namespace mpfem {
         }
 
         auto impl = std::make_unique<ExpressionProgram::Impl>();
-        impl->shape = VariableShape::Matrix;
+        impl->shape = TensorShape::matrix(3, 3);
         impl->literalMatrix = true;
         impl->components.reserve(matrixTemplate.components.size());
         impl->componentDependencySlots.reserve(matrixTemplate.components.size());
@@ -752,7 +752,7 @@ namespace mpfem {
             const std::string exprText = strings::trim(std::string(unitResult.expression));
 
             auto scalarImpl = std::make_unique<ExpressionProgram::Impl>();
-            scalarImpl->shape = VariableShape::Scalar;
+            scalarImpl->shape = TensorShape::scalar();
             scalarImpl->multiplier = unitResult.multiplier;
             ScalarAstCompiler compiler(exprText);
             scalarImpl->root = compiler.compile();
@@ -781,7 +781,7 @@ namespace mpfem {
             const std::string exprText = strings::trim(std::string(unitResult.expression));
 
             auto scalarImpl = std::make_unique<ExpressionProgram::Impl>();
-            scalarImpl->shape = VariableShape::Scalar;
+            scalarImpl->shape = TensorShape::scalar();
             scalarImpl->multiplier = unitResult.multiplier;
             ScalarAstCompiler compiler(exprText);
             scalarImpl->root = compiler.compile();

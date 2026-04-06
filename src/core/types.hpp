@@ -47,17 +47,6 @@ namespace mpfem {
     // Triplet for sparse matrix construction
     using Triplet = Eigen::Triplet<Real>;
 
-    // =============================================================================
-    // Expression value variant (unified scalar/matrix/tensor)
-    // =============================================================================
-
-    /// Shape classification for expression values
-    enum class VariableShape {
-        Scalar, ///< Scalar value (double)
-        Vector, ///< Vector value (Vector3)
-        Matrix, ///< Matrix value (Matrix3)
-    };
-
     /// Unified expression value type - scalar, vector, or matrix
     using ExprValue = std::variant<double, Vector3, Matrix3>;
 
