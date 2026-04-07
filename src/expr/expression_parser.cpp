@@ -716,8 +716,7 @@ namespace mpfem {
             FlattenedProgram& program)
         {
             switch (node.kind) {
-            case AstNode::Kind::Constant:
-            {
+            case AstNode::Kind::Constant: {
                 const int dest = allocateRegister(program);
                 const int constantIndex = static_cast<int>(program.constants.size());
                 program.constants.push_back(TensorValue::scalar(node.value));
@@ -728,8 +727,7 @@ namespace mpfem {
                 program.instructions.push_back(inst);
                 return dest;
             }
-            case AstNode::Kind::Variable:
-            {
+            case AstNode::Kind::Variable: {
                 const auto it = dependencyIndices.find(node.variableName);
                 if (it == dependencyIndices.end()) {
                     MPFEM_THROW(ArgumentException, "Variable index binding failed: " + node.variableName);
@@ -829,8 +827,7 @@ namespace mpfem {
             case AstNode::Kind::Exp:
             case AstNode::Kind::Log:
             case AstNode::Kind::Sqrt:
-            case AstNode::Kind::Abs:
-            {
+            case AstNode::Kind::Abs: {
                 const int dest = allocateRegister(program);
                 Instruction inst;
                 inst.dest = dest;
@@ -943,92 +940,70 @@ namespace mpfem {
                         registers[static_cast<size_t>(inst.operands[8])].scalar());
                     break;
                 case OpCode::Add:
-                    registers[static_cast<size_t>(inst.dest)] = add(
-                        registers[static_cast<size_t>(inst.operand1)],
-                        registers[static_cast<size_t>(inst.operand2)]);
+                    registers[inst.dest] = registers[inst.operand1] + registers[inst.operand2];
                     break;
                 case OpCode::Subtract:
-                    registers[static_cast<size_t>(inst.dest)] = subtract(
-                        registers[static_cast<size_t>(inst.operand1)],
-                        registers[static_cast<size_t>(inst.operand2)]);
+                    registers[inst.dest] = registers[inst.operand1] - registers[inst.operand2];
                     break;
-                case OpCode::Multiply: {
-                    const TensorValue& lhs = registers[static_cast<size_t>(inst.operand1)];
-                    const TensorValue& rhs = registers[static_cast<size_t>(inst.operand2)];
-                    if (lhs.isScalar()) {
-                        registers[static_cast<size_t>(inst.dest)] = scale(rhs, lhs.scalar());
-                    }
-                    else if (rhs.isScalar()) {
-                        registers[static_cast<size_t>(inst.dest)] = scale(lhs, rhs.scalar());
-                    }
-                    else if (lhs.isMatrix() && rhs.isVector()) {
-                        registers[static_cast<size_t>(inst.dest)] = matvec(lhs, rhs);
-                    }
-                    else {
-                        registers[static_cast<size_t>(inst.dest)] = matmat(lhs, rhs);
-                    }
+                case OpCode::Multiply:
+                    registers[inst.dest] = registers[inst.operand1] * registers[inst.operand2];
                     break;
-                }
                 case OpCode::Divide:
-                    registers[static_cast<size_t>(inst.dest)] = scale(
-                        registers[static_cast<size_t>(inst.operand1)],
-                        1.0 / registers[static_cast<size_t>(inst.operand2)].scalar());
+                    registers[inst.dest] = registers[inst.operand1] / registers[inst.operand2];
                     break;
                 case OpCode::Power:
-                    registers[static_cast<size_t>(inst.dest)] = TensorValue::scalar(std::pow(
-                        registers[static_cast<size_t>(inst.operand1)].scalar(),
-                        registers[static_cast<size_t>(inst.operand2)].scalar()));
+                    registers[inst.dest] = TensorValue::scalar(std::pow(
+                        registers[inst.operand1].scalar(),
+                        registers[inst.operand2].scalar()));
                     break;
                 case OpCode::Negate:
-                    registers[static_cast<size_t>(inst.dest)] = negate(registers[static_cast<size_t>(inst.operand1)]);
+                    registers[inst.dest] = -registers[inst.operand1];
                     break;
                 case OpCode::Sin:
-                    registers[static_cast<size_t>(inst.dest)] = TensorValue::scalar(std::sin(registers[static_cast<size_t>(inst.operand1)].scalar()));
+                    registers[inst.dest] = TensorValue::scalar(std::sin(registers[inst.operand1].scalar()));
                     break;
                 case OpCode::Cos:
-                    registers[static_cast<size_t>(inst.dest)] = TensorValue::scalar(std::cos(registers[static_cast<size_t>(inst.operand1)].scalar()));
+                    registers[inst.dest] = TensorValue::scalar(std::cos(registers[inst.operand1].scalar()));
                     break;
                 case OpCode::Tan:
-                    registers[static_cast<size_t>(inst.dest)] = TensorValue::scalar(std::tan(registers[static_cast<size_t>(inst.operand1)].scalar()));
+                    registers[inst.dest] = TensorValue::scalar(std::tan(registers[inst.operand1].scalar()));
                     break;
                 case OpCode::Exp:
-                    registers[static_cast<size_t>(inst.dest)] = TensorValue::scalar(std::exp(registers[static_cast<size_t>(inst.operand1)].scalar()));
+                    registers[inst.dest] = TensorValue::scalar(std::exp(registers[inst.operand1].scalar()));
                     break;
                 case OpCode::Log:
-                    registers[static_cast<size_t>(inst.dest)] = TensorValue::scalar(std::log(registers[static_cast<size_t>(inst.operand1)].scalar()));
+                    registers[inst.dest] = TensorValue::scalar(std::log(registers[inst.operand1].scalar()));
                     break;
                 case OpCode::Sqrt:
-                    registers[static_cast<size_t>(inst.dest)] = TensorValue::scalar(std::sqrt(registers[static_cast<size_t>(inst.operand1)].scalar()));
+                    registers[inst.dest] = TensorValue::scalar(std::sqrt(registers[inst.operand1].scalar()));
                     break;
                 case OpCode::Abs:
-                    registers[static_cast<size_t>(inst.dest)] = TensorValue::scalar(std::abs(registers[static_cast<size_t>(inst.operand1)].scalar()));
+                    registers[inst.dest] = TensorValue::scalar(std::abs(registers[inst.operand1].scalar()));
                     break;
                 case OpCode::Min:
-                    registers[static_cast<size_t>(inst.dest)] = TensorValue::scalar(std::min(
-                        registers[static_cast<size_t>(inst.operand1)].scalar(),
-                        registers[static_cast<size_t>(inst.operand2)].scalar()));
+                    registers[inst.dest] = TensorValue::scalar(std::min(
+                        registers[inst.operand1].scalar(),
+                        registers[inst.operand2].scalar()));
                     break;
                 case OpCode::Max:
-                    registers[static_cast<size_t>(inst.dest)] = TensorValue::scalar(std::max(
-                        registers[static_cast<size_t>(inst.operand1)].scalar(),
-                        registers[static_cast<size_t>(inst.operand2)].scalar()));
+                    registers[inst.dest] = TensorValue::scalar(std::max(
+                        registers[inst.operand1].scalar(),
+                        registers[inst.operand2].scalar()));
                     break;
                 case OpCode::Dot:
-                    registers[static_cast<size_t>(inst.dest)] = TensorValue::scalar(dot(
-                        registers[static_cast<size_t>(inst.operand1)],
-                        registers[static_cast<size_t>(inst.operand2)]));
+                    registers[inst.dest] = TensorValue::scalar(dot(registers[inst.operand1], registers[inst.operand2]));
                     break;
                 case OpCode::Sym:
-                    registers[static_cast<size_t>(inst.dest)] = sym(registers[static_cast<size_t>(inst.operand1)]);
+                    registers[inst.dest] = sym(registers[inst.operand1]);
                     break;
                 case OpCode::Trace:
-                    registers[static_cast<size_t>(inst.dest)] = TensorValue::scalar(trace(registers[static_cast<size_t>(inst.operand1)]));
+                    registers[inst.dest] = TensorValue::scalar(trace(registers[inst.operand1]));
                     break;
                 case OpCode::Transpose:
-                    registers[static_cast<size_t>(inst.dest)] = transpose(registers[static_cast<size_t>(inst.operand1)]);
+                    registers[inst.dest] = transpose(registers[inst.operand1]);
                     break;
                 case OpCode::Return:
-                    return registers[static_cast<size_t>(inst.operand1)];
+                    return registers[inst.operand1];
                 }
             }
             MPFEM_THROW(ArgumentException, "Expression program did not emit a return instruction.");
