@@ -5,6 +5,7 @@
 #include "expr/unit_parser.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdlib>
 #include <span>
@@ -519,113 +520,160 @@ namespace mpfem {
             }
         }
 
-        double evaluate_single_vm(std::span<const double> vars, const std::vector<Instruction>& instructions, double multiplier)
+        size_t computeMaxStackDepth(const std::vector<Instruction>& instructions)
         {
-            std::vector<double> stack;
-            stack.reserve(16);
+            size_t depth = 0;
+            size_t maxDepth = 0;
+            for (const Instruction& insn : instructions) {
+                switch (insn.op) {
+                case OpCode::Constant:
+                case OpCode::LoadVar:
+                    ++depth;
+                    break;
+                case OpCode::Add:
+                case OpCode::Sub:
+                case OpCode::Mul:
+                case OpCode::Div:
+                case OpCode::Pow:
+                case OpCode::Min:
+                case OpCode::Max:
+                    MPFEM_ASSERT(depth >= 2, "Invalid VM program: binary op underflow.");
+                    --depth;
+                    break;
+                case OpCode::Neg:
+                case OpCode::Sin:
+                case OpCode::Cos:
+                case OpCode::Tan:
+                case OpCode::Exp:
+                case OpCode::Log:
+                case OpCode::Sqrt:
+                case OpCode::Abs:
+                    MPFEM_ASSERT(depth >= 1, "Invalid VM program: unary op underflow.");
+                    break;
+                default:
+                    MPFEM_THROW(ArgumentException, "Unknown opcode");
+                }
+                maxDepth = std::max(maxDepth, depth);
+            }
+            MPFEM_ASSERT(depth == 1, "Invalid VM program: final stack depth must be 1.");
+            return maxDepth;
+        }
+
+        double evaluate_single_vm(std::span<const double> vars,
+            const std::vector<Instruction>& instructions,
+            double multiplier,
+            std::span<double> stack)
+        {
+            size_t sp = 0;
+
+            auto pop = [&]() -> double {
+                MPFEM_ASSERT(sp > 0, "VM stack underflow.");
+                --sp;
+                return stack[sp];
+            };
+
+            auto push = [&](double value) {
+                MPFEM_ASSERT(sp < stack.size(), "VM stack overflow.");
+                stack[sp] = value;
+                ++sp;
+            };
 
             for (const Instruction& insn : instructions) {
                 switch (insn.op) {
                 case OpCode::Constant:
-                    stack.push_back(insn.value);
+                    push(insn.value);
                     break;
                 case OpCode::LoadVar:
-                    stack.push_back(vars[static_cast<size_t>(insn.index)]);
+                    push(vars[static_cast<size_t>(insn.index)]);
                     break;
                 case OpCode::Add: {
-                    double b = stack.back();
-                    stack.pop_back();
-                    double a = stack.back();
-                    stack.pop_back();
-                    stack.push_back(a + b);
+                    const double b = pop();
+                    const double a = pop();
+                    push(a + b);
                     break;
                 }
                 case OpCode::Sub: {
-                    double b = stack.back();
-                    stack.pop_back();
-                    double a = stack.back();
-                    stack.pop_back();
-                    stack.push_back(a - b);
+                    const double b = pop();
+                    const double a = pop();
+                    push(a - b);
                     break;
                 }
                 case OpCode::Mul: {
-                    double b = stack.back();
-                    stack.pop_back();
-                    double a = stack.back();
-                    stack.pop_back();
-                    stack.push_back(a * b);
+                    const double b = pop();
+                    const double a = pop();
+                    push(a * b);
                     break;
                 }
                 case OpCode::Div: {
-                    double b = stack.back();
-                    stack.pop_back();
-                    double a = stack.back();
-                    stack.pop_back();
-                    stack.push_back(a / b);
+                    const double b = pop();
+                    const double a = pop();
+                    push(a / b);
                     break;
                 }
                 case OpCode::Pow: {
-                    double b = stack.back();
-                    stack.pop_back();
-                    double a = stack.back();
-                    stack.pop_back();
-                    stack.push_back(std::pow(a, b));
+                    const double b = pop();
+                    const double a = pop();
+                    push(std::pow(a, b));
                     break;
                 }
                 case OpCode::Neg: {
-                    stack.back() = -stack.back();
+                    MPFEM_ASSERT(sp > 0, "VM stack underflow.");
+                    stack[sp - 1] = -stack[sp - 1];
                     break;
                 }
                 case OpCode::Sin: {
-                    stack.back() = std::sin(stack.back());
+                    MPFEM_ASSERT(sp > 0, "VM stack underflow.");
+                    stack[sp - 1] = std::sin(stack[sp - 1]);
                     break;
                 }
                 case OpCode::Cos: {
-                    stack.back() = std::cos(stack.back());
+                    MPFEM_ASSERT(sp > 0, "VM stack underflow.");
+                    stack[sp - 1] = std::cos(stack[sp - 1]);
                     break;
                 }
                 case OpCode::Tan: {
-                    stack.back() = std::tan(stack.back());
+                    MPFEM_ASSERT(sp > 0, "VM stack underflow.");
+                    stack[sp - 1] = std::tan(stack[sp - 1]);
                     break;
                 }
                 case OpCode::Exp: {
-                    stack.back() = std::exp(stack.back());
+                    MPFEM_ASSERT(sp > 0, "VM stack underflow.");
+                    stack[sp - 1] = std::exp(stack[sp - 1]);
                     break;
                 }
                 case OpCode::Log: {
-                    stack.back() = std::log(stack.back());
+                    MPFEM_ASSERT(sp > 0, "VM stack underflow.");
+                    stack[sp - 1] = std::log(stack[sp - 1]);
                     break;
                 }
                 case OpCode::Sqrt: {
-                    stack.back() = std::sqrt(stack.back());
+                    MPFEM_ASSERT(sp > 0, "VM stack underflow.");
+                    stack[sp - 1] = std::sqrt(stack[sp - 1]);
                     break;
                 }
                 case OpCode::Abs: {
-                    stack.back() = std::abs(stack.back());
+                    MPFEM_ASSERT(sp > 0, "VM stack underflow.");
+                    stack[sp - 1] = std::abs(stack[sp - 1]);
                     break;
                 }
                 case OpCode::Min: {
-                    double b = stack.back();
-                    stack.pop_back();
-                    double a = stack.back();
-                    stack.pop_back();
-                    stack.push_back(std::min(a, b));
+                    const double b = pop();
+                    const double a = pop();
+                    push(std::min(a, b));
                     break;
                 }
                 case OpCode::Max: {
-                    double b = stack.back();
-                    stack.pop_back();
-                    double a = stack.back();
-                    stack.pop_back();
-                    stack.push_back(std::max(a, b));
+                    const double b = pop();
+                    const double a = pop();
+                    push(std::max(a, b));
                     break;
                 }
                 default:
                     MPFEM_THROW(ArgumentException, "Unknown opcode");
                 }
             }
-            MPFEM_ASSERT(stack.size() == 1, "Stack mismatch after evaluation");
-            return stack.back() * multiplier;
+            MPFEM_ASSERT(sp == 1, "Stack mismatch after evaluation");
+            return stack[0] * multiplier;
         }
 
     } // namespace
@@ -639,6 +687,7 @@ namespace mpfem {
         std::vector<std::string> dependencies;
         std::vector<std::vector<size_t>> componentDependencySlots;
         std::vector<Instruction> instructions_; // Linearized VM instruction stream
+        size_t maxStackDepth = 0;
     };
 
     ExpressionParser::ExpressionProgram::ExpressionProgram()
@@ -684,7 +733,19 @@ namespace mpfem {
             "Expression input size does not match dependency size.");
 
         if (impl_->shape.isScalar()) {
-            return evaluate_single_vm(values, impl_->instructions_, impl_->multiplier);
+            std::array<double, 64> localStack {};
+            if (impl_->maxStackDepth <= localStack.size()) {
+                return evaluate_single_vm(values,
+                    impl_->instructions_,
+                    impl_->multiplier,
+                    std::span<double>(localStack.data(), impl_->maxStackDepth));
+            }
+
+            std::vector<double> spillStack(impl_->maxStackDepth, 0.0);
+            return evaluate_single_vm(values,
+                impl_->instructions_,
+                impl_->multiplier,
+                std::span<double>(spillStack.data(), spillStack.size()));
         }
 
         auto evalComponent = [this, values](size_t componentIndex) -> double {
@@ -737,6 +798,7 @@ namespace mpfem {
             collectDependencies(*impl->root, seen, impl->dependencies);
             bindAstVariableIndices(*impl->root, impl->dependencies);
             linearize(impl->root.get(), impl->instructions_);
+            impl->maxStackDepth = computeMaxStackDepth(impl->instructions_);
             return ExpressionProgram(std::move(impl));
         }
 
@@ -760,6 +822,7 @@ namespace mpfem {
             collectDependencies(*scalarImpl->root, seen, scalarImpl->dependencies);
             bindAstVariableIndices(*scalarImpl->root, scalarImpl->dependencies);
             linearize(scalarImpl->root.get(), scalarImpl->instructions_);
+            scalarImpl->maxStackDepth = computeMaxStackDepth(scalarImpl->instructions_);
 
             ExpressionProgram scalarProg(std::move(scalarImpl));
             impl->components.push_back(std::move(scalarProg));
@@ -789,6 +852,7 @@ namespace mpfem {
             collectDependencies(*scalarImpl->root, seen, scalarImpl->dependencies);
             bindAstVariableIndices(*scalarImpl->root, scalarImpl->dependencies);
             linearize(scalarImpl->root.get(), scalarImpl->instructions_);
+            scalarImpl->maxStackDepth = computeMaxStackDepth(scalarImpl->instructions_);
 
             impl->components.push_back(ExpressionProgram(std::move(scalarImpl)));
             const std::vector<std::string>& componentDeps = impl->components.back().dependencies();

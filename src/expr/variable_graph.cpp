@@ -107,31 +107,38 @@ namespace mpfem {
             ValueExtractor extractor_;
         };
 
-        class RuntimeScalarExpressionNode final : public VariableNode {
+        class RuntimeExpressionNode final : public VariableNode {
         public:
-            RuntimeScalarExpressionNode(std::string expression,
+            RuntimeExpressionNode(std::string expression,
                 std::vector<const VariableNode*> dependencies,
                 ExpressionParser::ExpressionProgram program)
-                : expression_(std::move(expression)), dependencies_(std::move(dependencies)), program_(std::move(program)), id_(nextProgramId())
+                : expression_(std::move(expression)), dependencies_(std::move(dependencies)), program_(std::move(program)), shape_(program_.shape()), id_(nextProgramId())
             {
             }
 
-            TensorShape shape() const override { return TensorShape::scalar(); }
+            TensorShape shape() const override { return shape_; }
 
             void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override
             {
                 const size_t n = ctx.physicalPoints.size();
-                if (dest.size() != n) {
-                    MPFEM_THROW(ArgumentException, "RuntimeScalarExpressionNode evaluate destination size mismatch.");
+                const size_t valueSize = shape_.size();
+                if (dest.size() != n * valueSize) {
+                    MPFEM_THROW(ArgumentException, "RuntimeExpressionNode evaluate destination size mismatch.");
                 }
 
-                // Evaluate all dependencies - each produces n scalar values
                 std::vector<std::vector<double>> depValues(dependencies_.size());
+                std::vector<size_t> depSizes(dependencies_.size(), 0);
                 for (size_t d = 0; d < dependencies_.size(); ++d) {
-                    depValues[d].assign(n, 0.0);
+                    depSizes[d] = dependencies_[d]->shape().size();
+                    if (depSizes[d] != 1) {
+                        MPFEM_THROW(ArgumentException,
+                            "RuntimeExpressionNode currently requires scalar dependencies only.");
+                    }
+                    depValues[d].assign(n * depSizes[d], 0.0);
                     dependencies_[d]->evaluateBatch(ctx, std::span<double>(depValues[d].data(), depValues[d].size()));
                 }
 
+                std::vector<double> inputValues(dependencies_.size(), 0.0);
                 for (size_t i = 0; i < n; ++i) {
                     if (ctx.transform && i < ctx.referencePoints.size()) {
                         const Real xi[3] = {
@@ -142,80 +149,38 @@ namespace mpfem {
                         ctx.transform->setIntegrationPoint(xi);
                     }
 
-                    // Collect one scalar value per dependency at point i
-                    std::vector<double> inputValues(dependencies_.size());
                     for (size_t d = 0; d < dependencies_.size(); ++d) {
-                        inputValues[d] = depValues[d][i];
-                    }
-                    ExprValue exprResult = program_.evaluate(std::span<const double>(inputValues.data(), inputValues.size()));
-                    dest[i] = std::get<double>(exprResult);
-                }
-            }
-
-            std::vector<const VariableNode*> dependencies() const override
-            {
-                return dependencies_;
-            }
-
-        private:
-            std::string expression_;
-            std::vector<const VariableNode*> dependencies_;
-            ExpressionParser::ExpressionProgram program_;
-            std::uint64_t id_ = 0;
-        };
-
-        class RuntimeMatrixExpressionNode final : public VariableNode {
-        public:
-            RuntimeMatrixExpressionNode(std::string expression,
-                std::vector<const VariableNode*> dependencies,
-                ExpressionParser::ExpressionProgram program)
-                : expression_(std::move(expression)), dependencies_(std::move(dependencies)), program_(std::move(program)), id_(nextProgramId())
-            {
-            }
-
-            TensorShape shape() const override { return TensorShape::matrix(3, 3); }
-
-            void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override
-            {
-                const size_t n = ctx.physicalPoints.size();
-                if (dest.size() != n * 9ull) {
-                    MPFEM_THROW(ArgumentException, "RuntimeMatrixExpressionNode evaluate destination size mismatch.");
-                }
-
-                // Evaluate all dependencies
-                // For scalar deps: each produces n values (depValues[d][i] = scalar at point i)
-                // For matrix deps: each produces n*9 values
-                std::vector<std::vector<double>> depValues(dependencies_.size());
-                for (size_t d = 0; d < dependencies_.size(); ++d) {
-                    depValues[d].assign(n, 0.0);
-                    dependencies_[d]->evaluateBatch(ctx, std::span<double>(depValues[d].data(), depValues[d].size()));
-                }
-
-                for (size_t i = 0; i < n; ++i) {
-                    if (ctx.transform && i < ctx.referencePoints.size()) {
-                        const Real xi[3] = {
-                            ctx.referencePoints[i].x(),
-                            ctx.referencePoints[i].y(),
-                            ctx.referencePoints[i].z(),
-                        };
-                        ctx.transform->setIntegrationPoint(xi);
+                        inputValues[d] = depValues[d][i * depSizes[d]];
                     }
 
-                    // Collect one scalar value per dependency at point i
-                    // For matrix expression with scalar dependencies, the expression
-                    // internally handles broadcasting/replicating as needed
-                    std::vector<double> inputValues(dependencies_.size());
-                    for (size_t d = 0; d < dependencies_.size(); ++d) {
-                        inputValues[d] = depValues[d][i];
-                    }
                     const ExprValue exprResult = program_.evaluate(std::span<const double>(inputValues.data(), inputValues.size()));
-                    const Matrix3 mat = std::get<Matrix3>(exprResult);
-                    const size_t base = i * 9ull;
-                    for (int r = 0; r < 3; ++r) {
-                        for (int c = 0; c < 3; ++c) {
-                            dest[base + static_cast<size_t>(r * 3 + c)] = mat(r, c);
-                        }
+
+                    if (shape_.isScalar()) {
+                        dest[i] = std::get<double>(exprResult);
+                        continue;
                     }
+
+                    if (shape_.isVector()) {
+                        const Vector3 vec = std::get<Vector3>(exprResult);
+                        const size_t base = i * valueSize;
+                        for (size_t c = 0; c < valueSize; ++c) {
+                            dest[base + c] = vec[static_cast<Eigen::Index>(c)];
+                        }
+                        continue;
+                    }
+
+                    if (shape_.isMatrix()) {
+                        const Matrix3 mat = std::get<Matrix3>(exprResult);
+                        const size_t base = i * valueSize;
+                        for (int r = 0; r < 3; ++r) {
+                            for (int c = 0; c < 3; ++c) {
+                                dest[base + static_cast<size_t>(r * 3 + c)] = mat(r, c);
+                            }
+                        }
+                        continue;
+                    }
+
+                    MPFEM_THROW(ArgumentException, "RuntimeExpressionNode unsupported expression shape.");
                 }
             }
 
@@ -228,6 +193,7 @@ namespace mpfem {
             std::string expression_;
             std::vector<const VariableNode*> dependencies_;
             ExpressionParser::ExpressionProgram program_;
+            TensorShape shape_;
             std::uint64_t id_ = 0;
         };
 
@@ -288,23 +254,10 @@ namespace mpfem {
             dependencies.push_back(it->second.get());
         }
 
-        // Create node based on expression shape (inferred from compilation result)
-        TensorShape shape = program.shape();
-        if (shape.isScalar()) {
-            nodes_[std::move(name)] = std::make_unique<RuntimeScalarExpressionNode>(
-                std::move(expression),
-                std::move(dependencies),
-                std::move(program));
-        }
-        else if (shape.isMatrix()) {
-            nodes_[std::move(name)] = std::make_unique<RuntimeMatrixExpressionNode>(
-                std::move(expression),
-                std::move(dependencies),
-                std::move(program));
-        }
-        else {
-            MPFEM_THROW(ArgumentException, "Unsupported expression shape in registerExpression.");
-        }
+        nodes_[std::move(name)] = std::make_unique<RuntimeExpressionNode>(
+            std::move(expression),
+            std::move(dependencies),
+            std::move(program));
         graphDirty_ = true;
     }
 

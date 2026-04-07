@@ -45,8 +45,14 @@
 
 **操作步骤：**
 1. **统一数据结构**：修改 VM 栈，使其不再是 `double`，而是一个统一的、无堆分配的定长结构体（如 `union` 或 `std::array<double, 9>`，加上类型枚举）。
-2. **扩展 OpCode**：添加张量操作指令，如 `MatMul` (矩阵乘法), `Dot` (点乘), `Grad` (求梯度), `Sym` (对称化)。
+2. **扩展 OpCode**：添加张量操作指令，如 `MatMul` (矩阵乘法), `Dot` (点乘), `Grad` (求梯度)。
 3. **消除 Components 拆分**：删除 `MatrixTemplate` 拆分为 9 个子程序的逻辑。让 AST 直接解析形如 `[a, b, c; d, e, f; g, h, i]` 的语法，生成一个统一的 `AstNode::MatrixLiteral`，最终编译出直接操作矩阵的 OpCode。
+4. 但是COMSOL的材料属性配置文件中使用的仍然是形如：
+```xml
+<set name="electricconductivity" value="{'1/(1.72e-8*(1+0.0039*(T-298)))[S/m]','0','0','0','1/(1.72e-8*(1+0.0039*(T-298)))[S/m]','0','0','0','1/(1.72e-8*(1+0.0039*(T-298)))[S/m]'}"/>
+<set name="thermalexpansioncoefficient" value="{'17e-6[1/K]','0','0','0','17e-6[1/K]','0','0','0','17e-6[1/K]'}" />
+```
+你需要兼容一下这个格式。
 
 **验证点**：编译并运行一个测试，计算 `[1,0,0; 0,1,0; 0,0,1] * [x, y, z]^T`，确保 VM 能够原生输出向量。
 
@@ -125,18 +131,3 @@
 3. 这样在热应力表达式中，直接写 `"alpha * (T - T_ref)"` 即可，底层 `alpha` 节点在执行时会自动根据当前积分点所在的 `domainId` 取对应材料的膨胀系数。
 
 **验证点**：多材质模型可以正常求解，且 `VariableManager` 中不再有杂乱的带后缀变量名。
-
-#### 第五步：统一场变量与历史状态依赖 (Unified Field & Time History)
-
-在时间瞬态积分时，目前你是在求解器外围手动获取 `history( stepsBack )`。应当将时间步作为一个算子加入 DAG。
-
-**操作步骤：**
-1. 允许表达式引用过去的状态：如 `T_prev` 或 `old(T, 1)`。
-2. `GridFunctionNode` 初始化时可以携带 `stepsBack` 参数。
-   ```cpp
-   problem.globalVariables_.registerGridFunction("T", &problem.fieldValues, "T_field", 0 /* stepsBack */);
-   problem.globalVariables_.registerGridFunction("T_old", &problem.fieldValues, "T_field", 1 /* stepsBack */);
-   ```
-3. 你的 BDF1/BDF2 时间导数项也可以彻底表达式化：
-   `registerExpression("dT_dt", "(T - T_old) / dt")`。
-   这样求解器组装器甚至不需要知道什么是 BDF，它只管对 DAG 中名为 `"dT_dt"` 的节点进行弱形式积分。

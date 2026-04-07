@@ -59,48 +59,88 @@ namespace mpfem {
         const VariableNode* makeScalarExpressionNode(Problem& problem,
             const std::string& expression);
 
-        template <typename GetterFn>
-        std::unordered_map<int, const VariableNode*> collectDomainNodes(const std::set<int>& domainIds,
-            GetterFn getter)
-        {
-            std::unordered_map<int, const VariableNode*> byDomain;
-            byDomain.reserve(domainIds.size());
-            for (int domainId : domainIds) {
-                byDomain.emplace(domainId, getter(domainId));
+        class DomainMultiplexerNode final : public VariableNode {
+        public:
+            explicit DomainMultiplexerNode(TensorShape shape)
+                : shape_(std::move(shape))
+            {
             }
-            return byDomain;
+
+            void addDomain(int domainId, const VariableNode* node)
+            {
+                MPFEM_ASSERT(node != nullptr, "DomainMultiplexerNode child must not be null.");
+                MPFEM_ASSERT(node->shape() == shape_, "DomainMultiplexerNode child shape mismatch.");
+                children_[domainId] = node;
+            }
+
+            TensorShape shape() const override { return shape_; }
+
+            void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override
+            {
+                int domainId = ctx.domainId;
+                if (domainId < 0 && ctx.transform) {
+                    domainId = static_cast<int>(ctx.transform->attribute());
+                }
+                const auto it = children_.find(domainId);
+                if (it == children_.end() || !it->second) {
+                    MPFEM_THROW(ArgumentException,
+                        "DomainMultiplexerNode missing child for domain " + std::to_string(domainId));
+                }
+                it->second->evaluateBatch(ctx, dest);
+            }
+
+            std::vector<const VariableNode*> dependencies() const override
+            {
+                std::vector<const VariableNode*> deps;
+                deps.reserve(children_.size());
+                for (const auto& [_, node] : children_) {
+                    deps.push_back(node);
+                }
+                return deps;
+            }
+
+        private:
+            TensorShape shape_;
+            std::unordered_map<int, const VariableNode*> children_;
+        };
+
+        const VariableNode* requireDomainPropertyNode(Problem& problem,
+            std::string_view property,
+            bool matrixProperty)
+        {
+            const std::string nodeName(property);
+            if (const VariableNode* existing = problem.globalVariables_.get(nodeName)) {
+                return existing;
+            }
+
+            TensorShape shape = matrixProperty ? TensorShape::matrix(3, 3) : TensorShape::scalar();
+            auto selector = std::make_unique<DomainMultiplexerNode>(shape);
+
+            for (int domainId : problem.materials.domainIds()) {
+                const std::string leafName = std::string(property) + "$domain_" + std::to_string(domainId);
+                if (!problem.globalVariables_.get(leafName)) {
+                    const std::string& expression = matrixProperty
+                        ? problem.materials.matrixExpressionByDomain(domainId, property)
+                        : problem.materials.scalarExpressionByDomain(domainId, property);
+                    problem.globalVariables_.registerExpression(leafName, expression);
+                }
+                selector->addDomain(domainId, problem.globalVariables_.get(leafName));
+            }
+
+            problem.globalVariables_.adoptNode(std::move(selector), nodeName);
+            return problem.globalVariables_.get(nodeName);
         }
 
         const VariableNode* requireDomainMatrixNode(Problem& problem,
-            int domainId,
             std::string_view property)
         {
-            std::string name = std::string(property) + "_" + std::to_string(domainId);
-
-            if (const VariableNode* existing = problem.globalVariables_.get(name)) {
-                return existing;
-            }
-
-            const std::string& expression = problem.materials.matrixExpressionByDomain(domainId, property);
-            problem.globalVariables_.registerExpression(name, expression);
-
-            return problem.globalVariables_.get(name);
+            return requireDomainPropertyNode(problem, property, true);
         }
 
         const VariableNode* requireDomainScalarNode(Problem& problem,
-            int domainId,
             std::string_view property)
         {
-            std::string name = std::string(property) + "_" + std::to_string(domainId);
-
-            if (const VariableNode* existing = problem.globalVariables_.get(name)) {
-                return existing;
-            }
-
-            const std::string& expression = problem.materials.scalarExpressionByDomain(domainId, property);
-            problem.globalVariables_.registerExpression(name, expression);
-
-            return problem.globalVariables_.get(name);
+            return requireDomainPropertyNode(problem, property, false);
         }
 
         const VariableNode* makeScalarExpressionNode(Problem& problem,
@@ -115,11 +155,14 @@ namespace mpfem {
         class JouleHeatNode final : public VariableNode {
         public:
             JouleHeatNode(const GridFunction* voltageField,
-                std::unordered_map<int, const VariableNode*> sigmaByDomain)
-                : voltageField_(voltageField), sigmaByDomain_(std::move(sigmaByDomain))
+                const VariableNode* sigma)
+                : voltageField_(voltageField), sigma_(sigma)
             {
                 if (!voltageField_) {
                     MPFEM_THROW(ArgumentException, "JouleHeatNode requires voltage field.");
+                }
+                if (!sigma_) {
+                    MPFEM_THROW(ArgumentException, "JouleHeatNode requires conductivity node.");
                 }
             }
 
@@ -135,11 +178,6 @@ namespace mpfem {
                 }
 
                 const int domId = static_cast<int>(ctx.transform->attribute());
-                const auto it = sigmaByDomain_.find(domId);
-                if (it == sigmaByDomain_.end() || !it->second) {
-                    MPFEM_THROW(ArgumentException, "Missing conductivity node for domain.");
-                }
-                const VariableNode* sigmaNode = it->second;
 
                 for (size_t i = 0; i < dest.size(); ++i) {
                     Vector3 refPoint = Vector3::Zero();
@@ -176,7 +214,7 @@ namespace mpfem {
                     one.transform = ctx.transform;
 
                     std::array<double, 9> sigmaValues {};
-                    sigmaNode->evaluateBatch(one, std::span<double>(sigmaValues.data(), sigmaValues.size()));
+                    sigma_->evaluateBatch(one, std::span<double>(sigmaValues.data(), sigmaValues.size()));
                     Matrix3 sigma = Matrix3::Zero();
                     for (int r = 0; r < 3; ++r) {
                         for (int c = 0; c < 3; ++c) {
@@ -192,20 +230,23 @@ namespace mpfem {
 
         private:
             const GridFunction* voltageField_ = nullptr;
-            std::unordered_map<int, const VariableNode*> sigmaByDomain_;
+            const VariableNode* sigma_ = nullptr;
         };
 
         class ThermalExpansionStressNode final : public VariableNode {
         public:
             ThermalExpansionStressNode(const HeatTransferSolver* heat,
-                std::unordered_map<int, const VariableNode*> alphaByDomain,
-                std::unordered_map<int, const VariableNode*> youngByDomain,
-                std::unordered_map<int, const VariableNode*> nuByDomain,
+                const VariableNode* alpha,
+                const VariableNode* young,
+                const VariableNode* nu,
                 Real tref)
-                : heat_(heat), alphaByDomain_(std::move(alphaByDomain)), youngByDomain_(std::move(youngByDomain)), nuByDomain_(std::move(nuByDomain)), tref_(tref)
+                : heat_(heat), alpha_(alpha), young_(young), nu_(nu), tref_(tref)
             {
                 if (!heat_) {
                     MPFEM_THROW(ArgumentException, "ThermalExpansionStressNode requires heat solver.");
+                }
+                if (!alpha_ || !young_ || !nu_) {
+                    MPFEM_THROW(ArgumentException, "ThermalExpansionStressNode requires alpha/E/nu nodes.");
                 }
             }
 
@@ -221,9 +262,6 @@ namespace mpfem {
                 }
 
                 const int domId = static_cast<int>(ctx.transform->attribute());
-                const VariableNode* alphaNode = alphaByDomain_.at(domId);
-                const VariableNode* eNode = youngByDomain_.at(domId);
-                const VariableNode* nuNode = nuByDomain_.at(domId);
 
                 const size_t pointCount = dest.size() / 9ull;
                 for (size_t i = 0; i < pointCount; ++i) {
@@ -263,9 +301,9 @@ namespace mpfem {
                     std::array<double, 9> alphaValues {};
                     std::array<double, 1> eValues {0.0};
                     std::array<double, 1> nuValues {0.0};
-                    alphaNode->evaluateBatch(one, std::span<double>(alphaValues.data(), alphaValues.size()));
-                    eNode->evaluateBatch(one, std::span<double>(eValues.data(), eValues.size()));
-                    nuNode->evaluateBatch(one, std::span<double>(nuValues.data(), nuValues.size()));
+                    alpha_->evaluateBatch(one, std::span<double>(alphaValues.data(), alphaValues.size()));
+                    young_->evaluateBatch(one, std::span<double>(eValues.data(), eValues.size()));
+                    nu_->evaluateBatch(one, std::span<double>(nuValues.data(), nuValues.size()));
 
                     Matrix3 alpha = Matrix3::Zero();
                     for (int r = 0; r < 3; ++r) {
@@ -297,9 +335,9 @@ namespace mpfem {
 
         private:
             const HeatTransferSolver* heat_ = nullptr;
-            std::unordered_map<int, const VariableNode*> alphaByDomain_;
-            std::unordered_map<int, const VariableNode*> youngByDomain_;
-            std::unordered_map<int, const VariableNode*> nuByDomain_;
+            const VariableNode* alpha_ = nullptr;
+            const VariableNode* young_ = nullptr;
+            const VariableNode* nu_ = nullptr;
             Real tref_ = 0.0;
         };
 
@@ -415,11 +453,8 @@ namespace mpfem {
             // Register the electrostatics field as a DAG node for expression dependencies
             problem.globalVariables_.registerGridFunction("V", &problem.electrostatics->field());
 
+            const VariableNode* sigma = requireDomainMatrixNode(problem, kPropElectricConductivity);
             for (int domainId : problem.materials.domainIds()) {
-                const VariableNode* sigma = requireDomainMatrixNode(
-                    problem,
-                    domainId,
-                    kPropElectricConductivity);
                 problem.electrostatics->setElectricalConductivity({domainId}, sigma);
             }
 
@@ -443,23 +478,19 @@ namespace mpfem {
             // Register the heat transfer field as a DAG node for expression dependencies
             problem.globalVariables_.registerGridFunction("T", &problem.heatTransfer->field());
 
+            const VariableNode* k = requireDomainMatrixNode(problem, kPropThermalConductivity);
+            const VariableNode* density = requireDomainScalarNode(problem, kPropDensity);
+            const VariableNode* heatCapacity = requireDomainScalarNode(problem, kPropHeatCapacity);
+            (void)density;
+            (void)heatCapacity;
+
+            if (!problem.globalVariables_.get("thermal_mass")) {
+                problem.globalVariables_.registerExpression("thermal_mass", "density * heatcapacity");
+            }
+            const VariableNode* rhoCpNode = problem.globalVariables_.get("thermal_mass");
+
             for (int domainId : problem.materials.domainIds()) {
-                const VariableNode* k = requireDomainMatrixNode(
-                    problem,
-                    domainId,
-                    kPropThermalConductivity);
                 problem.heatTransfer->setThermalConductivity({domainId}, k);
-
-                // Ensure rho_<id> and cp_<id> are registered first
-                requireDomainScalarNode(problem, domainId, kPropDensity);
-                requireDomainScalarNode(problem, domainId, kPropHeatCapacity);
-
-                // Register thermal mass expression: rho_<domainId> * cp_<domainId>
-                std::string thermalMassName = "ThermalMass_" + std::to_string(domainId);
-                std::string rhoName = std::string(kPropDensity) + "_" + std::to_string(domainId);
-                std::string cpName = std::string(kPropHeatCapacity) + "_" + std::to_string(domainId);
-                problem.globalVariables_.registerExpression(thermalMassName, rhoName + " * " + cpName);
-                const VariableNode* rhoCpNode = problem.globalVariables_.get(thermalMassName);
                 problem.heatTransfer->setMassProperties({domainId}, rhoCpNode);
             }
 
@@ -487,9 +518,9 @@ namespace mpfem {
 
             problem.globalVariables_.registerGridFunction("u", &problem.structural->field());
 
+            const VariableNode* E = requireDomainScalarNode(problem, kPropYoungModulus);
+            const VariableNode* nu = requireDomainScalarNode(problem, kPropPoissonRatio);
             for (int domainId : problem.materials.domainIds()) {
-                const VariableNode* E = requireDomainScalarNode(problem, domainId, kPropYoungModulus);
-                const VariableNode* nu = requireDomainScalarNode(problem, domainId, kPropPoissonRatio);
                 problem.structural->addElasticity({domainId}, E, nu);
             }
 
@@ -504,15 +535,11 @@ namespace mpfem {
         {
             const GridFunction* V_field = &problem.electrostatics->field();
             const std::set<int> activeDomains = cp.domainIds;
-            const auto sigmaByDomain = collectDomainNodes(
-                activeDomains,
-                [&](int domainId) {
-                    return requireDomainMatrixNode(problem, domainId, kPropElectricConductivity);
-                });
+            const VariableNode* sigma = requireDomainMatrixNode(problem, kPropElectricConductivity);
 
             static std::atomic<std::uint64_t> id {0};
             std::string name = "JouleHeat_" + std::to_string(id++);
-            auto jouleNode = std::make_unique<JouleHeatNode>(V_field, sigmaByDomain);
+            auto jouleNode = std::make_unique<JouleHeatNode>(V_field, sigma);
             problem.globalVariables_.adoptNode(std::move(jouleNode), name);
             const VariableNode* joule = problem.globalVariables_.get(name);
             problem.heatTransfer->setHeatSource(activeDomains, joule);
@@ -527,29 +554,17 @@ namespace mpfem {
             Real T_ref = physicsIt->second.referenceTemperature;
 
             const std::set<int> activeDomains = cp.domainIds;
-            const auto alphaByDomain = collectDomainNodes(
-                activeDomains,
-                [&](int domainId) {
-                    return requireDomainMatrixNode(problem, domainId, kPropThermalExpansion);
-                });
-            const auto youngByDomain = collectDomainNodes(
-                activeDomains,
-                [&](int domainId) {
-                    return requireDomainScalarNode(problem, domainId, kPropYoungModulus);
-                });
-            const auto nuByDomain = collectDomainNodes(
-                activeDomains,
-                [&](int domainId) {
-                    return requireDomainScalarNode(problem, domainId, kPropPoissonRatio);
-                });
+            const VariableNode* alpha = requireDomainMatrixNode(problem, kPropThermalExpansion);
+            const VariableNode* young = requireDomainScalarNode(problem, kPropYoungModulus);
+            const VariableNode* nu = requireDomainScalarNode(problem, kPropPoissonRatio);
 
             static std::atomic<std::uint64_t> id {0};
             std::string name = "ThermalExpansionStress_" + std::to_string(id++);
             auto stressNode = std::make_unique<ThermalExpansionStressNode>(
                 problem.heatTransfer.get(),
-                alphaByDomain,
-                youngByDomain,
-                nuByDomain,
+                alpha,
+                young,
+                nu,
                 T_ref);
             problem.globalVariables_.adoptNode(std::move(stressNode), name);
             const VariableNode* stressCoef = problem.globalVariables_.get(name);
