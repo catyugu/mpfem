@@ -5,6 +5,7 @@
 #include "fe/element_transform.hpp"
 #include "fe/grid_function.hpp"
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -21,27 +22,76 @@ namespace mpfem {
             return id.fetch_add(1, std::memory_order_relaxed);
         }
 
-        class ConstantScalarNode final : public VariableNode {
-        public:
-            explicit ConstantScalarNode(Real value) : value_(value) { }
+        // =============================================================================
+        // Thread-local bump allocator：调用方完全隐形，零分配批量求值
+        // =============================================================================
+        struct ThreadScratchpad {
+            std::vector<Real> buffer;
+            std::vector<TensorValue> tensorArgs;
+            size_t offset = 0;
 
-            TensorShape shape() const override { return TensorShape::scalar(); }
+            Real* allocate(size_t size)
+            {
+                if (offset + size > buffer.size()) {
+                    // 倍增扩容，仅前几次调用触发
+                    buffer.resize(std::max(buffer.size() * 2, offset + size + 1024));
+                }
+                Real* ptr = buffer.data() + offset;
+                offset += size;
+                return ptr;
+            }
+
+            void deallocate(size_t oldOffset)
+            {
+                offset = oldOffset;
+            }
+        };
+
+        thread_local ThreadScratchpad tls_scratchpad;
+
+        // =============================================================================
+        // Node implementations (unchanged)
+        // =============================================================================
+
+        class ConstantNode final : public VariableNode {
+        public:
+            explicit ConstantNode(TensorValue value)
+                : value_(std::move(value)), shape_(value_.shape()) { }
+
+            TensorShape shape() const override { return shape_; }
 
             void evaluateBatch(const EvaluationContext& ctx, std::span<Real> dest) const override
             {
-                const size_t n = ctx.physicalPoints.empty() ? dest.size() : ctx.physicalPoints.size();
-                if (dest.size() != n) {
-                    MPFEM_THROW(ArgumentException, "ConstantScalarNode evaluate destination size mismatch.");
+                const size_t n = ctx.physicalPoints.empty() ? dest.size() / shape_.size() : ctx.physicalPoints.size();
+                const size_t valSize = shape_.size();
+
+                if (dest.size() != n * valSize) {
+                    MPFEM_THROW(ArgumentException, "ConstantNode evaluate destination size mismatch.");
                 }
-                for (size_t i = 0; i < n; ++i) {
-                    dest[i] = value_;
+
+                // Flatten data for fast batch fill
+                const Real* rawData = value_.data();
+
+                if (valSize == 1) {
+                    const Real v = rawData[0];
+                    std::fill(dest.begin(), dest.end(), v);
+                }
+                else {
+                    // For vectors or matrices, tile components
+                    for (size_t i = 0; i < n; ++i) {
+                        const size_t base = i * valSize;
+                        for (size_t c = 0; c < valSize; ++c) {
+                            dest[base + c] = rawData[c];
+                        }
+                    }
                 }
             }
 
             bool isConstant() const override { return true; }
 
         private:
-            Real value_ = Real(0);
+            TensorValue value_;
+            TensorShape shape_;
         };
 
         class GridFunctionNode final : public VariableNode {
@@ -151,6 +201,10 @@ namespace mpfem {
             ValueExtractor extractor_;
         };
 
+        // =============================================================================
+        // Runtime expression node with zero-allocation scratchpad
+        // =============================================================================
+
         class RuntimeExpressionNode final : public VariableNode {
         public:
             RuntimeExpressionNode(std::string expression,
@@ -158,27 +212,44 @@ namespace mpfem {
                 ExpressionParser::ExpressionProgram program)
                 : expression_(std::move(expression)), dependencies_(std::move(dependencies)), program_(std::move(program)), shape_(program_.shape()), id_(nextProgramId())
             {
+                // 预计算依赖数据总大小和偏移量
+                totalDepSize_ = 0;
+                depSizes_.reserve(dependencies_.size());
+                depOffsets_.reserve(dependencies_.size());
+                for (const auto* dep : dependencies_) {
+                    depOffsets_.push_back(totalDepSize_);
+                    const size_t sz = dep->shape().size();
+                    depSizes_.push_back(sz);
+                    totalDepSize_ += sz;
+                }
             }
 
             TensorShape shape() const override { return shape_; }
 
             void evaluateBatch(const EvaluationContext& ctx, std::span<Real> dest) const override
             {
-                const size_t n = ctx.physicalPoints.size();
+                const size_t n = ctx.physicalPoints.empty() ? dest.size() / shape_.size() : ctx.physicalPoints.size();
                 const size_t valueSize = shape_.size();
                 if (dest.size() != n * valueSize) {
                     MPFEM_THROW(ArgumentException, "RuntimeExpressionNode evaluate destination size mismatch.");
                 }
 
-                std::vector<std::vector<Real>> depValues(dependencies_.size());
-                std::vector<size_t> depSizes(dependencies_.size(), 0);
+                // 1. 记录水位线，分配连续内存
+                const size_t oldOffset = tls_scratchpad.offset;
+                Real* depBuffer = tls_scratchpad.allocate(n * totalDepSize_);
+
+                // 2. 递归求值依赖项
                 for (size_t d = 0; d < dependencies_.size(); ++d) {
-                    depSizes[d] = dependencies_[d]->shape().size();
-                    depValues[d].assign(n * depSizes[d], Real(0));
-                    dependencies_[d]->evaluateBatch(ctx, std::span<Real>(depValues[d].data(), depValues[d].size()));
+                    std::span<Real> depDest(depBuffer + depOffsets_[d] * n, n * depSizes_[d]);
+                    dependencies_[d]->evaluateBatch(ctx, depDest);
                 }
 
-                std::vector<TensorValue> inputValues(dependencies_.size());
+                // 3. 确保 tensorArgs 缓存足够大
+                if (tls_scratchpad.tensorArgs.size() < dependencies_.size()) {
+                    tls_scratchpad.tensorArgs.resize(dependencies_.size());
+                }
+
+                // 4. 对每个点执行表达式
                 for (size_t i = 0; i < n; ++i) {
                     if (ctx.transform && i < ctx.referencePoints.size()) {
                         const Real xi[3] = {
@@ -189,62 +260,49 @@ namespace mpfem {
                         ctx.transform->setIntegrationPoint(xi);
                     }
 
+                    // 反序列化为 TensorValue
                     for (size_t d = 0; d < dependencies_.size(); ++d) {
-                        const size_t base = i * depSizes[d];
-                        if (depSizes[d] == 1) {
-                            inputValues[d] = TensorValue::scalar(depValues[d][base]);
-                            continue;
+                        const Real* vals = &depBuffer[depOffsets_[d] * n + i * depSizes_[d]];
+                        if (depSizes_[d] == 1) {
+                            tls_scratchpad.tensorArgs[d] = TensorValue::scalar(vals[0]);
                         }
-                        if (depSizes[d] == 3) {
-                            inputValues[d] = TensorValue::vector(
-                                depValues[d][base],
-                                depValues[d][base + 1],
-                                depValues[d][base + 2]);
-                            continue;
+                        else if (depSizes_[d] == 3) {
+                            tls_scratchpad.tensorArgs[d] = TensorValue::vector(vals[0], vals[1], vals[2]);
                         }
-                        if (depSizes[d] == 9) {
-                            inputValues[d] = TensorValue::matrix3(
-                                depValues[d][base + 0], depValues[d][base + 1], depValues[d][base + 2],
-                                depValues[d][base + 3], depValues[d][base + 4], depValues[d][base + 5],
-                                depValues[d][base + 6], depValues[d][base + 7], depValues[d][base + 8]);
-                            continue;
+                        else if (depSizes_[d] == 9) {
+                            tls_scratchpad.tensorArgs[d] = TensorValue::matrix3(
+                                vals[0], vals[1], vals[2],
+                                vals[3], vals[4], vals[5],
+                                vals[6], vals[7], vals[8]);
                         }
-                        MPFEM_THROW(ArgumentException, "RuntimeExpressionNode unsupported dependency shape size.");
                     }
 
-                    const TensorValue exprResult = program_.evaluate(std::span<const TensorValue>(inputValues.data(), inputValues.size()));
+                    const TensorValue exprResult = program_.evaluate(
+                        std::span<const TensorValue>(tls_scratchpad.tensorArgs.data(), dependencies_.size()));
 
+                    // 写回目标
+                    const size_t destBase = i * valueSize;
                     if (shape_.isScalar()) {
-                        dest[i] = exprResult.scalar();
-                        continue;
+                        dest[destBase] = exprResult.scalar();
                     }
-
-                    if (shape_.isVector()) {
-                        const size_t base = i * valueSize;
-                        for (size_t c = 0; c < valueSize; ++c) {
-                            dest[base + c] = exprResult[static_cast<int>(c)];
-                        }
-                        continue;
+                    else if (shape_.isVector()) {
+                        for (size_t c = 0; c < valueSize; ++c)
+                            dest[destBase + c] = exprResult[static_cast<int>(c)];
                     }
-
-                    if (shape_.isMatrix()) {
-                        const size_t base = i * valueSize;
+                    else if (shape_.isMatrix()) {
                         for (int r = 0; r < 3; ++r) {
                             for (int c = 0; c < 3; ++c) {
-                                dest[base + static_cast<size_t>(r * 3 + c)] = exprResult.at(r, c);
+                                dest[destBase + static_cast<size_t>(r * 3 + c)] = exprResult.at(r, c);
                             }
                         }
-                        continue;
                     }
-
-                    MPFEM_THROW(ArgumentException, "RuntimeExpressionNode unsupported expression shape.");
                 }
+
+                // 5. 恢复水位线（保证递归安全）
+                tls_scratchpad.deallocate(oldOffset);
             }
 
-            std::vector<const VariableNode*> dependencies() const override
-            {
-                return dependencies_;
-            }
+            std::vector<const VariableNode*> dependencies() const override { return dependencies_; }
 
         private:
             std::string expression_;
@@ -252,13 +310,17 @@ namespace mpfem {
             ExpressionParser::ExpressionProgram program_;
             TensorShape shape_;
             std::uint64_t id_ = 0;
+
+            // 预计算数据
+            size_t totalDepSize_ = 0;
+            std::vector<size_t> depSizes_;
+            std::vector<size_t> depOffsets_;
         };
 
     } // namespace
 
     VariableManager::VariableManager()
     {
-        // Register built-in spatial coordinates x, y, z and time t as ExternalDataNode
         nodes_["x"] = std::make_unique<ExternalDataNode>("x",
             [](const EvaluationContext& ctx, size_t pointIndex) -> Real {
                 return ctx.physicalPoints[pointIndex].x();
@@ -287,11 +349,13 @@ namespace mpfem {
         ExpressionParser parser;
         ExpressionParser::ExpressionProgram program = parser.compile(expressionText);
 
-        // If expression has no dependencies (pure constant), create ConstantScalarNode directly
         MPFEM_ASSERT(program.dependencies().empty(), "Expected constant expression to have no dependencies.");
+
+        // Directly get the full TensorValue (not limited to .scalar())
         const std::array<TensorValue, 0> noInputs {};
-        Real value = program.evaluate(std::span<const TensorValue>(noInputs.data(), noInputs.size())).scalar();
-        nodes_[std::move(name)] = std::make_unique<ConstantScalarNode>(value);
+        TensorValue value = program.evaluate(std::span<const TensorValue>(noInputs.data(), noInputs.size()));
+
+        nodes_[std::move(name)] = std::make_unique<ConstantNode>(std::move(value));
 
         graphDirty_ = true;
     }
@@ -308,7 +372,6 @@ namespace mpfem {
         }
         ExpressionParser::ExpressionProgram program = parser.compile(expression, registeredShapes);
 
-        // Resolve all symbol dependencies from the node store
         std::vector<const VariableNode*> dependencies;
         dependencies.reserve(program.dependencies().size());
 
