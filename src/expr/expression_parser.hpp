@@ -7,6 +7,7 @@
 #include <memory>
 #include <span>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace mpfem {
@@ -40,6 +41,8 @@ namespace mpfem {
         ExpressionParser();
         ~ExpressionParser();
 
+        ExpressionProgram compile(const std::string& expression,
+            const std::unordered_map<std::string, TensorShape>& registeredShapes) const;
         ExpressionProgram compile(const std::string& expression) const;
     };
 

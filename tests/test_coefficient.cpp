@@ -90,6 +90,57 @@ TEST_F(VariableNodeTest, VectorLiteralMatMulAndDotEvaluation)
     EXPECT_NEAR(norm2Out[1], 0.25 + 16.0 + 1.0, 1e-12);
 }
 
+TEST_F(VariableNodeTest, TensorSymTraceTransposeEvaluation)
+{
+    VariableManager manager;
+    manager.registerExpression("S", "sym([1,2,3;4,5,6;7,8,9])");
+    manager.registerExpression("St", "transpose([1,2,3;4,5,6;7,8,9])");
+    manager.registerExpression("trS", "trace(sym([1,2,3;4,5,6;7,8,9]))");
+    manager.compileGraph();
+
+    const VariableNode* sNode = manager.get("S");
+    const VariableNode* stNode = manager.get("St");
+    const VariableNode* trNode = manager.get("trS");
+    ASSERT_NE(sNode, nullptr);
+    ASSERT_NE(stNode, nullptr);
+    ASSERT_NE(trNode, nullptr);
+    ASSERT_TRUE(sNode->shape().isMatrix());
+    ASSERT_TRUE(stNode->shape().isMatrix());
+    ASSERT_TRUE(trNode->shape().isScalar());
+
+    std::array<Vector3, 1> points {Vector3(0.0, 0.0, 0.0)};
+    EvaluationContext ctx;
+    ctx.physicalPoints = std::span<const Vector3>(points.data(), points.size());
+
+    std::array<double, 9> sOut {};
+    sNode->evaluateBatch(ctx, std::span<double>(sOut.data(), sOut.size()));
+    EXPECT_NEAR(sOut[0], 1.0, 1e-12);
+    EXPECT_NEAR(sOut[1], 3.0, 1e-12);
+    EXPECT_NEAR(sOut[2], 5.0, 1e-12);
+    EXPECT_NEAR(sOut[3], 3.0, 1e-12);
+    EXPECT_NEAR(sOut[4], 5.0, 1e-12);
+    EXPECT_NEAR(sOut[5], 7.0, 1e-12);
+    EXPECT_NEAR(sOut[6], 5.0, 1e-12);
+    EXPECT_NEAR(sOut[7], 7.0, 1e-12);
+    EXPECT_NEAR(sOut[8], 9.0, 1e-12);
+
+    std::array<double, 9> stOut {};
+    stNode->evaluateBatch(ctx, std::span<double>(stOut.data(), stOut.size()));
+    EXPECT_NEAR(stOut[0], 1.0, 1e-12);
+    EXPECT_NEAR(stOut[1], 4.0, 1e-12);
+    EXPECT_NEAR(stOut[2], 7.0, 1e-12);
+    EXPECT_NEAR(stOut[3], 2.0, 1e-12);
+    EXPECT_NEAR(stOut[4], 5.0, 1e-12);
+    EXPECT_NEAR(stOut[5], 8.0, 1e-12);
+    EXPECT_NEAR(stOut[6], 3.0, 1e-12);
+    EXPECT_NEAR(stOut[7], 6.0, 1e-12);
+    EXPECT_NEAR(stOut[8], 9.0, 1e-12);
+
+    std::array<double, 1> trOut {0.0};
+    trNode->evaluateBatch(ctx, std::span<double>(trOut.data(), trOut.size()));
+    EXPECT_NEAR(trOut[0], 15.0, 1e-12);
+}
+
 int main(int argc, char** argv)
 {
     ::testing::InitGoogleTest(&argc, argv);

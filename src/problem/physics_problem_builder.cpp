@@ -379,12 +379,12 @@ namespace mpfem {
                     "dot([1,1,1]^T, thermalexpansioncoefficient * [1,1,1]^T)/3.0");
             }
 
-            const std::string thermalSigmaScalarExpr =
-                "(3*lambda + 2*mu) * alpha_iso * (T - " + std::to_string(T_ref) + ")";
-            problem.globalVariables_.registerExpression("thermal_sigma_scalar", thermalSigmaScalarExpr);
+            problem.globalVariables_.registerConstantExpression("T_ref", std::to_string(T_ref));
+            problem.globalVariables_.registerExpression("thermal_dT", "T - T_ref");
             problem.globalVariables_.registerExpression(
                 "ThermalExpansionStress",
-                "[thermal_sigma_scalar,0,0;0,thermal_sigma_scalar,0;0,0,thermal_sigma_scalar]");
+                "2*mu*sym([alpha_iso,0,0;0,alpha_iso,0;0,0,alpha_iso]*thermal_dT)"
+                "+lambda*trace(sym([alpha_iso,0,0;0,alpha_iso,0;0,0,alpha_iso]*thermal_dT))*[1,0,0;0,1,0;0,0,1]");
 
             const VariableNode* stressCoef = problem.globalVariables_.get("ThermalExpansionStress");
             problem.structural->setStrainLoad(activeDomains, stressCoef);

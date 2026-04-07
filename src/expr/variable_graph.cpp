@@ -306,7 +306,14 @@ namespace mpfem {
     void VariableManager::registerExpression(std::string name, std::string expression)
     {
         ExpressionParser parser;
-        ExpressionParser::ExpressionProgram program = parser.compile(expression);
+        std::unordered_map<std::string, TensorShape> registeredShapes;
+        registeredShapes.reserve(nodes_.size());
+        for (const auto& [symbol, node] : nodes_) {
+            if (node) {
+                registeredShapes.emplace(symbol, node->shape());
+            }
+        }
+        ExpressionParser::ExpressionProgram program = parser.compile(expression, registeredShapes);
 
         // Resolve all symbol dependencies from the node store
         std::vector<const VariableNode*> dependencies;

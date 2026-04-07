@@ -40,6 +40,9 @@ namespace mpfem {
                 Min,
                 Max,
                 Dot,
+                Sym,
+                Trace,
+                Transpose,
             };
 
             Kind kind = Kind::Constant;
@@ -121,6 +124,11 @@ namespace mpfem {
         bool isGradSymbol(std::string_view name)
         {
             return name.size() > 6 && name.substr(0, 5) == "grad(" && name.back() == ')';
+        }
+
+        bool isNearOne(double value)
+        {
+            return std::abs(value - 1.0) < 1e-15;
         }
 
         class TensorAstCompiler {
@@ -209,24 +217,24 @@ namespace mpfem {
                     if (!match(')')) {
                         MPFEM_THROW(ArgumentException, "Missing closing ')' in expression.");
                     }
-                    return inner;
+                    return applyUnitSuffixIfPresent(std::move(inner));
                 }
 
                 if (peek() == '[') {
-                    return parseBracketLiteral();
+                    return applyUnitSuffixIfPresent(parseBracketLiteral());
                 }
 
                 if (peekIsNumberStart()) {
-                    return parseNumber();
+                    return applyUnitSuffixIfPresent(parseNumber());
                 }
 
                 if (peekIsIdentifierStart()) {
                     const std::string name = parseIdentifier();
                     skipWhitespace();
                     if (match('(')) {
-                        return parseFunction(name);
+                        return applyUnitSuffixIfPresent(parseFunction(name));
                     }
-                    return parseVariableOrConstant(name);
+                    return applyUnitSuffixIfPresent(parseVariableOrConstant(name));
                 }
 
                 MPFEM_THROW(ArgumentException, "Unexpected token near: " + std::string(text_.substr(pos_)));
@@ -371,6 +379,23 @@ namespace mpfem {
                     return node;
                 }
 
+                if (name == "sym" || name == "trace" || name == "tr" || name == "transpose") {
+                    if (args.size() != 1) {
+                        MPFEM_THROW(ArgumentException, name + "() requires exactly 1 argument.");
+                    }
+                    if (name == "sym") {
+                        node->kind = AstNode::Kind::Sym;
+                    }
+                    else if (name == "transpose") {
+                        node->kind = AstNode::Kind::Transpose;
+                    }
+                    else {
+                        node->kind = AstNode::Kind::Trace;
+                    }
+                    node->args = std::move(args);
+                    return node;
+                }
+
                 if (name == "grad") {
                     if (args.size() != 1 || args[0]->kind != AstNode::Kind::Variable) {
                         MPFEM_THROW(ArgumentException, "grad() requires a single field variable argument.");
@@ -481,7 +506,7 @@ namespace mpfem {
 
             static std::unique_ptr<AstNode> applyMultiplierIfNeeded(std::unique_ptr<AstNode> node, double multiplier)
             {
-                if (std::abs(multiplier - 1.0) < 1e-15) {
+                if (isNearOne(multiplier)) {
                     return node;
                 }
                 auto mulNode = std::make_unique<AstNode>();
@@ -492,6 +517,28 @@ namespace mpfem {
                 mulNode->args.push_back(std::move(c));
                 mulNode->args.push_back(std::move(node));
                 return mulNode;
+            }
+
+            std::unique_ptr<AstNode> applyUnitSuffixIfPresent(std::unique_ptr<AstNode> node)
+            {
+                skipWhitespace();
+                if (!match('[')) {
+                    return node;
+                }
+
+                const size_t unitBegin = pos_;
+                while (!eof() && text_[pos_] != ']') {
+                    ++pos_;
+                }
+                if (eof()) {
+                    MPFEM_THROW(ArgumentException, "Missing closing ']' for unit suffix.");
+                }
+                const std::string unit = strings::trim(std::string(text_.substr(unitBegin, pos_ - unitBegin)));
+                ++pos_; // consume ']'
+
+                UnitRegistry registry;
+                const double multiplier = registry.getMultiplier(unit);
+                return applyMultiplierIfNeeded(std::move(node), multiplier);
             }
 
             char peek() const
@@ -559,40 +606,53 @@ namespace mpfem {
             }
         }
 
-        void bindAstVariableIndices(AstNode& node, const std::vector<std::string>& dependencies)
+        void bindAstVariableIndices(AstNode& node,
+            const std::unordered_map<std::string, int>& dependencyIndices)
         {
             if (node.kind == AstNode::Kind::Variable) {
-                const auto it = std::find(dependencies.begin(), dependencies.end(), node.variableName);
-                if (it == dependencies.end()) {
+                const auto it = dependencyIndices.find(node.variableName);
+                if (it == dependencyIndices.end()) {
                     MPFEM_THROW(ArgumentException, "Variable index binding failed: " + node.variableName);
                 }
-                node.variableIndex = static_cast<int>(std::distance(dependencies.begin(), it));
+                node.variableIndex = it->second;
                 return;
             }
             for (auto& arg : node.args) {
-                bindAstVariableIndices(*arg, dependencies);
+                bindAstVariableIndices(*arg, dependencyIndices);
             }
         }
 
-        TensorShape inferShape(const AstNode& node)
+        TensorShape inferShape(const AstNode& node,
+            const std::unordered_map<std::string, TensorShape>& registeredShapes)
         {
             switch (node.kind) {
             case AstNode::Kind::Constant:
                 return TensorShape::scalar();
             case AstNode::Kind::Variable:
-                return isGradSymbol(node.variableName) ? TensorShape::vector(3) : TensorShape::scalar();
+                if (isGradSymbol(node.variableName)) {
+                    return TensorShape::vector(3);
+                }
+                if (const auto it = registeredShapes.find(node.variableName); it != registeredShapes.end()) {
+                    return it->second;
+                }
+                return TensorShape::scalar();
             case AstNode::Kind::VectorLiteral:
                 return TensorShape::vector(3);
             case AstNode::Kind::MatrixLiteral:
                 return TensorShape::matrix(3, 3);
             case AstNode::Kind::Dot:
                 return TensorShape::scalar();
+            case AstNode::Kind::Trace:
+                return TensorShape::scalar();
+            case AstNode::Kind::Sym:
+            case AstNode::Kind::Transpose:
+                return inferShape(*node.args[0], registeredShapes);
             case AstNode::Kind::Add:
             case AstNode::Kind::Subtract:
-                return inferShape(*node.args[0]);
+                return inferShape(*node.args[0], registeredShapes);
             case AstNode::Kind::Multiply: {
-                const TensorShape lhs = inferShape(*node.args[0]);
-                const TensorShape rhs = inferShape(*node.args[1]);
+                const TensorShape lhs = inferShape(*node.args[0], registeredShapes);
+                const TensorShape rhs = inferShape(*node.args[1], registeredShapes);
                 if (lhs.isScalar())
                     return rhs;
                 if (rhs.isScalar())
@@ -604,7 +664,7 @@ namespace mpfem {
                 MPFEM_THROW(ArgumentException, "Unsupported multiply shape combination.");
             }
             case AstNode::Kind::Divide:
-                return inferShape(*node.args[0]);
+                return inferShape(*node.args[0], registeredShapes);
             case AstNode::Kind::Power:
             case AstNode::Kind::Negate:
             case AstNode::Kind::Sin:
@@ -616,39 +676,106 @@ namespace mpfem {
             case AstNode::Kind::Abs:
             case AstNode::Kind::Min:
             case AstNode::Kind::Max:
-                return inferShape(*node.args[0]);
+                return inferShape(*node.args[0], registeredShapes);
             }
             MPFEM_THROW(ArgumentException, "Unknown AST node kind for shape inference.");
         }
 
         double asScalar(const ExprValue& value)
         {
-            if (!std::holds_alternative<double>(value)) {
-                MPFEM_THROW(ArgumentException, "Expected scalar expression value.");
+            if (const auto* v = std::get_if<double>(&value)) {
+                return *v;
             }
-            return std::get<double>(value);
+            MPFEM_THROW(ArgumentException, "Expected scalar expression value.");
         }
 
         Vector3 asVector(const ExprValue& value)
         {
-            if (!std::holds_alternative<Vector3>(value)) {
-                MPFEM_THROW(ArgumentException, "Expected vector expression value.");
+            if (const auto* v = std::get_if<Vector3>(&value)) {
+                return *v;
             }
-            return std::get<Vector3>(value);
+            MPFEM_THROW(ArgumentException, "Expected vector expression value.");
+        }
+
+        Matrix3 asMatrix(const ExprValue& value)
+        {
+            if (const auto* v = std::get_if<Matrix3>(&value)) {
+                return *v;
+            }
+            MPFEM_THROW(ArgumentException, "Expected matrix expression value.");
         }
 
         ExprValue mulByScalar(const ExprValue& value, double scalar)
         {
-            if (std::holds_alternative<double>(value)) {
-                return std::get<double>(value) * scalar;
+            if (const auto* s = std::get_if<double>(&value)) {
+                return (*s) * scalar;
             }
-            if (std::holds_alternative<Vector3>(value)) {
-                return (std::get<Vector3>(value) * scalar).eval();
+            if (const auto* v = std::get_if<Vector3>(&value)) {
+                return ((*v) * scalar).eval();
             }
-            if (std::holds_alternative<Matrix3>(value)) {
-                return (std::get<Matrix3>(value) * scalar).eval();
+            if (const auto* m = std::get_if<Matrix3>(&value)) {
+                return ((*m) * scalar).eval();
             }
             MPFEM_THROW(ArgumentException, "Unsupported value for scalar multiply.");
+        }
+
+        ExprValue addValues(const ExprValue& lhs, const ExprValue& rhs)
+        {
+            if (const auto* l = std::get_if<double>(&lhs)) {
+                if (const auto* r = std::get_if<double>(&rhs)) {
+                    return *l + *r;
+                }
+            }
+            if (const auto* l = std::get_if<Vector3>(&lhs)) {
+                if (const auto* r = std::get_if<Vector3>(&rhs)) {
+                    return ((*l) + (*r)).eval();
+                }
+            }
+            if (const auto* l = std::get_if<Matrix3>(&lhs)) {
+                if (const auto* r = std::get_if<Matrix3>(&rhs)) {
+                    return ((*l) + (*r)).eval();
+                }
+            }
+            MPFEM_THROW(ArgumentException, "Unsupported add shape combination.");
+        }
+
+        ExprValue subtractValues(const ExprValue& lhs, const ExprValue& rhs)
+        {
+            if (const auto* l = std::get_if<double>(&lhs)) {
+                if (const auto* r = std::get_if<double>(&rhs)) {
+                    return *l - *r;
+                }
+            }
+            if (const auto* l = std::get_if<Vector3>(&lhs)) {
+                if (const auto* r = std::get_if<Vector3>(&rhs)) {
+                    return ((*l) - (*r)).eval();
+                }
+            }
+            if (const auto* l = std::get_if<Matrix3>(&lhs)) {
+                if (const auto* r = std::get_if<Matrix3>(&rhs)) {
+                    return ((*l) - (*r)).eval();
+                }
+            }
+            MPFEM_THROW(ArgumentException, "Unsupported subtract shape combination.");
+        }
+
+        ExprValue multiplyValues(const ExprValue& lhs, const ExprValue& rhs)
+        {
+            if (const auto* l = std::get_if<double>(&lhs)) {
+                return mulByScalar(rhs, *l);
+            }
+            if (const auto* r = std::get_if<double>(&rhs)) {
+                return mulByScalar(lhs, *r);
+            }
+            if (const auto* l = std::get_if<Matrix3>(&lhs)) {
+                if (const auto* r = std::get_if<Vector3>(&rhs)) {
+                    return ((*l) * (*r)).eval();
+                }
+                if (const auto* rm = std::get_if<Matrix3>(&rhs)) {
+                    return ((*l) * (*rm)).eval();
+                }
+            }
+            MPFEM_THROW(ArgumentException, "Unsupported multiply shape combination.");
         }
 
         ExprValue evalNode(const AstNode& node, std::span<const ExprValue> vars)
@@ -678,37 +805,17 @@ namespace mpfem {
             case AstNode::Kind::Add: {
                 const ExprValue lhs = evalNode(*node.args[0], vars);
                 const ExprValue rhs = evalNode(*node.args[1], vars);
-                if (std::holds_alternative<double>(lhs) && std::holds_alternative<double>(rhs))
-                    return std::get<double>(lhs) + std::get<double>(rhs);
-                if (std::holds_alternative<Vector3>(lhs) && std::holds_alternative<Vector3>(rhs))
-                    return (std::get<Vector3>(lhs) + std::get<Vector3>(rhs)).eval();
-                if (std::holds_alternative<Matrix3>(lhs) && std::holds_alternative<Matrix3>(rhs))
-                    return (std::get<Matrix3>(lhs) + std::get<Matrix3>(rhs)).eval();
-                MPFEM_THROW(ArgumentException, "Unsupported add shape combination.");
+                return addValues(lhs, rhs);
             }
             case AstNode::Kind::Subtract: {
                 const ExprValue lhs = evalNode(*node.args[0], vars);
                 const ExprValue rhs = evalNode(*node.args[1], vars);
-                if (std::holds_alternative<double>(lhs) && std::holds_alternative<double>(rhs))
-                    return std::get<double>(lhs) - std::get<double>(rhs);
-                if (std::holds_alternative<Vector3>(lhs) && std::holds_alternative<Vector3>(rhs))
-                    return (std::get<Vector3>(lhs) - std::get<Vector3>(rhs)).eval();
-                if (std::holds_alternative<Matrix3>(lhs) && std::holds_alternative<Matrix3>(rhs))
-                    return (std::get<Matrix3>(lhs) - std::get<Matrix3>(rhs)).eval();
-                MPFEM_THROW(ArgumentException, "Unsupported subtract shape combination.");
+                return subtractValues(lhs, rhs);
             }
             case AstNode::Kind::Multiply: {
                 const ExprValue lhs = evalNode(*node.args[0], vars);
                 const ExprValue rhs = evalNode(*node.args[1], vars);
-                if (std::holds_alternative<double>(lhs))
-                    return mulByScalar(rhs, std::get<double>(lhs));
-                if (std::holds_alternative<double>(rhs))
-                    return mulByScalar(lhs, std::get<double>(rhs));
-                if (std::holds_alternative<Matrix3>(lhs) && std::holds_alternative<Vector3>(rhs))
-                    return (std::get<Matrix3>(lhs) * std::get<Vector3>(rhs)).eval();
-                if (std::holds_alternative<Matrix3>(lhs) && std::holds_alternative<Matrix3>(rhs))
-                    return (std::get<Matrix3>(lhs) * std::get<Matrix3>(rhs)).eval();
-                MPFEM_THROW(ArgumentException, "Unsupported multiply shape combination.");
+                return multiplyValues(lhs, rhs);
             }
             case AstNode::Kind::Divide: {
                 const ExprValue lhs = evalNode(*node.args[0], vars);
@@ -753,6 +860,19 @@ namespace mpfem {
                 const Vector3 rhs = asVector(evalNode(*node.args[1], vars));
                 return lhs.dot(rhs);
             }
+            case AstNode::Kind::Transpose: {
+                const Matrix3 m = asMatrix(evalNode(*node.args[0], vars));
+                const Matrix3 mt = m.transpose();
+                return mt;
+            }
+            case AstNode::Kind::Sym: {
+                const Matrix3 m = asMatrix(evalNode(*node.args[0], vars));
+                return (0.5 * (m + m.transpose())).eval();
+            }
+            case AstNode::Kind::Trace: {
+                const Matrix3 m = asMatrix(evalNode(*node.args[0], vars));
+                return static_cast<double>(m.trace());
+            }
             }
             MPFEM_THROW(ArgumentException, "Unsupported AST node during evaluation.");
         }
@@ -760,7 +880,6 @@ namespace mpfem {
     } // namespace
 
     struct ExpressionParser::ExpressionProgram::Impl {
-        double multiplier = 1.0;
         TensorShape shape = TensorShape::scalar();
         std::unique_ptr<AstNode> root;
         std::vector<std::string> dependencies;
@@ -802,11 +921,7 @@ namespace mpfem {
         MPFEM_ASSERT(values.size() == impl_->dependencies.size(),
             "Expression input size does not match dependency size.");
 
-        ExprValue value = evalNode(*impl_->root, values);
-        if (std::abs(impl_->multiplier - 1.0) < 1e-15) {
-            return value;
-        }
-        return mulByScalar(value, impl_->multiplier);
+        return evalNode(*impl_->root, values);
     }
 
     ExprValue ExpressionParser::ExpressionProgram::evaluate(std::span<const double> values) const
@@ -822,29 +937,14 @@ namespace mpfem {
     ExpressionParser::ExpressionParser() = default;
     ExpressionParser::~ExpressionParser() = default;
 
-    ExpressionParser::ExpressionProgram ExpressionParser::compile(const std::string& expression) const
+    ExpressionParser::ExpressionProgram ExpressionParser::compile(const std::string& expression,
+        const std::unordered_map<std::string, TensorShape>& registeredShapes) const
     {
         std::string expressionText = strings::trim(expression);
-        double multiplier = 1.0;
 
         MatrixTemplate legacy = parseLegacyMatrixTemplate(expressionText);
         if (legacy.literalMatrix) {
             expressionText = convertLegacyMatrixToBracketLiteral(legacy);
-        }
-        else if (!expressionText.empty() && expressionText.front() != '[' && expressionText.front() != '{') {
-            const size_t firstBracket = expressionText.find('[');
-            const size_t lastBracket = expressionText.rfind(']');
-            const bool trailingUnitForm =
-                firstBracket != std::string::npos &&
-                lastBracket == expressionText.size() - 1 &&
-                firstBracket > 0;
-
-            if (trailingUnitForm || firstBracket == std::string::npos) {
-                UnitRegistry registry;
-                UnitParseResult unitResult = registry.stripUnit(expressionText);
-                expressionText = strings::trim(std::string(unitResult.expression));
-                multiplier = unitResult.multiplier;
-            }
         }
 
         if (expressionText.empty()) {
@@ -852,17 +952,28 @@ namespace mpfem {
         }
 
         auto impl = std::make_unique<ExpressionProgram::Impl>();
-        impl->multiplier = multiplier;
 
         TensorAstCompiler compiler(expressionText);
         impl->root = compiler.compile();
-        impl->shape = inferShape(*impl->root);
+        impl->shape = inferShape(*impl->root, registeredShapes);
 
         std::unordered_set<std::string> seen;
         collectDependencies(*impl->root, seen, impl->dependencies);
-        bindAstVariableIndices(*impl->root, impl->dependencies);
+
+        std::unordered_map<std::string, int> dependencyIndices;
+        dependencyIndices.reserve(impl->dependencies.size());
+        for (size_t i = 0; i < impl->dependencies.size(); ++i) {
+            dependencyIndices.emplace(impl->dependencies[i], static_cast<int>(i));
+        }
+        bindAstVariableIndices(*impl->root, dependencyIndices);
 
         return ExpressionProgram(std::move(impl));
+    }
+
+    ExpressionParser::ExpressionProgram ExpressionParser::compile(const std::string& expression) const
+    {
+        static const std::unordered_map<std::string, TensorShape> emptyShapes;
+        return compile(expression, emptyShapes);
     }
 
 } // namespace mpfem
