@@ -5,6 +5,7 @@
 #include "expr/unit_parser.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdlib>
 #include <string_view>
@@ -48,8 +49,42 @@ namespace mpfem {
             Kind kind = Kind::Constant;
             Real value = 0.0;
             std::string variableName;
-            int variableIndex = -1;
             std::vector<std::unique_ptr<AstNode>> args;
+        };
+
+        enum class OpCode {
+            LoadConst,
+            LoadVar,
+            MakeVector3,
+            MakeMatrix3,
+            Add,
+            Subtract,
+            Multiply,
+            Divide,
+            Power,
+            Negate,
+            Sin,
+            Cos,
+            Tan,
+            Exp,
+            Log,
+            Sqrt,
+            Abs,
+            Min,
+            Max,
+            Dot,
+            Sym,
+            Trace,
+            Transpose,
+            Return,
+        };
+
+        struct Instruction {
+            OpCode op = OpCode::LoadConst;
+            int dest = -1;
+            int operand1 = -1;
+            int operand2 = -1;
+            std::array<int, 9> operands {};
         };
 
         bool isSeparator(char c)
@@ -606,22 +641,6 @@ namespace mpfem {
             }
         }
 
-        void bindAstVariableIndices(AstNode& node,
-            const std::unordered_map<std::string, int>& dependencyIndices)
-        {
-            if (node.kind == AstNode::Kind::Variable) {
-                const auto it = dependencyIndices.find(node.variableName);
-                if (it == dependencyIndices.end()) {
-                    MPFEM_THROW(ArgumentException, "Variable index binding failed: " + node.variableName);
-                }
-                node.variableIndex = it->second;
-                return;
-            }
-            for (auto& arg : node.args) {
-                bindAstVariableIndices(*arg, dependencyIndices);
-            }
-        }
-
         TensorShape inferShape(const AstNode& node,
             const std::unordered_map<std::string, TensorShape>& registeredShapes)
         {
@@ -681,119 +700,345 @@ namespace mpfem {
             MPFEM_THROW(ArgumentException, "Unknown AST node kind for shape inference.");
         }
 
-        TensorValue evalNode(const AstNode& node, std::span<const TensorValue> vars)
+        struct FlattenedProgram {
+            std::vector<Instruction> instructions;
+            std::vector<TensorValue> constants;
+            int registerCount = 0;
+        };
+
+        int allocateRegister(FlattenedProgram& program)
+        {
+            return program.registerCount++;
+        }
+
+        int emitAst(const AstNode& node,
+            const std::unordered_map<std::string, int>& dependencyIndices,
+            FlattenedProgram& program)
         {
             switch (node.kind) {
             case AstNode::Kind::Constant:
-                return TensorValue::scalar(node.value);
+            {
+                const int dest = allocateRegister(program);
+                const int constantIndex = static_cast<int>(program.constants.size());
+                program.constants.push_back(TensorValue::scalar(node.value));
+                Instruction inst;
+                inst.op = OpCode::LoadConst;
+                inst.dest = dest;
+                inst.operand1 = constantIndex;
+                program.instructions.push_back(inst);
+                return dest;
+            }
             case AstNode::Kind::Variable:
-                return vars[static_cast<size_t>(node.variableIndex)];
+            {
+                const auto it = dependencyIndices.find(node.variableName);
+                if (it == dependencyIndices.end()) {
+                    MPFEM_THROW(ArgumentException, "Variable index binding failed: " + node.variableName);
+                }
+                const int dest = allocateRegister(program);
+                Instruction inst;
+                inst.op = OpCode::LoadVar;
+                inst.dest = dest;
+                inst.operand1 = it->second;
+                program.instructions.push_back(inst);
+                return dest;
+            }
             case AstNode::Kind::VectorLiteral: {
-                Real x = evalNode(*node.args[0], vars).scalar();
-                Real y = evalNode(*node.args[1], vars).scalar();
-                Real z = evalNode(*node.args[2], vars).scalar();
-                return TensorValue::vector(x, y, z);
+                const int dest = allocateRegister(program);
+                Instruction inst;
+                inst.op = OpCode::MakeVector3;
+                inst.dest = dest;
+                inst.operands[0] = emitAst(*node.args[0], dependencyIndices, program);
+                inst.operands[1] = emitAst(*node.args[1], dependencyIndices, program);
+                inst.operands[2] = emitAst(*node.args[2], dependencyIndices, program);
+                program.instructions.push_back(inst);
+                return dest;
             }
             case AstNode::Kind::MatrixLiteral: {
-                Real m00 = evalNode(*node.args[0], vars).scalar();
-                Real m01 = evalNode(*node.args[1], vars).scalar();
-                Real m02 = evalNode(*node.args[2], vars).scalar();
-                Real m10 = evalNode(*node.args[3], vars).scalar();
-                Real m11 = evalNode(*node.args[4], vars).scalar();
-                Real m12 = evalNode(*node.args[5], vars).scalar();
-                Real m20 = evalNode(*node.args[6], vars).scalar();
-                Real m21 = evalNode(*node.args[7], vars).scalar();
-                Real m22 = evalNode(*node.args[8], vars).scalar();
-                return TensorValue::matrix3(m00, m01, m02, m10, m11, m12, m20, m21, m22);
+                const int dest = allocateRegister(program);
+                Instruction inst;
+                inst.op = OpCode::MakeMatrix3;
+                inst.dest = dest;
+                for (size_t i = 0; i < 9; ++i) {
+                    inst.operands[i] = emitAst(*node.args[i], dependencyIndices, program);
+                }
+                program.instructions.push_back(inst);
+                return dest;
             }
             case AstNode::Kind::Add: {
-                const TensorValue lhs = evalNode(*node.args[0], vars);
-                const TensorValue rhs = evalNode(*node.args[1], vars);
-                return add(lhs, rhs);
+                const int dest = allocateRegister(program);
+                Instruction inst;
+                inst.op = OpCode::Add;
+                inst.dest = dest;
+                inst.operand1 = emitAst(*node.args[0], dependencyIndices, program);
+                inst.operand2 = emitAst(*node.args[1], dependencyIndices, program);
+                program.instructions.push_back(inst);
+                return dest;
             }
             case AstNode::Kind::Subtract: {
-                const TensorValue lhs = evalNode(*node.args[0], vars);
-                const TensorValue rhs = evalNode(*node.args[1], vars);
-                return subtract(lhs, rhs);
+                const int dest = allocateRegister(program);
+                Instruction inst;
+                inst.op = OpCode::Subtract;
+                inst.dest = dest;
+                inst.operand1 = emitAst(*node.args[0], dependencyIndices, program);
+                inst.operand2 = emitAst(*node.args[1], dependencyIndices, program);
+                program.instructions.push_back(inst);
+                return dest;
             }
             case AstNode::Kind::Multiply: {
-                const TensorValue lhs = evalNode(*node.args[0], vars);
-                const TensorValue rhs = evalNode(*node.args[1], vars);
-                if (lhs.isScalar()) {
-                    return scale(rhs, lhs.scalar());
-                }
-                if (rhs.isScalar()) {
-                    return scale(lhs, rhs.scalar());
-                }
-                if (lhs.isMatrix() && rhs.isVector()) {
-                    return matvec(lhs, rhs);
-                }
-                return matmat(lhs, rhs);
+                const int dest = allocateRegister(program);
+                Instruction inst;
+                inst.op = OpCode::Multiply;
+                inst.dest = dest;
+                inst.operand1 = emitAst(*node.args[0], dependencyIndices, program);
+                inst.operand2 = emitAst(*node.args[1], dependencyIndices, program);
+                program.instructions.push_back(inst);
+                return dest;
             }
             case AstNode::Kind::Divide: {
-                const TensorValue lhs = evalNode(*node.args[0], vars);
-                const Real rhs = evalNode(*node.args[1], vars).scalar();
-                return scale(lhs, 1.0 / rhs);
+                const int dest = allocateRegister(program);
+                Instruction inst;
+                inst.op = OpCode::Divide;
+                inst.dest = dest;
+                inst.operand1 = emitAst(*node.args[0], dependencyIndices, program);
+                inst.operand2 = emitAst(*node.args[1], dependencyIndices, program);
+                program.instructions.push_back(inst);
+                return dest;
             }
             case AstNode::Kind::Power: {
-                const Real lhs = evalNode(*node.args[0], vars).scalar();
-                const Real rhs = evalNode(*node.args[1], vars).scalar();
-                return TensorValue::scalar(std::pow(lhs, rhs));
+                const int dest = allocateRegister(program);
+                Instruction inst;
+                inst.op = OpCode::Power;
+                inst.dest = dest;
+                inst.operand1 = emitAst(*node.args[0], dependencyIndices, program);
+                inst.operand2 = emitAst(*node.args[1], dependencyIndices, program);
+                program.instructions.push_back(inst);
+                return dest;
             }
             case AstNode::Kind::Negate: {
-                const TensorValue v = evalNode(*node.args[0], vars);
-                return negate(v);
+                const int dest = allocateRegister(program);
+                Instruction inst;
+                inst.op = OpCode::Negate;
+                inst.dest = dest;
+                inst.operand1 = emitAst(*node.args[0], dependencyIndices, program);
+                program.instructions.push_back(inst);
+                return dest;
             }
             case AstNode::Kind::Sin:
-                return TensorValue::scalar(std::sin(evalNode(*node.args[0], vars).scalar()));
             case AstNode::Kind::Cos:
-                return TensorValue::scalar(std::cos(evalNode(*node.args[0], vars).scalar()));
             case AstNode::Kind::Tan:
-                return TensorValue::scalar(std::tan(evalNode(*node.args[0], vars).scalar()));
             case AstNode::Kind::Exp:
-                return TensorValue::scalar(std::exp(evalNode(*node.args[0], vars).scalar()));
             case AstNode::Kind::Log:
-                return TensorValue::scalar(std::log(evalNode(*node.args[0], vars).scalar()));
             case AstNode::Kind::Sqrt:
-                return TensorValue::scalar(std::sqrt(evalNode(*node.args[0], vars).scalar()));
             case AstNode::Kind::Abs:
-                return TensorValue::scalar(std::abs(evalNode(*node.args[0], vars).scalar()));
+            {
+                const int dest = allocateRegister(program);
+                Instruction inst;
+                inst.dest = dest;
+                inst.operand1 = emitAst(*node.args[0], dependencyIndices, program);
+                if (node.kind == AstNode::Kind::Sin)
+                    inst.op = OpCode::Sin;
+                else if (node.kind == AstNode::Kind::Cos)
+                    inst.op = OpCode::Cos;
+                else if (node.kind == AstNode::Kind::Tan)
+                    inst.op = OpCode::Tan;
+                else if (node.kind == AstNode::Kind::Exp)
+                    inst.op = OpCode::Exp;
+                else if (node.kind == AstNode::Kind::Log)
+                    inst.op = OpCode::Log;
+                else if (node.kind == AstNode::Kind::Sqrt)
+                    inst.op = OpCode::Sqrt;
+                else
+                    inst.op = OpCode::Abs;
+                program.instructions.push_back(inst);
+                return dest;
+            }
             case AstNode::Kind::Min: {
-                const Real lhs = evalNode(*node.args[0], vars).scalar();
-                const Real rhs = evalNode(*node.args[1], vars).scalar();
-                return TensorValue::scalar(std::min(lhs, rhs));
+                const int dest = allocateRegister(program);
+                Instruction inst;
+                inst.op = OpCode::Min;
+                inst.dest = dest;
+                inst.operand1 = emitAst(*node.args[0], dependencyIndices, program);
+                inst.operand2 = emitAst(*node.args[1], dependencyIndices, program);
+                program.instructions.push_back(inst);
+                return dest;
             }
             case AstNode::Kind::Max: {
-                const Real lhs = evalNode(*node.args[0], vars).scalar();
-                const Real rhs = evalNode(*node.args[1], vars).scalar();
-                return TensorValue::scalar(std::max(lhs, rhs));
+                const int dest = allocateRegister(program);
+                Instruction inst;
+                inst.op = OpCode::Max;
+                inst.dest = dest;
+                inst.operand1 = emitAst(*node.args[0], dependencyIndices, program);
+                inst.operand2 = emitAst(*node.args[1], dependencyIndices, program);
+                program.instructions.push_back(inst);
+                return dest;
             }
             case AstNode::Kind::Dot: {
-                const TensorValue lhs = evalNode(*node.args[0], vars);
-                const TensorValue rhs = evalNode(*node.args[1], vars);
-                return TensorValue::scalar(dot(lhs, rhs));
+                const int dest = allocateRegister(program);
+                Instruction inst;
+                inst.op = OpCode::Dot;
+                inst.dest = dest;
+                inst.operand1 = emitAst(*node.args[0], dependencyIndices, program);
+                inst.operand2 = emitAst(*node.args[1], dependencyIndices, program);
+                program.instructions.push_back(inst);
+                return dest;
             }
             case AstNode::Kind::Transpose: {
-                const TensorValue m = evalNode(*node.args[0], vars);
-                return transpose(m);
+                const int dest = allocateRegister(program);
+                Instruction inst;
+                inst.op = OpCode::Transpose;
+                inst.dest = dest;
+                inst.operand1 = emitAst(*node.args[0], dependencyIndices, program);
+                program.instructions.push_back(inst);
+                return dest;
             }
             case AstNode::Kind::Sym: {
-                const TensorValue m = evalNode(*node.args[0], vars);
-                return sym(m);
+                const int dest = allocateRegister(program);
+                Instruction inst;
+                inst.op = OpCode::Sym;
+                inst.dest = dest;
+                inst.operand1 = emitAst(*node.args[0], dependencyIndices, program);
+                program.instructions.push_back(inst);
+                return dest;
             }
             case AstNode::Kind::Trace: {
-                const TensorValue m = evalNode(*node.args[0], vars);
-                return TensorValue::scalar(trace(m));
+                const int dest = allocateRegister(program);
+                Instruction inst;
+                inst.op = OpCode::Trace;
+                inst.dest = dest;
+                inst.operand1 = emitAst(*node.args[0], dependencyIndices, program);
+                program.instructions.push_back(inst);
+                return dest;
             }
             }
-            MPFEM_THROW(ArgumentException, "Unsupported AST node during evaluation.");
+            MPFEM_THROW(ArgumentException, "Unsupported AST node during instruction emission.");
+        }
+
+        TensorValue runProgram(const FlattenedProgram& program, std::span<const TensorValue> vars)
+        {
+            std::vector<TensorValue> registers(static_cast<size_t>(program.registerCount));
+            for (const Instruction& inst : program.instructions) {
+                switch (inst.op) {
+                case OpCode::LoadConst:
+                    registers[static_cast<size_t>(inst.dest)] = program.constants[static_cast<size_t>(inst.operand1)];
+                    break;
+                case OpCode::LoadVar:
+                    registers[static_cast<size_t>(inst.dest)] = vars[static_cast<size_t>(inst.operand1)];
+                    break;
+                case OpCode::MakeVector3:
+                    registers[static_cast<size_t>(inst.dest)] = TensorValue::vector(
+                        registers[static_cast<size_t>(inst.operands[0])].scalar(),
+                        registers[static_cast<size_t>(inst.operands[1])].scalar(),
+                        registers[static_cast<size_t>(inst.operands[2])].scalar());
+                    break;
+                case OpCode::MakeMatrix3:
+                    registers[static_cast<size_t>(inst.dest)] = TensorValue::matrix3(
+                        registers[static_cast<size_t>(inst.operands[0])].scalar(),
+                        registers[static_cast<size_t>(inst.operands[1])].scalar(),
+                        registers[static_cast<size_t>(inst.operands[2])].scalar(),
+                        registers[static_cast<size_t>(inst.operands[3])].scalar(),
+                        registers[static_cast<size_t>(inst.operands[4])].scalar(),
+                        registers[static_cast<size_t>(inst.operands[5])].scalar(),
+                        registers[static_cast<size_t>(inst.operands[6])].scalar(),
+                        registers[static_cast<size_t>(inst.operands[7])].scalar(),
+                        registers[static_cast<size_t>(inst.operands[8])].scalar());
+                    break;
+                case OpCode::Add:
+                    registers[static_cast<size_t>(inst.dest)] = add(
+                        registers[static_cast<size_t>(inst.operand1)],
+                        registers[static_cast<size_t>(inst.operand2)]);
+                    break;
+                case OpCode::Subtract:
+                    registers[static_cast<size_t>(inst.dest)] = subtract(
+                        registers[static_cast<size_t>(inst.operand1)],
+                        registers[static_cast<size_t>(inst.operand2)]);
+                    break;
+                case OpCode::Multiply: {
+                    const TensorValue& lhs = registers[static_cast<size_t>(inst.operand1)];
+                    const TensorValue& rhs = registers[static_cast<size_t>(inst.operand2)];
+                    if (lhs.isScalar()) {
+                        registers[static_cast<size_t>(inst.dest)] = scale(rhs, lhs.scalar());
+                    }
+                    else if (rhs.isScalar()) {
+                        registers[static_cast<size_t>(inst.dest)] = scale(lhs, rhs.scalar());
+                    }
+                    else if (lhs.isMatrix() && rhs.isVector()) {
+                        registers[static_cast<size_t>(inst.dest)] = matvec(lhs, rhs);
+                    }
+                    else {
+                        registers[static_cast<size_t>(inst.dest)] = matmat(lhs, rhs);
+                    }
+                    break;
+                }
+                case OpCode::Divide:
+                    registers[static_cast<size_t>(inst.dest)] = scale(
+                        registers[static_cast<size_t>(inst.operand1)],
+                        1.0 / registers[static_cast<size_t>(inst.operand2)].scalar());
+                    break;
+                case OpCode::Power:
+                    registers[static_cast<size_t>(inst.dest)] = TensorValue::scalar(std::pow(
+                        registers[static_cast<size_t>(inst.operand1)].scalar(),
+                        registers[static_cast<size_t>(inst.operand2)].scalar()));
+                    break;
+                case OpCode::Negate:
+                    registers[static_cast<size_t>(inst.dest)] = negate(registers[static_cast<size_t>(inst.operand1)]);
+                    break;
+                case OpCode::Sin:
+                    registers[static_cast<size_t>(inst.dest)] = TensorValue::scalar(std::sin(registers[static_cast<size_t>(inst.operand1)].scalar()));
+                    break;
+                case OpCode::Cos:
+                    registers[static_cast<size_t>(inst.dest)] = TensorValue::scalar(std::cos(registers[static_cast<size_t>(inst.operand1)].scalar()));
+                    break;
+                case OpCode::Tan:
+                    registers[static_cast<size_t>(inst.dest)] = TensorValue::scalar(std::tan(registers[static_cast<size_t>(inst.operand1)].scalar()));
+                    break;
+                case OpCode::Exp:
+                    registers[static_cast<size_t>(inst.dest)] = TensorValue::scalar(std::exp(registers[static_cast<size_t>(inst.operand1)].scalar()));
+                    break;
+                case OpCode::Log:
+                    registers[static_cast<size_t>(inst.dest)] = TensorValue::scalar(std::log(registers[static_cast<size_t>(inst.operand1)].scalar()));
+                    break;
+                case OpCode::Sqrt:
+                    registers[static_cast<size_t>(inst.dest)] = TensorValue::scalar(std::sqrt(registers[static_cast<size_t>(inst.operand1)].scalar()));
+                    break;
+                case OpCode::Abs:
+                    registers[static_cast<size_t>(inst.dest)] = TensorValue::scalar(std::abs(registers[static_cast<size_t>(inst.operand1)].scalar()));
+                    break;
+                case OpCode::Min:
+                    registers[static_cast<size_t>(inst.dest)] = TensorValue::scalar(std::min(
+                        registers[static_cast<size_t>(inst.operand1)].scalar(),
+                        registers[static_cast<size_t>(inst.operand2)].scalar()));
+                    break;
+                case OpCode::Max:
+                    registers[static_cast<size_t>(inst.dest)] = TensorValue::scalar(std::max(
+                        registers[static_cast<size_t>(inst.operand1)].scalar(),
+                        registers[static_cast<size_t>(inst.operand2)].scalar()));
+                    break;
+                case OpCode::Dot:
+                    registers[static_cast<size_t>(inst.dest)] = TensorValue::scalar(dot(
+                        registers[static_cast<size_t>(inst.operand1)],
+                        registers[static_cast<size_t>(inst.operand2)]));
+                    break;
+                case OpCode::Sym:
+                    registers[static_cast<size_t>(inst.dest)] = sym(registers[static_cast<size_t>(inst.operand1)]);
+                    break;
+                case OpCode::Trace:
+                    registers[static_cast<size_t>(inst.dest)] = TensorValue::scalar(trace(registers[static_cast<size_t>(inst.operand1)]));
+                    break;
+                case OpCode::Transpose:
+                    registers[static_cast<size_t>(inst.dest)] = transpose(registers[static_cast<size_t>(inst.operand1)]);
+                    break;
+                case OpCode::Return:
+                    return registers[static_cast<size_t>(inst.operand1)];
+                }
+            }
+            MPFEM_THROW(ArgumentException, "Expression program did not emit a return instruction.");
         }
 
     } // namespace
 
     struct ExpressionParser::ExpressionProgram::Impl {
         TensorShape shape = TensorShape::scalar();
-        std::unique_ptr<AstNode> root;
+        FlattenedProgram program;
         std::vector<std::string> dependencies;
     };
 
@@ -813,7 +1058,7 @@ namespace mpfem {
 
     bool ExpressionParser::ExpressionProgram::valid() const
     {
-        return impl_ && impl_->root != nullptr;
+        return impl_ && !impl_->program.instructions.empty();
     }
 
     TensorShape ExpressionParser::ExpressionProgram::shape() const
@@ -833,7 +1078,7 @@ namespace mpfem {
         MPFEM_ASSERT(values.size() == impl_->dependencies.size(),
             "Expression input size does not match dependency size.");
 
-        return evalNode(*impl_->root, values);
+        return runProgram(impl_->program, values);
     }
 
     TensorValue ExpressionParser::ExpressionProgram::evaluate(std::span<const Real> values) const
@@ -866,18 +1111,23 @@ namespace mpfem {
         auto impl = std::make_unique<ExpressionProgram::Impl>();
 
         TensorAstCompiler compiler(expressionText);
-        impl->root = compiler.compile();
-        impl->shape = inferShape(*impl->root, registeredShapes);
+        auto root = compiler.compile();
+        impl->shape = inferShape(*root, registeredShapes);
 
         std::unordered_set<std::string> seen;
-        collectDependencies(*impl->root, seen, impl->dependencies);
+        collectDependencies(*root, seen, impl->dependencies);
 
         std::unordered_map<std::string, int> dependencyIndices;
         dependencyIndices.reserve(impl->dependencies.size());
         for (size_t i = 0; i < impl->dependencies.size(); ++i) {
             dependencyIndices.emplace(impl->dependencies[i], static_cast<int>(i));
         }
-        bindAstVariableIndices(*impl->root, dependencyIndices);
+
+        const int resultRegister = emitAst(*root, dependencyIndices, impl->program);
+        Instruction ret;
+        ret.op = OpCode::Return;
+        ret.operand1 = resultRegister;
+        impl->program.instructions.push_back(ret);
 
         return ExpressionProgram(std::move(impl));
     }

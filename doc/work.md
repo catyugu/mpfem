@@ -22,4 +22,102 @@
 
 ## 具体工作任务
 
-识别这个代码中的设计反模式、冗长、向后兼容、循环依赖等，并进行步骤化的重构 ，使代码尽可能更加简洁，一致（宁可采取破坏式重构而非向后兼容），尤其是关于表达式，变量解析，物理场注册的地方。我的意图是完全用自动DAG+表达式解析的变量系统，保证可以兼容标量，向量，矩阵等各种类型的表达式。统一场值管理/计算和表达式编译后端等。每一步重构都应该可执行，可编译，可验证。 
+通过对您的代码架构和性能分析（Profiler）结果的仔细审视，我识别出了该工程目前的几个关键问题。性能瓶颈明确地指向了**表达式求值阶段**（`evalScalarNode`, `evaluateBatch` 占用约 12% 性能）和 **组装内部的虚函数调用/矩阵运算**（`BilinearFormAssembler::assemble` 占用近 40%）。
+
+同时，您提到 `PhysicsProblemBuilder` 高达 1.8 万行，这典型地反映了**硬编码组合爆炸、向后兼容负担、缺乏自动 DAG 解析**的设计反模式。
+
+以下是具体的诊断与**破坏式重构（打破向后兼容以换取一致性和性能）**步骤。由于涉及到基础架构替换，我们将采用统一的张量计算图（自动 DAG） + 扁平化指令集（虚拟机/JIT 后端）策略。
+
+### 诊断：当前架构的反模式
+
+1. **表达式求值的“多态陷阱” (Virtual Dispatch in Inner Loops)**：
+   `VariableNode::evaluateBatch` 和 `evalScalarNode` 大量出现在热点中。使用面向对象的树形结构（AST）并通过虚函数在每个积分点（Quadrature Point）求值，会导致严重的指令缓存未命中和分支预测失败。
+2. **类型割裂 (Scalar/Vector/Matrix 分离处理)**：
+   缺少统一的 `Tensor` 抽象。代码中可能存在分别处理标量节点和向量节点的冗长代码，无法优雅地应对后续的张量（如应力、应变）操作。
+
+---
+
+### 重构目标与架构蓝图
+。
+* **统一张量**：兼容标量形状 `()`，向量 `(n)`，矩阵 `(n,m)`。
+* **表达式编译后端**：将 AST 树在初始化时“拍平”为基于连续内存的执行计划（类似 Bytecode/栈机模式），**消灭内部循环的虚函数**。
+
+### 第一步：统一张量值与扁平化执行引擎（表达式编译后端）
+
+我们要消灭 `VariableNode` 的虚函数调用。取而代之的是，构建一个线性的执行序列（Tape）。每一步执行一个特定类型的算子（通过函数指针或 `std::function`，或者更高效的 `switch(opcode)` 虚拟机模式）。
+
+首先定义统一张量维度和虚拟机指令集结构：
+
+```cpp
+// src/expr/tensor_system.hpp
+#ifndef MPFEM_EXPR_TENSOR_SYSTEM_HPP
+#define MPFEM_EXPR_TENSOR_SYSTEM_HPP
+
+#include <vector>
+#include <array>
+#include <span>
+#include <variant>
+
+namespace mpfem {
+
+// 所有的运算都在一段连续的内存缓冲区（Tape）中进行
+struct ExecContext {
+    int batch_size;
+    std::vector<double> registers; // 扁平化寄存器堆，预分配以容纳所有的中间变量
+};
+
+// 操作码
+enum class OpCode : uint8_t {
+    ADD, SUB, MUL, DIV, DOT, CROSS, MATMUL,
+    LOAD_CONST, LOAD_FIELD_VAL, EVAL_SHAPE_FUNC
+};
+
+// 一条扁平化的指令
+struct Instruction {
+    OpCode op;
+    int dest_reg;     // 输出结果存放的寄存器偏移
+    int src_reg1;     // 输入1
+    int src_reg2;     // 输入2
+    int stride;       // 张量步长（1 标量，3 向量，9 矩阵）
+    double const_val; // 可选常量
+};
+
+// 编译后的表达式执行程序
+class CompiledExpression {
+    std::vector<Instruction> instructions;
+    int required_registers_size;
+
+public:
+    void execute(ExecContext& ctx) const {
+        const int batch = ctx.batch_size;
+        double* regs = ctx.registers.data();
+        
+        // 【关键】消灭了多态，全部变成紧凑的指令迭代和连续内存操作
+        for (const auto& inst : instructions) {
+            double* dest = regs + inst.dest_reg * batch;
+            const double* s1 = regs + inst.src_reg1 * batch;
+            const double* s2 = regs + inst.src_reg2 * batch;
+            const int stride = inst.stride;
+
+            switch (inst.op) {
+                case OpCode::ADD:
+                    // 自动向量化友好 (SIMD)
+                    for(int i=0; i < batch * stride; ++i) dest[i] = s1[i] + s2[i];
+                    break;
+                case OpCode::MUL:
+                    for(int i=0; i < batch * stride; ++i) dest[i] = s1[i] * s2[i];
+                    break;
+                // ... 其他张量计算逻辑
+                case OpCode::LOAD_CONST:
+                    for(int i=0; i < batch * stride; ++i) dest[i] = inst.const_val;
+                    break;
+            }
+        }
+    }
+};
+
+}
+#endif
+```
+
+**重构行动：** 在当前的 `expression_parser.cpp` 中，修改原有的解析逻辑。原来是生成一棵 `RuntimeExpressionNode` 树，现在改为遍历这棵 AST 树，**发射（Emit）** `Instruction` 到 `CompiledExpression` 中。
