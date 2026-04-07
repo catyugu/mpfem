@@ -47,9 +47,6 @@ namespace mpfem {
     // Triplet for sparse matrix construction
     using Triplet = Eigen::Triplet<Real>;
 
-    /// Unified expression value type - scalar, vector, or matrix
-    using ExprValue = std::variant<double, Vector3, Matrix3>;
-
     // =============================================================================
     // Geometry related types
     // =============================================================================

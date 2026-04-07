@@ -102,7 +102,7 @@ namespace mpfem {
         ExpressionParser parser;
         ExpressionParser::ExpressionProgram program = parser.compile(scalarExpression(name));
         const std::vector<double> inputs = buildInputValues(program.dependencies(), variables);
-        return std::get<double>(program.evaluate(std::span<const double>(inputs.data(), inputs.size())));
+        return program.evaluate(std::span<const double>(inputs.data(), inputs.size())).scalar();
     }
 
     Matrix3 MaterialPropertyModel::getMatrix(
@@ -112,7 +112,7 @@ namespace mpfem {
         ExpressionParser parser;
         ExpressionParser::ExpressionProgram program = parser.compile(matrixExpression(name));
         const std::vector<double> inputs = buildInputValues(program.dependencies(), variables);
-        return std::get<Matrix3>(program.evaluate(std::span<const double>(inputs.data(), inputs.size())));
+        return program.evaluate(std::span<const double>(inputs.data(), inputs.size())).toMatrix3();
     }
 
     const std::string& MaterialPropertyModel::scalarExpression(const std::string& name) const

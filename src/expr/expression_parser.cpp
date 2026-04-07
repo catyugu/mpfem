@@ -681,197 +681,109 @@ namespace mpfem {
             MPFEM_THROW(ArgumentException, "Unknown AST node kind for shape inference.");
         }
 
-        double asScalar(const ExprValue& value)
-        {
-            if (const auto* v = std::get_if<double>(&value)) {
-                return *v;
-            }
-            MPFEM_THROW(ArgumentException, "Expected scalar expression value.");
-        }
-
-        Vector3 asVector(const ExprValue& value)
-        {
-            if (const auto* v = std::get_if<Vector3>(&value)) {
-                return *v;
-            }
-            MPFEM_THROW(ArgumentException, "Expected vector expression value.");
-        }
-
-        Matrix3 asMatrix(const ExprValue& value)
-        {
-            if (const auto* v = std::get_if<Matrix3>(&value)) {
-                return *v;
-            }
-            MPFEM_THROW(ArgumentException, "Expected matrix expression value.");
-        }
-
-        ExprValue mulByScalar(const ExprValue& value, double scalar)
-        {
-            if (const auto* s = std::get_if<double>(&value)) {
-                return (*s) * scalar;
-            }
-            if (const auto* v = std::get_if<Vector3>(&value)) {
-                return ((*v) * scalar).eval();
-            }
-            if (const auto* m = std::get_if<Matrix3>(&value)) {
-                return ((*m) * scalar).eval();
-            }
-            MPFEM_THROW(ArgumentException, "Unsupported value for scalar multiply.");
-        }
-
-        ExprValue addValues(const ExprValue& lhs, const ExprValue& rhs)
-        {
-            if (const auto* l = std::get_if<double>(&lhs)) {
-                if (const auto* r = std::get_if<double>(&rhs)) {
-                    return *l + *r;
-                }
-            }
-            if (const auto* l = std::get_if<Vector3>(&lhs)) {
-                if (const auto* r = std::get_if<Vector3>(&rhs)) {
-                    return ((*l) + (*r)).eval();
-                }
-            }
-            if (const auto* l = std::get_if<Matrix3>(&lhs)) {
-                if (const auto* r = std::get_if<Matrix3>(&rhs)) {
-                    return ((*l) + (*r)).eval();
-                }
-            }
-            MPFEM_THROW(ArgumentException, "Unsupported add shape combination.");
-        }
-
-        ExprValue subtractValues(const ExprValue& lhs, const ExprValue& rhs)
-        {
-            if (const auto* l = std::get_if<double>(&lhs)) {
-                if (const auto* r = std::get_if<double>(&rhs)) {
-                    return *l - *r;
-                }
-            }
-            if (const auto* l = std::get_if<Vector3>(&lhs)) {
-                if (const auto* r = std::get_if<Vector3>(&rhs)) {
-                    return ((*l) - (*r)).eval();
-                }
-            }
-            if (const auto* l = std::get_if<Matrix3>(&lhs)) {
-                if (const auto* r = std::get_if<Matrix3>(&rhs)) {
-                    return ((*l) - (*r)).eval();
-                }
-            }
-            MPFEM_THROW(ArgumentException, "Unsupported subtract shape combination.");
-        }
-
-        ExprValue multiplyValues(const ExprValue& lhs, const ExprValue& rhs)
-        {
-            if (const auto* l = std::get_if<double>(&lhs)) {
-                return mulByScalar(rhs, *l);
-            }
-            if (const auto* r = std::get_if<double>(&rhs)) {
-                return mulByScalar(lhs, *r);
-            }
-            if (const auto* l = std::get_if<Matrix3>(&lhs)) {
-                if (const auto* r = std::get_if<Vector3>(&rhs)) {
-                    return ((*l) * (*r)).eval();
-                }
-                if (const auto* rm = std::get_if<Matrix3>(&rhs)) {
-                    return ((*l) * (*rm)).eval();
-                }
-            }
-            MPFEM_THROW(ArgumentException, "Unsupported multiply shape combination.");
-        }
-
-        ExprValue evalNode(const AstNode& node, std::span<const ExprValue> vars)
+        TensorValue evalNode(const AstNode& node, std::span<const TensorValue> vars)
         {
             switch (node.kind) {
             case AstNode::Kind::Constant:
-                return node.value;
+                return TensorValue::scalar(node.value);
             case AstNode::Kind::Variable:
                 return vars[static_cast<size_t>(node.variableIndex)];
             case AstNode::Kind::VectorLiteral: {
-                Vector3 v;
-                for (int i = 0; i < 3; ++i) {
-                    v[i] = asScalar(evalNode(*node.args[static_cast<size_t>(i)], vars));
-                }
-                return v;
+                double x = evalNode(*node.args[0], vars).scalar();
+                double y = evalNode(*node.args[1], vars).scalar();
+                double z = evalNode(*node.args[2], vars).scalar();
+                return TensorValue::vector(x, y, z);
             }
             case AstNode::Kind::MatrixLiteral: {
-                Matrix3 m;
-                for (int r = 0; r < 3; ++r) {
-                    for (int c = 0; c < 3; ++c) {
-                        const size_t idx = static_cast<size_t>(r * 3 + c);
-                        m(r, c) = asScalar(evalNode(*node.args[idx], vars));
-                    }
-                }
-                return m;
+                double m00 = evalNode(*node.args[0], vars).scalar();
+                double m01 = evalNode(*node.args[1], vars).scalar();
+                double m02 = evalNode(*node.args[2], vars).scalar();
+                double m10 = evalNode(*node.args[3], vars).scalar();
+                double m11 = evalNode(*node.args[4], vars).scalar();
+                double m12 = evalNode(*node.args[5], vars).scalar();
+                double m20 = evalNode(*node.args[6], vars).scalar();
+                double m21 = evalNode(*node.args[7], vars).scalar();
+                double m22 = evalNode(*node.args[8], vars).scalar();
+                return TensorValue::matrix3(m00, m01, m02, m10, m11, m12, m20, m21, m22);
             }
             case AstNode::Kind::Add: {
-                const ExprValue lhs = evalNode(*node.args[0], vars);
-                const ExprValue rhs = evalNode(*node.args[1], vars);
-                return addValues(lhs, rhs);
+                const TensorValue lhs = evalNode(*node.args[0], vars);
+                const TensorValue rhs = evalNode(*node.args[1], vars);
+                return add(lhs, rhs);
             }
             case AstNode::Kind::Subtract: {
-                const ExprValue lhs = evalNode(*node.args[0], vars);
-                const ExprValue rhs = evalNode(*node.args[1], vars);
-                return subtractValues(lhs, rhs);
+                const TensorValue lhs = evalNode(*node.args[0], vars);
+                const TensorValue rhs = evalNode(*node.args[1], vars);
+                return subtract(lhs, rhs);
             }
             case AstNode::Kind::Multiply: {
-                const ExprValue lhs = evalNode(*node.args[0], vars);
-                const ExprValue rhs = evalNode(*node.args[1], vars);
-                return multiplyValues(lhs, rhs);
+                const TensorValue lhs = evalNode(*node.args[0], vars);
+                const TensorValue rhs = evalNode(*node.args[1], vars);
+                if (lhs.isScalar()) {
+                    return scale(rhs, lhs.scalar());
+                }
+                if (rhs.isScalar()) {
+                    return scale(lhs, rhs.scalar());
+                }
+                if (lhs.isMatrix() && rhs.isVector()) {
+                    return matvec(lhs, rhs);
+                }
+                return matmat(lhs, rhs);
             }
             case AstNode::Kind::Divide: {
-                const ExprValue lhs = evalNode(*node.args[0], vars);
-                const double rhs = asScalar(evalNode(*node.args[1], vars));
-                return mulByScalar(lhs, 1.0 / rhs);
+                const TensorValue lhs = evalNode(*node.args[0], vars);
+                const double rhs = evalNode(*node.args[1], vars).scalar();
+                return scale(lhs, 1.0 / rhs);
             }
             case AstNode::Kind::Power: {
-                const double lhs = asScalar(evalNode(*node.args[0], vars));
-                const double rhs = asScalar(evalNode(*node.args[1], vars));
-                return std::pow(lhs, rhs);
+                const double lhs = evalNode(*node.args[0], vars).scalar();
+                const double rhs = evalNode(*node.args[1], vars).scalar();
+                return TensorValue::scalar(std::pow(lhs, rhs));
             }
             case AstNode::Kind::Negate: {
-                const ExprValue v = evalNode(*node.args[0], vars);
-                return mulByScalar(v, -1.0);
+                const TensorValue v = evalNode(*node.args[0], vars);
+                return negate(v);
             }
             case AstNode::Kind::Sin:
-                return std::sin(asScalar(evalNode(*node.args[0], vars)));
+                return TensorValue::scalar(std::sin(evalNode(*node.args[0], vars).scalar()));
             case AstNode::Kind::Cos:
-                return std::cos(asScalar(evalNode(*node.args[0], vars)));
+                return TensorValue::scalar(std::cos(evalNode(*node.args[0], vars).scalar()));
             case AstNode::Kind::Tan:
-                return std::tan(asScalar(evalNode(*node.args[0], vars)));
+                return TensorValue::scalar(std::tan(evalNode(*node.args[0], vars).scalar()));
             case AstNode::Kind::Exp:
-                return std::exp(asScalar(evalNode(*node.args[0], vars)));
+                return TensorValue::scalar(std::exp(evalNode(*node.args[0], vars).scalar()));
             case AstNode::Kind::Log:
-                return std::log(asScalar(evalNode(*node.args[0], vars)));
+                return TensorValue::scalar(std::log(evalNode(*node.args[0], vars).scalar()));
             case AstNode::Kind::Sqrt:
-                return std::sqrt(asScalar(evalNode(*node.args[0], vars)));
+                return TensorValue::scalar(std::sqrt(evalNode(*node.args[0], vars).scalar()));
             case AstNode::Kind::Abs:
-                return std::abs(asScalar(evalNode(*node.args[0], vars)));
+                return TensorValue::scalar(std::abs(evalNode(*node.args[0], vars).scalar()));
             case AstNode::Kind::Min: {
-                const double lhs = asScalar(evalNode(*node.args[0], vars));
-                const double rhs = asScalar(evalNode(*node.args[1], vars));
-                return std::min(lhs, rhs);
+                const double lhs = evalNode(*node.args[0], vars).scalar();
+                const double rhs = evalNode(*node.args[1], vars).scalar();
+                return TensorValue::scalar(std::min(lhs, rhs));
             }
             case AstNode::Kind::Max: {
-                const double lhs = asScalar(evalNode(*node.args[0], vars));
-                const double rhs = asScalar(evalNode(*node.args[1], vars));
-                return std::max(lhs, rhs);
+                const double lhs = evalNode(*node.args[0], vars).scalar();
+                const double rhs = evalNode(*node.args[1], vars).scalar();
+                return TensorValue::scalar(std::max(lhs, rhs));
             }
             case AstNode::Kind::Dot: {
-                const Vector3 lhs = asVector(evalNode(*node.args[0], vars));
-                const Vector3 rhs = asVector(evalNode(*node.args[1], vars));
-                return lhs.dot(rhs);
+                const TensorValue lhs = evalNode(*node.args[0], vars);
+                const TensorValue rhs = evalNode(*node.args[1], vars);
+                return TensorValue::scalar(dot(lhs, rhs));
             }
             case AstNode::Kind::Transpose: {
-                const Matrix3 m = asMatrix(evalNode(*node.args[0], vars));
-                const Matrix3 mt = m.transpose();
-                return mt;
+                const TensorValue m = evalNode(*node.args[0], vars);
+                return transpose(m);
             }
             case AstNode::Kind::Sym: {
-                const Matrix3 m = asMatrix(evalNode(*node.args[0], vars));
-                return (0.5 * (m + m.transpose())).eval();
+                const TensorValue m = evalNode(*node.args[0], vars);
+                return sym(m);
             }
             case AstNode::Kind::Trace: {
-                const Matrix3 m = asMatrix(evalNode(*node.args[0], vars));
-                return static_cast<double>(m.trace());
+                const TensorValue m = evalNode(*node.args[0], vars);
+                return TensorValue::scalar(trace(m));
             }
             }
             MPFEM_THROW(ArgumentException, "Unsupported AST node during evaluation.");
@@ -915,7 +827,7 @@ namespace mpfem {
         return impl_ ? impl_->dependencies : empty;
     }
 
-    ExprValue ExpressionParser::ExpressionProgram::evaluate(std::span<const ExprValue> values) const
+    TensorValue ExpressionParser::ExpressionProgram::evaluate(std::span<const TensorValue> values) const
     {
         MPFEM_ASSERT(valid(), "Attempting to evaluate an invalid expression program.");
         MPFEM_ASSERT(values.size() == impl_->dependencies.size(),
@@ -924,14 +836,14 @@ namespace mpfem {
         return evalNode(*impl_->root, values);
     }
 
-    ExprValue ExpressionParser::ExpressionProgram::evaluate(std::span<const double> values) const
+    TensorValue ExpressionParser::ExpressionProgram::evaluate(std::span<const double> values) const
     {
-        std::vector<ExprValue> typed;
+        std::vector<TensorValue> typed;
         typed.reserve(values.size());
         for (const double value : values) {
             typed.emplace_back(value);
         }
-        return evaluate(std::span<const ExprValue>(typed.data(), typed.size()));
+        return evaluate(std::span<const TensorValue>(typed.data(), typed.size()));
     }
 
     ExpressionParser::ExpressionParser() = default;

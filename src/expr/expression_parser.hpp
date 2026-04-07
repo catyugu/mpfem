@@ -2,6 +2,7 @@
 #define MPFEM_EXPR_EXPRESSION_PARSER_HPP
 
 #include "core/tensor_shape.hpp"
+#include "core/tensor_value.hpp"
 #include "core/types.hpp"
 
 #include <memory>
@@ -28,8 +29,8 @@ namespace mpfem {
             bool valid() const;
             TensorShape shape() const;
             const std::vector<std::string>& dependencies() const;
-            ExprValue evaluate(std::span<const ExprValue> values) const;
-            ExprValue evaluate(std::span<const double> values) const;
+            TensorValue evaluate(std::span<const TensorValue> values) const;
+            TensorValue evaluate(std::span<const double> values) const;
 
         private:
             std::unique_ptr<Impl> impl_;

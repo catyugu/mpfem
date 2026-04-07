@@ -181,7 +181,7 @@ namespace mpfem {
                     dependencies_[d]->evaluateBatch(ctx, std::span<double>(depValues[d].data(), depValues[d].size()));
                 }
 
-                std::vector<ExprValue> inputValues(dependencies_.size(), 0.0);
+                std::vector<TensorValue> inputValues(dependencies_.size());
                 for (size_t i = 0; i < n; ++i) {
                     if (ctx.transform && i < ctx.referencePoints.size()) {
                         const Real xi[3] = {
@@ -195,50 +195,46 @@ namespace mpfem {
                     for (size_t d = 0; d < dependencies_.size(); ++d) {
                         const size_t base = i * depSizes[d];
                         if (depSizes[d] == 1) {
-                            inputValues[d] = depValues[d][base];
+                            inputValues[d] = TensorValue::scalar(depValues[d][base]);
                             continue;
                         }
                         if (depSizes[d] == 3) {
-                            Vector3 vec;
-                            vec << depValues[d][base], depValues[d][base + 1], depValues[d][base + 2];
-                            inputValues[d] = vec;
+                            inputValues[d] = TensorValue::vector(
+                                depValues[d][base],
+                                depValues[d][base + 1],
+                                depValues[d][base + 2]);
                             continue;
                         }
                         if (depSizes[d] == 9) {
-                            Matrix3 mat;
-                            for (int r = 0; r < 3; ++r) {
-                                for (int c = 0; c < 3; ++c) {
-                                    mat(r, c) = depValues[d][base + static_cast<size_t>(r * 3 + c)];
-                                }
-                            }
-                            inputValues[d] = mat;
+                            inputValues[d] = TensorValue::matrix3(
+                                depValues[d][base + 0], depValues[d][base + 1], depValues[d][base + 2],
+                                depValues[d][base + 3], depValues[d][base + 4], depValues[d][base + 5],
+                                depValues[d][base + 6], depValues[d][base + 7], depValues[d][base + 8]);
                             continue;
                         }
                         MPFEM_THROW(ArgumentException, "RuntimeExpressionNode unsupported dependency shape size.");
                     }
 
-                    const ExprValue exprResult = program_.evaluate(std::span<const ExprValue>(inputValues.data(), inputValues.size()));
+                    const TensorValue exprResult = program_.evaluate(std::span<const TensorValue>(inputValues.data(), inputValues.size()));
 
                     if (shape_.isScalar()) {
-                        dest[i] = std::get<double>(exprResult);
+                        dest[i] = exprResult.scalar();
                         continue;
                     }
 
                     if (shape_.isVector()) {
-                        const Vector3 vec = std::get<Vector3>(exprResult);
                         const size_t base = i * valueSize;
                         for (size_t c = 0; c < valueSize; ++c) {
-                            dest[base + c] = vec[static_cast<Eigen::Index>(c)];
+                            dest[base + c] = exprResult[static_cast<int>(c)];
                         }
                         continue;
                     }
 
                     if (shape_.isMatrix()) {
-                        const Matrix3 mat = std::get<Matrix3>(exprResult);
                         const size_t base = i * valueSize;
                         for (int r = 0; r < 3; ++r) {
                             for (int c = 0; c < 3; ++c) {
-                                dest[base + static_cast<size_t>(r * 3 + c)] = mat(r, c);
+                                dest[base + static_cast<size_t>(r * 3 + c)] = exprResult.at(r, c);
                             }
                         }
                         continue;
@@ -296,8 +292,8 @@ namespace mpfem {
 
         // If expression has no dependencies (pure constant), create ConstantScalarNode directly
         MPFEM_ASSERT(program.dependencies().empty(), "Expected constant expression to have no dependencies.");
-        const std::array<ExprValue, 0> noInputs {};
-        double value = std::get<double>(program.evaluate(std::span<const ExprValue>(noInputs.data(), noInputs.size())));
+        const std::array<TensorValue, 0> noInputs {};
+        double value = program.evaluate(std::span<const TensorValue>(noInputs.data(), noInputs.size())).scalar();
         nodes_[std::move(name)] = std::make_unique<ConstantScalarNode>(value);
 
         graphDirty_ = true;

@@ -91,8 +91,8 @@ TEST_F(MaterialXmlReaderTest, DomainScalarPropertyAccess)
     const auto nuProgram = parser.compile(nuExpr);
     const std::vector<double> eInputs = buildInputs(eProgram.dependencies(), {});
     const std::vector<double> nuInputs = buildInputs(nuProgram.dependencies(), {});
-    const double E = std::get<double>(eProgram.evaluate(std::span<const double>(eInputs.data(), eInputs.size())));
-    const double nu = std::get<double>(nuProgram.evaluate(std::span<const double>(nuInputs.data(), nuInputs.size())));
+    const double E = eProgram.evaluate(std::span<const double>(eInputs.data(), eInputs.size())).scalar();
+    const double nu = nuProgram.evaluate(std::span<const double>(nuInputs.data(), nuInputs.size())).scalar();
 
     EXPECT_GT(E, 0.0);
     EXPECT_GT(nu, 0.0);
@@ -114,11 +114,11 @@ TEST_F(MaterialXmlReaderTest, TemperatureDependentConductivityByDomain)
     ExpressionParser parser;
     const auto sigmaProgram = parser.compile(sigmaExpr);
     std::vector<double> inputs = buildInputs(sigmaProgram.dependencies(), vars);
-    Matrix3 sigma293 = std::get<Matrix3>(sigmaProgram.evaluate(std::span<const double>(inputs.data(), inputs.size())));
+    Matrix3 sigma293 = sigmaProgram.evaluate(std::span<const double>(inputs.data(), inputs.size())).toMatrix3();
 
     vars["T"] = 373.15;
     inputs = buildInputs(sigmaProgram.dependencies(), vars);
-    Matrix3 sigma373 = std::get<Matrix3>(sigmaProgram.evaluate(std::span<const double>(inputs.data(), inputs.size())));
+    Matrix3 sigma373 = sigmaProgram.evaluate(std::span<const double>(inputs.data(), inputs.size())).toMatrix3();
 
     EXPECT_GT(sigma293(0, 0), 0.0);
     EXPECT_GT(sigma293(1, 1), 0.0);
@@ -167,7 +167,7 @@ TEST_F(MaterialXmlReaderTest, ConstantConductivityByDomain)
     ExpressionParser parser;
     const auto sigmaProgram = parser.compile(sigmaExpr);
     const std::vector<double> inputs = buildInputs(sigmaProgram.dependencies(), {});
-    Matrix3 sigma = std::get<Matrix3>(sigmaProgram.evaluate(std::span<const double>(inputs.data(), inputs.size())));
+    Matrix3 sigma = sigmaProgram.evaluate(std::span<const double>(inputs.data(), inputs.size())).toMatrix3();
 
     EXPECT_GT(sigma(0, 0), 0.0);
     EXPECT_NEAR(sigma(0, 0), sigma(1, 1), 1e-10);
