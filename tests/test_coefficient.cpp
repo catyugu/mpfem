@@ -27,8 +27,8 @@ TEST_F(VariableNodeTest, ConstantScalarNodeEvaluation)
     std::array<Vector3, 2> points {Vector3(0.0, 0.0, 0.0), Vector3(1.0, 0.0, 0.0)};
     EvaluationContext ctx;
     ctx.physicalPoints = std::span<const Vector3>(points.data(), points.size());
-    std::array<double, 2> out {0.0, 0.0};
-    node->evaluateBatch(ctx, std::span<double>(out.data(), out.size()));
+    std::array<Real, 2> out {0.0, 0.0};
+    node->evaluateBatch(ctx, std::span<Real>(out.data(), out.size()));
 
     EXPECT_NEAR(out[0], 3.14, 1e-12);
     EXPECT_NEAR(out[1], 3.14, 1e-12);
@@ -48,8 +48,8 @@ TEST_F(VariableNodeTest, ScalarExpressionNodeEvaluation)
     std::array<Vector3, 2> points {Vector3(0.0, 0.0, 0.0), Vector3(2.0, 0.0, 0.0)};
     EvaluationContext ctx;
     ctx.physicalPoints = std::span<const Vector3>(points.data(), points.size());
-    std::array<double, 2> out {0.0, 0.0};
-    node->evaluateBatch(ctx, std::span<double>(out.data(), out.size()));
+    std::array<Real, 2> out {0.0, 0.0};
+    node->evaluateBatch(ctx, std::span<Real>(out.data(), out.size()));
 
     EXPECT_NEAR(out[0], 1.0, 1e-12);
     EXPECT_NEAR(out[1], 5.0, 1e-12);
@@ -73,8 +73,8 @@ TEST_F(VariableNodeTest, VectorLiteralMatMulAndDotEvaluation)
     EvaluationContext ctx;
     ctx.physicalPoints = std::span<const Vector3>(points.data(), points.size());
 
-    std::array<double, 6> ivOut {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-    ivNode->evaluateBatch(ctx, std::span<double>(ivOut.data(), ivOut.size()));
+    std::array<Real, 6> ivOut {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+    ivNode->evaluateBatch(ctx, std::span<Real>(ivOut.data(), ivOut.size()));
 
     EXPECT_NEAR(ivOut[0], 1.5, 1e-12);
     EXPECT_NEAR(ivOut[1], -2.0, 1e-12);
@@ -83,8 +83,8 @@ TEST_F(VariableNodeTest, VectorLiteralMatMulAndDotEvaluation)
     EXPECT_NEAR(ivOut[4], 4.0, 1e-12);
     EXPECT_NEAR(ivOut[5], -1.0, 1e-12);
 
-    std::array<double, 2> norm2Out {0.0, 0.0};
-    norm2Node->evaluateBatch(ctx, std::span<double>(norm2Out.data(), norm2Out.size()));
+    std::array<Real, 2> norm2Out {0.0, 0.0};
+    norm2Node->evaluateBatch(ctx, std::span<Real>(norm2Out.data(), norm2Out.size()));
 
     EXPECT_NEAR(norm2Out[0], 1.5 * 1.5 + 4.0 + 9.0, 1e-12);
     EXPECT_NEAR(norm2Out[1], 0.25 + 16.0 + 1.0, 1e-12);
@@ -112,8 +112,8 @@ TEST_F(VariableNodeTest, TensorSymTraceTransposeEvaluation)
     EvaluationContext ctx;
     ctx.physicalPoints = std::span<const Vector3>(points.data(), points.size());
 
-    std::array<double, 9> sOut {};
-    sNode->evaluateBatch(ctx, std::span<double>(sOut.data(), sOut.size()));
+    std::array<Real, 9> sOut {};
+    sNode->evaluateBatch(ctx, std::span<Real>(sOut.data(), sOut.size()));
     EXPECT_NEAR(sOut[0], 1.0, 1e-12);
     EXPECT_NEAR(sOut[1], 3.0, 1e-12);
     EXPECT_NEAR(sOut[2], 5.0, 1e-12);
@@ -124,8 +124,8 @@ TEST_F(VariableNodeTest, TensorSymTraceTransposeEvaluation)
     EXPECT_NEAR(sOut[7], 7.0, 1e-12);
     EXPECT_NEAR(sOut[8], 9.0, 1e-12);
 
-    std::array<double, 9> stOut {};
-    stNode->evaluateBatch(ctx, std::span<double>(stOut.data(), stOut.size()));
+    std::array<Real, 9> stOut {};
+    stNode->evaluateBatch(ctx, std::span<Real>(stOut.data(), stOut.size()));
     EXPECT_NEAR(stOut[0], 1.0, 1e-12);
     EXPECT_NEAR(stOut[1], 4.0, 1e-12);
     EXPECT_NEAR(stOut[2], 7.0, 1e-12);
@@ -136,8 +136,8 @@ TEST_F(VariableNodeTest, TensorSymTraceTransposeEvaluation)
     EXPECT_NEAR(stOut[7], 6.0, 1e-12);
     EXPECT_NEAR(stOut[8], 9.0, 1e-12);
 
-    std::array<double, 1> trOut {0.0};
-    trNode->evaluateBatch(ctx, std::span<double>(trOut.data(), trOut.size()));
+    std::array<Real, 1> trOut {0.0};
+    trNode->evaluateBatch(ctx, std::span<Real>(trOut.data(), trOut.size()));
     EXPECT_NEAR(trOut[0], 15.0, 1e-12);
 }
 

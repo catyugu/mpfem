@@ -6,7 +6,7 @@
 
 namespace mpfem {
 
-    bool ElectrostaticsSolver::initialize(const Mesh& mesh, FieldValues& fieldValues, int order, double initialPotential)
+    bool ElectrostaticsSolver::initialize(const Mesh& mesh, FieldValues& fieldValues, int order, Real initialPotential)
     {
         mesh_ = &mesh;
         fieldValues_ = &fieldValues;

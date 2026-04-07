@@ -6,7 +6,7 @@
 
 namespace mpfem {
 
-    bool HeatTransferSolver::initialize(const Mesh& mesh, FieldValues& fieldValues, int order, double initialTemperature)
+    bool HeatTransferSolver::initialize(const Mesh& mesh, FieldValues& fieldValues, int order, Real initialTemperature)
     {
         mesh_ = &mesh;
         fieldValues_ = &fieldValues;

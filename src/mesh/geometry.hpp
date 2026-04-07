@@ -6,6 +6,7 @@
 #include <array>
 #include <utility>
 #include <vector>
+#include "core/types.hpp"
 
 namespace mpfem
 {
@@ -287,19 +288,19 @@ namespace mpfem
         /// Note: These are defined for the standard reference elements
 
         /// Reference vertex coordinates for Segment: [-1, 1]
-        inline constexpr std::array<std::array<double, 1>, 2> refCoords_Segment = {{{{-1.0}}, {{1.0}}}};
+        inline constexpr std::array<std::array<Real, 1>, 2> refCoords_Segment = {{{{-1.0}}, {{1.0}}}};
 
         /// Reference vertex coordinates for Triangle: (0,0), (1,0), (0,1)
-        inline constexpr std::array<std::array<double, 2>, 3> refCoords_Triangle = {{{{0.0, 0.0}}, {{1.0, 0.0}}, {{0.0, 1.0}}}};
+        inline constexpr std::array<std::array<Real, 2>, 3> refCoords_Triangle = {{{{0.0, 0.0}}, {{1.0, 0.0}}, {{0.0, 1.0}}}};
 
         /// Reference vertex coordinates for Square: [-1,1] x [-1,1]
-        inline constexpr std::array<std::array<double, 2>, 4> refCoords_Square = {{{{-1.0, -1.0}}, {{1.0, -1.0}}, {{1.0, 1.0}}, {{-1.0, 1.0}}}};
+        inline constexpr std::array<std::array<Real, 2>, 4> refCoords_Square = {{{{-1.0, -1.0}}, {{1.0, -1.0}}, {{1.0, 1.0}}, {{-1.0, 1.0}}}};
 
         /// Reference vertex coordinates for Tetrahedron
-        inline constexpr std::array<std::array<double, 3>, 4> refCoords_Tetrahedron = {{{{0.0, 0.0, 0.0}}, {{1.0, 0.0, 0.0}}, {{0.0, 1.0, 0.0}}, {{0.0, 0.0, 1.0}}}};
+        inline constexpr std::array<std::array<Real, 3>, 4> refCoords_Tetrahedron = {{{{0.0, 0.0, 0.0}}, {{1.0, 0.0, 0.0}}, {{0.0, 1.0, 0.0}}, {{0.0, 0.0, 1.0}}}};
 
         /// Reference vertex coordinates for Cube: [-1,1]^3
-        inline constexpr std::array<std::array<double, 3>, 8> refCoords_Cube = {{{{-1.0, -1.0, -1.0}}, {{1.0, -1.0, -1.0}}, {{1.0, 1.0, -1.0}}, {{-1.0, 1.0, -1.0}}, {{-1.0, -1.0, 1.0}}, {{1.0, -1.0, 1.0}}, {{1.0, 1.0, 1.0}}, {{-1.0, 1.0, 1.0}}}};
+        inline constexpr std::array<std::array<Real, 3>, 8> refCoords_Cube = {{{{-1.0, -1.0, -1.0}}, {{1.0, -1.0, -1.0}}, {{1.0, 1.0, -1.0}}, {{-1.0, 1.0, -1.0}}, {{-1.0, -1.0, 1.0}}, {{1.0, -1.0, 1.0}}, {{1.0, 1.0, 1.0}}, {{-1.0, 1.0, 1.0}}}};
 
         // =============================================================================
         // Reference element topology tables
@@ -358,7 +359,7 @@ namespace mpfem
         /// Edge midpoint reference coordinates for Triangle2
         /// Edge ordering matches edge_table::Triangle
         /// Coordinates are (xi, eta) in reference triangle
-        inline constexpr std::array<std::array<double, 2>, 3> edgeMidpoint_Triangle = {{
+        inline constexpr std::array<std::array<Real, 2>, 3> edgeMidpoint_Triangle = {{
             {{0.5, 0.0}},  // Edge 0: between vertices 1-2 (midpoint of edge from (1,0) to (0,1))
             {{0.0, 0.5}},  // Edge 1: between vertices 2-0 (midpoint of edge from (0,1) to (0,0))
             {{0.5, 0.5}}   // Edge 2: between vertices 0-1 (midpoint of edge from (0,0) to (1,0))
@@ -366,7 +367,7 @@ namespace mpfem
 
         /// Edge midpoint reference coordinates for Square2
         /// Edge ordering matches edge_table::Square
-        inline constexpr std::array<std::array<double, 2>, 4> edgeMidpoint_Square = {{
+        inline constexpr std::array<std::array<Real, 2>, 4> edgeMidpoint_Square = {{
             {{0.0, -1.0}},  // Edge 0: bottom (vertices 0-1)
             {{1.0, 0.0}},   // Edge 1: right (vertices 1-2)
             {{0.0, 1.0}},   // Edge 2: top (vertices 2-3)
@@ -375,7 +376,7 @@ namespace mpfem
 
         /// Edge midpoint reference coordinates for Tetrahedron2
         /// Edge ordering matches edge_table::Tetrahedron
-        inline constexpr std::array<std::array<double, 3>, 6> edgeMidpoint_Tetrahedron = {{
+        inline constexpr std::array<std::array<Real, 3>, 6> edgeMidpoint_Tetrahedron = {{
             {{0.5, 0.0, 0.0}},  // Edge 0: between vertices 0-1
             {{0.5, 0.5, 0.0}},  // Edge 1: between vertices 1-2
             {{0.0, 0.5, 0.0}},  // Edge 2: between vertices 2-0
@@ -386,7 +387,7 @@ namespace mpfem
 
         /// Edge midpoint reference coordinates for Cube2
         /// Edge ordering matches edge_table::Cube
-        inline constexpr std::array<std::array<double, 3>, 12> edgeMidpoint_Cube = {{
+        inline constexpr std::array<std::array<Real, 3>, 12> edgeMidpoint_Cube = {{
             {{0.0, -1.0, -1.0}},   // Edge 0: bottom front
             {{1.0, 0.0, -1.0}},    // Edge 1: bottom right
             {{0.0, 1.0, -1.0}},    // Edge 2: bottom back
@@ -407,11 +408,11 @@ namespace mpfem
 
         /// Face center reference coordinates for Square2 (single center point)
         /// Center of the reference square [-1,1] x [-1,1]
-        inline constexpr std::array<double, 2> faceCenter_Square = {{0.0, 0.0}};
+        inline constexpr std::array<Real, 2> faceCenter_Square = {{0.0, 0.0}};
 
         /// Face center reference coordinates for Cube2 (6 face centers)
         /// Face ordering matches face_table::Cube: -z, +z, -y, +y, -x, +x
-        inline constexpr std::array<std::array<double, 3>, 6> faceCenter_Cube = {{
+        inline constexpr std::array<std::array<Real, 3>, 6> faceCenter_Cube = {{
             {{0.0, 0.0, -1.0}},   // Face 0: bottom (-z)
             {{0.0, 0.0, 1.0}},    // Face 1: top (+z)
             {{0.0, -1.0, 0.0}},   // Face 2: front (-y)
@@ -426,10 +427,10 @@ namespace mpfem
 
         /// Volume center reference coordinates for Cube2 (single center point)
         /// Center of the reference cube [-1,1]^3
-        inline constexpr std::array<double, 3> volumeCenter_Cube = {{0.0, 0.0, 0.0}};
+        inline constexpr std::array<Real, 3> volumeCenter_Cube = {{0.0, 0.0, 0.0}};
 
         /// Square2: center of the element (same as face center for 2D)
-        inline constexpr std::array<double, 2> center_Square = {{0.0, 0.0}};
+        inline constexpr std::array<Real, 2> center_Square = {{0.0, 0.0}};
 
         // =============================================================================
         // Face edge tables: edge indices for each face
@@ -468,7 +469,7 @@ namespace mpfem
         /// @param edgeIdx Edge index
         /// @param coords Output coordinates (size = dim)
         /// @return true if successful
-        inline bool getEdgeMidpointCoords(Geometry g, int edgeIdx, double* coords) {
+        inline bool getEdgeMidpointCoords(Geometry g, int edgeIdx, Real* coords) {
             switch (g) {
                 case Geometry::Segment:
                     if (edgeIdx == 0) { coords[0] = 0.0; return true; }
@@ -553,8 +554,8 @@ namespace mpfem
         /// - Square2:   4 corners + 4 edge midpoints + 1 center = 9 nodes
         /// - Tetrahedron2: 4 corners + 6 edge midpoints = 10 nodes (no face/volume center for simplex)
         /// - Cube2:     8 corners + 12 edge midpoints + 6 face centers + 1 volume center = 27 nodes
-        inline std::vector<std::vector<double>> nodeCoords(Geometry g, int order) {
-            std::vector<std::vector<double>> coords;
+        inline std::vector<std::vector<Real>> nodeCoords(Geometry g, int order) {
+            std::vector<std::vector<Real>> coords;
             int d = dim(g);
 
             // Add corner vertex coordinates
@@ -598,7 +599,7 @@ namespace mpfem
             if (order >= 2) {
                 int nEdges = numEdges(g);
                 for (int e = 0; e < nEdges; ++e) {
-                    std::vector<double> mp(d);
+                    std::vector<Real> mp(d);
                     getEdgeMidpointCoords(g, e, mp.data());
                     coords.push_back(std::move(mp));
                 }
@@ -632,7 +633,7 @@ namespace mpfem
         /// @param faceIdx Face index (0 to 5)
         /// @param coords Output coordinates (size = 3)
         /// @return true if successful
-        inline bool getFaceCenterCoords(Geometry g, int faceIdx, double* coords) {
+        inline bool getFaceCenterCoords(Geometry g, int faceIdx, Real* coords) {
             if (g == Geometry::Cube && faceIdx >= 0 && faceIdx < 6) {
                 coords[0] = faceCenter_Cube[faceIdx][0];
                 coords[1] = faceCenter_Cube[faceIdx][1];
@@ -644,7 +645,7 @@ namespace mpfem
         
         /// Get volume center reference coordinates for Cube2
         /// @param coords Output coordinates (size = 3)
-        inline void getVolumeCenterCoords(Geometry g, double* coords) {
+        inline void getVolumeCenterCoords(Geometry g, Real* coords) {
             if (g == Geometry::Cube) {
                 coords[0] = volumeCenter_Cube[0];
                 coords[1] = volumeCenter_Cube[1];

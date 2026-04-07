@@ -57,7 +57,7 @@ std::string_view stripOuterParens(std::string_view text) {
 }  // namespace
 
 struct UnitRegistry::Impl {
-    std::unordered_map<std::string, double> units;
+    std::unordered_map<std::string, Real> units;
 
     Impl() {
         units.reserve(40);
@@ -89,7 +89,7 @@ struct UnitRegistry::Impl {
         units["kg/m"] = 1.0;
     }
 
-    double getBaseMultiplier(std::string_view baseUnit) const {
+    Real getBaseMultiplier(std::string_view baseUnit) const {
         baseUnit = trimView(baseUnit);
         std::string unitKey(baseUnit);
         auto it = units.find(unitKey);
@@ -100,7 +100,7 @@ struct UnitRegistry::Impl {
         throw std::invalid_argument("Unknown unit: " + unitKey);
     }
 
-    double parseUnitElement(std::string_view text) const {
+    Real parseUnitElement(std::string_view text) const {
         text = stripOuterParens(text);
 
         auto caretPos = text.find('^');
@@ -114,11 +114,11 @@ struct UnitRegistry::Impl {
             throw std::invalid_argument("Missing unit exponent in: " + std::string(text));
         }
 
-        const double exponent = std::stod(std::string(exponentText));
+        const Real exponent = std::stod(std::string(exponentText));
         return std::pow(getBaseMultiplier(base), exponent);
     }
 
-    double parseUnitTerms(std::string_view text) const {
+    Real parseUnitTerms(std::string_view text) const {
         text = stripOuterParens(text);
         if (text.empty()) {
             return 1.0;
@@ -150,7 +150,7 @@ struct UnitRegistry::Impl {
         return parseUnitTerms(left) * parseUnitTerms(right);
     }
 
-    double parseCompoundUnit(std::string_view text) const {
+    Real parseCompoundUnit(std::string_view text) const {
         text = stripOuterParens(text);
         if (text.empty()) {
             return 1.0;
@@ -202,7 +202,7 @@ UnitParseResult UnitRegistry::stripUnit(std::string_view input) const {
     return {expression, getMultiplier(unit)};
 }
 
-double UnitRegistry::getMultiplier(std::string_view unit) const {
+Real UnitRegistry::getMultiplier(std::string_view unit) const {
     unit = trimView(unit);
     if (unit.empty()) {
         return 1.0;
@@ -214,18 +214,18 @@ double UnitRegistry::getMultiplier(std::string_view unit) const {
         return it->second;
     }
 
-    thread_local std::unordered_map<std::string, double> cache;
+    thread_local std::unordered_map<std::string, Real> cache;
     auto cacheIt = cache.find(unitKey);
     if (cacheIt != cache.end()) {
         return cacheIt->second;
     }
 
-    const double parsed = impl_->parseCompoundUnit(unit);
+    const Real parsed = impl_->parseCompoundUnit(unit);
     cache.emplace(unitKey, parsed);
     return parsed;
 }
 
-double parseSI(std::string_view input) {
+Real parseSI(std::string_view input) {
     UnitRegistry registry;
     const UnitParseResult parsed = registry.stripUnit(input);
     return std::stod(std::string(parsed.expression)) * parsed.multiplier;

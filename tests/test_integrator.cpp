@@ -20,11 +20,11 @@ namespace {
 
     class ScalarConstantNode final : public VariableNode {
     public:
-        explicit ScalarConstantNode(double value) : value_(value) { }
+        explicit ScalarConstantNode(Real value) : value_(value) { }
 
         TensorShape shape() const override { return TensorShape::scalar(); }
 
-        void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override
+        void evaluateBatch(const EvaluationContext& ctx, std::span<Real> dest) const override
         {
             const size_t n = ctx.physicalPoints.empty() ? dest.size() : ctx.physicalPoints.size();
             if (dest.size() != n) {
@@ -36,7 +36,7 @@ namespace {
         }
 
     private:
-        double value_ = 0.0;
+        Real value_ = 0.0;
     };
 
     class MatrixConstantNode final : public VariableNode {
@@ -45,7 +45,7 @@ namespace {
 
         TensorShape shape() const override { return TensorShape::matrix(3, 3); }
 
-        void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override
+        void evaluateBatch(const EvaluationContext& ctx, std::span<Real> dest) const override
         {
             const size_t n = ctx.physicalPoints.empty() ? (dest.size() / 9ull) : ctx.physicalPoints.size();
             if (dest.size() != n * 9ull) {

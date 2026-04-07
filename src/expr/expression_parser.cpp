@@ -46,7 +46,7 @@ namespace mpfem {
             };
 
             Kind kind = Kind::Constant;
-            double value = 0.0;
+            Real value = 0.0;
             std::string variableName;
             int variableIndex = -1;
             std::vector<std::unique_ptr<AstNode>> args;
@@ -126,7 +126,7 @@ namespace mpfem {
             return name.size() > 6 && name.substr(0, 5) == "grad(" && name.back() == ')';
         }
 
-        bool isNearOne(double value)
+        bool isNearOne(Real value)
         {
             return std::abs(value - 1.0) < 1e-15;
         }
@@ -467,7 +467,7 @@ namespace mpfem {
             {
                 const char* begin = text_.data() + pos_;
                 char* end = nullptr;
-                const double value = std::strtod(begin, &end);
+                const Real value = std::strtod(begin, &end);
                 if (end == begin) {
                     MPFEM_THROW(ArgumentException,
                         "Invalid numeric literal near: " + std::string(text_.substr(pos_)));
@@ -504,7 +504,7 @@ namespace mpfem {
                 return node;
             }
 
-            static std::unique_ptr<AstNode> applyMultiplierIfNeeded(std::unique_ptr<AstNode> node, double multiplier)
+            static std::unique_ptr<AstNode> applyMultiplierIfNeeded(std::unique_ptr<AstNode> node, Real multiplier)
             {
                 if (isNearOne(multiplier)) {
                     return node;
@@ -537,7 +537,7 @@ namespace mpfem {
                 ++pos_; // consume ']'
 
                 UnitRegistry registry;
-                const double multiplier = registry.getMultiplier(unit);
+                const Real multiplier = registry.getMultiplier(unit);
                 return applyMultiplierIfNeeded(std::move(node), multiplier);
             }
 
@@ -689,21 +689,21 @@ namespace mpfem {
             case AstNode::Kind::Variable:
                 return vars[static_cast<size_t>(node.variableIndex)];
             case AstNode::Kind::VectorLiteral: {
-                double x = evalNode(*node.args[0], vars).scalar();
-                double y = evalNode(*node.args[1], vars).scalar();
-                double z = evalNode(*node.args[2], vars).scalar();
+                Real x = evalNode(*node.args[0], vars).scalar();
+                Real y = evalNode(*node.args[1], vars).scalar();
+                Real z = evalNode(*node.args[2], vars).scalar();
                 return TensorValue::vector(x, y, z);
             }
             case AstNode::Kind::MatrixLiteral: {
-                double m00 = evalNode(*node.args[0], vars).scalar();
-                double m01 = evalNode(*node.args[1], vars).scalar();
-                double m02 = evalNode(*node.args[2], vars).scalar();
-                double m10 = evalNode(*node.args[3], vars).scalar();
-                double m11 = evalNode(*node.args[4], vars).scalar();
-                double m12 = evalNode(*node.args[5], vars).scalar();
-                double m20 = evalNode(*node.args[6], vars).scalar();
-                double m21 = evalNode(*node.args[7], vars).scalar();
-                double m22 = evalNode(*node.args[8], vars).scalar();
+                Real m00 = evalNode(*node.args[0], vars).scalar();
+                Real m01 = evalNode(*node.args[1], vars).scalar();
+                Real m02 = evalNode(*node.args[2], vars).scalar();
+                Real m10 = evalNode(*node.args[3], vars).scalar();
+                Real m11 = evalNode(*node.args[4], vars).scalar();
+                Real m12 = evalNode(*node.args[5], vars).scalar();
+                Real m20 = evalNode(*node.args[6], vars).scalar();
+                Real m21 = evalNode(*node.args[7], vars).scalar();
+                Real m22 = evalNode(*node.args[8], vars).scalar();
                 return TensorValue::matrix3(m00, m01, m02, m10, m11, m12, m20, m21, m22);
             }
             case AstNode::Kind::Add: {
@@ -732,12 +732,12 @@ namespace mpfem {
             }
             case AstNode::Kind::Divide: {
                 const TensorValue lhs = evalNode(*node.args[0], vars);
-                const double rhs = evalNode(*node.args[1], vars).scalar();
+                const Real rhs = evalNode(*node.args[1], vars).scalar();
                 return scale(lhs, 1.0 / rhs);
             }
             case AstNode::Kind::Power: {
-                const double lhs = evalNode(*node.args[0], vars).scalar();
-                const double rhs = evalNode(*node.args[1], vars).scalar();
+                const Real lhs = evalNode(*node.args[0], vars).scalar();
+                const Real rhs = evalNode(*node.args[1], vars).scalar();
                 return TensorValue::scalar(std::pow(lhs, rhs));
             }
             case AstNode::Kind::Negate: {
@@ -759,13 +759,13 @@ namespace mpfem {
             case AstNode::Kind::Abs:
                 return TensorValue::scalar(std::abs(evalNode(*node.args[0], vars).scalar()));
             case AstNode::Kind::Min: {
-                const double lhs = evalNode(*node.args[0], vars).scalar();
-                const double rhs = evalNode(*node.args[1], vars).scalar();
+                const Real lhs = evalNode(*node.args[0], vars).scalar();
+                const Real rhs = evalNode(*node.args[1], vars).scalar();
                 return TensorValue::scalar(std::min(lhs, rhs));
             }
             case AstNode::Kind::Max: {
-                const double lhs = evalNode(*node.args[0], vars).scalar();
-                const double rhs = evalNode(*node.args[1], vars).scalar();
+                const Real lhs = evalNode(*node.args[0], vars).scalar();
+                const Real rhs = evalNode(*node.args[1], vars).scalar();
                 return TensorValue::scalar(std::max(lhs, rhs));
             }
             case AstNode::Kind::Dot: {
@@ -836,11 +836,11 @@ namespace mpfem {
         return evalNode(*impl_->root, values);
     }
 
-    TensorValue ExpressionParser::ExpressionProgram::evaluate(std::span<const double> values) const
+    TensorValue ExpressionParser::ExpressionProgram::evaluate(std::span<const Real> values) const
     {
         std::vector<TensorValue> typed;
         typed.reserve(values.size());
-        for (const double value : values) {
+        for (const Real value : values) {
             typed.emplace_back(value);
         }
         return evaluate(std::span<const TensorValue>(typed.data(), typed.size()));

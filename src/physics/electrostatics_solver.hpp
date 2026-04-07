@@ -21,7 +21,7 @@ namespace mpfem {
 
         std::string fieldName() const override { return "V"; }
 
-        bool initialize(const Mesh& mesh, FieldValues& fieldValues, int order, double initialPotential = 0.0);
+        bool initialize(const Mesh& mesh, FieldValues& fieldValues, int order, Real initialPotential = 0.0);
 
         // Material bindings
         void setElectricalConductivity(const std::set<int>& domains, const VariableNode* sigma);

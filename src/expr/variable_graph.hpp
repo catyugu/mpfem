@@ -19,7 +19,7 @@ namespace mpfem {
     class GridFunction;
 
     struct EvaluationContext {
-        double time = 0.0;
+        Real time = Real(0);
         int domainId = -1;
         Index elementId = InvalidIndex;
         std::span<const Vector3> physicalPoints;
@@ -37,7 +37,7 @@ namespace mpfem {
         /// 批量求值：计算该节点在每个物理点的值
         /// @param ctx 评估上下文
         /// @param dest 输出缓冲区，大小 = physicalPoints.size() * shape().size()
-        virtual void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const = 0;
+        virtual void evaluateBatch(const EvaluationContext& ctx, std::span<Real> dest) const = 0;
 
         virtual bool isConstant() const { return false; }
         virtual std::vector<const VariableNode*> dependencies() const { return {}; }
@@ -69,7 +69,7 @@ namespace mpfem {
         void registerGridFunction(std::string name, const GridFunction* field);
 
         void registerExternalSource(std::string name,
-            std::function<double(const EvaluationContext&, size_t pointIndex)> extractor);
+            std::function<Real(const EvaluationContext&, size_t pointIndex)> extractor);
 
         void adoptNode(std::unique_ptr<VariableNode> node, std::string name);
 

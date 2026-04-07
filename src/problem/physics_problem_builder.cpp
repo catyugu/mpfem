@@ -33,9 +33,9 @@ namespace mpfem {
         constexpr std::string_view kPropYoungModulus = "E";
         constexpr std::string_view kPropPoissonRatio = "nu";
         constexpr std::string_view kPropThermalExpansion = "thermalexpansioncoefficient";
-        double getInitialCondition(const CaseDefinition& caseDef,
+        Real getInitialCondition(const CaseDefinition& caseDef,
             std::string_view fieldKind,
-            double defaultVal)
+            Real defaultVal)
         {
             for (const auto& ic : caseDef.initialConditions) {
                 if (ic.fieldKind == fieldKind) {
@@ -75,7 +75,7 @@ namespace mpfem {
 
             TensorShape shape() const override { return shape_; }
 
-            void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override
+            void evaluateBatch(const EvaluationContext& ctx, std::span<Real> dest) const override
             {
                 int domainId = ctx.domainId;
                 if (domainId < 0 && ctx.transform) {
@@ -258,7 +258,7 @@ namespace mpfem {
             problem.electrostatics = std::make_unique<ElectrostaticsSolver>(physics.order);
             problem.electrostatics->setSolverConfig(std::move(physics.solver));
 
-            double icValue = getInitialCondition(problem.caseDef, kPhysicsElectrostatics, 0.0);
+            Real icValue = getInitialCondition(problem.caseDef, kPhysicsElectrostatics, 0.0);
             problem.electrostatics->initialize(*problem.mesh, problem.fieldValues, physics.order, icValue);
 
             // Register the electrostatics field as a DAG node for expression dependencies
@@ -283,7 +283,7 @@ namespace mpfem {
             problem.heatTransfer = std::make_unique<HeatTransferSolver>(physics.order);
             problem.heatTransfer->setSolverConfig(std::move(physics.solver));
 
-            double icValue = getInitialCondition(problem.caseDef, kPhysicsHeatTransfer, 293.15);
+            Real icValue = getInitialCondition(problem.caseDef, kPhysicsHeatTransfer, 293.15);
             problem.heatTransfer->initialize(*problem.mesh, problem.fieldValues, physics.order, icValue);
 
             // Register the heat transfer field as a DAG node for expression dependencies
@@ -324,7 +324,7 @@ namespace mpfem {
             problem.structural = std::make_unique<StructuralSolver>(physics.order);
             problem.structural->setSolverConfig(std::move(physics.solver));
 
-            double icValue = getInitialCondition(problem.caseDef, kPhysicsSolidMechanics, 0.0);
+            Real icValue = getInitialCondition(problem.caseDef, kPhysicsSolidMechanics, 0.0);
             problem.structural->initialize(*problem.mesh, problem.fieldValues, physics.order, icValue);
 
             problem.globalVariables_.registerGridFunction("u", &problem.structural->field());

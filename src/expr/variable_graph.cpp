@@ -23,14 +23,11 @@ namespace mpfem {
 
         class ConstantScalarNode final : public VariableNode {
         public:
-            explicit ConstantScalarNode(double value)
-                : value_(value)
-            {
-            }
+            explicit ConstantScalarNode(Real value) : value_(value) { }
 
             TensorShape shape() const override { return TensorShape::scalar(); }
 
-            void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override
+            void evaluateBatch(const EvaluationContext& ctx, std::span<Real> dest) const override
             {
                 const size_t n = ctx.physicalPoints.empty() ? dest.size() : ctx.physicalPoints.size();
                 if (dest.size() != n) {
@@ -44,7 +41,7 @@ namespace mpfem {
             bool isConstant() const override { return true; }
 
         private:
-            double value_ = 0.0;
+            Real value_ = Real(0);
         };
 
         class GridFunctionNode final : public VariableNode {
@@ -54,10 +51,10 @@ namespace mpfem {
 
             TensorShape shape() const override { return TensorShape::scalar(); }
 
-            void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override
+            void evaluateBatch(const EvaluationContext& ctx, std::span<Real> dest) const override
             {
                 if (!field_) {
-                    std::fill(dest.begin(), dest.end(), 0.0);
+                    std::fill(dest.begin(), dest.end(), Real(0));
                     return;
                 }
                 if (!ctx.transform) {
@@ -90,10 +87,10 @@ namespace mpfem {
 
             TensorShape shape() const override { return TensorShape::vector(3); }
 
-            void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override
+            void evaluateBatch(const EvaluationContext& ctx, std::span<Real> dest) const override
             {
                 if (!field_) {
-                    std::fill(dest.begin(), dest.end(), 0.0);
+                    std::fill(dest.begin(), dest.end(), Real(0));
                     return;
                 }
                 if (!ctx.transform) {
@@ -132,14 +129,14 @@ namespace mpfem {
 
         class ExternalDataNode final : public VariableNode {
         public:
-            using ValueExtractor = std::function<double(const EvaluationContext&, size_t pointIndex)>;
+            using ValueExtractor = std::function<Real(const EvaluationContext&, size_t pointIndex)>;
 
             ExternalDataNode(std::string name, ValueExtractor extractor)
                 : name_(std::move(name)), extractor_(std::move(extractor)) { }
 
             TensorShape shape() const override { return TensorShape::scalar(); }
 
-            void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override
+            void evaluateBatch(const EvaluationContext& ctx, std::span<Real> dest) const override
             {
                 const size_t n = ctx.physicalPoints.size();
                 for (size_t i = 0; i < n; ++i) {
@@ -165,7 +162,7 @@ namespace mpfem {
 
             TensorShape shape() const override { return shape_; }
 
-            void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override
+            void evaluateBatch(const EvaluationContext& ctx, std::span<Real> dest) const override
             {
                 const size_t n = ctx.physicalPoints.size();
                 const size_t valueSize = shape_.size();
@@ -173,12 +170,12 @@ namespace mpfem {
                     MPFEM_THROW(ArgumentException, "RuntimeExpressionNode evaluate destination size mismatch.");
                 }
 
-                std::vector<std::vector<double>> depValues(dependencies_.size());
+                std::vector<std::vector<Real>> depValues(dependencies_.size());
                 std::vector<size_t> depSizes(dependencies_.size(), 0);
                 for (size_t d = 0; d < dependencies_.size(); ++d) {
                     depSizes[d] = dependencies_[d]->shape().size();
-                    depValues[d].assign(n * depSizes[d], 0.0);
-                    dependencies_[d]->evaluateBatch(ctx, std::span<double>(depValues[d].data(), depValues[d].size()));
+                    depValues[d].assign(n * depSizes[d], Real(0));
+                    dependencies_[d]->evaluateBatch(ctx, std::span<Real>(depValues[d].data(), depValues[d].size()));
                 }
 
                 std::vector<TensorValue> inputValues(dependencies_.size());
@@ -263,22 +260,22 @@ namespace mpfem {
     {
         // Register built-in spatial coordinates x, y, z and time t as ExternalDataNode
         nodes_["x"] = std::make_unique<ExternalDataNode>("x",
-            [](const EvaluationContext& ctx, size_t pointIndex) -> double {
+            [](const EvaluationContext& ctx, size_t pointIndex) -> Real {
                 return ctx.physicalPoints[pointIndex].x();
             });
 
         nodes_["y"] = std::make_unique<ExternalDataNode>("y",
-            [](const EvaluationContext& ctx, size_t pointIndex) -> double {
+            [](const EvaluationContext& ctx, size_t pointIndex) -> Real {
                 return ctx.physicalPoints[pointIndex].y();
             });
 
         nodes_["z"] = std::make_unique<ExternalDataNode>("z",
-            [](const EvaluationContext& ctx, size_t pointIndex) -> double {
+            [](const EvaluationContext& ctx, size_t pointIndex) -> Real {
                 return ctx.physicalPoints[pointIndex].z();
             });
 
         nodes_["t"] = std::make_unique<ExternalDataNode>("t",
-            [](const EvaluationContext& ctx, size_t) -> double {
+            [](const EvaluationContext& ctx, size_t) -> Real {
                 return ctx.time;
             });
 
@@ -293,7 +290,7 @@ namespace mpfem {
         // If expression has no dependencies (pure constant), create ConstantScalarNode directly
         MPFEM_ASSERT(program.dependencies().empty(), "Expected constant expression to have no dependencies.");
         const std::array<TensorValue, 0> noInputs {};
-        double value = program.evaluate(std::span<const TensorValue>(noInputs.data(), noInputs.size())).scalar();
+        Real value = program.evaluate(std::span<const TensorValue>(noInputs.data(), noInputs.size())).scalar();
         nodes_[std::move(name)] = std::make_unique<ConstantScalarNode>(value);
 
         graphDirty_ = true;
@@ -360,7 +357,7 @@ namespace mpfem {
     }
 
     void VariableManager::registerExternalSource(std::string name,
-        std::function<double(const EvaluationContext&, size_t pointIndex)> extractor)
+        std::function<Real(const EvaluationContext&, size_t pointIndex)> extractor)
     {
         nodes_[std::move(name)] = std::make_unique<ExternalDataNode>(name, std::move(extractor));
         graphDirty_ = true;
