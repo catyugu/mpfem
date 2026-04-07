@@ -1,78 +1,47 @@
 #ifndef MPFEM_EXPR_EXPRESSION_PARSER_HPP
 #define MPFEM_EXPR_EXPRESSION_PARSER_HPP
 
+#include "core/tensor_shape.hpp"
 #include "core/types.hpp"
 
-#include <map>
 #include <memory>
+#include <span>
 #include <string>
 #include <vector>
 
 namespace mpfem {
 
-class ExpressionParser {
-public:
-    struct VariableBinding {
-        std::string name;
-        double* ref = nullptr;
-    };
-
-    class ScalarProgram {
+    class ExpressionParser {
     public:
-        struct Impl;
-        ScalarProgram();
-        explicit ScalarProgram(std::unique_ptr<Impl> impl) noexcept;
-        ~ScalarProgram();
-        ScalarProgram(ScalarProgram&&) noexcept;
-        ScalarProgram& operator=(ScalarProgram&&) noexcept;
-        ScalarProgram(const ScalarProgram&) = delete;
-        ScalarProgram& operator=(const ScalarProgram&) = delete;
+        class ExpressionProgram {
+        public:
+            struct Impl;
+            ExpressionProgram();
+            explicit ExpressionProgram(std::unique_ptr<Impl> impl) noexcept;
+            ~ExpressionProgram();
+            ExpressionProgram(ExpressionProgram&&) noexcept;
+            ExpressionProgram& operator=(ExpressionProgram&&) noexcept;
+            ExpressionProgram(const ExpressionProgram&) = delete;
+            ExpressionProgram& operator=(const ExpressionProgram&) = delete;
 
-        [[nodiscard]] bool valid() const;
-        [[nodiscard]] double evaluate() const;
+            bool valid() const;
+            TensorShape shape() const;
+            const std::vector<std::string>& dependencies() const;
+            ExprValue evaluate(std::span<const double> values) const;
 
-    private:
-        std::unique_ptr<Impl> impl_;
+        private:
+            std::unique_ptr<Impl> impl_;
+        };
+
+        ExpressionParser(const ExpressionParser&) = delete;
+        ExpressionParser& operator=(const ExpressionParser&) = delete;
+
+        ExpressionParser();
+        ~ExpressionParser();
+
+        ExpressionProgram compile(const std::string& expression) const;
     };
 
-    class MatrixProgram {
-    public:
-        struct Impl;
-        MatrixProgram();
-        explicit MatrixProgram(std::unique_ptr<Impl> impl) noexcept;
-        ~MatrixProgram();
-        MatrixProgram(MatrixProgram&&) noexcept;
-        MatrixProgram& operator=(MatrixProgram&&) noexcept;
-        MatrixProgram(const MatrixProgram&) = delete;
-        MatrixProgram& operator=(const MatrixProgram&) = delete;
+} // namespace mpfem
 
-        [[nodiscard]] bool valid() const;
-        [[nodiscard]] Matrix3 evaluate() const;
-
-    private:
-        std::unique_ptr<Impl> impl_;
-    };
-
-    static ExpressionParser& instance();
-
-    ExpressionParser(const ExpressionParser&) = delete;
-    ExpressionParser& operator=(const ExpressionParser&) = delete;
-
-    ExpressionParser();
-    ~ExpressionParser();
-
-    ScalarProgram compileScalar(const std::string& expression,
-                                const std::vector<VariableBinding>& bindings) const;
-    MatrixProgram compileMatrix(const std::string& expression,
-                                const std::vector<VariableBinding>& bindings) const;
-
-    // Convenience one-shot APIs for configuration parsing.
-    double evaluate(const std::string& expression,
-                    const std::map<std::string, double>& variables = {});
-    Matrix3 evaluateMatrix(const std::string& expression,
-                           const std::map<std::string, double>& variables = {});
-};
-
-}  // namespace mpfem
-
-#endif  // MPFEM_EXPR_EXPRESSION_PARSER_HPP
+#endif // MPFEM_EXPR_EXPRESSION_PARSER_HPP

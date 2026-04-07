@@ -1,10 +1,8 @@
 #ifndef MPFEM_STRUCTURAL_SOLVER_HPP
 #define MPFEM_STRUCTURAL_SOLVER_HPP
 
-#include "assembly_change_tracker.hpp"
-#include "fe/coefficient.hpp"
+#include "expr/variable_graph.hpp"
 #include "physics_field_solver.hpp"
-#include <cstdint>
 #include <set>
 #include <vector>
 
@@ -21,20 +19,19 @@ namespace mpfem {
         StructuralSolver() = default;
         explicit StructuralSolver(int order) { order_ = order; }
 
-        std::string fieldName() const override { return "Structural"; }
-        FieldId fieldId() const override { return FieldId::Displacement; }
+        std::string fieldName() const override { return "u"; }
 
         bool initialize(const Mesh& mesh, FieldValues& fieldValues, int order, double initialDisplacement = 0.0);
 
         // Material bindings
-        void addElasticity(const std::set<int>& domains, const Coefficient* E, const Coefficient* nu);
+        void addElasticity(const std::set<int>& domains, const VariableNode* E, const VariableNode* nu);
 
         // Boundary conditions
-        void addFixedDisplacementBC(const std::set<int>& boundaryIds, const VectorCoefficient* displacement);
+        void addFixedDisplacementBC(const std::set<int>& boundaryIds, const Vector3& displacement);
         void clearBoundaryConditions() { displacementBindings_.clear(); }
 
         // Generic stress load term assembled as ∫ sigma : epsilon(v) dΩ
-        void setStrainLoad(const std::set<int>& domains, const MatrixCoefficient* stress);
+        void setStrainLoad(const std::set<int>& domains, const VariableNode* stress);
         bool hasStrainLoad() const { return !strainLoadBindings_.empty(); }
 
         void assemble() override;
@@ -42,34 +39,17 @@ namespace mpfem {
     private:
         struct ElasticityBinding {
             std::set<int> domains;
-            const Coefficient* E = nullptr;
-            const Coefficient* nu = nullptr;
-
-            std::uint64_t stateTag() const
-            {
-                return combineTag(
-                    stateTagOf(domains),
-                    combineTag(stateTagOf(E), stateTagOf(nu)));
-            }
+            const VariableNode* E = nullptr;
+            const VariableNode* nu = nullptr;
         };
         struct StrainLoadBinding {
             std::set<int> domains;
-            const MatrixCoefficient* stress = nullptr;
-
-            std::uint64_t stateTag() const
-            {
-                return combineTag(stateTagOf(domains), stateTagOf(stress));
-            }
+            const VariableNode* stress = nullptr;
         };
 
         struct DisplacementBinding {
             std::set<int> boundaryIds;
-            const VectorCoefficient* displacement = nullptr;
-
-            std::uint64_t stateTag() const
-            {
-                return combineTag(stateTagOf(boundaryIds), stateTagOf(displacement));
-            }
+            Vector3 displacement = Vector3::Zero();
         };
 
         std::vector<ElasticityBinding> elasticityBindings_;
@@ -78,9 +58,6 @@ namespace mpfem {
 
         SparseMatrix stiffnessMatrixBeforeBC_;
         Vector rhsBeforeBC_;
-        AssemblyTagCache stiffnessAssemblyState_;
-        AssemblyTagCache loadAssemblyState_;
-        AssemblyTagCache bcAssemblyState_;
     };
 
 } // namespace mpfem

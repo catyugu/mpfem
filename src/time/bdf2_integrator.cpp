@@ -28,8 +28,8 @@ namespace mpfem {
         ensureSize(M.rows(), M.cols());
 
         if (problem.currentStep > 0) {
-            const GridFunction& Tprev1 = problem.history(FieldId::Temperature, 1);
-            const GridFunction& Tprev2 = problem.history(FieldId::Temperature, 2);
+            const GridFunction& Tprev1 = problem.history("T", 1);
+            const GridFunction& Tprev2 = problem.history("T", 2);
 
             A_ = (1.5 * M) + (dt * K);
             A_.makeCompressed();
@@ -40,7 +40,7 @@ namespace mpfem {
             LOG_INFO << "BDF2Integrator: Step " << (problem.currentStep + 1) << " (using BDF2)";
         }
         else {
-            const GridFunction& Tprev = problem.history(FieldId::Temperature, 1);
+            const GridFunction& Tprev = problem.history("T", 1);
 
             A_ = M + (dt * K);
             A_.makeCompressed();

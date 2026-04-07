@@ -1,10 +1,8 @@
 #ifndef MPFEM_ELECTROSTATICS_SOLVER_HPP
 #define MPFEM_ELECTROSTATICS_SOLVER_HPP
 
-#include "assembly_change_tracker.hpp"
-#include "fe/coefficient.hpp"
+#include "expr/variable_graph.hpp"
 #include "physics_field_solver.hpp"
-#include <cstdint>
 #include <set>
 #include <vector>
 
@@ -21,16 +19,15 @@ namespace mpfem {
         ElectrostaticsSolver() = default;
         explicit ElectrostaticsSolver(int order) { order_ = order; }
 
-        std::string fieldName() const override { return "Electrostatics"; }
-        FieldId fieldId() const override { return FieldId::ElectricPotential; }
+        std::string fieldName() const override { return "V"; }
 
         bool initialize(const Mesh& mesh, FieldValues& fieldValues, int order, double initialPotential = 0.0);
 
         // Material bindings
-        void setElectricalConductivity(const std::set<int>& domains, const MatrixCoefficient* sigma);
+        void setElectricalConductivity(const std::set<int>& domains, const VariableNode* sigma);
 
         // Boundary conditions
-        void addVoltageBC(const std::set<int>& boundaryIds, const Coefficient* voltage);
+        void addVoltageBC(const std::set<int>& boundaryIds, const VariableNode* voltage);
         void clearBoundaryConditions() { voltageBindings_.clear(); }
 
         void assemble() override;
@@ -38,27 +35,16 @@ namespace mpfem {
     private:
         struct ConductivityBinding {
             std::set<int> domains;
-            const MatrixCoefficient* sigma = nullptr;
-
-            std::uint64_t stateTag() const
-            {
-                return combineTag(stateTagOf(domains), stateTagOf(sigma));
-            }
+            const VariableNode* sigma = nullptr;
         };
 
         struct VoltageBinding {
             std::set<int> boundaryIds;
-            const Coefficient* voltage = nullptr;
-
-            std::uint64_t stateTag() const
-            {
-                return combineTag(stateTagOf(boundaryIds), stateTagOf(voltage));
-            }
+            const VariableNode* voltage = nullptr;
         };
 
         std::vector<ConductivityBinding> conductivityBindings_;
         std::vector<VoltageBinding> voltageBindings_;
-        AssemblyTagCache stiffnessAssemblyState_;
     };
 
 } // namespace mpfem

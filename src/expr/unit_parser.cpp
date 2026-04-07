@@ -183,11 +183,6 @@ struct UnitRegistry::Impl {
     }
 };
 
-UnitRegistry& UnitRegistry::instance() {
-    static UnitRegistry registry;
-    return registry;
-}
-
 UnitRegistry::UnitRegistry()
     : impl_(std::make_unique<Impl>()) {
 }
@@ -231,7 +226,8 @@ double UnitRegistry::getMultiplier(std::string_view unit) const {
 }
 
 double parseSI(std::string_view input) {
-    const UnitParseResult parsed = UnitRegistry::instance().stripUnit(input);
+    UnitRegistry registry;
+    const UnitParseResult parsed = registry.stripUnit(input);
     return std::stod(std::string(parsed.expression)) * parsed.multiplier;
 }
 

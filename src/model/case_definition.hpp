@@ -12,11 +12,12 @@ namespace mpfem {
 
     /**
      * @brief Scalar variable definition from case XML.
+     * @note valueText stores the expression text (e.g., "20e-3", "k * 2 + 1").
+     *       No siValue field - evaluation is deferred to VariableManager at runtime.
      */
     struct VariableEntry {
         std::string name;
         std::string valueText;
-        double siValue = 0.0;
     };
 
     /**
@@ -111,47 +112,23 @@ namespace mpfem {
         TimeConfig timeConfig;
         std::vector<InitialCondition> initialConditions;
 
-    private:
-        // O(1) variable lookup map, kept in sync with variables vector via addVariable()
-        std::map<std::string, double> variableMap_;
-
     public:
-        /**
-         * @brief Add a variable, synchronizing both vector and map storage.
-         *
-         * This eliminates the temporal coupling issue where buildVariableMap()
-         * had to be called explicitly after modifying variables.
-         */
-        void addVariable(std::string name, std::string valueText, double siValue)
-        {
-            variables.push_back({name, std::move(valueText), siValue});
-            variableMap_[std::move(name)] = siValue;
-        }
-
-        /**
-         * @brief Get variable value by name.
-         * @throws Exception if variable not found.
-         */
-        double getVariable(const std::string& name) const
-        {
-            auto it = variableMap_.find(name);
-            if (it != variableMap_.end()) {
-                return it->second;
-            }
-            MPFEM_THROW(Exception,
-                "CaseDefinition::getVariable: variable '" + name + "' not found");
-        }
-
-        /**
-         * @brief Check if variable exists.
-         */
-        bool hasVariable(const std::string& name) const
-        {
-            return variableMap_.find(name) != variableMap_.end();
-        }
-
         /// @brief Get const reference to variables vector for iteration.
         const std::vector<VariableEntry>& getVariables() const { return variables; }
+
+        /**
+         * @brief Get variable expression text by name.
+         * @return Empty string if variable not found.
+         */
+        std::string getVariableExpression(const std::string& name) const
+        {
+            for (const auto& v : variables) {
+                if (v.name == name) {
+                    return v.valueText;
+                }
+            }
+            return {};
+        }
     };
 
 } // namespace mpfem

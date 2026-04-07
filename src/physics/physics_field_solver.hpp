@@ -3,7 +3,6 @@
 
 #include "assembly/assembler.hpp"
 #include "core/logger.hpp"
-#include "fe/coefficient.hpp"
 #include "fe/fe_space.hpp"
 #include "fe/grid_function.hpp"
 #include "mesh/mesh.hpp"
@@ -19,7 +18,6 @@ namespace mpfem {
         virtual ~PhysicsFieldSolver() = default;
 
         virtual std::string fieldName() const = 0;
-        virtual FieldId fieldId() const = 0;
         virtual void assemble() = 0;
 
         void solve()
@@ -29,13 +27,7 @@ namespace mpfem {
             MPFEM_ASSERT(vecAsm_ != nullptr, "Vector assembler not configured");
             MPFEM_ASSERT(fieldValues_ != nullptr, "FieldValues not set");
 
-            // Two-stage lifecycle: setup then apply
-            // Re-setup if matrix fingerprint changed (matrix was rebuilt)
-            const auto currentFingerprint = matAsm_->matrix().fingerprint();
-            if (!solver_->is_setup() || currentFingerprint != matrixFingerprint_) {
-                solver_->setup(&matAsm_->matrix());
-                matrixFingerprint_ = currentFingerprint;
-            }
+            solver_->setup(&matAsm_->matrix());
             solver_->apply(vecAsm_->vector(), field().values());
 
             field().markUpdated();
@@ -46,12 +38,12 @@ namespace mpfem {
         const GridFunction& field() const
         {
             MPFEM_ASSERT(fieldValues_ != nullptr, "FieldValues not set");
-            return fieldValues_->current(fieldId());
+            return fieldValues_->current(fieldName());
         }
         GridFunction& field()
         {
             MPFEM_ASSERT(fieldValues_ != nullptr, "FieldValues not set");
-            return fieldValues_->current(fieldId());
+            return fieldValues_->current(fieldName());
         }
 
         const FESpace& feSpace() const { return *fes_; }
@@ -78,7 +70,6 @@ namespace mpfem {
 
         int order_ = 1;
         std::unique_ptr<LinearOperatorConfig> solverConfig_;
-        std::uint64_t matrixFingerprint_ = 0;
 
         const Mesh* mesh_ = nullptr;
         FieldValues* fieldValues_ = nullptr;

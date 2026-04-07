@@ -2,7 +2,6 @@
 #include "physics/electrostatics_solver.hpp"
 #include "problem/physics_problem_builder.hpp"
 #include "mesh/mesh.hpp"
-#include "fe/coefficient.hpp"
 #include "core/logger.hpp"
 #include <cmath>
 #include <fstream>

@@ -5,7 +5,6 @@
 #include "fe/element_transform.hpp"
 #include "fe/facet_element_transform.hpp"
 #include "fe/reference_element.hpp"
-#include "fe/coefficient.hpp"
 #include <memory>
 
 namespace mpfem {

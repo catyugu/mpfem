@@ -8,7 +8,6 @@
 #include "time/time_scheme.hpp"
 #include <memory>
 
-
 namespace mpfem {
 
     /**
@@ -49,12 +48,12 @@ namespace mpfem {
             fieldValues.setMaxHistorySteps(historyDepth);
         }
 
-        const GridFunction& history(FieldId id, int stepsBack = 1) const
+        const GridFunction& history(std::string_view id, int stepsBack = 1) const
         {
             return fieldValues.history(id, stepsBack);
         }
 
-        GridFunction& history(FieldId id, int stepsBack = 1)
+        GridFunction& history(std::string_view id, int stepsBack = 1)
         {
             return fieldValues.history(id, stepsBack);
         }

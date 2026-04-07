@@ -140,15 +140,11 @@ mpfem_add_library(mpfem_expr
     SOURCES
         src/expr/unit_parser.cpp
         src/expr/expression_parser.cpp
-        src/expr/symbol_scanner.cpp
-        src/expr/runtime_program.cpp
+        src/expr/variable_graph.cpp
     PUBLIC_LINK
         Eigen3::Eigen
         mpfem_core
 )
-
-# Add ExprTk include directory (local header in external/exprtk)
-target_include_directories(mpfem_expr PUBLIC ${CMAKE_SOURCE_DIR}/external/exprtk)
 
 # =============================================================================
 # IO library
@@ -235,7 +231,6 @@ mpfem_add_library(mpfem_coupling
 mpfem_add_library(mpfem_problem
     SOURCES
         src/problem/problem.cpp
-        src/problem/expression_coefficient_factory.cpp
         src/problem/physics_problem_builder.cpp
     PUBLIC_LINK
         Eigen3::Eigen

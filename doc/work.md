@@ -5,13 +5,13 @@
 
 ## 原则
 
+* 从难度最低，收益最高的部分开始，如果有些任务过于困难，你可以选择性放弃。
+* 严格禁止向后兼容。
 * 任何情况下，逻辑嵌套必须少于三层。
 * 代码越精简越好，抹除不必要的抽象。
 * 尽可能少做判断，只在最接近用户层的地方做判断，减少热循环中分支预测代价。
 * 所有同质功能的接口只保留一个性能最高、最易用的，使代码更清晰，不易误用。
-* 禁止使用const_cast（除非为了调用外部求解器的局部使用），mutable（除非为了缓存或者锁），friend，dynamic_cast，shared_ptr等关键字或功能。
-* 删除冗余的成员变量、接口等。
-* 尽量使用pimpl模式最小化编译依赖与交叉耦合。
+* 禁止使用const_cast（除非为了调用外部求解器的局部使用），mutable（除非为了缓存或者锁），friend，dynamic_cast，shared_ptr等关键字或功能。。
 * 把工作任务分成多个子任务，从最容易的子任务开始，完成一块子任务后：
   * 确保编译通过。
   * 确保回归测试通过。
@@ -22,155 +22,121 @@
 
 ## 具体工作任务
 
-通过对代码的分析，我发现该有限元库（MPFEM）在架构上存在几个较为明显的**设计反模式（Anti-patterns）**。这些问题主要集中在**违反开闭原则（OCP）**、**类型嗅探（RTTI 滥用）**、**时间耦合（Temporal Coupling）**以及**数据结构内聚性差**等方面。
+### 🚨 识别出的核心反模式 (Anti-Patterns)
 
-以下是破坏式重构（Breaking Changes）的建议，旨在用最少的不必要复杂度提升代码的健壮性和可扩展性。
-
-### 1. 违反开闭原则的“上帝类” (God Object)
-**文件**: `src/problem/problem.hpp`
-**现象**: `Problem` 类硬编码了所有具体的物理场求解器（`ElectrostaticsSolver`, `HeatTransferSolver`, `StructuralSolver`），并包含大量的 `hasElectrostatics()`、`hasJouleHeating()` 等硬编码判断。
-**反模式**: 典型的 **God Object** 和 **OCP 违背**。每当想要引入一种新的物理场（例如流体动力学、电磁波），都必须修改 `Problem` 类的核心头文件。
-
-**破坏式重构建议**:
-将具体的物理场指针替换为基于接口的通用容器。依赖 `PhysicsFieldSolver` 基类，并通过 `FieldId` 或字符串名称进行管理。
-
-```cpp
-// 重构后的 Problem 类
-class Problem {
-public:
-    // ...
-    // 统一管理所有的物理场求解器
-    void addSolver(std::unique_ptr<PhysicsFieldSolver> solver);
-    PhysicsFieldSolver* getSolver(const std::string& fieldName);
-    const PhysicsFieldSolver* getSolver(const std::string& fieldName) const;
-
-    // 耦合关系不再硬编码，而是通过检查 CaseDefinition 中的 CoupledPhysicsDefinition 动态决定
-    bool isCoupled() const { return !caseDef.coupledPhysicsDefinitions.empty(); }
-
-private:
-    // 取代硬编码的 unique_ptr<ElectrostaticsSolver> 等
-    std::unordered_map<std::string, std::unique_ptr<PhysicsFieldSolver>> solvers_;
-};
-```
+1. **伪DAG与硬编码物理耦合 (Pseudo-DAG & Hardcoded Physics)**
+   * **问题**: `JouleHeatNode` 和 `ThermalExpansionStressNode` 是完全用C++硬编码的变量节点。在真正的DAG表达式系统中，焦耳热应该仅仅是一个表达式 `sigma * grad(V) * grad(V)`，热应力应该仅仅是 `2*mu*sym(grad(u)) + lambda*tr(sym(grad(u)))*I - (3*lambda+2*mu)*alpha*(T-Tref)`。目前通过硬编码C++类去手动拉取场变量（`heat_->field().eval`），完全绕过了你设计的自动表达式解析系统。
+2. **割裂的张量表达式后端 (Fragmented Tensor Backend)**
+   * **问题**: 在 `expression_parser.cpp` 中，矩阵表达式被解析为 9 个独立的标量 `ExpressionProgram` (`components`)。这意味着 VM 根本不懂矩阵运算，它只是在跑 9 次标量 VM。这无法支持真正的张量代数（如点乘、叉乘、矩阵乘法），也无法支持向量。
+3. **VM 求值层的性能灾难 (Performance Catastrophe in VM)**
+   * **问题**: `evaluate_single_vm` 在每次被调用时（即每个积分点），都会 `std::vector<double> stack; stack.reserve(16);`。在有限元组装中，这意味着数百万次的堆内存分配。
+4. **通过字符串拼接管理域属性 (String-Typing for Domains)**
+   * **问题**: `PhysicsProblemBuilder` 中充斥着 `E_1`, `E_2` 这样的字符串拼接来区分不同 Domain 的材质属性。这种设计非常脆弱，容易导致拼写错误，且无法利用类型系统或图论验证依赖。
 
 ---
 
-### 2. 工厂模式中的向下转型与 RTTI 滥用
-**文件**: `src/solver/solver_factory.hpp`
-**现象**: `OperatorFactory::applyParameters` 函数中使用了大量的 `dynamic_cast<CgOperator*>(op)` 来判断对象类型，从而调用 `set_max_iterations()` 等专属方法。
-**反模式**: **Switch 语句嗅探 / 类型查询 (Type Querying)**。工厂类不仅要知道如何创建对象，还要清楚每个子类的实现细节和参数接口。一旦添加新的求解器（如 BiCGSTAB），必须回头修改这个工厂方法。
+### 🛠️ 步骤化重构方案 (Step-by-Step Refactoring Plan)
 
-**破坏式重构建议**:
-将参数配置的职责下放给具体的 `LinearOperator` 子类（或其 Config 结构），在基类中引入通用的参数配置接口。
+你的目标是**完全统一到“表达式+DAG”后端**。以下是破坏性重构的步骤，每一步都保证系统更接近最终目标。
 
-```cpp
-// 1. 在 LinearOperator (基类) 中增加虚函数
-class LinearOperator {
-public:
-    // ...
-    virtual void configure(const std::map<std::string, double>& params) {} 
-    // 或者使用 std::any 以支持非 double 类型的参数
-};
+#### 第一步：重构虚拟机与 AST，实现原生张量支持 (Native Tensor VM)
 
-// 2. 在具体的子类中实现 (例如 CgOperator)
-void CgOperator::configure(const std::map<std::string, double>& params) override {
-    if (auto it = params.find("MaxIterations"); it != params.end()) {
-        this->set_max_iterations(static_cast<int>(it->second));
-    }
-    // ...
-}
+目前你的表达式引擎是标量的。我们需要让底层的 `ExprValue` 和 VM 栈直接支持标量、向量和矩阵。
 
-// 3. 工厂代码变得极其纯粹（甚至不再需要单独的 applyParameters 函数）
-static std::unique_ptr<LinearOperator> create(const LinearOperatorConfig& config) {
-    std::unique_ptr<LinearOperator> op = createByType(config.type);
-    
-    // 多态调用，工厂无需知道具体类型
-    op->configure(config.parameters);
-    
-    if (config.preconditioner) {
-        op->set_preconditioner(create(*config.preconditioner));
-    }
-    return op;
-}
-```
+**操作步骤：**
+1. **统一数据结构**：修改 VM 栈，使其不再是 `double`，而是一个统一的、无堆分配的定长结构体（如 `union` 或 `std::array<double, 9>`，加上类型枚举）。
+2. **扩展 OpCode**：添加张量操作指令，如 `MatMul` (矩阵乘法), `Dot` (点乘), `Grad` (求梯度), `Sym` (对称化)。
+3. **消除 Components 拆分**：删除 `MatrixTemplate` 拆分为 9 个子程序的逻辑。让 AST 直接解析形如 `[a, b, c; d, e, f; g, h, i]` 的语法，生成一个统一的 `AstNode::MatrixLiteral`，最终编译出直接操作矩阵的 OpCode。
 
----
+**验证点**：编译并运行一个测试，计算 `[1,0,0; 0,1,0; 0,0,1] * [x, y, z]^T`，确保 VM 能够原生输出向量。
 
-### 3. 危险的时间耦合 (Temporal Coupling)
-**文件**: `src/model/case_definition.hpp`
-**现象**: `CaseDefinition` 同时维护了 `std::vector<VariableEntry> variables` 和 `std::map<std::string, double> variableMap_`。注释中明确要求：“*Call this (buildVariableMap) after variables are populated or modified.*”
-**反模式**: **双重数据源验证缺失 / 时间耦合**。调用方在修改 `variables` 后，如果忘记调用 `buildVariableMap()`，系统将读取到过期或错误的数据（且不会有任何编译期报错）。
+#### 第二步：统一 VariableNode (Unify Variable Nodes)
 
-**破坏式重构建议**:
-将变量管理的职责完全封装，对外不暴露裸露的 `vector` 或 `map`，或者废弃冗余结构。如果不需要保持 XML 解析的原始顺序，直接废弃 `vector`。如果需要顺序，就用专门的类封装它们。
+消除 `RuntimeScalarExpressionNode` 和 `RuntimeMatrixExpressionNode` 的硬编码区分，所有的表达式节点应该统一为一个 `RuntimeExpressionNode`。
 
-```cpp
-// 重构：直接隐藏数据成员，强制通过接口操作
-class CaseDefinition {
-public:
-    // 添加变量时同步更新 map 和 vector
-    void addVariable(const std::string& name, const std::string& text, double val) {
-        variables_.push_back({name, text, val});
-        variableMap_[name] = val;
-    }
+**操作步骤：**
+1. 合并节点：
+   ```cpp
+   // 重构后的统一表达式节点
+   class RuntimeExpressionNode final : public VariableNode {
+   public:
+       RuntimeExpressionNode(ExpressionProgram program, std::vector<const VariableNode*> deps);
+       TensorShape shape() const override { return program_.shape(); }
+       void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override;
+   private:
+       ExpressionProgram program_;
+       std::vector<const VariableNode*> dependencies_;
+       // ...
+   };
+   ```
+2. **批量执行 VM**：将 `evaluate_single_vm` 改造为 `evaluate_batch_vm`。在最外层分配一次栈（根据最大深度预分配），然后对一个 batch 的所有积分点执行一个紧凑的循环，彻底消除 `std::vector` 的循环内分配。
 
-    double getVariable(const std::string& name) const { /* ... */ }
+**验证点**：运行标量和矩阵表达式，确保输出正确，且性能得到数量级的提升。
 
-private:
-    std::vector<VariableEntry> variables_;
-    std::unordered_map<std::string, double> variableMap_;
-};
-```
+#### 第三步：引入空间算子并抹除硬编码物理节点 (Eliminate Hardcoded Physics via Operators)
 
----
+这是实现自动 DAG 的核心。我们不能在 C++ 中硬写 `JouleHeatNode`。我们必须让 `GridFunctionNode` 提供它的梯度，并让表达式解析器支持 `grad(V)`。
 
-### 4. 平行数组导致的高内聚缺失
-**文件**: `src/assembly/assembler.hpp` (在 `BilinearFormAssembler` 和 `LinearFormAssembler` 中)
-**现象**: 
-```cpp
-std::vector<std::unique_ptr<DomainBilinearIntegratorBase>> domainIntegs_;
-std::vector<std::vector<int>> domainSets_;
-```
-**反模式**: **平行数组 (Parallel Arrays)**。积分器（Integrator）和它适用的域（Domain sets）在逻辑上是强绑定的，但却被分拆存储在两个并行的 `vector` 中。这降低了缓存局部性，增加了错位（Misalignment）的风险。
+**操作步骤：**
+1. 扩展 `GridFunctionNode`，使其支持除了值 (Value) 之外的算子求值 (如 Gradient)。
+   ```cpp
+   // 在表达式语法中支持 `grad(V)` 或 `del(V)`
+   // 解析器将其识别为一个特殊函数，并向 VariableManager 请求 V 的梯度节点
+   ```
+2. 在 `PhysicsProblemBuilder.cpp` 中**彻底删除 `JouleHeatNode` 和 `ThermalExpansionStressNode`**。
+3. 替换为纯表达式注册：
+   ```cpp
+   // 焦耳热就是一句纯纯的表达式
+   problem.globalVariables_.registerExpression("JouleHeat", "dot(grad(V), sigma * grad(V))");
+   problem.heatTransfer->setHeatSource(activeDomains, problem.globalVariables_.get("JouleHeat"));
+   
+   // 热应变/应力同样纯表达式化
+   problem.globalVariables_.registerExpression("ThermalStrain", "alpha * (T - T_ref)");
+   ```
 
-**破坏式重构建议**:
-创建一个轻量级的结构体将它们绑定在一起。
+**验证点**：编译通过后，焦耳热和热膨胀的测试结果与重构前完全一致，但代码减少了数百行复杂的 C++。
 
-```cpp
-// 在 BilinearFormAssembler 内部：
-struct DomainIntegratorEntry {
-    std::unique_ptr<DomainBilinearIntegratorBase> integrator;
-    std::vector<int> domains;
-};
+#### 第四步：重构 Material Domain 注册 (Refactor Domain Binding)
 
-// 取代平行数组
-std::vector<DomainIntegratorEntry> domainIntegrators_;
-```
+放弃使用 `"E_1"`, `"E_2"` 这种基于字符串拼接的域隔离，改用 `DomainSelectorNode`（域选择器节点），由 DAG 在求值时根据 `ctx.domainId` 自动路由。
 
----
+**操作步骤：**
+1. 引入一种新的 DAG 节点：多路复用节点 (Multiplexer Node)。
+   ```cpp
+   class DomainMultiplexerNode final : public VariableNode {
+   public:
+       // map: domainId -> sub-node
+       void addDomain(int domainId, const VariableNode* node);
+       void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override {
+           // 根据 ctx.domainId 转发给对应的子节点
+           children_.at(ctx.domainId)->evaluateBatch(ctx, dest);
+       }
+   };
+   ```
+2. 修改 `PhysicsProblemBuilder`：
+   ```cpp
+   // 用户代码中，材料属性依然叫 "E", "nu", "sigma"
+   auto E_node = std::make_unique<DomainMultiplexerNode>();
+   for (int domId : domains) {
+       E_node->addDomain(domId, parser.compile(mat_expr[domId]));
+   }
+   problem.globalVariables_.adoptNode("E", std::move(E_node));
+   ```
+3. 这样在热应力表达式中，直接写 `"alpha * (T - T_ref)"` 即可，底层 `alpha` 节点在执行时会自动根据当前积分点所在的 `domainId` 取对应材料的膨胀系数。
 
-### 5. 掩盖错误的“静默失败” (Silent Failures)
-**文件**: `src/physics/physics_field_solver.hpp`
-**现象**: 
-```cpp
-bool solve() {
-    if (!solver_ || !matAsm_ || !vecAsm_ || !fieldValues_)
-        return false;
-    // ...
-}
-```
-**反模式**: 核心数学/物理求解管线不应该**静默失败**。如果这些核心组件为空，说明在 Setup 阶段出现了严重的生命周期错误或逻辑断裂。返回 `false` 并不能让上层排查到“究竟是哪个组件为 Null”。
+**验证点**：多材质模型可以正常求解，且 `VariableManager` 中不再有杂乱的带后缀变量名。
 
-**破坏式重构建议**:
-遵循“快速失败（Fail Fast）”原则。既然依赖缺失无法求解，应该直接抛出异常或触发断言。
+#### 第五步：统一场变量与历史状态依赖 (Unified Field & Time History)
 
-```cpp
-void solve() { // 甚至不需要返回 bool，除非求解不收敛需要返回状态
-    MPFEM_ASSERT(solver_ != nullptr, "Solver not initialized prior to solve()");
-    MPFEM_ASSERT(matAsm_ != nullptr, "Matrix Assembler missing");
-    // ... 
-    
-    // 如果求解器发散（迭代不收敛），这才是应该被返回/抛出的错误
-    solver_->apply(vecAsm_->vector(), field().values());
-}
-```
+在时间瞬态积分时，目前你是在求解器外围手动获取 `history( stepsBack )`。应当将时间步作为一个算子加入 DAG。
+
+**操作步骤：**
+1. 允许表达式引用过去的状态：如 `T_prev` 或 `old(T, 1)`。
+2. `GridFunctionNode` 初始化时可以携带 `stepsBack` 参数。
+   ```cpp
+   problem.globalVariables_.registerGridFunction("T", &problem.fieldValues, "T_field", 0 /* stepsBack */);
+   problem.globalVariables_.registerGridFunction("T_old", &problem.fieldValues, "T_field", 1 /* stepsBack */);
+   ```
+3. 你的 BDF1/BDF2 时间导数项也可以彻底表达式化：
+   `registerExpression("dT_dt", "(T - T_old) / dt")`。
+   这样求解器组装器甚至不需要知道什么是 BDF，它只管对 DAG 中名为 `"dT_dt"` 的节点进行弱形式积分。

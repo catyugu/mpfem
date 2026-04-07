@@ -179,13 +179,6 @@ CPMAddPackage(
     "BUILD_TESTING OFF"
 )
 
-# ExprTk (header-only expression parser)
-# Using local header in external/exprtk/
-# Full ExprTk can be downloaded from: https://www.partow.net/programming/exprtk/exprtk.hpp
-# For now we use a stub that provides basic API compatibility
-set(EXPRTK_HEADER_DIR ${CMAKE_SOURCE_DIR}/external/exprtk)
-message(STATUS "ExprTk header directory: ${EXPRTK_HEADER_DIR}")
-
 # GoogleTest (optional, for testing)
 if(MPFEM_BUILD_TESTS)
     enable_testing()

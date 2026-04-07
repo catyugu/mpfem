@@ -70,21 +70,8 @@ namespace mpfem {
 
             const auto& mat = A->eigen();
             n_ = static_cast<MKL_INT>(mat.rows());
-            const std::uint64_t currentFingerprint = A->fingerprint();
-            const bool needRefactor = !hasFactorCache_ || (currentFingerprint != lastMatrixFingerprint_);
-
-            if (needRefactor) {
-                convertToCSR(mat);
-            }
-
-            if (needRefactor) {
-                // Analysis + factorization
-                phase_ = 12;
-            }
-            else {
-                // Structure unchanged, just factorization
-                phase_ = 22;
-            }
+            convertToCSR(mat);
+            phase_ = 12;
 
             MKL_INT nrhs = 1;
             initialized_ = true;
@@ -99,12 +86,9 @@ namespace mpfem {
 
             if (error_ != 0) {
                 LOG_ERROR << "PARDISO factorization failed with error: " << error_;
-                hasFactorCache_ = false;
                 throw std::runtime_error("PardisoSolver: factorization failed");
             }
 
-            hasFactorCache_ = true;
-            lastMatrixFingerprint_ = currentFingerprint;
             set_matrix(A);
             mark_setup();
         }
@@ -198,8 +182,6 @@ namespace mpfem {
         MKL_INT error_ = 0;
 
         bool initialized_ = false;
-        bool hasFactorCache_ = false;
-        std::uint64_t lastMatrixFingerprint_ = 0;
         int iterations_ = 1;
         Real residual_ = 0.0;
     };

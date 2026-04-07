@@ -131,14 +131,9 @@ namespace mpfem {
             if (!A) {
                 throw std::runtime_error("EigenSparseLUOperator: null matrix in setup");
             }
-            const std::uint64_t currentFingerprint = A->fingerprint();
-            if (!hasFactorCache_ || currentFingerprint != lastMatrixFingerprint_) {
-                solver_.compute(A->eigen());
-                if (solver_.info() != Eigen::Success) {
-                    throw std::runtime_error("EigenSparseLUOperator: factorization failed");
-                }
-                hasFactorCache_ = true;
-                lastMatrixFingerprint_ = currentFingerprint;
+            solver_.compute(A->eigen());
+            if (solver_.info() != Eigen::Success) {
+                throw std::runtime_error("EigenSparseLUOperator: factorization failed");
             }
             set_matrix(A);
             mark_setup();
@@ -157,8 +152,6 @@ namespace mpfem {
 
     private:
         Eigen::SparseLU<Eigen::SparseMatrix<Real>> solver_;
-        bool hasFactorCache_ = false;
-        std::uint64_t lastMatrixFingerprint_ = 0;
     };
 
 } // namespace mpfem

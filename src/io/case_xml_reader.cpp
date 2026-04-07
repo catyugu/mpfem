@@ -2,14 +2,12 @@
 #include "core/exception.hpp"
 #include "core/logger.hpp"
 #include "core/string_utils.hpp"
-#include "expr/expression_parser.hpp"
 #include "solver/solver_factory.hpp"
 
 #include <tinyxml2.h>
 
 #include <cctype>
 #include <cstdlib>
-#include <functional>
 #include <sstream>
 
 namespace mpfem {
@@ -135,14 +133,6 @@ namespace mpfem {
             caseDefinition.caseName = nameAttr;
         }
 
-        std::map<std::string, double> variableValues;
-        auto evalExpr = [&variableValues](const char* text, double defaultValue) -> double {
-            if (!text) {
-                return defaultValue;
-            }
-            return ExpressionParser::instance().evaluate(text, variableValues);
-        };
-
         auto readParameterMap = [&](const tinyxml2::XMLElement* parametersElement) {
             std::map<std::string, Real> parameters;
             if (!parametersElement) {
@@ -162,7 +152,7 @@ namespace mpfem {
                 }
 
                 if (!key.empty() && !value.empty()) {
-                    parameters[key] = static_cast<Real>(evalExpr(value.c_str(), 0.0));
+                    parameters[key] = static_cast<Real>(std::stod(value));
                 }
             }
 
@@ -208,8 +198,8 @@ namespace mpfem {
             return node;
         };
 
-        // Variables are parsed first so all following numeric attributes can use
-        // a single expression pipeline with variable substitution.
+        // Variables are parsed first and stored as expression text.
+        // Evaluation is deferred to VariableManager at runtime.
         if (const tinyxml2::XMLElement* variablesElement = caseElement->FirstChildElement("variables")) {
             for (const tinyxml2::XMLElement* varElement = variablesElement->FirstChildElement("var");
                 varElement != nullptr;
@@ -223,17 +213,14 @@ namespace mpfem {
                 VariableEntry entry;
                 entry.name = nameAttr;
 
+                // value attribute stores expression text (e.g., "20[mV]", "k * 2 + 1")
+                // si attribute is removed - VariableManager handles unit conversion at runtime
                 const char* valueAttr = varElement->Attribute("value");
                 if (valueAttr) {
                     entry.valueText = valueAttr;
                 }
 
-                const char* siAttr = varElement->Attribute("si");
-                const char* evalText = siAttr ? siAttr : valueAttr;
-                entry.siValue = evalExpr(evalText, 0.0);
-
-                variableValues[entry.name] = entry.siValue;
-                caseDefinition.addVariable(entry.name, entry.valueText, entry.siValue);
+                caseDefinition.variables.push_back(entry);
             }
         }
 
@@ -245,9 +232,15 @@ namespace mpfem {
 
             // Parse <time start="0" end="100" step="10" scheme="BDF1"/>
             if (const tinyxml2::XMLElement* timeElement = studyElement->FirstChildElement("time")) {
-                caseDefinition.timeConfig.start = evalExpr(timeElement->Attribute("start"), 0.0);
-                caseDefinition.timeConfig.end = evalExpr(timeElement->Attribute("end"), 1.0);
-                caseDefinition.timeConfig.step = evalExpr(timeElement->Attribute("step"), 0.01);
+                if (const char* startAttr = timeElement->Attribute("start")) {
+                    caseDefinition.timeConfig.start = std::stod(startAttr);
+                }
+                if (const char* endAttr = timeElement->Attribute("end")) {
+                    caseDefinition.timeConfig.end = std::stod(endAttr);
+                }
+                if (const char* stepAttr = timeElement->Attribute("step")) {
+                    caseDefinition.timeConfig.step = std::stod(stepAttr);
+                }
                 if (const char* schemeAttr = timeElement->Attribute("scheme")) {
                     caseDefinition.timeConfig.scheme = schemeAttr;
                 }
@@ -265,7 +258,9 @@ namespace mpfem {
                     if (!valueAttr) {
                         valueAttr = fieldElement->Attribute("displacement");
                     }
-                    ic.value = evalExpr(valueAttr, 0.0);
+                    if (valueAttr) {
+                        ic.value = std::stod(valueAttr);
+                    }
                     caseDefinition.initialConditions.push_back(ic);
                 }
             }
@@ -312,13 +307,15 @@ namespace mpfem {
                 physics.kind = kindAttr;
             }
             if (const char* orderAttr = physicsElement->Attribute("order")) {
-                physics.order = static_cast<int>(std::lround(evalExpr(orderAttr, 1.0)));
+                physics.order = static_cast<int>(std::lround(std::stod(orderAttr)));
                 if (physics.order < 1)
                     physics.order = 1;
             }
             // Reference temperature for thermal expansion [K]
             if (const tinyxml2::XMLElement* refTempElement = physicsElement->FirstChildElement("referenceTemperature")) {
-                physics.referenceTemperature = evalExpr(refTempElement->Attribute("value"), 293.15);
+                if (const char* valueAttr = refTempElement->Attribute("value")) {
+                    physics.referenceTemperature = std::stod(valueAttr);
+                }
             }
 
             // Solver configuration
@@ -412,10 +409,10 @@ namespace mpfem {
         // Coupling configuration
         if (const tinyxml2::XMLElement* couplingConfigElement = caseElement->FirstChildElement("coupling")) {
             if (const char* maxIterAttr = couplingConfigElement->Attribute("max_iter")) {
-                caseDefinition.couplingConfig.maxIterations = static_cast<int>(std::lround(evalExpr(maxIterAttr, caseDefinition.couplingConfig.maxIterations)));
+                caseDefinition.couplingConfig.maxIterations = static_cast<int>(std::lround(std::stod(maxIterAttr)));
             }
             if (const char* tolAttr = couplingConfigElement->Attribute("tolerance")) {
-                caseDefinition.couplingConfig.tolerance = evalExpr(tolAttr, caseDefinition.couplingConfig.tolerance);
+                caseDefinition.couplingConfig.tolerance = std::stod(tolAttr);
             }
         }
 

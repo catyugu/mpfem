@@ -3,6 +3,7 @@
 
 #include "integrator.hpp"
 #include "core/exception.hpp"
+#include "expr/variable_graph.hpp"
 
 namespace mpfem {
 
@@ -17,8 +18,8 @@ namespace mpfem {
  */
 class DiffusionIntegrator : public DomainBilinearIntegratorBase {
 public:
-    explicit DiffusionIntegrator(const MatrixCoefficient* c) : coef_(c) {
-        if (!coef_) MPFEM_THROW(ArgumentException, "DiffusionIntegrator requires non-null MatrixCoefficient");
+    explicit DiffusionIntegrator(const VariableNode* c) : coef_(c) {
+        if (!coef_) MPFEM_THROW(ArgumentException, "DiffusionIntegrator requires non-null matrix node");
     }
     
     int vdim() const override { return 1; }
@@ -27,7 +28,7 @@ public:
                                ElementTransform& trans,
                                Matrix& elmat) const override;
 private:
-    const MatrixCoefficient* coef_ = nullptr;
+    const VariableNode* coef_ = nullptr;
 };
 
 // =============================================================================
@@ -39,8 +40,8 @@ private:
  */
 class MassIntegrator : public DomainBilinearIntegratorBase {
 public:
-    explicit MassIntegrator(const Coefficient* c) : coef_(c) {
-        if (!coef_) MPFEM_THROW(ArgumentException, "MassIntegrator requires non-null Coefficient");
+    explicit MassIntegrator(const VariableNode* c) : coef_(c) {
+        if (!coef_) MPFEM_THROW(ArgumentException, "MassIntegrator requires non-null scalar node");
     }
     
     int vdim() const override { return 1; }
@@ -49,7 +50,7 @@ public:
                                ElementTransform& trans,
                                Matrix& elmat) const override;
 private:
-    const Coefficient* coef_ = nullptr;
+    const VariableNode* coef_ = nullptr;
 };
 
 // =============================================================================
@@ -61,8 +62,8 @@ private:
  */
 class DomainLFIntegrator : public DomainLinearIntegratorBase {
 public:
-    explicit DomainLFIntegrator(const Coefficient* c) : coef_(c) {
-        if (!coef_) MPFEM_THROW(ArgumentException, "DomainLFIntegrator requires non-null Coefficient");
+    explicit DomainLFIntegrator(const VariableNode* c) : coef_(c) {
+        if (!coef_) MPFEM_THROW(ArgumentException, "DomainLFIntegrator requires non-null scalar node");
     }
     
     int vdim() const override { return 1; }
@@ -71,7 +72,7 @@ public:
                                ElementTransform& trans,
                                Vector& elvec) const override;
 private:
-    const Coefficient* coef_ = nullptr;
+    const VariableNode* coef_ = nullptr;
 };
 
 // =============================================================================
@@ -83,15 +84,15 @@ private:
  */
 class BoundaryLFIntegrator : public FaceLinearIntegratorBase {
 public:
-    explicit BoundaryLFIntegrator(const Coefficient* c) : coef_(c) {
-        if (!coef_) MPFEM_THROW(ArgumentException, "BoundaryLFIntegrator requires non-null Coefficient");
+    explicit BoundaryLFIntegrator(const VariableNode* c) : coef_(c) {
+        if (!coef_) MPFEM_THROW(ArgumentException, "BoundaryLFIntegrator requires non-null scalar node");
     }
     
     void assembleFaceVector(const ReferenceElement& ref,
                             FacetElementTransform& trans,
                             Vector& elvec) const override;
 private:
-    const Coefficient* coef_ = nullptr;
+    const VariableNode* coef_ = nullptr;
 };
 
 // =============================================================================
@@ -103,15 +104,15 @@ private:
  */
 class ConvectionMassIntegrator : public FaceBilinearIntegratorBase {
 public:
-    explicit ConvectionMassIntegrator(const Coefficient* c) : coef_(c) {
-        if (!coef_) MPFEM_THROW(ArgumentException, "ConvectionMassIntegrator requires non-null Coefficient");
+    explicit ConvectionMassIntegrator(const VariableNode* c) : coef_(c) {
+        if (!coef_) MPFEM_THROW(ArgumentException, "ConvectionMassIntegrator requires non-null scalar node");
     }
     
     void assembleFaceMatrix(const ReferenceElement& ref,
                             FacetElementTransform& trans,
                             Matrix& elmat) const override;
 private:
-    const Coefficient* coef_ = nullptr;
+    const VariableNode* coef_ = nullptr;
 };
 
 /**
@@ -119,10 +120,10 @@ private:
  */
 class ConvectionLFIntegrator : public FaceLinearIntegratorBase {
 public:
-    ConvectionLFIntegrator(const Coefficient* h, const Coefficient* Tinf)
+    ConvectionLFIntegrator(const VariableNode* h, const VariableNode* Tinf)
         : coef_(h), Tinf_(Tinf) {
-        if (!coef_) MPFEM_THROW(ArgumentException, "ConvectionLFIntegrator requires non-null h Coefficient");
-        if (!Tinf_) MPFEM_THROW(ArgumentException, "ConvectionLFIntegrator requires non-null Tinf Coefficient");
+        if (!coef_) MPFEM_THROW(ArgumentException, "ConvectionLFIntegrator requires non-null h node");
+        if (!Tinf_) MPFEM_THROW(ArgumentException, "ConvectionLFIntegrator requires non-null Tinf node");
     }
     
     void assembleFaceVector(const ReferenceElement& ref,
@@ -130,8 +131,8 @@ public:
                             Vector& elvec) const override;
     
 private:
-    const Coefficient* coef_ = nullptr;
-    const Coefficient* Tinf_ = nullptr;
+    const VariableNode* coef_ = nullptr;
+    const VariableNode* Tinf_ = nullptr;
 };
 
 // =============================================================================
@@ -143,10 +144,10 @@ private:
  */
 class ElasticityIntegrator : public DomainBilinearIntegratorBase {
 public:
-    ElasticityIntegrator(const Coefficient* E, const Coefficient* nu, int vdim)
+    ElasticityIntegrator(const VariableNode* E, const VariableNode* nu, int vdim)
         : E_(E), nu_(nu), vdim_(vdim) {
-        if (!E_) MPFEM_THROW(ArgumentException, "ElasticityIntegrator requires non-null E Coefficient");
-        if (!nu_) MPFEM_THROW(ArgumentException, "ElasticityIntegrator requires non-null nu Coefficient");
+        if (!E_) MPFEM_THROW(ArgumentException, "ElasticityIntegrator requires non-null E node");
+        if (!nu_) MPFEM_THROW(ArgumentException, "ElasticityIntegrator requires non-null nu node");
         if (vdim_ <= 0) MPFEM_THROW(ArgumentException, "ElasticityIntegrator requires vdim > 0");
     }
     
@@ -157,8 +158,8 @@ public:
                                Matrix& elmat) const override;
     
 private:
-    const Coefficient* E_ = nullptr;
-    const Coefficient* nu_ = nullptr;
+    const VariableNode* E_ = nullptr;
+    const VariableNode* nu_ = nullptr;
     int vdim_ = 1;
 };
 
@@ -170,9 +171,9 @@ private:
  */
 class StrainLoadIntegrator : public DomainLinearIntegratorBase {
 public:
-    StrainLoadIntegrator(const MatrixCoefficient* stress, int vdim)
+    StrainLoadIntegrator(const VariableNode* stress, int vdim)
         : stress_(stress), vdim_(vdim) {
-        if (!stress_) MPFEM_THROW(ArgumentException, "StrainLoadIntegrator requires non-null stress MatrixCoefficient");
+        if (!stress_) MPFEM_THROW(ArgumentException, "StrainLoadIntegrator requires non-null stress node");
         if (vdim_ <= 0) MPFEM_THROW(ArgumentException, "StrainLoadIntegrator requires vdim > 0");
     }
     
@@ -183,7 +184,7 @@ public:
                                Vector& elvec) const override;
     
 private:
-    const MatrixCoefficient* stress_ = nullptr;
+    const VariableNode* stress_ = nullptr;
     int vdim_ = 1;
 };
 

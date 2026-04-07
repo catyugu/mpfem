@@ -15,7 +15,7 @@ namespace mpfem {
         auto fec = std::make_unique<FECollection>(order_, FECollection::Type::H1);
         fes_ = std::make_unique<FESpace>(&mesh, std::move(fec));
 
-        fieldValues.createScalarField(FieldId::ElectricPotential, fes_.get(), initialPotential);
+        fieldValues.createField("V", fes_.get(), TensorShape::scalar(), initialPotential);
 
         matAsm_ = std::make_unique<BilinearFormAssembler>(fes_.get());
         vecAsm_ = std::make_unique<LinearFormAssembler>(fes_.get());
@@ -25,12 +25,12 @@ namespace mpfem {
         return true;
     }
 
-    void ElectrostaticsSolver::setElectricalConductivity(const std::set<int>& domains, const MatrixCoefficient* sigma)
+    void ElectrostaticsSolver::setElectricalConductivity(const std::set<int>& domains, const VariableNode* sigma)
     {
         conductivityBindings_.push_back({domains, sigma});
     }
 
-    void ElectrostaticsSolver::addVoltageBC(const std::set<int>& boundaryIds, const Coefficient* voltage)
+    void ElectrostaticsSolver::addVoltageBC(const std::set<int>& boundaryIds, const VariableNode* voltage)
     {
         voltageBindings_.push_back({boundaryIds, voltage});
     }
@@ -44,14 +44,6 @@ namespace mpfem {
             return;
         }
 
-        const std::uint64_t currentTag = combineTag(
-            stateTagOfRange(conductivityBindings_),
-            stateTagOfRange(voltageBindings_));
-        if (stiffnessAssemblyState_.isUnchanged(currentTag)) {
-            LOG_DEBUG << "Electrostatics assemble skipped (coefficients unchanged)";
-            return;
-        }
-
         clearAssemblers();
 
         for (const auto& binding : conductivityBindings_) {
@@ -61,7 +53,7 @@ namespace mpfem {
         vecAsm_->assemble();
 
         // Flatten voltageBindings_ to map for applyDirichletBC
-        std::map<int, const Coefficient*> voltageBCs;
+        std::map<int, const VariableNode*> voltageBCs;
         for (const auto& binding : voltageBindings_) {
             for (int bid : binding.boundaryIds) {
                 voltageBCs[bid] = binding.voltage;
@@ -69,8 +61,6 @@ namespace mpfem {
         }
         applyDirichletBC(matAsm_->matrix(), vecAsm_->vector(), field().values(), *fes_, *mesh_, voltageBCs);
         matAsm_->finalize();
-
-        stiffnessAssemblyState_.update(currentTag);
     }
 
 } // namespace mpfem
