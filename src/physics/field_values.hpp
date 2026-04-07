@@ -2,6 +2,7 @@
 #define MPFEM_FIELD_VALUES_HPP
 
 #include "core/exception.hpp"
+#include "core/tensor_shape.hpp"
 #include "core/types.hpp"
 #include "fe/fe_space.hpp"
 #include "fe/grid_function.hpp"
@@ -48,22 +49,12 @@ namespace mpfem {
         FieldValues(FieldValues&&) = default;
         FieldValues& operator=(FieldValues&&) = default;
 
-        void createScalarField(std::string_view id, const FESpace* fes, Real initVal = 0.0)
+        /// Unified field creation with explicit TensorShape
+        void createField(std::string_view id, const FESpace* fes, TensorShape shape, Real initVal = 0.0)
         {
             auto& entry = fields_[std::string(id)];
             entry.current = GridFunction(fes, initVal);
-            entry.isVector = false;
-            entry.maxHistory = maxHistorySteps_;
-            allocateHistory(entry, fes);
-        }
-
-        void createVectorField(std::string_view id, const FESpace* fes, int vdim)
-        {
-            auto& entry = fields_[std::string(id)];
-            entry.current = GridFunction(fes);
-            entry.current.values().setZero();
-            entry.isVector = true;
-            entry.vdim = vdim;
+            entry.shape_ = shape;
             entry.maxHistory = maxHistorySteps_;
             allocateHistory(entry, fes);
         }
@@ -155,8 +146,7 @@ namespace mpfem {
             int historyHead = 0;
             int historyCount = 0;
             int maxHistory = 0;
-            bool isVector = false;
-            int vdim = 1;
+            TensorShape shape_; // Replaces isVector and vdim
         };
 
         void allocateHistory(FieldState& entry, const FESpace* fes)

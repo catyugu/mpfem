@@ -15,7 +15,7 @@ namespace mpfem {
         auto fec = std::make_unique<FECollection>(order_, FECollection::Type::H1);
         fes_ = std::make_unique<FESpace>(&mesh, std::move(fec), 3);
 
-        fieldValues.createVectorField("u", fes_.get(), 3);
+        fieldValues.createField("u", fes_.get(), TensorShape::vector(3));
 
         // Set initial displacement value for all components
         fieldValues.current("u").values().setConstant(initialDisplacement);
