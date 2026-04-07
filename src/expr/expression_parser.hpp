@@ -27,6 +27,7 @@ namespace mpfem {
             bool valid() const;
             TensorShape shape() const;
             const std::vector<std::string>& dependencies() const;
+            ExprValue evaluate(std::span<const ExprValue> values) const;
             ExprValue evaluate(std::span<const double> values) const;
 
         private:

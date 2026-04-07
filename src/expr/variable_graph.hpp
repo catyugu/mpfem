@@ -54,7 +54,7 @@ namespace mpfem {
         /**
          * @brief Register a constant expression.
          * @details If expression has no dependencies (pure constant), creates ConstantScalarNode.
-         *         Otherwise creates RuntimeScalarExpressionNode.
+         *         Otherwise creates RuntimeExpressionNode.
          */
         void registerConstantExpression(std::string name, std::string expressionText);
 
@@ -76,12 +76,14 @@ namespace mpfem {
         void compileGraph();
 
     private:
+        void ensureGradientNode(std::string_view symbol);
         void clearExecutionPlan();
         void dfsVisit(const VariableNode* node,
             std::unordered_map<const VariableNode*, int>& marks,
             std::vector<const VariableNode*>& ordered) const;
 
         NodeStore nodes_;
+        std::unordered_map<std::string, const GridFunction*> gridFunctions_;
         std::vector<const VariableNode*> executionPlan_;
         bool graphDirty_ = true;
     };

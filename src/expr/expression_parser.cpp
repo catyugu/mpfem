@@ -5,42 +5,13 @@
 #include "expr/unit_parser.hpp"
 
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <cstdlib>
-#include <span>
 #include <string_view>
 #include <unordered_set>
-#include <utility>
 
 namespace mpfem {
     namespace {
-
-        enum class OpCode : uint8_t {
-            Constant, // push literal (value in Instruction::value)
-            LoadVar, // push variable (index in Instruction::index)
-            Add,
-            Sub,
-            Mul,
-            Div,
-            Pow, // binary ops
-            Neg,
-            Sin,
-            Cos,
-            Tan,
-            Exp,
-            Log,
-            Sqrt,
-            Abs,
-            Min,
-            Max, // unary ops
-        };
-
-        struct Instruction {
-            OpCode op;
-            double value; // for Constant
-            int index; // for LoadVar
-        };
 
         struct MatrixTemplate {
             bool literalMatrix = false;
@@ -51,6 +22,8 @@ namespace mpfem {
             enum class Kind {
                 Constant,
                 Variable,
+                VectorLiteral,
+                MatrixLiteral,
                 Add,
                 Subtract,
                 Multiply,
@@ -66,39 +39,22 @@ namespace mpfem {
                 Abs,
                 Min,
                 Max,
+                Dot,
             };
 
             Kind kind = Kind::Constant;
             double value = 0.0;
             std::string variableName;
             int variableIndex = -1;
-            std::unique_ptr<AstNode> lhs;
-            std::unique_ptr<AstNode> rhs;
+            std::vector<std::unique_ptr<AstNode>> args;
         };
-
-        void collectDependencies(const AstNode& node, std::unordered_set<std::string>& seen, std::vector<std::string>& deps)
-        {
-            if (node.kind == AstNode::Kind::Variable) {
-                if (seen.insert(node.variableName).second) {
-                    deps.push_back(node.variableName);
-                }
-                return;
-            }
-
-            if (node.lhs) {
-                collectDependencies(*node.lhs, seen, deps);
-            }
-            if (node.rhs) {
-                collectDependencies(*node.rhs, seen, deps);
-            }
-        }
 
         bool isSeparator(char c)
         {
             return std::isspace(static_cast<unsigned char>(c)) != 0 || c == ',';
         }
 
-        MatrixTemplate parseMatrixTemplate(std::string_view expression)
+        MatrixTemplate parseLegacyMatrixTemplate(std::string_view expression)
         {
             MatrixTemplate matrixTemplate;
             const std::string trimmed = strings::trim(std::string(expression));
@@ -121,19 +77,18 @@ namespace mpfem {
 
                 if (content[index] != '\'') {
                     MPFEM_THROW(ArgumentException,
-                        "Invalid matrix expression literal. Expected quoted component near: " + trimmed);
+                        "Invalid legacy matrix literal. Expected quoted component near: " + trimmed);
                 }
 
                 const size_t endQuote = content.find('\'', index + 1);
                 if (endQuote == std::string_view::npos) {
                     MPFEM_THROW(ArgumentException,
-                        "Invalid matrix expression literal. Unterminated quoted component: " + trimmed);
+                        "Invalid legacy matrix literal. Unterminated quoted component: " + trimmed);
                 }
 
                 std::string component = strings::trim(std::string(content.substr(index + 1, endQuote - index - 1)));
                 if (component.empty()) {
-                    MPFEM_THROW(ArgumentException,
-                        "Invalid matrix expression literal. Empty component in: " + trimmed);
+                    MPFEM_THROW(ArgumentException, "Invalid legacy matrix literal with empty component.");
                 }
 
                 matrixTemplate.components.push_back(std::move(component));
@@ -142,15 +97,35 @@ namespace mpfem {
 
             if (matrixTemplate.components.size() != 1 && matrixTemplate.components.size() != 9) {
                 MPFEM_THROW(ArgumentException,
-                    "Invalid matrix expression: expected 1 or 9 components, got " + std::to_string(matrixTemplate.components.size()));
+                    "Invalid legacy matrix literal: expected 1 or 9 components, got " + std::to_string(matrixTemplate.components.size()));
             }
 
             return matrixTemplate;
         }
 
-        class ScalarAstCompiler {
+        std::string convertLegacyMatrixToBracketLiteral(const MatrixTemplate& tpl)
+        {
+            MPFEM_ASSERT(tpl.literalMatrix, "Matrix template must be legacy literal.");
+            if (tpl.components.size() == 1) {
+                const std::string& c = tpl.components[0];
+                return "[" + c + ",0,0;0," + c + ",0;0,0," + c + "]";
+            }
+
+            MPFEM_ASSERT(tpl.components.size() == 9, "Legacy matrix literal expects 9 components.");
+            return "["
+                + tpl.components[0] + "," + tpl.components[3] + "," + tpl.components[6] + ";"
+                + tpl.components[1] + "," + tpl.components[4] + "," + tpl.components[7] + ";"
+                + tpl.components[2] + "," + tpl.components[5] + "," + tpl.components[8] + "]";
+        }
+
+        bool isGradSymbol(std::string_view name)
+        {
+            return name.size() > 6 && name.substr(0, 5) == "grad(" && name.back() == ')';
+        }
+
+        class TensorAstCompiler {
         public:
-            explicit ScalarAstCompiler(std::string_view text)
+            explicit TensorAstCompiler(std::string_view text)
                 : text_(text)
             {
             }
@@ -160,8 +135,7 @@ namespace mpfem {
                 auto root = parseExpression();
                 skipWhitespace();
                 if (!eof()) {
-                    MPFEM_THROW(ArgumentException,
-                        "Unexpected token near: " + std::string(text_.substr(pos_)));
+                    MPFEM_THROW(ArgumentException, "Unexpected token near: " + std::string(text_.substr(pos_)));
                 }
                 return root;
             }
@@ -220,7 +194,7 @@ namespace mpfem {
                 if (match('-')) {
                     auto node = std::make_unique<AstNode>();
                     node->kind = AstNode::Kind::Negate;
-                    node->lhs = parseUnary();
+                    node->args.push_back(parseUnary());
                     return node;
                 }
                 return parsePrimary();
@@ -238,6 +212,10 @@ namespace mpfem {
                     return inner;
                 }
 
+                if (peek() == '[') {
+                    return parseBracketLiteral();
+                }
+
                 if (peekIsNumberStart()) {
                     return parseNumber();
                 }
@@ -251,71 +229,200 @@ namespace mpfem {
                     return parseVariableOrConstant(name);
                 }
 
+                MPFEM_THROW(ArgumentException, "Unexpected token near: " + std::string(text_.substr(pos_)));
+            }
+
+            std::unique_ptr<AstNode> parseBracketLiteral()
+            {
+                if (!match('[')) {
+                    MPFEM_THROW(ArgumentException, "Internal parser error: bracket literal expected.");
+                }
+
+                std::vector<std::vector<std::unique_ptr<AstNode>>> rows;
+                rows.emplace_back();
+
+                for (;;) {
+                    skipWhitespace();
+                    const size_t partBegin = pos_;
+                    int parenDepth = 0;
+                    int unitBracketDepth = 0;
+                    while (!eof()) {
+                        const char c = text_[pos_];
+                        if (c == '(') {
+                            ++parenDepth;
+                        }
+                        else if (c == ')') {
+                            --parenDepth;
+                        }
+                        else if (c == '[') {
+                            ++unitBracketDepth;
+                        }
+                        else if (c == ']') {
+                            if (unitBracketDepth > 0) {
+                                --unitBracketDepth;
+                            }
+                            else if (parenDepth == 0) {
+                                break;
+                            }
+                        }
+                        else if (parenDepth == 0 && unitBracketDepth == 0 && (c == ',' || c == ';')) {
+                            break;
+                        }
+                        ++pos_;
+                    }
+
+                    if (eof()) {
+                        MPFEM_THROW(ArgumentException, "Missing closing ']' in literal expression.");
+                    }
+
+                    const std::string part = strings::trim(std::string(text_.substr(partBegin, pos_ - partBegin)));
+                    if (part.empty()) {
+                        MPFEM_THROW(ArgumentException, "Empty component in bracket literal.");
+                    }
+
+                    UnitRegistry unitRegistry;
+                    const UnitParseResult unitPart = unitRegistry.stripUnit(part);
+                    TensorAstCompiler scalarCompiler(unitPart.expression);
+                    auto component = scalarCompiler.compile();
+                    rows.back().push_back(applyMultiplierIfNeeded(std::move(component), unitPart.multiplier));
+
+                    const char delim = text_[pos_];
+                    ++pos_;
+                    if (delim == ',') {
+                        continue;
+                    }
+                    if (delim == ';') {
+                        rows.emplace_back();
+                        continue;
+                    }
+                    if (delim == ']') {
+                        break;
+                    }
+                }
+
+                skipWhitespace();
+                if (match('^')) {
+                    skipWhitespace();
+                    if (!match('T')) {
+                        MPFEM_THROW(ArgumentException, "Expected '^T' after vector literal.");
+                    }
+                }
+
+                const size_t rowCount = rows.size();
+                const size_t colCount = rows.front().size();
+                for (const auto& row : rows) {
+                    if (row.size() != colCount) {
+                        MPFEM_THROW(ArgumentException, "Inconsistent row size in bracket literal.");
+                    }
+                }
+
+                if (rowCount == 1 && colCount == 1) {
+                    return std::move(rows.front().front());
+                }
+
+                auto node = std::make_unique<AstNode>();
+                if (rowCount == 1 && colCount == 3) {
+                    node->kind = AstNode::Kind::VectorLiteral;
+                    for (auto& entry : rows.front()) {
+                        node->args.push_back(std::move(entry));
+                    }
+                    return node;
+                }
+
+                if (rowCount == 3 && colCount == 3) {
+                    node->kind = AstNode::Kind::MatrixLiteral;
+                    for (auto& row : rows) {
+                        for (auto& entry : row) {
+                            node->args.push_back(std::move(entry));
+                        }
+                    }
+                    return node;
+                }
+
                 MPFEM_THROW(ArgumentException,
-                    "Unexpected token near: " + std::string(text_.substr(pos_)));
+                    "Unsupported bracket literal shape [" + std::to_string(rowCount) + "x" + std::to_string(colCount) + "]");
             }
 
             std::unique_ptr<AstNode> parseFunction(const std::string& name)
             {
-                auto arg0 = parseExpression();
+                std::vector<std::unique_ptr<AstNode>> args;
                 skipWhitespace();
-
-                if (match(')')) {
-                    AstNode::Kind kind;
-                    if (name == "sin")
-                        kind = AstNode::Kind::Sin;
-                    else if (name == "cos")
-                        kind = AstNode::Kind::Cos;
-                    else if (name == "tan")
-                        kind = AstNode::Kind::Tan;
-                    else if (name == "exp")
-                        kind = AstNode::Kind::Exp;
-                    else if (name == "log")
-                        kind = AstNode::Kind::Log;
-                    else if (name == "sqrt")
-                        kind = AstNode::Kind::Sqrt;
-                    else if (name == "abs")
-                        kind = AstNode::Kind::Abs;
-                    else {
-                        MPFEM_THROW(ArgumentException,
-                            "Unsupported unary function: " + name);
+                if (!match(')')) {
+                    for (;;) {
+                        args.push_back(parseExpression());
+                        skipWhitespace();
+                        if (match(')')) {
+                            break;
+                        }
+                        if (!match(',')) {
+                            MPFEM_THROW(ArgumentException,
+                                "Expected ',' or ')' in function call: " + name);
+                        }
                     }
-                    auto node = std::make_unique<AstNode>();
-                    node->kind = kind;
-                    node->lhs = std::move(arg0);
+                }
+
+                auto node = std::make_unique<AstNode>();
+                if (name == "dot") {
+                    if (args.size() != 2) {
+                        MPFEM_THROW(ArgumentException, "dot(a,b) requires exactly 2 arguments.");
+                    }
+                    node->kind = AstNode::Kind::Dot;
+                    node->args = std::move(args);
                     return node;
                 }
 
-                if (!match(',')) {
-                    MPFEM_THROW(ArgumentException,
-                        "Expected ',' or ')' in function call: " + name);
+                if (name == "grad") {
+                    if (args.size() != 1 || args[0]->kind != AstNode::Kind::Variable) {
+                        MPFEM_THROW(ArgumentException, "grad() requires a single field variable argument.");
+                    }
+                    auto gradVar = std::make_unique<AstNode>();
+                    gradVar->kind = AstNode::Kind::Variable;
+                    gradVar->variableName = "grad(" + args[0]->variableName + ")";
+                    return gradVar;
                 }
 
-                auto arg1 = parseExpression();
-                skipWhitespace();
-                if (!match(')')) {
-                    MPFEM_THROW(ArgumentException,
-                        "Expected ')' in function call: " + name);
+                if (args.size() == 1) {
+                    if (name == "sin")
+                        node->kind = AstNode::Kind::Sin;
+                    else if (name == "cos")
+                        node->kind = AstNode::Kind::Cos;
+                    else if (name == "tan")
+                        node->kind = AstNode::Kind::Tan;
+                    else if (name == "exp")
+                        node->kind = AstNode::Kind::Exp;
+                    else if (name == "log")
+                        node->kind = AstNode::Kind::Log;
+                    else if (name == "sqrt")
+                        node->kind = AstNode::Kind::Sqrt;
+                    else if (name == "abs")
+                        node->kind = AstNode::Kind::Abs;
+                    else {
+                        MPFEM_THROW(ArgumentException, "Unsupported unary function: " + name);
+                    }
+                    node->args = std::move(args);
+                    return node;
                 }
 
-                if (name == "pow") {
-                    return makeBinary(AstNode::Kind::Power, std::move(arg0), std::move(arg1));
-                }
-                if (name == "min") {
-                    return makeBinary(AstNode::Kind::Min, std::move(arg0), std::move(arg1));
-                }
-                if (name == "max") {
-                    return makeBinary(AstNode::Kind::Max, std::move(arg0), std::move(arg1));
+                if (args.size() == 2) {
+                    if (name == "pow")
+                        node->kind = AstNode::Kind::Power;
+                    else if (name == "min")
+                        node->kind = AstNode::Kind::Min;
+                    else if (name == "max")
+                        node->kind = AstNode::Kind::Max;
+                    else {
+                        MPFEM_THROW(ArgumentException, "Unsupported binary function: " + name);
+                    }
+                    node->args = std::move(args);
+                    return node;
                 }
 
-                MPFEM_THROW(ArgumentException,
-                    "Unsupported binary function: " + name);
+                MPFEM_THROW(ArgumentException, "Unsupported arity for function: " + name);
             }
 
             std::unique_ptr<AstNode> parseVariableOrConstant(const std::string& name)
             {
                 auto node = std::make_unique<AstNode>();
-
                 if (name == "pi") {
                     node->kind = AstNode::Kind::Constant;
                     node->value = 3.141592653589793238462643383279502884;
@@ -326,7 +433,6 @@ namespace mpfem {
                     node->value = 2.718281828459045235360287471352662498;
                     return node;
                 }
-
                 node->kind = AstNode::Kind::Variable;
                 node->variableName = name;
                 return node;
@@ -337,12 +443,10 @@ namespace mpfem {
                 const char* begin = text_.data() + pos_;
                 char* end = nullptr;
                 const double value = std::strtod(begin, &end);
-
                 if (end == begin) {
                     MPFEM_THROW(ArgumentException,
                         "Invalid numeric literal near: " + std::string(text_.substr(pos_)));
                 }
-
                 pos_ += static_cast<size_t>(end - begin);
                 auto node = std::make_unique<AstNode>();
                 node->kind = AstNode::Kind::Constant;
@@ -370,9 +474,29 @@ namespace mpfem {
             {
                 auto node = std::make_unique<AstNode>();
                 node->kind = kind;
-                node->lhs = std::move(lhs);
-                node->rhs = std::move(rhs);
+                node->args.push_back(std::move(lhs));
+                node->args.push_back(std::move(rhs));
                 return node;
+            }
+
+            static std::unique_ptr<AstNode> applyMultiplierIfNeeded(std::unique_ptr<AstNode> node, double multiplier)
+            {
+                if (std::abs(multiplier - 1.0) < 1e-15) {
+                    return node;
+                }
+                auto mulNode = std::make_unique<AstNode>();
+                mulNode->kind = AstNode::Kind::Multiply;
+                auto c = std::make_unique<AstNode>();
+                c->kind = AstNode::Kind::Constant;
+                c->value = multiplier;
+                mulNode->args.push_back(std::move(c));
+                mulNode->args.push_back(std::move(node));
+                return mulNode;
+            }
+
+            char peek() const
+            {
+                return eof() ? '\0' : text_[pos_];
             }
 
             bool peekIsIdentifierStart() const
@@ -422,6 +546,19 @@ namespace mpfem {
             size_t pos_ = 0;
         };
 
+        void collectDependencies(const AstNode& node, std::unordered_set<std::string>& seen, std::vector<std::string>& deps)
+        {
+            if (node.kind == AstNode::Kind::Variable) {
+                if (seen.insert(node.variableName).second) {
+                    deps.push_back(node.variableName);
+                }
+                return;
+            }
+            for (const auto& arg : node.args) {
+                collectDependencies(*arg, seen, deps);
+            }
+        }
+
         void bindAstVariableIndices(AstNode& node, const std::vector<std::string>& dependencies)
         {
             if (node.kind == AstNode::Kind::Variable) {
@@ -432,262 +569,201 @@ namespace mpfem {
                 node.variableIndex = static_cast<int>(std::distance(dependencies.begin(), it));
                 return;
             }
-
-            if (node.lhs) {
-                bindAstVariableIndices(*node.lhs, dependencies);
-            }
-            if (node.rhs) {
-                bindAstVariableIndices(*node.rhs, dependencies);
+            for (auto& arg : node.args) {
+                bindAstVariableIndices(*arg, dependencies);
             }
         }
 
-        void linearize(const AstNode* node, std::vector<Instruction>& out)
+        TensorShape inferShape(const AstNode& node)
         {
-            switch (node->kind) {
+            switch (node.kind) {
             case AstNode::Kind::Constant:
-                out.push_back({OpCode::Constant, node->value, -1});
-                break;
+                return TensorShape::scalar();
             case AstNode::Kind::Variable:
-                out.push_back({OpCode::LoadVar, 0.0, node->variableIndex});
-                break;
+                return isGradSymbol(node.variableName) ? TensorShape::vector(3) : TensorShape::scalar();
+            case AstNode::Kind::VectorLiteral:
+                return TensorShape::vector(3);
+            case AstNode::Kind::MatrixLiteral:
+                return TensorShape::matrix(3, 3);
+            case AstNode::Kind::Dot:
+                return TensorShape::scalar();
             case AstNode::Kind::Add:
-                linearize(node->lhs.get(), out);
-                linearize(node->rhs.get(), out);
-                out.push_back({OpCode::Add, 0.0, -1});
-                break;
             case AstNode::Kind::Subtract:
-                linearize(node->lhs.get(), out);
-                linearize(node->rhs.get(), out);
-                out.push_back({OpCode::Sub, 0.0, -1});
-                break;
-            case AstNode::Kind::Multiply:
-                linearize(node->lhs.get(), out);
-                linearize(node->rhs.get(), out);
-                out.push_back({OpCode::Mul, 0.0, -1});
-                break;
+                return inferShape(*node.args[0]);
+            case AstNode::Kind::Multiply: {
+                const TensorShape lhs = inferShape(*node.args[0]);
+                const TensorShape rhs = inferShape(*node.args[1]);
+                if (lhs.isScalar())
+                    return rhs;
+                if (rhs.isScalar())
+                    return lhs;
+                if (lhs.isMatrix() && rhs.isVector())
+                    return TensorShape::vector(3);
+                if (lhs.isMatrix() && rhs.isMatrix())
+                    return TensorShape::matrix(3, 3);
+                MPFEM_THROW(ArgumentException, "Unsupported multiply shape combination.");
+            }
             case AstNode::Kind::Divide:
-                linearize(node->lhs.get(), out);
-                linearize(node->rhs.get(), out);
-                out.push_back({OpCode::Div, 0.0, -1});
-                break;
+                return inferShape(*node.args[0]);
             case AstNode::Kind::Power:
-                linearize(node->lhs.get(), out);
-                linearize(node->rhs.get(), out);
-                out.push_back({OpCode::Pow, 0.0, -1});
-                break;
             case AstNode::Kind::Negate:
-                linearize(node->lhs.get(), out);
-                out.push_back({OpCode::Neg, 0.0, -1});
-                break;
             case AstNode::Kind::Sin:
-                linearize(node->lhs.get(), out);
-                out.push_back({OpCode::Sin, 0.0, -1});
-                break;
             case AstNode::Kind::Cos:
-                linearize(node->lhs.get(), out);
-                out.push_back({OpCode::Cos, 0.0, -1});
-                break;
             case AstNode::Kind::Tan:
-                linearize(node->lhs.get(), out);
-                out.push_back({OpCode::Tan, 0.0, -1});
-                break;
             case AstNode::Kind::Exp:
-                linearize(node->lhs.get(), out);
-                out.push_back({OpCode::Exp, 0.0, -1});
-                break;
             case AstNode::Kind::Log:
-                linearize(node->lhs.get(), out);
-                out.push_back({OpCode::Log, 0.0, -1});
-                break;
             case AstNode::Kind::Sqrt:
-                linearize(node->lhs.get(), out);
-                out.push_back({OpCode::Sqrt, 0.0, -1});
-                break;
             case AstNode::Kind::Abs:
-                linearize(node->lhs.get(), out);
-                out.push_back({OpCode::Abs, 0.0, -1});
-                break;
             case AstNode::Kind::Min:
-                linearize(node->lhs.get(), out);
-                linearize(node->rhs.get(), out);
-                out.push_back({OpCode::Min, 0.0, -1});
-                break;
             case AstNode::Kind::Max:
-                linearize(node->lhs.get(), out);
-                linearize(node->rhs.get(), out);
-                out.push_back({OpCode::Max, 0.0, -1});
-                break;
+                return inferShape(*node.args[0]);
             }
+            MPFEM_THROW(ArgumentException, "Unknown AST node kind for shape inference.");
         }
 
-        size_t computeMaxStackDepth(const std::vector<Instruction>& instructions)
+        double asScalar(const ExprValue& value)
         {
-            size_t depth = 0;
-            size_t maxDepth = 0;
-            for (const Instruction& insn : instructions) {
-                switch (insn.op) {
-                case OpCode::Constant:
-                case OpCode::LoadVar:
-                    ++depth;
-                    break;
-                case OpCode::Add:
-                case OpCode::Sub:
-                case OpCode::Mul:
-                case OpCode::Div:
-                case OpCode::Pow:
-                case OpCode::Min:
-                case OpCode::Max:
-                    MPFEM_ASSERT(depth >= 2, "Invalid VM program: binary op underflow.");
-                    --depth;
-                    break;
-                case OpCode::Neg:
-                case OpCode::Sin:
-                case OpCode::Cos:
-                case OpCode::Tan:
-                case OpCode::Exp:
-                case OpCode::Log:
-                case OpCode::Sqrt:
-                case OpCode::Abs:
-                    MPFEM_ASSERT(depth >= 1, "Invalid VM program: unary op underflow.");
-                    break;
-                default:
-                    MPFEM_THROW(ArgumentException, "Unknown opcode");
-                }
-                maxDepth = std::max(maxDepth, depth);
+            if (!std::holds_alternative<double>(value)) {
+                MPFEM_THROW(ArgumentException, "Expected scalar expression value.");
             }
-            MPFEM_ASSERT(depth == 1, "Invalid VM program: final stack depth must be 1.");
-            return maxDepth;
+            return std::get<double>(value);
         }
 
-        double evaluate_single_vm(std::span<const double> vars,
-            const std::vector<Instruction>& instructions,
-            double multiplier,
-            std::span<double> stack)
+        Vector3 asVector(const ExprValue& value)
         {
-            size_t sp = 0;
-
-            auto pop = [&]() -> double {
-                MPFEM_ASSERT(sp > 0, "VM stack underflow.");
-                --sp;
-                return stack[sp];
-            };
-
-            auto push = [&](double value) {
-                MPFEM_ASSERT(sp < stack.size(), "VM stack overflow.");
-                stack[sp] = value;
-                ++sp;
-            };
-
-            for (const Instruction& insn : instructions) {
-                switch (insn.op) {
-                case OpCode::Constant:
-                    push(insn.value);
-                    break;
-                case OpCode::LoadVar:
-                    push(vars[static_cast<size_t>(insn.index)]);
-                    break;
-                case OpCode::Add: {
-                    const double b = pop();
-                    const double a = pop();
-                    push(a + b);
-                    break;
-                }
-                case OpCode::Sub: {
-                    const double b = pop();
-                    const double a = pop();
-                    push(a - b);
-                    break;
-                }
-                case OpCode::Mul: {
-                    const double b = pop();
-                    const double a = pop();
-                    push(a * b);
-                    break;
-                }
-                case OpCode::Div: {
-                    const double b = pop();
-                    const double a = pop();
-                    push(a / b);
-                    break;
-                }
-                case OpCode::Pow: {
-                    const double b = pop();
-                    const double a = pop();
-                    push(std::pow(a, b));
-                    break;
-                }
-                case OpCode::Neg: {
-                    MPFEM_ASSERT(sp > 0, "VM stack underflow.");
-                    stack[sp - 1] = -stack[sp - 1];
-                    break;
-                }
-                case OpCode::Sin: {
-                    MPFEM_ASSERT(sp > 0, "VM stack underflow.");
-                    stack[sp - 1] = std::sin(stack[sp - 1]);
-                    break;
-                }
-                case OpCode::Cos: {
-                    MPFEM_ASSERT(sp > 0, "VM stack underflow.");
-                    stack[sp - 1] = std::cos(stack[sp - 1]);
-                    break;
-                }
-                case OpCode::Tan: {
-                    MPFEM_ASSERT(sp > 0, "VM stack underflow.");
-                    stack[sp - 1] = std::tan(stack[sp - 1]);
-                    break;
-                }
-                case OpCode::Exp: {
-                    MPFEM_ASSERT(sp > 0, "VM stack underflow.");
-                    stack[sp - 1] = std::exp(stack[sp - 1]);
-                    break;
-                }
-                case OpCode::Log: {
-                    MPFEM_ASSERT(sp > 0, "VM stack underflow.");
-                    stack[sp - 1] = std::log(stack[sp - 1]);
-                    break;
-                }
-                case OpCode::Sqrt: {
-                    MPFEM_ASSERT(sp > 0, "VM stack underflow.");
-                    stack[sp - 1] = std::sqrt(stack[sp - 1]);
-                    break;
-                }
-                case OpCode::Abs: {
-                    MPFEM_ASSERT(sp > 0, "VM stack underflow.");
-                    stack[sp - 1] = std::abs(stack[sp - 1]);
-                    break;
-                }
-                case OpCode::Min: {
-                    const double b = pop();
-                    const double a = pop();
-                    push(std::min(a, b));
-                    break;
-                }
-                case OpCode::Max: {
-                    const double b = pop();
-                    const double a = pop();
-                    push(std::max(a, b));
-                    break;
-                }
-                default:
-                    MPFEM_THROW(ArgumentException, "Unknown opcode");
-                }
+            if (!std::holds_alternative<Vector3>(value)) {
+                MPFEM_THROW(ArgumentException, "Expected vector expression value.");
             }
-            MPFEM_ASSERT(sp == 1, "Stack mismatch after evaluation");
-            return stack[0] * multiplier;
+            return std::get<Vector3>(value);
+        }
+
+        ExprValue mulByScalar(const ExprValue& value, double scalar)
+        {
+            if (std::holds_alternative<double>(value)) {
+                return std::get<double>(value) * scalar;
+            }
+            if (std::holds_alternative<Vector3>(value)) {
+                return (std::get<Vector3>(value) * scalar).eval();
+            }
+            if (std::holds_alternative<Matrix3>(value)) {
+                return (std::get<Matrix3>(value) * scalar).eval();
+            }
+            MPFEM_THROW(ArgumentException, "Unsupported value for scalar multiply.");
+        }
+
+        ExprValue evalNode(const AstNode& node, std::span<const ExprValue> vars)
+        {
+            switch (node.kind) {
+            case AstNode::Kind::Constant:
+                return node.value;
+            case AstNode::Kind::Variable:
+                return vars[static_cast<size_t>(node.variableIndex)];
+            case AstNode::Kind::VectorLiteral: {
+                Vector3 v;
+                for (int i = 0; i < 3; ++i) {
+                    v[i] = asScalar(evalNode(*node.args[static_cast<size_t>(i)], vars));
+                }
+                return v;
+            }
+            case AstNode::Kind::MatrixLiteral: {
+                Matrix3 m;
+                for (int r = 0; r < 3; ++r) {
+                    for (int c = 0; c < 3; ++c) {
+                        const size_t idx = static_cast<size_t>(r * 3 + c);
+                        m(r, c) = asScalar(evalNode(*node.args[idx], vars));
+                    }
+                }
+                return m;
+            }
+            case AstNode::Kind::Add: {
+                const ExprValue lhs = evalNode(*node.args[0], vars);
+                const ExprValue rhs = evalNode(*node.args[1], vars);
+                if (std::holds_alternative<double>(lhs) && std::holds_alternative<double>(rhs))
+                    return std::get<double>(lhs) + std::get<double>(rhs);
+                if (std::holds_alternative<Vector3>(lhs) && std::holds_alternative<Vector3>(rhs))
+                    return (std::get<Vector3>(lhs) + std::get<Vector3>(rhs)).eval();
+                if (std::holds_alternative<Matrix3>(lhs) && std::holds_alternative<Matrix3>(rhs))
+                    return (std::get<Matrix3>(lhs) + std::get<Matrix3>(rhs)).eval();
+                MPFEM_THROW(ArgumentException, "Unsupported add shape combination.");
+            }
+            case AstNode::Kind::Subtract: {
+                const ExprValue lhs = evalNode(*node.args[0], vars);
+                const ExprValue rhs = evalNode(*node.args[1], vars);
+                if (std::holds_alternative<double>(lhs) && std::holds_alternative<double>(rhs))
+                    return std::get<double>(lhs) - std::get<double>(rhs);
+                if (std::holds_alternative<Vector3>(lhs) && std::holds_alternative<Vector3>(rhs))
+                    return (std::get<Vector3>(lhs) - std::get<Vector3>(rhs)).eval();
+                if (std::holds_alternative<Matrix3>(lhs) && std::holds_alternative<Matrix3>(rhs))
+                    return (std::get<Matrix3>(lhs) - std::get<Matrix3>(rhs)).eval();
+                MPFEM_THROW(ArgumentException, "Unsupported subtract shape combination.");
+            }
+            case AstNode::Kind::Multiply: {
+                const ExprValue lhs = evalNode(*node.args[0], vars);
+                const ExprValue rhs = evalNode(*node.args[1], vars);
+                if (std::holds_alternative<double>(lhs))
+                    return mulByScalar(rhs, std::get<double>(lhs));
+                if (std::holds_alternative<double>(rhs))
+                    return mulByScalar(lhs, std::get<double>(rhs));
+                if (std::holds_alternative<Matrix3>(lhs) && std::holds_alternative<Vector3>(rhs))
+                    return (std::get<Matrix3>(lhs) * std::get<Vector3>(rhs)).eval();
+                if (std::holds_alternative<Matrix3>(lhs) && std::holds_alternative<Matrix3>(rhs))
+                    return (std::get<Matrix3>(lhs) * std::get<Matrix3>(rhs)).eval();
+                MPFEM_THROW(ArgumentException, "Unsupported multiply shape combination.");
+            }
+            case AstNode::Kind::Divide: {
+                const ExprValue lhs = evalNode(*node.args[0], vars);
+                const double rhs = asScalar(evalNode(*node.args[1], vars));
+                return mulByScalar(lhs, 1.0 / rhs);
+            }
+            case AstNode::Kind::Power: {
+                const double lhs = asScalar(evalNode(*node.args[0], vars));
+                const double rhs = asScalar(evalNode(*node.args[1], vars));
+                return std::pow(lhs, rhs);
+            }
+            case AstNode::Kind::Negate: {
+                const ExprValue v = evalNode(*node.args[0], vars);
+                return mulByScalar(v, -1.0);
+            }
+            case AstNode::Kind::Sin:
+                return std::sin(asScalar(evalNode(*node.args[0], vars)));
+            case AstNode::Kind::Cos:
+                return std::cos(asScalar(evalNode(*node.args[0], vars)));
+            case AstNode::Kind::Tan:
+                return std::tan(asScalar(evalNode(*node.args[0], vars)));
+            case AstNode::Kind::Exp:
+                return std::exp(asScalar(evalNode(*node.args[0], vars)));
+            case AstNode::Kind::Log:
+                return std::log(asScalar(evalNode(*node.args[0], vars)));
+            case AstNode::Kind::Sqrt:
+                return std::sqrt(asScalar(evalNode(*node.args[0], vars)));
+            case AstNode::Kind::Abs:
+                return std::abs(asScalar(evalNode(*node.args[0], vars)));
+            case AstNode::Kind::Min: {
+                const double lhs = asScalar(evalNode(*node.args[0], vars));
+                const double rhs = asScalar(evalNode(*node.args[1], vars));
+                return std::min(lhs, rhs);
+            }
+            case AstNode::Kind::Max: {
+                const double lhs = asScalar(evalNode(*node.args[0], vars));
+                const double rhs = asScalar(evalNode(*node.args[1], vars));
+                return std::max(lhs, rhs);
+            }
+            case AstNode::Kind::Dot: {
+                const Vector3 lhs = asVector(evalNode(*node.args[0], vars));
+                const Vector3 rhs = asVector(evalNode(*node.args[1], vars));
+                return lhs.dot(rhs);
+            }
+            }
+            MPFEM_THROW(ArgumentException, "Unsupported AST node during evaluation.");
         }
 
     } // namespace
 
     struct ExpressionParser::ExpressionProgram::Impl {
         double multiplier = 1.0;
-        bool literalMatrix = false;
         TensorShape shape = TensorShape::scalar();
         std::unique_ptr<AstNode> root;
-        std::vector<ExpressionParser::ExpressionProgram> components;
         std::vector<std::string> dependencies;
-        std::vector<std::vector<size_t>> componentDependencySlots;
-        std::vector<Instruction> instructions_; // Linearized VM instruction stream
-        size_t maxStackDepth = 0;
     };
 
     ExpressionParser::ExpressionProgram::ExpressionProgram()
@@ -706,13 +782,7 @@ namespace mpfem {
 
     bool ExpressionParser::ExpressionProgram::valid() const
     {
-        if (!impl_) {
-            return false;
-        }
-        if (impl_->shape.isScalar()) {
-            return impl_->root != nullptr;
-        }
-        return !impl_->components.empty();
+        return impl_ && impl_->root != nullptr;
     }
 
     TensorShape ExpressionParser::ExpressionProgram::shape() const
@@ -726,52 +796,27 @@ namespace mpfem {
         return impl_ ? impl_->dependencies : empty;
     }
 
-    ExprValue ExpressionParser::ExpressionProgram::evaluate(std::span<const double> values) const
+    ExprValue ExpressionParser::ExpressionProgram::evaluate(std::span<const ExprValue> values) const
     {
         MPFEM_ASSERT(valid(), "Attempting to evaluate an invalid expression program.");
         MPFEM_ASSERT(values.size() == impl_->dependencies.size(),
             "Expression input size does not match dependency size.");
 
-        if (impl_->shape.isScalar()) {
-            std::array<double, 64> localStack {};
-            if (impl_->maxStackDepth <= localStack.size()) {
-                return evaluate_single_vm(values,
-                    impl_->instructions_,
-                    impl_->multiplier,
-                    std::span<double>(localStack.data(), impl_->maxStackDepth));
-            }
-
-            std::vector<double> spillStack(impl_->maxStackDepth, 0.0);
-            return evaluate_single_vm(values,
-                impl_->instructions_,
-                impl_->multiplier,
-                std::span<double>(spillStack.data(), spillStack.size()));
+        ExprValue value = evalNode(*impl_->root, values);
+        if (std::abs(impl_->multiplier - 1.0) < 1e-15) {
+            return value;
         }
+        return mulByScalar(value, impl_->multiplier);
+    }
 
-        auto evalComponent = [this, values](size_t componentIndex) -> double {
-            const ExpressionParser::ExpressionProgram& component = impl_->components[componentIndex];
-            const std::vector<size_t>& slots = impl_->componentDependencySlots[componentIndex];
-            std::vector<double> componentInputs;
-            componentInputs.reserve(slots.size());
-            for (const size_t slot : slots) {
-                componentInputs.push_back(values[slot]);
-            }
-            return std::get<double>(component.evaluate(std::span<const double>(componentInputs.data(), componentInputs.size())));
-        };
-
-        if (!impl_->literalMatrix || impl_->components.size() == 1) {
-            const double scalar = evalComponent(0);
-            return Matrix3 {Matrix3::Identity() * scalar};
+    ExprValue ExpressionParser::ExpressionProgram::evaluate(std::span<const double> values) const
+    {
+        std::vector<ExprValue> typed;
+        typed.reserve(values.size());
+        for (const double value : values) {
+            typed.emplace_back(value);
         }
-
-        MPFEM_ASSERT(impl_->components.size() == 9,
-            "Invalid matrix expression program: expected 1 or 9 components.");
-
-        Matrix3 matrix;
-        matrix << evalComponent(0), evalComponent(3), evalComponent(6),
-            evalComponent(1), evalComponent(4), evalComponent(7),
-            evalComponent(2), evalComponent(5), evalComponent(8);
-        return matrix;
+        return evaluate(std::span<const ExprValue>(typed.data(), typed.size()));
     }
 
     ExpressionParser::ExpressionParser() = default;
@@ -779,98 +824,44 @@ namespace mpfem {
 
     ExpressionParser::ExpressionProgram ExpressionParser::compile(const std::string& expression) const
     {
-        MatrixTemplate matrixTemplate = parseMatrixTemplate(expression);
+        std::string expressionText = strings::trim(expression);
+        double multiplier = 1.0;
 
-        if (!matrixTemplate.literalMatrix) {
-            UnitRegistry registry;
-            const UnitParseResult unitResult = registry.stripUnit(expression);
-            const std::string expressionText = strings::trim(std::string(unitResult.expression));
-            if (expressionText.empty()) {
-                MPFEM_THROW(ArgumentException, "Expression is empty after unit stripping: " + expression);
+        MatrixTemplate legacy = parseLegacyMatrixTemplate(expressionText);
+        if (legacy.literalMatrix) {
+            expressionText = convertLegacyMatrixToBracketLiteral(legacy);
+        }
+        else if (!expressionText.empty() && expressionText.front() != '[' && expressionText.front() != '{') {
+            const size_t firstBracket = expressionText.find('[');
+            const size_t lastBracket = expressionText.rfind(']');
+            const bool trailingUnitForm =
+                firstBracket != std::string::npos &&
+                lastBracket == expressionText.size() - 1 &&
+                firstBracket > 0;
+
+            if (trailingUnitForm || firstBracket == std::string::npos) {
+                UnitRegistry registry;
+                UnitParseResult unitResult = registry.stripUnit(expressionText);
+                expressionText = strings::trim(std::string(unitResult.expression));
+                multiplier = unitResult.multiplier;
             }
+        }
 
-            auto impl = std::make_unique<ExpressionProgram::Impl>();
-            impl->shape = TensorShape::scalar();
-            impl->multiplier = unitResult.multiplier;
-            ScalarAstCompiler compiler(expressionText);
-            impl->root = compiler.compile();
-            std::unordered_set<std::string> seen;
-            collectDependencies(*impl->root, seen, impl->dependencies);
-            bindAstVariableIndices(*impl->root, impl->dependencies);
-            linearize(impl->root.get(), impl->instructions_);
-            impl->maxStackDepth = computeMaxStackDepth(impl->instructions_);
-            return ExpressionProgram(std::move(impl));
+        if (expressionText.empty()) {
+            MPFEM_THROW(ArgumentException, "Expression is empty after unit stripping: " + expression);
         }
 
         auto impl = std::make_unique<ExpressionProgram::Impl>();
-        impl->shape = TensorShape::matrix(3, 3);
-        impl->literalMatrix = true;
-        impl->components.reserve(matrixTemplate.components.size());
-        impl->componentDependencySlots.reserve(matrixTemplate.components.size());
+        impl->multiplier = multiplier;
 
-        if (matrixTemplate.components.size() == 1) {
-            UnitRegistry registry;
-            const UnitParseResult unitResult = registry.stripUnit(matrixTemplate.components[0]);
-            const std::string exprText = strings::trim(std::string(unitResult.expression));
+        TensorAstCompiler compiler(expressionText);
+        impl->root = compiler.compile();
+        impl->shape = inferShape(*impl->root);
 
-            auto scalarImpl = std::make_unique<ExpressionProgram::Impl>();
-            scalarImpl->shape = TensorShape::scalar();
-            scalarImpl->multiplier = unitResult.multiplier;
-            ScalarAstCompiler compiler(exprText);
-            scalarImpl->root = compiler.compile();
-            std::unordered_set<std::string> seen;
-            collectDependencies(*scalarImpl->root, seen, scalarImpl->dependencies);
-            bindAstVariableIndices(*scalarImpl->root, scalarImpl->dependencies);
-            linearize(scalarImpl->root.get(), scalarImpl->instructions_);
-            scalarImpl->maxStackDepth = computeMaxStackDepth(scalarImpl->instructions_);
+        std::unordered_set<std::string> seen;
+        collectDependencies(*impl->root, seen, impl->dependencies);
+        bindAstVariableIndices(*impl->root, impl->dependencies);
 
-            ExpressionProgram scalarProg(std::move(scalarImpl));
-            impl->components.push_back(std::move(scalarProg));
-            impl->dependencies = impl->components.front().dependencies();
-            impl->componentDependencySlots.push_back({});
-            impl->componentDependencySlots.front().reserve(impl->dependencies.size());
-            for (size_t i = 0; i < impl->dependencies.size(); ++i) {
-                impl->componentDependencySlots.front().push_back(i);
-            }
-            return ExpressionProgram(std::move(impl));
-        }
-
-        MPFEM_ASSERT(matrixTemplate.components.size() == 9,
-            "Invalid matrix expression: expected 1 or 9 components.");
-
-        for (const std::string& componentExpression : matrixTemplate.components) {
-            UnitRegistry registry;
-            const UnitParseResult unitResult = registry.stripUnit(componentExpression);
-            const std::string exprText = strings::trim(std::string(unitResult.expression));
-
-            auto scalarImpl = std::make_unique<ExpressionProgram::Impl>();
-            scalarImpl->shape = TensorShape::scalar();
-            scalarImpl->multiplier = unitResult.multiplier;
-            ScalarAstCompiler compiler(exprText);
-            scalarImpl->root = compiler.compile();
-            std::unordered_set<std::string> seen;
-            collectDependencies(*scalarImpl->root, seen, scalarImpl->dependencies);
-            bindAstVariableIndices(*scalarImpl->root, scalarImpl->dependencies);
-            linearize(scalarImpl->root.get(), scalarImpl->instructions_);
-            scalarImpl->maxStackDepth = computeMaxStackDepth(scalarImpl->instructions_);
-
-            impl->components.push_back(ExpressionProgram(std::move(scalarImpl)));
-            const std::vector<std::string>& componentDeps = impl->components.back().dependencies();
-            for (const std::string& dep : componentDeps) {
-                if (std::find(impl->dependencies.begin(), impl->dependencies.end(), dep) == impl->dependencies.end()) {
-                    impl->dependencies.push_back(dep);
-                }
-            }
-
-            std::vector<size_t> slots;
-            slots.reserve(componentDeps.size());
-            for (const std::string& dep : componentDeps) {
-                const auto it = std::find(impl->dependencies.begin(), impl->dependencies.end(), dep);
-                MPFEM_ASSERT(it != impl->dependencies.end(), "Matrix dependency mapping failed.");
-                slots.push_back(static_cast<size_t>(std::distance(impl->dependencies.begin(), it)));
-            }
-            impl->componentDependencySlots.push_back(std::move(slots));
-        }
         return ExpressionProgram(std::move(impl));
     }
 

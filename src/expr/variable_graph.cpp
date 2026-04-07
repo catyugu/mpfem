@@ -83,6 +83,53 @@ namespace mpfem {
             const GridFunction* field_ = nullptr;
         };
 
+        class GridFunctionGradientNode final : public VariableNode {
+        public:
+            GridFunctionGradientNode(std::string name, const GridFunction* field)
+                : name_(std::move(name)), field_(field) { }
+
+            TensorShape shape() const override { return TensorShape::vector(3); }
+
+            void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override
+            {
+                if (!field_) {
+                    std::fill(dest.begin(), dest.end(), 0.0);
+                    return;
+                }
+                if (!ctx.transform) {
+                    MPFEM_THROW(ArgumentException, "GridFunctionGradientNode requires ElementTransform in EvaluationContext.");
+                }
+
+                const size_t n = ctx.physicalPoints.size();
+                if (dest.size() != n * 3ull) {
+                    MPFEM_THROW(ArgumentException, "GridFunctionGradientNode evaluate destination size mismatch.");
+                }
+
+                for (size_t i = 0; i < n; ++i) {
+                    const Real* xi = nullptr;
+                    if (i < ctx.referencePoints.size()) {
+                        xi = &ctx.referencePoints[i].x();
+                        ctx.transform->setIntegrationPoint(xi);
+                    }
+                    else {
+                        xi = &ctx.transform->integrationPoint().xi;
+                    }
+
+                    const Vector3 g = field_->gradient(ctx.transform->elementIndex(), xi, *ctx.transform);
+                    const size_t base = i * 3ull;
+                    dest[base] = g.x();
+                    dest[base + 1] = g.y();
+                    dest[base + 2] = g.z();
+                }
+            }
+
+            std::vector<const VariableNode*> dependencies() const override { return {}; }
+
+        private:
+            std::string name_;
+            const GridFunction* field_ = nullptr;
+        };
+
         class ExternalDataNode final : public VariableNode {
         public:
             using ValueExtractor = std::function<double(const EvaluationContext&, size_t pointIndex)>;
@@ -130,15 +177,11 @@ namespace mpfem {
                 std::vector<size_t> depSizes(dependencies_.size(), 0);
                 for (size_t d = 0; d < dependencies_.size(); ++d) {
                     depSizes[d] = dependencies_[d]->shape().size();
-                    if (depSizes[d] != 1) {
-                        MPFEM_THROW(ArgumentException,
-                            "RuntimeExpressionNode currently requires scalar dependencies only.");
-                    }
                     depValues[d].assign(n * depSizes[d], 0.0);
                     dependencies_[d]->evaluateBatch(ctx, std::span<double>(depValues[d].data(), depValues[d].size()));
                 }
 
-                std::vector<double> inputValues(dependencies_.size(), 0.0);
+                std::vector<ExprValue> inputValues(dependencies_.size(), 0.0);
                 for (size_t i = 0; i < n; ++i) {
                     if (ctx.transform && i < ctx.referencePoints.size()) {
                         const Real xi[3] = {
@@ -150,10 +193,31 @@ namespace mpfem {
                     }
 
                     for (size_t d = 0; d < dependencies_.size(); ++d) {
-                        inputValues[d] = depValues[d][i * depSizes[d]];
+                        const size_t base = i * depSizes[d];
+                        if (depSizes[d] == 1) {
+                            inputValues[d] = depValues[d][base];
+                            continue;
+                        }
+                        if (depSizes[d] == 3) {
+                            Vector3 vec;
+                            vec << depValues[d][base], depValues[d][base + 1], depValues[d][base + 2];
+                            inputValues[d] = vec;
+                            continue;
+                        }
+                        if (depSizes[d] == 9) {
+                            Matrix3 mat;
+                            for (int r = 0; r < 3; ++r) {
+                                for (int c = 0; c < 3; ++c) {
+                                    mat(r, c) = depValues[d][base + static_cast<size_t>(r * 3 + c)];
+                                }
+                            }
+                            inputValues[d] = mat;
+                            continue;
+                        }
+                        MPFEM_THROW(ArgumentException, "RuntimeExpressionNode unsupported dependency shape size.");
                     }
 
-                    const ExprValue exprResult = program_.evaluate(std::span<const double>(inputValues.data(), inputValues.size()));
+                    const ExprValue exprResult = program_.evaluate(std::span<const ExprValue>(inputValues.data(), inputValues.size()));
 
                     if (shape_.isScalar()) {
                         dest[i] = std::get<double>(exprResult);
@@ -232,7 +296,8 @@ namespace mpfem {
 
         // If expression has no dependencies (pure constant), create ConstantScalarNode directly
         MPFEM_ASSERT(program.dependencies().empty(), "Expected constant expression to have no dependencies.");
-        double value = std::get<double>(program.evaluate({}));
+        const std::array<ExprValue, 0> noInputs {};
+        double value = std::get<double>(program.evaluate(std::span<const ExprValue>(noInputs.data(), noInputs.size())));
         nodes_[std::move(name)] = std::make_unique<ConstantScalarNode>(value);
 
         graphDirty_ = true;
@@ -248,6 +313,9 @@ namespace mpfem {
         dependencies.reserve(program.dependencies().size());
 
         for (const std::string& symbol : program.dependencies()) {
+            if (nodes_.find(symbol) == nodes_.end()) {
+                ensureGradientNode(symbol);
+            }
             const auto it = nodes_.find(symbol);
             MPFEM_ASSERT(it != nodes_.end() && it->second != nullptr,
                 "Unbound symbol in expression: " + symbol);
@@ -263,8 +331,29 @@ namespace mpfem {
 
     void VariableManager::registerGridFunction(std::string name, const GridFunction* field)
     {
-        nodes_[std::move(name)] = std::make_unique<GridFunctionNode>(name, field);
+        const std::string key = name;
+        nodes_[key] = std::make_unique<GridFunctionNode>(key, field);
+        gridFunctions_[key] = field;
         graphDirty_ = true;
+    }
+
+    void VariableManager::ensureGradientNode(std::string_view symbol)
+    {
+        if (symbol.size() <= 6 || symbol.substr(0, 5) != "grad(" || symbol.back() != ')') {
+            return;
+        }
+
+        const std::string base = std::string(symbol.substr(5, symbol.size() - 6));
+        const auto fieldIt = gridFunctions_.find(base);
+        if (fieldIt == gridFunctions_.end() || !fieldIt->second) {
+            return;
+        }
+
+        const std::string gradName(symbol);
+        if (nodes_.find(gradName) != nodes_.end()) {
+            return;
+        }
+        nodes_[gradName] = std::make_unique<GridFunctionGradientNode>(gradName, fieldIt->second);
     }
 
     void VariableManager::registerExternalSource(std::string name,
