@@ -40,8 +40,8 @@
 **目标**：将所有字面量（标量、向量、矩阵）统一为 `BracketLiteral`。
 
 * **操作**：
-    * 重构 `AstNode`：将 `VectorLiteral` 和 `MatrixLiteral` 合并到 `Literal` 类型，并在解析期就决定其 `TensorValue` 内容。
-    * 修改 `parseBracketLiteral`，使其直接利用 `TensorValue::matrix3` 或 `vector` 构造函数生成常量节点。
+    * 重构 `AstNode`：将`Constant`, `VectorLiteral` 和 `MatrixLiteral` 合并到 `Literal` 类型，并在解析期就决定其 `TensorValue` 内容。
+    * 修改 `parseBracketLiteral`，使其直接利用 `TensorValue::matrix3` 或 `vector` 或 `Real` 构造函数生成常量节点。
 
 #### 第二步：表达式解析器降级与算子抽象 (实现可执行)
 **目标**：将原本在解析器中硬编码的 `inferShape` 和 `evaluateAst` 逻辑下放到 `TensorValue` 运算符中。
