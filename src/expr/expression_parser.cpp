@@ -56,7 +56,7 @@ namespace mpfem {
             return std::isspace(static_cast<unsigned char>(c)) != 0 || c == ',';
         }
 
-        MatrixTemplate parseLegacyMatrixTemplate(std::string_view expression)
+        MatrixTemplate parseComsolMatrixTemplate(std::string_view expression)
         {
             MatrixTemplate matrixTemplate;
             const std::string trimmed = strings::trim(std::string(expression));
@@ -79,18 +79,18 @@ namespace mpfem {
 
                 if (content[index] != '\'') {
                     MPFEM_THROW(ArgumentException,
-                        "Invalid legacy matrix literal. Expected quoted component near: " + trimmed);
+                        "Invalid comsol matrix literal. Expected quoted component near: " + trimmed);
                 }
 
                 const size_t endQuote = content.find('\'', index + 1);
                 if (endQuote == std::string_view::npos) {
                     MPFEM_THROW(ArgumentException,
-                        "Invalid legacy matrix literal. Unterminated quoted component: " + trimmed);
+                        "Invalid comsol matrix literal. Unterminated quoted component: " + trimmed);
                 }
 
                 std::string component = strings::trim(std::string(content.substr(index + 1, endQuote - index - 1)));
                 if (component.empty()) {
-                    MPFEM_THROW(ArgumentException, "Invalid legacy matrix literal with empty component.");
+                    MPFEM_THROW(ArgumentException, "Invalid comsol matrix literal with empty component.");
                 }
 
                 matrixTemplate.components.push_back(std::move(component));
@@ -99,21 +99,21 @@ namespace mpfem {
 
             if (matrixTemplate.components.size() != 1 && matrixTemplate.components.size() != 9) {
                 MPFEM_THROW(ArgumentException,
-                    "Invalid legacy matrix literal: expected 1 or 9 components, got " + std::to_string(matrixTemplate.components.size()));
+                    "Invalid comsol matrix literal: expected 1 or 9 components, got " + std::to_string(matrixTemplate.components.size()));
             }
 
             return matrixTemplate;
         }
 
-        std::string convertLegacyMatrixToBracketLiteral(const MatrixTemplate& tpl)
+        std::string convertComsolMatrixToBracketLiteral(const MatrixTemplate& tpl)
         {
-            MPFEM_ASSERT(tpl.literalMatrix, "Matrix template must be legacy literal.");
+            MPFEM_ASSERT(tpl.literalMatrix, "Matrix template must be comsol literal.");
             if (tpl.components.size() == 1) {
                 const std::string& c = tpl.components[0];
                 return "[" + c + ",0,0;0," + c + ",0;0,0," + c + "]";
             }
 
-            MPFEM_ASSERT(tpl.components.size() == 9, "Legacy matrix literal expects 9 components.");
+            MPFEM_ASSERT(tpl.components.size() == 9, "Comsol matrix literal expects 9 components.");
             return "["
                 + tpl.components[0] + "," + tpl.components[3] + "," + tpl.components[6] + ";"
                 + tpl.components[1] + "," + tpl.components[4] + "," + tpl.components[7] + ";"
@@ -793,9 +793,9 @@ namespace mpfem {
     {
         std::string expressionText = strings::trim(expression);
 
-        MatrixTemplate legacy = parseLegacyMatrixTemplate(expressionText);
-        if (legacy.literalMatrix) {
-            expressionText = convertLegacyMatrixToBracketLiteral(legacy);
+        MatrixTemplate comsol = parseComsolMatrixTemplate(expressionText);
+        if (comsol.literalMatrix) {
+            expressionText = convertComsolMatrixToBracketLiteral(comsol);
         }
 
         if (expressionText.empty()) {

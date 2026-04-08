@@ -85,7 +85,7 @@ def parse_comsol_combined_file(file_path: Path) -> tuple[list[ResultRow], list[f
 
 
 def parse_result_file_single(file_path: Path) -> list[ResultRow]:
-    """Parse a single-time-step result file (legacy format)."""
+    """Parse a single-time-step result file (comsol format)."""
     rows: list[ResultRow] = []
     with file_path.open("r", encoding="utf-8") as handle:
         for raw_line in handle:
