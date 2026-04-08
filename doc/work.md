@@ -22,190 +22,198 @@
 
 ## 具体工作任务
 
-通过对你提供的代码进行深入分析，我发现虽然代码在尽力避免堆分配（例如使用 `std::variant` 实现 `TensorValue`），但在**表达式解析接口**、**DAG 节点抽象**以及**变量图管理**方面存在一些典型的设计反模式（Anti-patterns）、冗余和职责泄漏。
+这是一个非常典型的科学计算/有限元软件中的表达式系统设计。目前的实现中存在几个明显的**设计反模式（Anti-patterns）**和**性能陷阱**，尤其是在高性能计算（FEM积分点计算）的上下文中：
 
-按照你的要求（宁可破坏向后兼容也要保持简洁高效、统一自动DAG和表达式解析系统），我们将分 4 个步骤进行“破坏式”重构。
+### 🚨 当前代码的四大核心问题分析
 
----
+1.  **双重图/AST反模式与过度设计 (Overengineering)：**
+    * `ExpressionParser` 将字符串解析为 `AstNode`，然后将其展平为基于栈/寄存器的字节码（`Instruction`, `OpCode`, `FlattenedProgram`）。
+    * `VariableManager` 维护了另一个级别的 DAG（`VariableNode`）。
+    * **结果**：一个简单的数学表达式被解析两次、包装两次。为了执行一个简单的 `+`，系统要通过 DAG 节点，再进入一个模拟的基于 `switch-case` 的虚拟机 (`runProgram`)，极度臃肿且没有必要。
+2.  **紧密循环中的动态内存分配 (Memory Allocation in Tight Loops)：**
+    * 在 `RuntimeExpressionNode::evaluateBatch` 中，每次调用（FEM中的每个批次）都会分配 `std::vector<TensorValue> localScratchpad` 和 `pointInputs`。
+    * 在虚拟机的 `runProgram` 中，每次调用（FEM中的每个积分点！）都会分配 `std::vector<TensorValue> registers`。
+    * **结果**：这将导致灾难性的性能瓶颈。
+3.  **巨大的 `switch-case` 与扩展性差 (Violation of Open-Closed Principle)：**
+    * `BuiltinUnary` 和 `BuiltinBinary` 枚举硬编码了所有支持的数学函数。如果想添加 `sinh`，需要改动词法分析、AST定义、Shape推导、OpCode定义以及虚拟机的 `executeUnary`。
+4.  **运行时多态开销 (`std::visit` 滥用)：**
+    * `TensorValue` 每次加减乘除都在运行时通过 `std::visit` 进行类型分发。虽然很安全，但在已知类型的 DAG 中，这是极大的性能浪费。
 
-### 发现的设计反模式与核心问题
+### 步骤化重构方案（破坏式、自动DAG+解析统一）
 
-1.  **类型擦除与接口不一致 (Type Erasure & Inconsistency)**：
-    * `ExpressionProgram` 返回 `TensorValue`，但 `VariableNode::evaluateBatch` 却要求输出到 `std::span<Real>`。这破坏了 `TensorValue` 建立的强类型系统，导致图节点在求值时需要手动处理内存展平/反展平，极易出错且不支持复杂的张量图计算。
-2.  **上帝对象与职责泄漏 (God Object & Leaky Abstraction)**：
-    * `VariableManager` 内部竟然包含了 `ensureGradientNode` 和 `gridFunctions_`。DAG 管理器不应该知道“梯度”或“网格函数”是什么，这属于物理/有限元业务逻辑，严重违反了**开闭原则 (OCP)**。
-3.  **冗余接口 (Redundant Interfaces)**：
-    * `ExpressionProgram` 提供了 `std::span<const TensorValue>` 和 `std::span<const Real>` 两个求值接口，纯属多余。
+我们的核心思路是：**让 AST 就是 DAG，干掉中间的字节码虚拟机；静态分配内存；引入操作符注册表。**
 
-### 步骤化重构方案
+#### 步骤 1：统一 AST 与 DAG，废除字节码虚拟机
+**目标**：删除所有的 `Instruction`、`OpCode`、`FlattenedProgram`。让 `ExpressionParser` 直接生成 `VariableNode` 树。
 
-#### 第一步：统一数据流通量（消除类型擦除与冗余 API）
+**重构动作：**
+我们将 `VariableNode` 定义为真正的计算图节点。
 
-**目标**：强制整个表达式和 DAG 系统中只流动 `TensorValue`，移除所有降级到 `Real` 裸指针/Span 的冗余接口。
-
-**修改 `src/expr/expression_parser.hpp`**：
-移除接受 `Real` 的重载，保持唯一事实来源。
 ```cpp
-// 重构后的 ExpressionProgram
-class ExpressionProgram {
+// 1. 新的抽象 VariableNode (代替旧的 VariableNode 和 AstNode)
+class ExprNode {
 public:
-    // ... 构造/析构保持不变 ...
-    bool valid() const;
-    TensorShape shape() const;
-    const std::vector<std::string>& dependencies() const;
-    
-    // [破坏性重构] 移除 TensorValue evaluate(std::span<const Real>) const;
-    // 强制使用统一的 TensorValue 接口
-    TensorValue evaluate(std::span<const TensorValue> values) const;
-};
-```
-
-**修改 `src/expr/variable_graph.hpp` (节点抽象)**：
-将 `evaluateBatch` 的输出从 `std::span<Real>` 改为 `std::span<TensorValue>`。
-```cpp
-// 重构后的 VariableNode
-class VariableNode {
-public:
-    virtual ~VariableNode() = default;
-
+    virtual ~ExprNode() = default;
     virtual TensorShape shape() const = 0;
+    
+    // 取消 evaluateBatch 中每次传递 std::span 作为目标的做法
+    // 改为节点自带输出缓存（为后续消除 new 做准备）
+    virtual void evaluateBatch(const EvaluationContext& ctx) = 0;
+    virtual const std::vector<TensorValue>& getOutput() const = 0;
+    
+    virtual void setBatchSize(size_t size) = 0;
+    virtual std::vector<std::shared_ptr<ExprNode>> dependencies() const { return {}; }
+};
 
-    // [破坏性重构] 拒绝退化为 Real 数组，直接使用 TensorValue 数组进行 Batch 写入
-    // 这消除了图节点内部手动计算 stride 的痛苦，且完美兼容常数、向量、矩阵
-    virtual void evaluateBatch(const EvaluationContext& ctx, 
-                               std::span<TensorValue> dest) const = 0;
-
-    virtual bool isConstant() const { return false; }
-    virtual std::vector<const VariableNode*> dependencies() const { return {}; }
+// 2. 基础常量节点
+class ConstantNode final : public ExprNode {
+    TensorValue value_;
+    std::vector<TensorValue> output_;
+public:
+    explicit ConstantNode(TensorValue v) : value_(std::move(v)) {}
+    TensorShape shape() const override { return value_.shape(); }
+    void setBatchSize(size_t size) override { output_.assign(size, value_); } // 预计算
+    void evaluateBatch(const EvaluationContext& ctx) override { /* 无需操作 */ }
+    const std::vector<TensorValue>& getOutput() const override { return output_; }
 };
 ```
+*验证：* 代码大幅度减少，删除了上千行的 VM 机制代码。
 
-#### 第二步：引入 `EvaluationWorkspace` 解决计算内存分配
+#### 步骤 2：消除所有动态内存分配（预分配工作区）
+**目标**：解决在 `evaluateBatch` 和 `runProgram` 中不断的 `std::vector` 分配。
 
-**目标**：DAG 执行时需要存储中间变量，目前代码没有体现这些中间变量存在哪里。引入一个统一的工作区（Workspace），在一次评估中重用内存。
+**重构动作：**
+DAG 在编译期（`compileGraph`）获知批处理大小（或设置一个合理的最大值），每个节点在内部持有自己的输出缓冲区。
 
-**新增类 (可在 `variable_graph.hpp` 中)**：
 ```cpp
-namespace mpfem {
-    // 管理一次 Batch 评估中所有节点的临时/结果数据
-    class EvaluationWorkspace {
-    public:
-        void allocate(size_t batchSize, const std::vector<const VariableNode*>& plan) {
-            batchSize_ = batchSize;
-            memory_.clear();
-            memory_.resize(plan.size() * batchSize);
-            
-            nodeOffsets_.clear();
-            size_t offset = 0;
-            for (const auto* node : plan) {
-                nodeOffsets_[node] = offset;
-                offset += batchSize;
-            }
-        }
-
-        std::span<TensorValue> getBuffer(const VariableNode* node) {
-            return {memory_.data() + nodeOffsets_.at(node), batchSize_};
-        }
-
-        std::span<const TensorValue> getBuffer(const VariableNode* node) const {
-            return {memory_.data() + nodeOffsets_.at(node), batchSize_};
-        }
-
-    private:
-        size_t batchSize_ = 0;
-        std::vector<TensorValue> memory_; 
-        std::unordered_map<const VariableNode*, size_t> nodeOffsets_;
-    };
-}
-```
-
-#### 第三步：剥离 `VariableManager` 的业务逻辑（纯化 DAG 管理）
-
-**目标**：把 `VariableManager` 变成一个纯粹的、仅关心图拓扑排序和节点拥有的容器。把 `GridFunction` 和梯度逻辑踢出这个类。
-
-**修改 `src/expr/variable_graph.hpp` (`VariableManager`)**：
-```cpp
-class VariableManager {
+// 3. 通用二元操作节点工厂模式
+template <typename OpFunc>
+class BinaryOpNode final : public ExprNode {
+    std::shared_ptr<ExprNode> lhs_, rhs_;
+    std::vector<TensorValue> output_;
+    TensorShape shape_;
+    OpFunc op_;
 public:
-    using NodeStore = std::unordered_map<std::string, std::unique_ptr<VariableNode>>;
+    BinaryOpNode(std::shared_ptr<ExprNode> lhs, std::shared_ptr<ExprNode> rhs, OpFunc op, TensorShape shape)
+        : lhs_(std::move(lhs)), rhs_(std::move(rhs)), op_(std::move(op)), shape_(std::move(shape)) {}
 
-    VariableManager() = default;
-    ~VariableManager() = default;
+    TensorShape shape() const override { return shape_; }
+    std::vector<std::shared_ptr<ExprNode>> dependencies() const override { return {lhs_, rhs_}; }
 
-    // 核心 API 1：接管节点所有权 (所有特殊节点通过此接口注入)
-    void registerNode(std::string name, std::unique_ptr<VariableNode> node);
-
-    // 核心 API 2：基于字符串表达式自动构建 RuntimeExpressionNode
-    void registerExpression(std::string name, std::string expression);
-
-    const VariableNode* get(std::string_view name) const;
-
-    // 编译图结构，生成拓扑排序的执行计划，并分配 Workspace
-    void compileGraph();
-
-    // 执行求值
-    void evaluate(const EvaluationContext& ctx, EvaluationWorkspace& workspace) const;
-
-private:
-    void clearExecutionPlan();
-    void dfsVisit(const VariableNode* node,
-                  std::unordered_map<const VariableNode*, int>& marks,
-                  std::vector<const VariableNode*>& ordered) const;
-
-    NodeStore nodes_;
-    std::vector<const VariableNode*> executionPlan_;
-    bool graphDirty_ = true;
-
-    // [破坏性重构] 移除了以下业务逻辑，它们应该由外部 Factory 包装后调用 registerNode 注入
-    // void ensureGradientNode(std::string_view symbol);
-    // std::unordered_map<std::string, const GridFunction*> gridFunctions_;
-    // void registerGridFunction(...);
-    // void registerExternalSource(...);
-};
-```
-
-#### 第四步：实现统一的 `RuntimeExpressionNode`（闭环验证）
-
-现在，因为图管理纯化了，且输入输出都是统一的 `TensorValue`，我们终于可以写出一个极度干净、支持任何张量表达式的解析节点实现：
-
-```cpp
-// 假设这是在 variable_graph.cpp 中的实现
-class RuntimeExpressionNode : public VariableNode {
-public:
-    RuntimeExpressionNode(ExpressionParser::ExpressionProgram prog, 
-                          std::vector<const VariableNode*> deps)
-        : program_(std::move(prog)), deps_(std::move(deps)) {}
-
-    TensorShape shape() const override { return program_.shape(); }
-    std::vector<const VariableNode*> dependencies() const override { return deps_; }
-
-    void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override {
-        size_t batchSize = ctx.physicalPoints.size();
-        
-        // 准备单个点的输入缓冲区
-        std::vector<TensorValue> pointInputs(deps_.size());
-        
-        // 注意：这里的实现为了展示逻辑结构。
-        // 在实际的高性能框架中，Workspace 应该直接传给 evaluateBatch，
-        // 从而可以执行向量化求值，而不是每次在循环里收集依赖。
-        
-        for (size_t i = 0; i < batchSize; ++i) {
-            // 这里假设外部的 workspace 已经帮依赖节点求好值了
-            // 实际工程中，你需要将 workspace 传进来以获取依赖的值。
-            // 例如： pointInputs[j] = workspace.getBuffer(deps_[j])[i];
-            
-            dest[i] = program_.evaluate(pointInputs);
-        }
+    void setBatchSize(size_t size) override {
+        output_.resize(size);
+        lhs_->setBatchSize(size);
+        rhs_->setBatchSize(size);
     }
 
-private:
-    ExpressionParser::ExpressionProgram program_;
-    std::vector<const VariableNode*> deps_;
+    void evaluateBatch(const EvaluationContext& ctx) override {
+        lhs_->evaluateBatch(ctx);
+        rhs_->evaluateBatch(ctx);
+        const auto& l_out = lhs_->getOutput();
+        const auto& r_out = rhs_->getOutput();
+        // 无内存分配的紧密循环
+        for(size_t i = 0; i < output_.size(); ++i) {
+            output_[i] = op_(l_out[i], r_out[i]); 
+        }
+    }
+    const std::vector<TensorValue>& getOutput() const override { return output_; }
+};
+```
+*验证：* 在一个物理场更新循环中，除了最开始的一次 `resize`，不再有任何 heap allocation 发生。
+
+#### 步骤 3：引入注册表模式 (Registry)，根除硬编码和冗长的 Parser
+**目标**：让解析器（Parser）不再依赖巨大的 `switch-case` 来匹配 `sin`, `cos` 等函数，彻底消除 `BuiltinUnary` 的反模式。
+
+**重构动作：**
+设计一个全局或局部的操作符注册表，Parser 在遇到函数或算符时直接查表生成节点。
+
+```cpp
+using NodeFactory = std::function<std::shared_ptr<ExprNode>(const std::vector<std::shared_ptr<ExprNode>>&)>;
+
+class OpRegistry {
+    std::unordered_map<std::string, NodeFactory> factories_;
+public:
+    static OpRegistry& instance() {
+        static OpRegistry reg;
+        return reg;
+    }
+
+    void registerOp(const std::string& name, NodeFactory factory) {
+        factories_[name] = std::move(factory);
+    }
+
+    std::shared_ptr<ExprNode> createNode(const std::string& name, const std::vector<std::shared_ptr<ExprNode>>& args) {
+        auto it = factories_.find(name);
+        if (it == factories_.end()) MPFEM_THROW(ArgumentException, "Unknown op: " + name);
+        return it->second(args);
+    }
+};
+
+// 注册时 (例如在系统初始化时)
+OpRegistry::instance().registerOp("add", [](const std::vector<std::shared_ptr<ExprNode>>& args) {
+    // 可以在这里做 Shape 检查推导
+    TensorShape outShape = inferAddShape(args[0]->shape(), args[1]->shape());
+    return std::make_shared<BinaryOpNode<decltype(&mpfem::add)>>(args[0], args[1], mpfem::add, outShape);
+});
+
+OpRegistry::instance().registerOp("sin", [](const std::vector<std::shared_ptr<ExprNode>>& args) {
+    return std::make_shared<UnaryOpNode<...>>(args[0], ...);
+});
+```
+*验证：* `ExpressionParser::parseFunction` 被简化为提取名字和参数，然后调用 `OpRegistry::createNode`。添加新函数只需在 `.cpp` 文件中注册，完全符合开闭原则（OCP）。
+
+#### 步骤 4：基于类型的 JIT 级别优化 (消除内部 `std::visit`)
+**目标**：既然在 `ExpressionParser` 中可以通过 `TensorShape` 推导出返回类型，我们可以在**构建 DAG 节点时**，绑定对应类型的特定 Lambda，从而在 `evaluateBatch` 的 `for` 循环中消除 `std::visit` 开销。
+
+**重构动作：**
+对 `BinaryOpNode` 进一步特化。
+
+```cpp
+// 注册时，基于输入 Shape 静态绑定类型特定的计算逻辑
+OpRegistry::instance().registerOp("add", [](const std::vector<std::shared_ptr<ExprNode>>& args) {
+    auto s0 = args[0]->shape();
+    auto s1 = args[1]->shape();
+    
+    if (s0.isScalar() && s1.isScalar()) {
+        auto op = [](const TensorValue& a, const TensorValue& b) -> TensorValue {
+            // 绕过泛型的 std::visit 操作符，直接提取 double
+            return TensorValue::scalar(a.asScalar() + b.asScalar());
+        };
+        return std::make_shared<BinaryOpNode<decltype(op)>>(args[0], args[1], op, TensorShape::scalar());
+    }
+    // 其它类型同理 (Vector + Vector 等)...
+});
+```
+*验证：* 在 `evaluateBatch` 循环中，由于 Lambda 内部已经直接调用了 `asScalar()` (强制读取)，从而避开了 `TensorValue` 中臃肿的 `std::visit` 类型推断逻辑。这使得数值计算的速度接近原生 C++。
+
+#### 步骤 5：统一 DAG 与 VariableManager
+**目标**：彻底将 `VariableManager` 和 `ExpressionParser` 融合。
+
+**重构动作：**
+`VariableManager` 其实就是一个统一的 `SymbolTable`。
+```cpp
+class VariableManager {
+    std::unordered_map<std::string, std::shared_ptr<ExprNode>> symbols_;
+    std::vector<std::shared_ptr<ExprNode>> executionPlan_; // 拓扑排序后的节点
+    
+public:
+    // 解析表达式时，Parser 直接去查 symbols_
+    void registerExpression(const std::string& name, const std::string& expr) {
+        ExpressionParser parser(this); // 传入自身作为符号解析器
+        auto rootNode = parser.parse(expr);
+        symbols_[name] = rootNode;
+    }
+    
+    // 外部可以直接注册场变量
+    void registerGridFunction(const std::string& name, const GridFunction* field) {
+        symbols_[name] = std::make_shared<GridFunctionNode>(field);
+    }
 };
 ```
 
-### 重构带来的好处：
-
-1. **接口极其一致**：从 `TensorValue` 的变体，到 `ExpressionProgram`，再到 `VariableNode` 的 IO，全量统一为 `TensorValue`。不再有 `Real` 和 `TensorValue` 的混用。
-2. **纯粹的 DAG (SoC)**：`VariableManager` 现在只负责一件事——有向无环图的拓扑排序和执行。什么是“场变量”、什么是“梯度”，变成了一个个实现了 `VariableNode` 的派生类，由外部工厂创建后注册进去。
-3. **消除隐式循环依赖**：原先的 `Manager` 强依赖了 `GridFunction`，重构后它只依赖抽象的 `VariableNode`，`GridFunctionNode` 可以在 `fe/` 或 `physics/` 目录中单独实现并注入，解除了 `expr` 模块对 `fe` 模块的逆向依赖。
+### 总结
+通过上述 5 个步骤的破坏式重构：
+1. **接口一致性**：整个系统只有一个 `ExprNode`，即是 AST 节点也是计算图 DAG 节点。
+2. **零运行时分配**：通过 `setBatchSize` 预先在各个节点分配好 `std::vector<TensorValue>` 内存块，计算阶段 0 分配。
+3. **极简代码**：抛弃了过度设计的基于栈的虚拟机，节省了大量的 `OpCode` 维护工作。
+4. **极致性能**：通过 DAG 编译期的类型推断绑定特化 Lambda，消除了 `std::visit` 带来的运行时类型推断开销。

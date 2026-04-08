@@ -36,7 +36,7 @@ namespace mpfem {
 
             void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
             {
-                const size_t n = dest.size();
+                (void)ctx; // Unused
                 std::fill(dest.begin(), dest.end(), value_);
             }
 

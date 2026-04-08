@@ -57,33 +57,38 @@ namespace mpfem {
             LoadVar,
             MakeVector3,
             MakeMatrix3,
-            Add,
-            Subtract,
-            Multiply,
-            Divide,
-            Power,
-            Negate,
-            Sin,
+            CallUnary, // BuiltinUnary
+            CallBinary, // BuiltinBinary
+            Return,
+        };
+
+        // Unified function dispatch for math operations
+        enum class BuiltinUnary { Sin,
             Cos,
             Tan,
             Exp,
             Log,
             Sqrt,
             Abs,
-            Min,
-            Max,
-            Dot,
+            Negate,
             Sym,
             Trace,
-            Transpose,
-            Return,
-        };
+            Transpose };
+        enum class BuiltinBinary { Add,
+            Subtract,
+            Multiply,
+            Divide,
+            Min,
+            Max,
+            Pow,
+            Dot };
 
         struct Instruction {
             OpCode op = OpCode::LoadConst;
             int dest = -1;
             int operand1 = -1;
             int operand2 = -1;
+            int funcId = 0; // Index into BuiltinUnary or BuiltinBinary
             std::array<int, 9> operands {};
         };
 
@@ -755,152 +760,135 @@ namespace mpfem {
                 program.instructions.push_back(inst);
                 return dest;
             }
-            case AstNode::Kind::Add: {
-                const int dest = allocateRegister(program);
-                Instruction inst;
-                inst.op = OpCode::Add;
-                inst.dest = dest;
-                inst.operand1 = emitAst(*node.args[0], dependencyIndices, program);
-                inst.operand2 = emitAst(*node.args[1], dependencyIndices, program);
-                program.instructions.push_back(inst);
-                return dest;
-            }
-            case AstNode::Kind::Subtract: {
-                const int dest = allocateRegister(program);
-                Instruction inst;
-                inst.op = OpCode::Subtract;
-                inst.dest = dest;
-                inst.operand1 = emitAst(*node.args[0], dependencyIndices, program);
-                inst.operand2 = emitAst(*node.args[1], dependencyIndices, program);
-                program.instructions.push_back(inst);
-                return dest;
-            }
-            case AstNode::Kind::Multiply: {
-                const int dest = allocateRegister(program);
-                Instruction inst;
-                inst.op = OpCode::Multiply;
-                inst.dest = dest;
-                inst.operand1 = emitAst(*node.args[0], dependencyIndices, program);
-                inst.operand2 = emitAst(*node.args[1], dependencyIndices, program);
-                program.instructions.push_back(inst);
-                return dest;
-            }
-            case AstNode::Kind::Divide: {
-                const int dest = allocateRegister(program);
-                Instruction inst;
-                inst.op = OpCode::Divide;
-                inst.dest = dest;
-                inst.operand1 = emitAst(*node.args[0], dependencyIndices, program);
-                inst.operand2 = emitAst(*node.args[1], dependencyIndices, program);
-                program.instructions.push_back(inst);
-                return dest;
-            }
-            case AstNode::Kind::Power: {
-                const int dest = allocateRegister(program);
-                Instruction inst;
-                inst.op = OpCode::Power;
-                inst.dest = dest;
-                inst.operand1 = emitAst(*node.args[0], dependencyIndices, program);
-                inst.operand2 = emitAst(*node.args[1], dependencyIndices, program);
-                program.instructions.push_back(inst);
-                return dest;
-            }
-            case AstNode::Kind::Negate: {
-                const int dest = allocateRegister(program);
-                Instruction inst;
-                inst.op = OpCode::Negate;
-                inst.dest = dest;
-                inst.operand1 = emitAst(*node.args[0], dependencyIndices, program);
-                program.instructions.push_back(inst);
-                return dest;
-            }
             case AstNode::Kind::Sin:
             case AstNode::Kind::Cos:
             case AstNode::Kind::Tan:
             case AstNode::Kind::Exp:
             case AstNode::Kind::Log:
             case AstNode::Kind::Sqrt:
-            case AstNode::Kind::Abs: {
-                const int dest = allocateRegister(program);
-                Instruction inst;
-                inst.dest = dest;
-                inst.operand1 = emitAst(*node.args[0], dependencyIndices, program);
-                if (node.kind == AstNode::Kind::Sin)
-                    inst.op = OpCode::Sin;
-                else if (node.kind == AstNode::Kind::Cos)
-                    inst.op = OpCode::Cos;
-                else if (node.kind == AstNode::Kind::Tan)
-                    inst.op = OpCode::Tan;
-                else if (node.kind == AstNode::Kind::Exp)
-                    inst.op = OpCode::Exp;
-                else if (node.kind == AstNode::Kind::Log)
-                    inst.op = OpCode::Log;
-                else if (node.kind == AstNode::Kind::Sqrt)
-                    inst.op = OpCode::Sqrt;
-                else
-                    inst.op = OpCode::Abs;
-                program.instructions.push_back(inst);
-                return dest;
-            }
-            case AstNode::Kind::Min: {
-                const int dest = allocateRegister(program);
-                Instruction inst;
-                inst.op = OpCode::Min;
-                inst.dest = dest;
-                inst.operand1 = emitAst(*node.args[0], dependencyIndices, program);
-                inst.operand2 = emitAst(*node.args[1], dependencyIndices, program);
-                program.instructions.push_back(inst);
-                return dest;
-            }
-            case AstNode::Kind::Max: {
-                const int dest = allocateRegister(program);
-                Instruction inst;
-                inst.op = OpCode::Max;
-                inst.dest = dest;
-                inst.operand1 = emitAst(*node.args[0], dependencyIndices, program);
-                inst.operand2 = emitAst(*node.args[1], dependencyIndices, program);
-                program.instructions.push_back(inst);
-                return dest;
-            }
-            case AstNode::Kind::Dot: {
-                const int dest = allocateRegister(program);
-                Instruction inst;
-                inst.op = OpCode::Dot;
-                inst.dest = dest;
-                inst.operand1 = emitAst(*node.args[0], dependencyIndices, program);
-                inst.operand2 = emitAst(*node.args[1], dependencyIndices, program);
-                program.instructions.push_back(inst);
-                return dest;
-            }
+            case AstNode::Kind::Abs:
+            case AstNode::Kind::Negate:
+            case AstNode::Kind::Sym:
+            case AstNode::Kind::Trace:
             case AstNode::Kind::Transpose: {
                 const int dest = allocateRegister(program);
                 Instruction inst;
-                inst.op = OpCode::Transpose;
+                inst.op = OpCode::CallUnary;
                 inst.dest = dest;
                 inst.operand1 = emitAst(*node.args[0], dependencyIndices, program);
+                if (node.kind == AstNode::Kind::Sin)
+                    inst.funcId = static_cast<int>(BuiltinUnary::Sin);
+                else if (node.kind == AstNode::Kind::Cos)
+                    inst.funcId = static_cast<int>(BuiltinUnary::Cos);
+                else if (node.kind == AstNode::Kind::Tan)
+                    inst.funcId = static_cast<int>(BuiltinUnary::Tan);
+                else if (node.kind == AstNode::Kind::Exp)
+                    inst.funcId = static_cast<int>(BuiltinUnary::Exp);
+                else if (node.kind == AstNode::Kind::Log)
+                    inst.funcId = static_cast<int>(BuiltinUnary::Log);
+                else if (node.kind == AstNode::Kind::Sqrt)
+                    inst.funcId = static_cast<int>(BuiltinUnary::Sqrt);
+                else if (node.kind == AstNode::Kind::Abs)
+                    inst.funcId = static_cast<int>(BuiltinUnary::Abs);
+                else if (node.kind == AstNode::Kind::Negate)
+                    inst.funcId = static_cast<int>(BuiltinUnary::Negate);
+                else if (node.kind == AstNode::Kind::Sym)
+                    inst.funcId = static_cast<int>(BuiltinUnary::Sym);
+                else if (node.kind == AstNode::Kind::Trace)
+                    inst.funcId = static_cast<int>(BuiltinUnary::Trace);
+                else if (node.kind == AstNode::Kind::Transpose)
+                    inst.funcId = static_cast<int>(BuiltinUnary::Transpose);
                 program.instructions.push_back(inst);
                 return dest;
             }
-            case AstNode::Kind::Sym: {
+            case AstNode::Kind::Add:
+            case AstNode::Kind::Subtract:
+            case AstNode::Kind::Multiply:
+            case AstNode::Kind::Divide:
+            case AstNode::Kind::Min:
+            case AstNode::Kind::Max:
+            case AstNode::Kind::Dot:
+            case AstNode::Kind::Power: {
                 const int dest = allocateRegister(program);
                 Instruction inst;
-                inst.op = OpCode::Sym;
+                inst.op = OpCode::CallBinary;
                 inst.dest = dest;
                 inst.operand1 = emitAst(*node.args[0], dependencyIndices, program);
-                program.instructions.push_back(inst);
-                return dest;
-            }
-            case AstNode::Kind::Trace: {
-                const int dest = allocateRegister(program);
-                Instruction inst;
-                inst.op = OpCode::Trace;
-                inst.dest = dest;
-                inst.operand1 = emitAst(*node.args[0], dependencyIndices, program);
+                inst.operand2 = emitAst(*node.args[1], dependencyIndices, program);
+                if (node.kind == AstNode::Kind::Add)
+                    inst.funcId = static_cast<int>(BuiltinBinary::Add);
+                else if (node.kind == AstNode::Kind::Subtract)
+                    inst.funcId = static_cast<int>(BuiltinBinary::Subtract);
+                else if (node.kind == AstNode::Kind::Multiply)
+                    inst.funcId = static_cast<int>(BuiltinBinary::Multiply);
+                else if (node.kind == AstNode::Kind::Divide)
+                    inst.funcId = static_cast<int>(BuiltinBinary::Divide);
+                else if (node.kind == AstNode::Kind::Min)
+                    inst.funcId = static_cast<int>(BuiltinBinary::Min);
+                else if (node.kind == AstNode::Kind::Max)
+                    inst.funcId = static_cast<int>(BuiltinBinary::Max);
+                else if (node.kind == AstNode::Kind::Dot)
+                    inst.funcId = static_cast<int>(BuiltinBinary::Dot);
+                else if (node.kind == AstNode::Kind::Power)
+                    inst.funcId = static_cast<int>(BuiltinBinary::Pow);
                 program.instructions.push_back(inst);
                 return dest;
             }
             }
             MPFEM_THROW(ArgumentException, "Unsupported AST node during instruction emission.");
+        }
+
+        // Dispatch functions for builtin operations
+        TensorValue executeUnary(BuiltinUnary op, const TensorValue& arg)
+        {
+            switch (op) {
+            case BuiltinUnary::Sin:
+                return TensorValue::scalar(std::sin(arg.scalar()));
+            case BuiltinUnary::Cos:
+                return TensorValue::scalar(std::cos(arg.scalar()));
+            case BuiltinUnary::Tan:
+                return TensorValue::scalar(std::tan(arg.scalar()));
+            case BuiltinUnary::Exp:
+                return TensorValue::scalar(std::exp(arg.scalar()));
+            case BuiltinUnary::Log:
+                return TensorValue::scalar(std::log(arg.scalar()));
+            case BuiltinUnary::Sqrt:
+                return TensorValue::scalar(std::sqrt(arg.scalar()));
+            case BuiltinUnary::Abs:
+                return TensorValue::scalar(std::abs(arg.scalar()));
+            case BuiltinUnary::Negate:
+                return -arg;
+            case BuiltinUnary::Sym:
+                return sym(arg);
+            case BuiltinUnary::Trace:
+                return TensorValue::scalar(trace(arg));
+            case BuiltinUnary::Transpose:
+                return transpose(arg);
+            }
+            MPFEM_THROW(ArgumentException, "Unknown BuiltinUnary");
+        }
+
+        TensorValue executeBinary(BuiltinBinary op, const TensorValue& lhs, const TensorValue& rhs)
+        {
+            switch (op) {
+            case BuiltinBinary::Add:
+                return lhs + rhs;
+            case BuiltinBinary::Subtract:
+                return lhs - rhs;
+            case BuiltinBinary::Multiply:
+                return lhs * rhs;
+            case BuiltinBinary::Divide:
+                return lhs / rhs;
+            case BuiltinBinary::Min:
+                return TensorValue::scalar(std::min(lhs.scalar(), rhs.scalar()));
+            case BuiltinBinary::Max:
+                return TensorValue::scalar(std::max(lhs.scalar(), rhs.scalar()));
+            case BuiltinBinary::Pow:
+                return TensorValue::scalar(std::pow(lhs.scalar(), rhs.scalar()));
+            case BuiltinBinary::Dot:
+                return TensorValue::scalar(dot(lhs, rhs));
+            }
+            MPFEM_THROW(ArgumentException, "Unknown BuiltinBinary");
         }
 
         TensorValue runProgram(const FlattenedProgram& program, std::span<const TensorValue> vars)
@@ -932,68 +920,11 @@ namespace mpfem {
                         registers[static_cast<size_t>(inst.operands[7])].scalar(),
                         registers[static_cast<size_t>(inst.operands[8])].scalar());
                     break;
-                case OpCode::Add:
-                    registers[inst.dest] = registers[inst.operand1] + registers[inst.operand2];
+                case OpCode::CallUnary:
+                    registers[inst.dest] = executeUnary(static_cast<BuiltinUnary>(inst.funcId), registers[inst.operand1]);
                     break;
-                case OpCode::Subtract:
-                    registers[inst.dest] = registers[inst.operand1] - registers[inst.operand2];
-                    break;
-                case OpCode::Multiply:
-                    registers[inst.dest] = registers[inst.operand1] * registers[inst.operand2];
-                    break;
-                case OpCode::Divide:
-                    registers[inst.dest] = registers[inst.operand1] / registers[inst.operand2];
-                    break;
-                case OpCode::Power:
-                    registers[inst.dest] = TensorValue::scalar(std::pow(
-                        registers[inst.operand1].scalar(),
-                        registers[inst.operand2].scalar()));
-                    break;
-                case OpCode::Negate:
-                    registers[inst.dest] = -registers[inst.operand1];
-                    break;
-                case OpCode::Sin:
-                    registers[inst.dest] = TensorValue::scalar(std::sin(registers[inst.operand1].scalar()));
-                    break;
-                case OpCode::Cos:
-                    registers[inst.dest] = TensorValue::scalar(std::cos(registers[inst.operand1].scalar()));
-                    break;
-                case OpCode::Tan:
-                    registers[inst.dest] = TensorValue::scalar(std::tan(registers[inst.operand1].scalar()));
-                    break;
-                case OpCode::Exp:
-                    registers[inst.dest] = TensorValue::scalar(std::exp(registers[inst.operand1].scalar()));
-                    break;
-                case OpCode::Log:
-                    registers[inst.dest] = TensorValue::scalar(std::log(registers[inst.operand1].scalar()));
-                    break;
-                case OpCode::Sqrt:
-                    registers[inst.dest] = TensorValue::scalar(std::sqrt(registers[inst.operand1].scalar()));
-                    break;
-                case OpCode::Abs:
-                    registers[inst.dest] = TensorValue::scalar(std::abs(registers[inst.operand1].scalar()));
-                    break;
-                case OpCode::Min:
-                    registers[inst.dest] = TensorValue::scalar(std::min(
-                        registers[inst.operand1].scalar(),
-                        registers[inst.operand2].scalar()));
-                    break;
-                case OpCode::Max:
-                    registers[inst.dest] = TensorValue::scalar(std::max(
-                        registers[inst.operand1].scalar(),
-                        registers[inst.operand2].scalar()));
-                    break;
-                case OpCode::Dot:
-                    registers[inst.dest] = TensorValue::scalar(dot(registers[inst.operand1], registers[inst.operand2]));
-                    break;
-                case OpCode::Sym:
-                    registers[inst.dest] = sym(registers[inst.operand1]);
-                    break;
-                case OpCode::Trace:
-                    registers[inst.dest] = TensorValue::scalar(trace(registers[inst.operand1]));
-                    break;
-                case OpCode::Transpose:
-                    registers[inst.dest] = transpose(registers[inst.operand1]);
+                case OpCode::CallBinary:
+                    registers[inst.dest] = executeBinary(static_cast<BuiltinBinary>(inst.funcId), registers[inst.operand1], registers[inst.operand2]);
                     break;
                 case OpCode::Return:
                     return registers[inst.operand1];
