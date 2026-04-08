@@ -156,11 +156,6 @@ namespace mpfem {
                 + tpl.components[2] + "," + tpl.components[5] + "," + tpl.components[8] + "]";
         }
 
-        bool isGradSymbol(std::string_view name)
-        {
-            return name.size() > 6 && name.substr(0, 5) == "grad(" && name.back() == ')';
-        }
-
         bool isNearOne(Real value)
         {
             return std::abs(value - 1.0) < 1e-15;
@@ -431,17 +426,18 @@ namespace mpfem {
                     return node;
                 }
 
-                if (name == "grad") {
-                    if (args.size() != 1 || args[0]->kind != AstNode::Kind::Variable) {
-                        MPFEM_THROW(ArgumentException, "grad() requires a single field variable argument.");
-                    }
-                    auto gradVar = std::make_unique<AstNode>();
-                    gradVar->kind = AstNode::Kind::Variable;
-                    gradVar->variableName = "grad(" + args[0]->variableName + ")";
-                    return gradVar;
-                }
-
                 if (args.size() == 1) {
+                    if (name == "grad") {
+                        // grad(V) is treated as a variable reference to "grad(V)"
+                        // Shape inference happens at DAG layer via registeredShapes
+                        if (args[0]->kind != AstNode::Kind::Variable) {
+                            MPFEM_THROW(ArgumentException, "grad() requires a single field variable argument.");
+                        }
+                        auto gradVar = std::make_unique<AstNode>();
+                        gradVar->kind = AstNode::Kind::Variable;
+                        gradVar->variableName = "grad(" + args[0]->variableName + ")";
+                        return gradVar;
+                    }
                     if (name == "sin")
                         node->kind = AstNode::Kind::Sin;
                     else if (name == "cos")
@@ -648,9 +644,6 @@ namespace mpfem {
             case AstNode::Kind::Constant:
                 return TensorShape::scalar();
             case AstNode::Kind::Variable:
-                if (isGradSymbol(node.variableName)) {
-                    return TensorShape::vector(3);
-                }
                 if (const auto it = registeredShapes.find(node.variableName); it != registeredShapes.end()) {
                     return it->second;
                 }

@@ -267,15 +267,29 @@ namespace mpfem {
                 registeredShapes.emplace(symbol, node->shape());
             }
         }
+
+        // Pre-process: ensure gradient nodes exist for any grad(...) dependencies
+        // before compile so inferShape can find them
+        ExpressionParser::ExpressionProgram tempProgram = parser.compile(expression, registeredShapes);
+        for (const std::string& symbol : tempProgram.dependencies()) {
+            ensureGradientNode(symbol);
+        }
+
+        // Rebuild registeredShapes to include newly created gradient nodes
+        registeredShapes.clear();
+        registeredShapes.reserve(nodes_.size());
+        for (const auto& [symbol, node] : nodes_) {
+            if (node) {
+                registeredShapes.emplace(symbol, node->shape());
+            }
+        }
+
         ExpressionParser::ExpressionProgram program = parser.compile(expression, registeredShapes);
 
         std::vector<const VariableNode*> dependencies;
         dependencies.reserve(program.dependencies().size());
 
         for (const std::string& symbol : program.dependencies()) {
-            if (nodes_.find(symbol) == nodes_.end()) {
-                ensureGradientNode(symbol);
-            }
             const auto it = nodes_.find(symbol);
             MPFEM_ASSERT(it != nodes_.end() && it->second != nullptr,
                 "Unbound symbol in expression: " + symbol);
