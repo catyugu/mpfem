@@ -6,7 +6,7 @@
 
 namespace mpfem {
 
-    bool StructuralSolver::initialize(const Mesh& mesh, FieldValues& fieldValues, int order, double initialDisplacement)
+    bool StructuralSolver::initialize(const Mesh& mesh, FieldValues& fieldValues, int order, Real initialDisplacement)
     {
         mesh_ = &mesh;
         fieldValues_ = &fieldValues;

@@ -8,18 +8,20 @@ namespace mpfem {
 
         EvaluationContext makeSinglePointContext(ElementTransform& trans,
             std::array<Vector3, 1>& refPts,
-            std::array<Vector3, 1>& physPts)
+            std::array<Vector3, 1>& physPts,
+            std::array<Matrix3, 1>& invJTs)
         {
             const IntegrationPoint& ip = trans.integrationPoint();
             refPts[0] = Vector3(ip.xi, ip.eta, ip.zeta);
             trans.transform(ip, physPts[0]);
+            invJTs[0] = trans.invJacobianT();
 
             EvaluationContext ctx;
             ctx.domainId = static_cast<int>(trans.attribute());
             ctx.elementId = trans.elementIndex();
             ctx.referencePoints = std::span<const Vector3>(refPts.data(), refPts.size());
             ctx.physicalPoints = std::span<const Vector3>(physPts.data(), physPts.size());
-            ctx.transform = &trans;
+            ctx.invJacobianTransposes = std::span<const Matrix3>(invJTs.data(), invJTs.size());
             return ctx;
         }
 
@@ -30,10 +32,11 @@ namespace mpfem {
             }
             std::array<Vector3, 1> refPts;
             std::array<Vector3, 1> physPts;
-            std::array<double, 1> value {0.0};
-            const EvaluationContext ctx = makeSinglePointContext(trans, refPts, physPts);
-            node->evaluateBatch(ctx, std::span<double>(value.data(), value.size()));
-            return static_cast<Real>(value[0]);
+            std::array<Matrix3, 1> invJTs;
+            std::array<TensorValue, 1> value {};
+            const EvaluationContext ctx = makeSinglePointContext(trans, refPts, physPts, invJTs);
+            node->evaluateBatch(ctx, std::span<TensorValue>(value.data(), value.size()));
+            return value[0].scalar();
         }
 
         Matrix3 evalMatrixNode(const VariableNode* node, ElementTransform& trans)
@@ -44,17 +47,12 @@ namespace mpfem {
 
             std::array<Vector3, 1> refPts;
             std::array<Vector3, 1> physPts;
-            std::array<double, 9> values {};
-            const EvaluationContext ctx = makeSinglePointContext(trans, refPts, physPts);
-            node->evaluateBatch(ctx, std::span<double>(values.data(), values.size()));
+            std::array<Matrix3, 1> invJTs;
+            std::array<TensorValue, 1> value {};
+            const EvaluationContext ctx = makeSinglePointContext(trans, refPts, physPts, invJTs);
+            node->evaluateBatch(ctx, std::span<TensorValue>(value.data(), value.size()));
 
-            Matrix3 result;
-            for (int r = 0; r < 3; ++r) {
-                for (int c = 0; c < 3; ++c) {
-                    result(r, c) = static_cast<Real>(values[static_cast<size_t>(r * 3 + c)]);
-                }
-            }
-            return result;
+            return value[0].toMatrix3();
         }
 
     } // namespace

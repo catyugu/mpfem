@@ -22,121 +22,77 @@
 
 ## 具体工作任务
 
-### 🚨 识别出的核心反模式 (Anti-Patterns)
+针对您提供的 `mpfem` 变量系统与表达式解析器的代码，通过分析发现存在以下主要问题：
 
-1. **伪DAG与硬编码物理耦合 (Pseudo-DAG & Hardcoded Physics)**
-   * **问题**: `JouleHeatNode` 和 `ThermalExpansionStressNode` 是完全用C++硬编码的变量节点。在真正的DAG表达式系统中，焦耳热应该仅仅是一个表达式 `sigma * grad(V) * grad(V)`，热应力应该仅仅是 `2*mu*sym(grad(u)) + lambda*tr(sym(grad(u)))*I - (3*lambda+2*mu)*alpha*(T-Tref)`。目前通过硬编码C++类去手动拉取场变量（`heat_->field().eval`），完全绕过了你设计的自动表达式解析系统。
-2. **割裂的张量表达式后端 (Fragmented Tensor Backend)**
-   * **问题**: 在 `expression_parser.cpp` 中，矩阵表达式被解析为 9 个独立的标量 `ExpressionProgram` (`components`)。这意味着 VM 根本不懂矩阵运算，它只是在跑 9 次标量 VM。这无法支持真正的张量代数（如点乘、叉乘、矩阵乘法），也无法支持向量。
-3. **VM 求值层的性能灾难 (Performance Catastrophe in VM)**
-   * **问题**: `evaluate_single_vm` 在每次被调用时（即每个积分点），都会 `std::vector<double> stack; stack.reserve(16);`。在有限元组装中，这意味着数百万次的堆内存分配。
-4. **通过字符串拼接管理域属性 (String-Typing for Domains)**
-   * **问题**: `PhysicsProblemBuilder` 中充斥着 `E_1`, `E_2` 这样的字符串拼接来区分不同 Domain 的材质属性。这种设计非常脆弱，容易导致拼写错误，且无法利用类型系统或图论验证依赖。
+### 现状分析与反模式识别
+
+1.  **类型处理不统一**：`AstNode` 的 `Kind` 过于繁琐（区分 `VectorLiteral` 和 `MatrixLiteral`），未能充分利用已经存在的 `TensorValue` 调度能力。
+2.  **求值效率低**：`RuntimeExpressionNode` 在 `evaluateBatch` 中使用 `thread_local` 的 `unordered_map` 和大量的 `std::vector` 分配作为临时缓冲区，这会产生巨大的运行时开销。
+3.  **循环依赖隐患**：`VariableManager` 在 `define` 时直接调用 `makeExpressionNode`，而 `makeExpressionNode` 又需要查看 `nodes_` 的状态。这种逻辑耦合使得图的构建和验证变得混乱。
 
 ---
 
-### 🛠️ 步骤化重构方案 (Step-by-Step Refactoring Plan)
+### 重构步骤建议
 
-你的目标是**完全统一到“表达式+DAG”后端**。以下是破坏性重构的步骤，每一步都保证系统更接近最终目标。
+我们将采取“破坏式重构”，目标是建立一个纯粹的、强类型的、基于张量的自动 DAG 系统。
 
-#### 第一步：重构虚拟机与 AST，实现原生张量支持 (Native Tensor VM)
+#### 第一步：统一 AST 节点与张量字面量 (实现可编译)
+**目标**：将所有字面量（标量、向量、矩阵）统一为 `BracketLiteral`。
 
-目前你的表达式引擎是标量的。我们需要让底层的 `ExprValue` 和 VM 栈直接支持标量、向量和矩阵。
+* **操作**：
+    * 重构 `AstNode`：将 `VectorLiteral` 和 `MatrixLiteral` 合并到 `Literal` 类型，并在解析期就决定其 `TensorValue` 内容。
+    * 修改 `parseBracketLiteral`，使其直接利用 `TensorValue::matrix3` 或 `vector` 构造函数生成常量节点。
 
-**操作步骤：**
-1. **统一数据结构**：修改 VM 栈，使其不再是 `double`，而是一个统一的、无堆分配的定长结构体（如 `union` 或 `std::array<double, 9>`，加上类型枚举）。
-2. **扩展 OpCode**：添加张量操作指令，如 `MatMul` (矩阵乘法), `Dot` (点乘), `Grad` (求梯度), `Sym` (对称化)。
-3. **消除 Components 拆分**：删除 `MatrixTemplate` 拆分为 9 个子程序的逻辑。让 AST 直接解析形如 `[a, b, c; d, e, f; g, h, i]` 的语法，生成一个统一的 `AstNode::MatrixLiteral`，最终编译出直接操作矩阵的 OpCode。
+#### 第二步：表达式解析器降级与算子抽象 (实现可执行)
+**目标**：将原本在解析器中硬编码的 `inferShape` 和 `evaluateAst` 逻辑下放到 `TensorValue` 运算符中。
 
-**验证点**：编译并运行一个测试，计算 `[1,0,0; 0,1,0; 0,0,1] * [x, y, z]^T`，确保 VM 能够原生输出向量。
+* **操作**：
+    * 利用 `src/core/tensor_value.hpp` 中已有的 `operator+`, `operator*`, `dot`, `sym` 等重载函数。
+    * `AstNode` 不再存储复杂的求值逻辑，而是存储一个 `std::function` 或算子枚举。
+    * **代码精简**：解析阶段直接根据注册的 `registeredShapes` 校验维度，如果不匹配直接抛出异常，不再在运行时进行复杂的类型检查。
 
-#### 第二步：统一 VariableNode (Unify Variable Nodes)
+#### 第三步：重构变量图的高效求值引擎 (关键重构)
+**目标**：消除 `evaluateBatch` 中的动态内存分配，改为预分配缓冲区。
 
-消除 `RuntimeScalarExpressionNode` 和 `RuntimeMatrixExpressionNode` 的硬编码区分，所有的表达式节点应该统一为一个 `RuntimeExpressionNode`。
+* **操作**：
+    * 在 `VariableManager::compile()` 阶段，不仅计算拓扑排序（`executionPlan_`），还要计算每个节点所需的缓冲区大小。
+    * **内存池化**：为整个 `VariableManager` 分配一块连续的 `TensorValue` 缓冲区。
+    * 每个 `VariableNode` 在编译后获得该缓冲区的 `offset`。
+    * `evaluateBatch` 变为：`void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> globalBuffer)`。这将运行时复杂度从 $O(N \cdot \text{MapLookup})$ 降至 $O(N)$ 指针偏移。
 
-**操作步骤：**
-1. 合并节点：
-   ```cpp
-   // 重构后的统一表达式节点
-   class RuntimeExpressionNode final : public VariableNode {
-   public:
-       RuntimeExpressionNode(ExpressionProgram program, std::vector<const VariableNode*> deps);
-       TensorShape shape() const override { return program_.shape(); }
-       void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override;
-   private:
-       ExpressionProgram program_;
-       std::vector<const VariableNode*> dependencies_;
-       // ...
-   };
-   ```
-2. **批量执行 VM**：将 `evaluate_single_vm` 改造为 `evaluate_batch_vm`。在最外层分配一次栈（根据最大深度预分配），然后对一个 batch 的所有积分点执行一个紧凑的循环，彻底消除 `std::vector` 的循环内分配。
+#### 第四步：解耦变量定义与图构建 (接口统一)
+**目标**：使 `VariableManager` 成为纯粹的声明式接口。
 
-**验证点**：运行标量和矩阵表达式，确保输出正确，且性能得到数量级的提升。
+* **操作**：
+    * `define(name, expr)` 仅存储原始字符串。
+    * 新增 `validate()` 阶段：检查未定义的符号、循环依赖。
+    * `compile()` 阶段：一次性解析所有表达式，构建完整的 `RuntimeExpressionNode` 森林。
+    * 这样可以避免在 `define` 每一个变量时都去解析一次 `registeredShapes`。
 
-#### 第三步：引入空间算子并抹除硬编码物理节点 (Eliminate Hardcoded Physics via Operators)
+---
 
-这是实现自动 DAG 的核心。我们不能在 C++ 中硬写 `JouleHeatNode`。我们必须让 `GridFunctionNode` 提供它的梯度，并让表达式解析器支持 `grad(V)`。
+### 核心重构代码示例 (基于 Step 3 & 4)
 
-**操作步骤：**
-1. 扩展 `GridFunctionNode`，使其支持除了值 (Value) 之外的算子求值 (如 Gradient)。
-   ```cpp
-   // 在表达式语法中支持 `grad(V)` 或 `del(V)`
-   // 解析器将其识别为一个特殊函数，并向 VariableManager 请求 V 的梯度节点
-   ```
-2. 在 `PhysicsProblemBuilder.cpp` 中**彻底删除 `JouleHeatNode` 和 `ThermalExpansionStressNode`**。
-3. 替换为纯表达式注册：
-   ```cpp
-   // 焦耳热就是一句纯纯的表达式
-   problem.globalVariables_.registerExpression("JouleHeat", "dot(grad(V), sigma * grad(V))");
-   problem.heatTransfer->setHeatSource(activeDomains, problem.globalVariables_.get("JouleHeat"));
-   
-   // 热应变/应力同样纯表达式化
-   problem.globalVariables_.registerExpression("ThermalStrain", "alpha * (T - T_ref)");
-   ```
+重构后的执行计划逻辑应类似于：
 
-**验证点**：编译通过后，焦耳热和热膨胀的测试结果与重构前完全一致，但代码减少了数百行复杂的 C++。
+```cpp
+// 在 VariableManager.cpp 中
+void VariableManager::compile() {
+    // 1. 拓扑排序 (现有逻辑)
+    // 2. 静态分配优化：
+    size_t totalBufferSize = 0;
+    for (auto* node : executionPlan_) {
+        // 每个节点在 globalBuffer 中分配其存储空间
+        node->setBufferOffset(totalBufferSize);
+        totalBufferSize += numPhysicalPoints; // 假设批量大小固定或按需重分配
+    }
+    // 3. 预解析所有表达式程序
+}
 
-#### 第四步：重构 Material Domain 注册 (Refactor Domain Binding)
-
-放弃使用 `"E_1"`, `"E_2"` 这种基于字符串拼接的域隔离，改用 `DomainSelectorNode`（域选择器节点），由 DAG 在求值时根据 `ctx.domainId` 自动路由。
-
-**操作步骤：**
-1. 引入一种新的 DAG 节点：多路复用节点 (Multiplexer Node)。
-   ```cpp
-   class DomainMultiplexerNode final : public VariableNode {
-   public:
-       // map: domainId -> sub-node
-       void addDomain(int domainId, const VariableNode* node);
-       void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override {
-           // 根据 ctx.domainId 转发给对应的子节点
-           children_.at(ctx.domainId)->evaluateBatch(ctx, dest);
-       }
-   };
-   ```
-2. 修改 `PhysicsProblemBuilder`：
-   ```cpp
-   // 用户代码中，材料属性依然叫 "E", "nu", "sigma"
-   auto E_node = std::make_unique<DomainMultiplexerNode>();
-   for (int domId : domains) {
-       E_node->addDomain(domId, parser.compile(mat_expr[domId]));
-   }
-   problem.globalVariables_.adoptNode("E", std::move(E_node));
-   ```
-3. 这样在热应力表达式中，直接写 `"alpha * (T - T_ref)"` 即可，底层 `alpha` 节点在执行时会自动根据当前积分点所在的 `domainId` 取对应材料的膨胀系数。
-
-**验证点**：多材质模型可以正常求解，且 `VariableManager` 中不再有杂乱的带后缀变量名。
-
-#### 第五步：统一场变量与历史状态依赖 (Unified Field & Time History)
-
-在时间瞬态积分时，目前你是在求解器外围手动获取 `history( stepsBack )`。应当将时间步作为一个算子加入 DAG。
-
-**操作步骤：**
-1. 允许表达式引用过去的状态：如 `T_prev` 或 `old(T, 1)`。
-2. `GridFunctionNode` 初始化时可以携带 `stepsBack` 参数。
-   ```cpp
-   problem.globalVariables_.registerGridFunction("T", &problem.fieldValues, "T_field", 0 /* stepsBack */);
-   problem.globalVariables_.registerGridFunction("T_old", &problem.fieldValues, "T_field", 1 /* stepsBack */);
-   ```
-3. 你的 BDF1/BDF2 时间导数项也可以彻底表达式化：
-   `registerExpression("dT_dt", "(T - T_old) / dt")`。
-   这样求解器组装器甚至不需要知道什么是 BDF，它只管对 DAG 中名为 `"dT_dt"` 的节点进行弱形式积分。
+void VariableManager::evaluateAll(const EvaluationContext& ctx) const {
+    // 严格按拓扑序执行，不再需要递归调用 evaluateBatch
+    for (auto* node : executionPlan_) {
+        node->execute(ctx, globalBuffer_); 
+    }
+}
+```

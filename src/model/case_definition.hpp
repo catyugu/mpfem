@@ -69,7 +69,7 @@ namespace mpfem {
      */
     struct InitialCondition {
         std::string fieldKind; // "electrostatics", "heat_transfer", "solid_mechanics"
-        double value = 0.0; // scalar value for initial condition
+        Real value = 0.0; // scalar value for initial condition
     };
 
     /**
@@ -96,7 +96,7 @@ namespace mpfem {
             std::vector<BoundaryCondition> boundaries;
             std::vector<SourceDefinition> sources;
             // Reference temperature for thermal expansion [K]
-            double referenceTemperature = 293.15;
+            Real referenceTemperature = 293.15;
         };
 
         std::string caseName;

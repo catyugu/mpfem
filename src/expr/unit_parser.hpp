@@ -3,18 +3,19 @@
 
 #include <memory>
 #include <string_view>
+#include "core/types.hpp"
 
 namespace mpfem {
 
 struct UnitParseResult {
     std::string_view expression;
-    double multiplier;
+    Real multiplier;
 };
 
 class UnitRegistry {
 public:
     UnitParseResult stripUnit(std::string_view input) const;
-    double getMultiplier(std::string_view unit) const;
+    Real getMultiplier(std::string_view unit) const;
 
     UnitRegistry();
     ~UnitRegistry();
@@ -28,7 +29,7 @@ public:
     std::unique_ptr<Impl> impl_;
 };
 
-double parseSI(std::string_view input);
+Real parseSI(std::string_view input);
 
 }  // namespace mpfem
 

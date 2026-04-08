@@ -2,9 +2,8 @@
 
 #include "core/exception.hpp"
 #include "expr/expression_parser.hpp"
-#include "fe/element_transform.hpp"
-#include "fe/grid_function.hpp"
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -21,309 +20,209 @@ namespace mpfem {
             return id.fetch_add(1, std::memory_order_relaxed);
         }
 
-        class ConstantScalarNode final : public VariableNode {
+        class RuntimeExpressionNode final : public VariableNode {
         public:
-            explicit ConstantScalarNode(double value)
-                : value_(value)
+            RuntimeExpressionNode(std::string expression,
+                std::vector<const VariableNode*> dependencies,
+                ExpressionParser::ExpressionProgram program)
+                : expression_(std::move(expression)),
+                  dependencies_(std::move(dependencies)),
+                  program_(std::move(program)),
+                  shape_(program_.shape()),
+                  id_(nextProgramId())
             {
             }
 
-            TensorShape shape() const override { return TensorShape::scalar(); }
+            TensorShape shape() const override { return shape_; }
 
-            void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override
+            void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
             {
                 const size_t n = ctx.physicalPoints.empty() ? dest.size() : ctx.physicalPoints.size();
                 if (dest.size() != n) {
-                    MPFEM_THROW(ArgumentException, "ConstantScalarNode evaluate destination size mismatch.");
+                    MPFEM_THROW(ArgumentException, "RuntimeExpressionNode evaluate destination size mismatch.");
                 }
+
+                const size_t m = dependencies_.size();
+                Workspace& workspace = workspaceFor(id_);
+
+                if (workspace.scratchpad.size() != m * n) {
+                    workspace.scratchpad.resize(m * n);
+                }
+
+                for (size_t d = 0; d < m; ++d) {
+                    std::span<TensorValue> depDest(&workspace.scratchpad[d * n], n);
+                    dependencies_[d]->evaluateBatch(ctx, depDest);
+                }
+
+                if (workspace.pointInputs.size() != m) {
+                    workspace.pointInputs.resize(m);
+                }
+
                 for (size_t i = 0; i < n; ++i) {
-                    dest[i] = value_;
+                    for (size_t d = 0; d < m; ++d) {
+                        workspace.pointInputs[d] = workspace.scratchpad[d * n + i];
+                    }
+
+                    dest[i] = program_.evaluate(std::span<const TensorValue>(workspace.pointInputs.data(), m));
                 }
+            }
+
+            std::vector<const VariableNode*> dependencies() const override { return dependencies_; }
+
+        private:
+            struct Workspace {
+                std::vector<TensorValue> scratchpad;
+                std::vector<TensorValue> pointInputs;
+            };
+
+            static Workspace& workspaceFor(std::uint64_t nodeId)
+            {
+                thread_local std::unordered_map<std::uint64_t, Workspace> workspaceByNode;
+                return workspaceByNode[nodeId];
+            }
+
+            std::string expression_;
+            std::vector<const VariableNode*> dependencies_;
+            ExpressionParser::ExpressionProgram program_;
+            TensorShape shape_;
+            std::uint64_t id_ = 0;
+        };
+
+        class ConstantNode final : public VariableNode {
+        public:
+            explicit ConstantNode(TensorValue value)
+                : value_(std::move(value)), shape_(value_.shape())
+            {
+            }
+
+            TensorShape shape() const override { return shape_; }
+
+            void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
+            {
+                (void)ctx;
+                std::fill(dest.begin(), dest.end(), value_);
             }
 
             bool isConstant() const override { return true; }
 
         private:
-            double value_ = 0.0;
+            TensorValue value_;
+            TensorShape shape_;
         };
 
-        class GridFunctionNode final : public VariableNode {
+        class ExternalProviderNode final : public VariableNode {
         public:
-            GridFunctionNode(std::string name, const GridFunction* field)
-                : name_(std::move(name)), field_(field) { }
-
-            TensorShape shape() const override { return TensorShape::scalar(); }
-
-            void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override
+            explicit ExternalProviderNode(std::unique_ptr<ExternalDataProvider> provider)
+                : provider_(std::move(provider))
             {
-                if (!field_) {
-                    std::fill(dest.begin(), dest.end(), 0.0);
-                    return;
-                }
-                if (!ctx.transform) {
-                    MPFEM_THROW(ArgumentException, "GridFunctionNode requires ElementTransform in EvaluationContext.");
-                }
-                const size_t n = ctx.physicalPoints.size();
-                for (size_t i = 0; i < n; ++i) {
-                    const Real* xi = nullptr;
-                    if (i < ctx.referencePoints.size()) {
-                        xi = &ctx.referencePoints[i].x();
-                    }
-                    else {
-                        xi = &ctx.transform->integrationPoint().xi;
-                    }
-                    dest[i] = field_->eval(ctx.transform->elementIndex(), xi);
-                }
+                MPFEM_ASSERT(provider_ != nullptr, "External provider must not be null.");
             }
 
-            std::vector<const VariableNode*> dependencies() const override { return {}; }
+            TensorShape shape() const override { return provider_->shape(); }
 
-        private:
-            std::string name_;
-            const GridFunction* field_ = nullptr;
-        };
-
-        class ExternalDataNode final : public VariableNode {
-        public:
-            using ValueExtractor = std::function<double(const EvaluationContext&, size_t pointIndex)>;
-
-            ExternalDataNode(std::string name, ValueExtractor extractor)
-                : name_(std::move(name)), extractor_(std::move(extractor)) { }
-
-            TensorShape shape() const override { return TensorShape::scalar(); }
-
-            void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override
+            void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
             {
-                const size_t n = ctx.physicalPoints.size();
-                for (size_t i = 0; i < n; ++i) {
-                    dest[i] = extractor_(ctx, i);
-                }
+                provider_->evaluateBatch(ctx, dest);
             }
 
-            std::vector<const VariableNode*> dependencies() const override { return {}; }
-
         private:
-            std::string name_;
-            ValueExtractor extractor_;
+            std::unique_ptr<ExternalDataProvider> provider_;
         };
 
-        class RuntimeScalarExpressionNode final : public VariableNode {
+        class PointScalarProvider final : public ExternalDataProvider {
         public:
-            RuntimeScalarExpressionNode(std::string expression,
-                std::vector<const VariableNode*> dependencies,
-                ExpressionParser::ExpressionProgram program)
-                : expression_(std::move(expression)), dependencies_(std::move(dependencies)), program_(std::move(program)), id_(nextProgramId())
+            using Extractor = std::function<Real(const EvaluationContext&, size_t)>;
+
+            explicit PointScalarProvider(Extractor extractor)
+                : extractor_(std::move(extractor))
             {
             }
 
             TensorShape shape() const override { return TensorShape::scalar(); }
 
-            void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override
+            void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
             {
-                const size_t n = ctx.physicalPoints.size();
-                if (dest.size() != n) {
-                    MPFEM_THROW(ArgumentException, "RuntimeScalarExpressionNode evaluate destination size mismatch.");
+                for (size_t i = 0; i < dest.size(); ++i) {
+                    dest[i] = TensorValue::scalar(extractor_(ctx, i));
                 }
-
-                // Evaluate all dependencies - each produces n scalar values
-                std::vector<std::vector<double>> depValues(dependencies_.size());
-                for (size_t d = 0; d < dependencies_.size(); ++d) {
-                    depValues[d].assign(n, 0.0);
-                    dependencies_[d]->evaluateBatch(ctx, std::span<double>(depValues[d].data(), depValues[d].size()));
-                }
-
-                for (size_t i = 0; i < n; ++i) {
-                    if (ctx.transform && i < ctx.referencePoints.size()) {
-                        const Real xi[3] = {
-                            ctx.referencePoints[i].x(),
-                            ctx.referencePoints[i].y(),
-                            ctx.referencePoints[i].z(),
-                        };
-                        ctx.transform->setIntegrationPoint(xi);
-                    }
-
-                    // Collect one scalar value per dependency at point i
-                    std::vector<double> inputValues(dependencies_.size());
-                    for (size_t d = 0; d < dependencies_.size(); ++d) {
-                        inputValues[d] = depValues[d][i];
-                    }
-                    ExprValue exprResult = program_.evaluate(std::span<const double>(inputValues.data(), inputValues.size()));
-                    dest[i] = std::get<double>(exprResult);
-                }
-            }
-
-            std::vector<const VariableNode*> dependencies() const override
-            {
-                return dependencies_;
             }
 
         private:
-            std::string expression_;
-            std::vector<const VariableNode*> dependencies_;
-            ExpressionParser::ExpressionProgram program_;
-            std::uint64_t id_ = 0;
+            Extractor extractor_;
         };
 
-        class RuntimeMatrixExpressionNode final : public VariableNode {
-        public:
-            RuntimeMatrixExpressionNode(std::string expression,
-                std::vector<const VariableNode*> dependencies,
-                ExpressionParser::ExpressionProgram program)
-                : expression_(std::move(expression)), dependencies_(std::move(dependencies)), program_(std::move(program)), id_(nextProgramId())
-            {
-            }
-
-            TensorShape shape() const override { return TensorShape::matrix(3, 3); }
-
-            void evaluateBatch(const EvaluationContext& ctx, std::span<double> dest) const override
-            {
-                const size_t n = ctx.physicalPoints.size();
-                if (dest.size() != n * 9ull) {
-                    MPFEM_THROW(ArgumentException, "RuntimeMatrixExpressionNode evaluate destination size mismatch.");
-                }
-
-                // Evaluate all dependencies
-                // For scalar deps: each produces n values (depValues[d][i] = scalar at point i)
-                // For matrix deps: each produces n*9 values
-                std::vector<std::vector<double>> depValues(dependencies_.size());
-                for (size_t d = 0; d < dependencies_.size(); ++d) {
-                    depValues[d].assign(n, 0.0);
-                    dependencies_[d]->evaluateBatch(ctx, std::span<double>(depValues[d].data(), depValues[d].size()));
-                }
-
-                for (size_t i = 0; i < n; ++i) {
-                    if (ctx.transform && i < ctx.referencePoints.size()) {
-                        const Real xi[3] = {
-                            ctx.referencePoints[i].x(),
-                            ctx.referencePoints[i].y(),
-                            ctx.referencePoints[i].z(),
-                        };
-                        ctx.transform->setIntegrationPoint(xi);
-                    }
-
-                    // Collect one scalar value per dependency at point i
-                    // For matrix expression with scalar dependencies, the expression
-                    // internally handles broadcasting/replicating as needed
-                    std::vector<double> inputValues(dependencies_.size());
-                    for (size_t d = 0; d < dependencies_.size(); ++d) {
-                        inputValues[d] = depValues[d][i];
-                    }
-                    const ExprValue exprResult = program_.evaluate(std::span<const double>(inputValues.data(), inputValues.size()));
-                    const Matrix3 mat = std::get<Matrix3>(exprResult);
-                    const size_t base = i * 9ull;
-                    for (int r = 0; r < 3; ++r) {
-                        for (int c = 0; c < 3; ++c) {
-                            dest[base + static_cast<size_t>(r * 3 + c)] = mat(r, c);
-                        }
-                    }
+        std::unique_ptr<VariableNode> makeExpressionNode(
+            const std::string& expression,
+            const std::unordered_map<std::string, std::unique_ptr<VariableNode>>& nodes)
+        {
+            ExpressionParser parser;
+            std::unordered_map<std::string, TensorShape> registeredShapes;
+            registeredShapes.reserve(nodes.size());
+            for (const auto& [symbol, node] : nodes) {
+                if (node) {
+                    registeredShapes.emplace(symbol, node->shape());
                 }
             }
 
-            std::vector<const VariableNode*> dependencies() const override
-            {
-                return dependencies_;
+            ExpressionParser::ExpressionProgram program = parser.compile(expression, registeredShapes);
+            if (program.dependencies().empty()) {
+                const std::array<TensorValue, 0> noInputs {};
+                TensorValue value = program.evaluate(std::span<const TensorValue>(noInputs.data(), noInputs.size()));
+                return std::make_unique<ConstantNode>(std::move(value));
             }
 
-        private:
-            std::string expression_;
-            std::vector<const VariableNode*> dependencies_;
-            ExpressionParser::ExpressionProgram program_;
-            std::uint64_t id_ = 0;
-        };
+            std::vector<const VariableNode*> dependencies;
+            dependencies.reserve(program.dependencies().size());
+            for (const std::string& symbol : program.dependencies()) {
+                const auto it = nodes.find(symbol);
+                MPFEM_ASSERT(it != nodes.end() && it->second != nullptr,
+                    "Unbound symbol in expression: " + symbol);
+                dependencies.push_back(it->second.get());
+            }
+
+            return std::make_unique<RuntimeExpressionNode>(
+                expression,
+                std::move(dependencies),
+                std::move(program));
+        }
 
     } // namespace
 
     VariableManager::VariableManager()
     {
-        // Register built-in spatial coordinates x, y, z and time t as ExternalDataNode
-        nodes_["x"] = std::make_unique<ExternalDataNode>("x",
-            [](const EvaluationContext& ctx, size_t pointIndex) -> double {
-                return ctx.physicalPoints[pointIndex].x();
-            });
+        bindExternal("x", std::make_unique<PointScalarProvider>(
+                              [](const EvaluationContext& ctx, size_t pointIndex) -> Real {
+                                  return ctx.physicalPoints[pointIndex].x();
+                              }));
 
-        nodes_["y"] = std::make_unique<ExternalDataNode>("y",
-            [](const EvaluationContext& ctx, size_t pointIndex) -> double {
-                return ctx.physicalPoints[pointIndex].y();
-            });
+        bindExternal("y", std::make_unique<PointScalarProvider>(
+                              [](const EvaluationContext& ctx, size_t pointIndex) -> Real {
+                                  return ctx.physicalPoints[pointIndex].y();
+                              }));
 
-        nodes_["z"] = std::make_unique<ExternalDataNode>("z",
-            [](const EvaluationContext& ctx, size_t pointIndex) -> double {
-                return ctx.physicalPoints[pointIndex].z();
-            });
+        bindExternal("z", std::make_unique<PointScalarProvider>(
+                              [](const EvaluationContext& ctx, size_t pointIndex) -> Real {
+                                  return ctx.physicalPoints[pointIndex].z();
+                              }));
 
-        nodes_["t"] = std::make_unique<ExternalDataNode>("t",
-            [](const EvaluationContext& ctx, size_t) -> double {
-                return ctx.time;
-            });
-
-        graphDirty_ = true;
-    }
-
-    void VariableManager::registerConstantExpression(std::string name, std::string expressionText)
-    {
-        ExpressionParser parser;
-        ExpressionParser::ExpressionProgram program = parser.compile(expressionText);
-
-        // If expression has no dependencies (pure constant), create ConstantScalarNode directly
-        MPFEM_ASSERT(program.dependencies().empty(), "Expected constant expression to have no dependencies.");
-        double value = std::get<double>(program.evaluate({}));
-        nodes_[std::move(name)] = std::make_unique<ConstantScalarNode>(value);
+        bindExternal("t", std::make_unique<PointScalarProvider>(
+                              [](const EvaluationContext& ctx, size_t) -> Real {
+                                  return ctx.time;
+                              }));
 
         graphDirty_ = true;
     }
 
-    void VariableManager::registerExpression(std::string name, std::string expression)
+    void VariableManager::define(std::string name, std::string expression)
     {
-        ExpressionParser parser;
-        ExpressionParser::ExpressionProgram program = parser.compile(expression);
-
-        // Resolve all symbol dependencies from the node store
-        std::vector<const VariableNode*> dependencies;
-        dependencies.reserve(program.dependencies().size());
-
-        for (const std::string& symbol : program.dependencies()) {
-            const auto it = nodes_.find(symbol);
-            MPFEM_ASSERT(it != nodes_.end() && it->second != nullptr,
-                "Unbound symbol in expression: " + symbol);
-            dependencies.push_back(it->second.get());
-        }
-
-        // Create node based on expression shape (inferred from compilation result)
-        TensorShape shape = program.shape();
-        if (shape.isScalar()) {
-            nodes_[std::move(name)] = std::make_unique<RuntimeScalarExpressionNode>(
-                std::move(expression),
-                std::move(dependencies),
-                std::move(program));
-        }
-        else if (shape.isMatrix()) {
-            nodes_[std::move(name)] = std::make_unique<RuntimeMatrixExpressionNode>(
-                std::move(expression),
-                std::move(dependencies),
-                std::move(program));
-        }
-        else {
-            MPFEM_THROW(ArgumentException, "Unsupported expression shape in registerExpression.");
-        }
+        nodes_[std::move(name)] = makeExpressionNode(expression, nodes_);
         graphDirty_ = true;
     }
 
-    void VariableManager::registerGridFunction(std::string name, const GridFunction* field)
+    void VariableManager::bindExternal(std::string name, std::unique_ptr<ExternalDataProvider> provider)
     {
-        nodes_[std::move(name)] = std::make_unique<GridFunctionNode>(name, field);
-        graphDirty_ = true;
-    }
-
-    void VariableManager::registerExternalSource(std::string name,
-        std::function<double(const EvaluationContext&, size_t pointIndex)> extractor)
-    {
-        nodes_[std::move(name)] = std::make_unique<ExternalDataNode>(name, std::move(extractor));
-        graphDirty_ = true;
-    }
-
-    void VariableManager::adoptNode(std::unique_ptr<VariableNode> node, std::string name)
-    {
-        nodes_[std::move(name)] = std::move(node);
+        MPFEM_ASSERT(provider != nullptr, "bindExternal requires non-null provider.");
+        nodes_[std::move(name)] = std::make_unique<ExternalProviderNode>(std::move(provider));
         graphDirty_ = true;
     }
 
@@ -356,8 +255,7 @@ namespace mpfem {
         }
 
         marks[node] = 1;
-        const std::vector<const VariableNode*> deps = node->dependencies();
-        for (const VariableNode* dep : deps) {
+        for (const VariableNode* dep : node->dependencies()) {
             if (dep) {
                 dfsVisit(dep, marks, ordered);
             }
@@ -366,7 +264,7 @@ namespace mpfem {
         ordered.push_back(node);
     }
 
-    void VariableManager::compileGraph()
+    void VariableManager::compile()
     {
         if (!graphDirty_) {
             return;
@@ -388,6 +286,17 @@ namespace mpfem {
 
         executionPlan_ = std::move(ordered);
         graphDirty_ = false;
+    }
+
+    void VariableManager::evaluate(std::string_view name,
+        const EvaluationContext& ctx,
+        std::span<TensorValue> dest) const
+    {
+        const VariableNode* node = get(name);
+        if (!node) {
+            MPFEM_THROW(ArgumentException, "Variable not found: " + std::string(name));
+        }
+        node->evaluateBatch(ctx, dest);
     }
 
 } // namespace mpfem

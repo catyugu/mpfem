@@ -13,7 +13,7 @@ namespace mpfem {
     void Problem::registerCaseDefinitionVariables()
     {
         for (const auto& entry : caseDef.getVariables()) {
-            globalVariables_.registerConstantExpression(entry.name, entry.valueText);
+            globalVariables_.define(entry.name, entry.valueText);
         }
     }
 

@@ -8,8 +8,6 @@
 
 namespace mpfem {
 
-class ElementTransform;
-
 /**
  * @brief 场函数 - 最小化设计
  */
@@ -60,7 +58,7 @@ public:
     }
     
     Real eval(Index elem, const Real* xi) const;
-    Vector3 gradient(Index elem, const Real* xi, ElementTransform& trans) const;
+    Vector3 gradient(Index elem, const Real* xi, const Matrix3& invJacobianTranspose) const;
     
 private:
     const FESpace* fes_ = nullptr;

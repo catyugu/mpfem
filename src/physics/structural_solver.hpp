@@ -21,7 +21,7 @@ namespace mpfem {
 
         std::string fieldName() const override { return "u"; }
 
-        bool initialize(const Mesh& mesh, FieldValues& fieldValues, int order, double initialDisplacement = 0.0);
+        bool initialize(const Mesh& mesh, FieldValues& fieldValues, int order, Real initialDisplacement = 0.0);
 
         // Material bindings
         void addElasticity(const std::set<int>& domains, const VariableNode* E, const VariableNode* nu);

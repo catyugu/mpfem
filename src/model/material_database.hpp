@@ -32,10 +32,10 @@ public:
     void setTag(std::string tag);
     void setLabel(std::string label);
 
-    double getScalar(const std::string& name,
-                    const std::map<std::string, double>& variables = {}) const;
+    Real getScalar(const std::string& name,
+                    const std::map<std::string, Real>& variables = {}) const;
     Matrix3 getMatrix(const std::string& name,
-                    const std::map<std::string, double>& variables = {}) const;
+                    const std::map<std::string, Real>& variables = {}) const;
 
     const std::string& scalarExpression(const std::string& name) const;
     const std::string& matrixExpression(const std::string& name) const;

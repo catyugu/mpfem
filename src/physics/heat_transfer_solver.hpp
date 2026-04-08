@@ -20,7 +20,7 @@ namespace mpfem {
         explicit HeatTransferSolver(int order) { order_ = order; }
         std::string fieldName() const override { return "T"; }
 
-        bool initialize(const Mesh& mesh, FieldValues& fieldValues, int order, double initialTemperature = 293.15);
+        bool initialize(const Mesh& mesh, FieldValues& fieldValues, int order, Real initialTemperature = 293.15);
 
         // Material bindings
         void setThermalConductivity(const std::set<int>& domains, const VariableNode* k);

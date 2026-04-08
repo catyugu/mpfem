@@ -29,10 +29,10 @@ namespace mpfem {
             return materialIt->second;
         }
 
-        std::vector<double> buildInputValues(const std::vector<std::string>& dependencies,
-            const std::map<std::string, double>& variables)
+        std::vector<TensorValue> buildInputValues(const std::vector<std::string>& dependencies,
+            const std::map<std::string, Real>& variables)
         {
-            std::vector<double> inputs;
+            std::vector<TensorValue> inputs;
             inputs.reserve(dependencies.size());
 
             for (const std::string& symbol : dependencies) {
@@ -40,7 +40,7 @@ namespace mpfem {
                 if (it == variables.end()) {
                     MPFEM_THROW(ArgumentException, "Unbound variable in material expression: " + symbol);
                 }
-                inputs.push_back(it->second);
+                inputs.emplace_back(it->second);
             }
 
             return inputs;
@@ -95,24 +95,24 @@ namespace mpfem {
         impl_->label = std::move(label);
     }
 
-    double MaterialPropertyModel::getScalar(
+    Real MaterialPropertyModel::getScalar(
         const std::string& name,
-        const std::map<std::string, double>& variables) const
+        const std::map<std::string, Real>& variables) const
     {
         ExpressionParser parser;
         ExpressionParser::ExpressionProgram program = parser.compile(scalarExpression(name));
-        const std::vector<double> inputs = buildInputValues(program.dependencies(), variables);
-        return std::get<double>(program.evaluate(std::span<const double>(inputs.data(), inputs.size())));
+        const std::vector<TensorValue> inputs = buildInputValues(program.dependencies(), variables);
+        return program.evaluate(std::span<const TensorValue>(inputs.data(), inputs.size())).scalar();
     }
 
     Matrix3 MaterialPropertyModel::getMatrix(
         const std::string& name,
-        const std::map<std::string, double>& variables) const
+        const std::map<std::string, Real>& variables) const
     {
         ExpressionParser parser;
         ExpressionParser::ExpressionProgram program = parser.compile(matrixExpression(name));
-        const std::vector<double> inputs = buildInputValues(program.dependencies(), variables);
-        return std::get<Matrix3>(program.evaluate(std::span<const double>(inputs.data(), inputs.size())));
+        const std::vector<TensorValue> inputs = buildInputValues(program.dependencies(), variables);
+        return program.evaluate(std::span<const TensorValue>(inputs.data(), inputs.size())).toMatrix3();
     }
 
     const std::string& MaterialPropertyModel::scalarExpression(const std::string& name) const
