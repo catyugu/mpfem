@@ -2,6 +2,7 @@
 #define MPFEM_EXPR_VARIABLE_GRAPH_HPP
 
 #include "core/tensor_shape.hpp"
+#include "core/tensor_value.hpp"
 #include "core/types.hpp"
 
 #include <functional>
@@ -36,8 +37,8 @@ namespace mpfem {
 
         /// 批量求值：计算该节点在每个物理点的值
         /// @param ctx 评估上下文
-        /// @param dest 输出缓冲区，大小 = physicalPoints.size() * shape().size()
-        virtual void evaluateBatch(const EvaluationContext& ctx, std::span<Real> dest) const = 0;
+        /// @param dest 输出缓冲区，大小 = physicalPoints.size()
+        virtual void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const = 0;
 
         virtual bool isConstant() const { return false; }
         virtual std::vector<const VariableNode*> dependencies() const { return {}; }

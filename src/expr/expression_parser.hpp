@@ -30,7 +30,6 @@ namespace mpfem {
             TensorShape shape() const;
             const std::vector<std::string>& dependencies() const;
             TensorValue evaluate(std::span<const TensorValue> values) const;
-            TensorValue evaluate(std::span<const Real> values) const;
 
         private:
             std::unique_ptr<Impl> impl_;

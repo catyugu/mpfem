@@ -1056,16 +1056,6 @@ namespace mpfem {
         return runProgram(impl_->program, values);
     }
 
-    TensorValue ExpressionParser::ExpressionProgram::evaluate(std::span<const Real> values) const
-    {
-        std::vector<TensorValue> typed;
-        typed.reserve(values.size());
-        for (const Real value : values) {
-            typed.emplace_back(value);
-        }
-        return evaluate(std::span<const TensorValue>(typed.data(), typed.size()));
-    }
-
     ExpressionParser::ExpressionParser() = default;
     ExpressionParser::~ExpressionParser() = default;
 

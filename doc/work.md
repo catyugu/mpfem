@@ -22,181 +22,190 @@
 
 ## 具体工作任务
 
-仔细分析您提供的代码库片段后，可以发现代码中存在一些典型的 C++ 设计反模式、冗余代码以及模块间的过度耦合。
+通过对你提供的代码进行深入分析，我发现虽然代码在尽力避免堆分配（例如使用 `std::variant` 实现 `TensorValue`），但在**表达式解析接口**、**DAG 节点抽象**以及**变量图管理**方面存在一些典型的设计反模式（Anti-patterns）、冗余和职责泄漏。
 
-### 当前架构的主要问题：
-1. **重新发明轮子 (Reinventing the Wheel)**: `TensorValue` 中手动实现了矩阵乘法、向量叉乘、转置等操作。既然底层已经引入了 Eigen（推断自 `Vector3` 和 `Matrix3`），完全应该利用 Eigen 的能力，而不是手写低效的循环。
-2. **类型擦除的妥协 (Type Erasure Compromise)**: `TensorValue` 使用 `std::array<Real, 9>` 加上运行时的 `TensorShape` 来区分标量、向量和矩阵。这不仅浪费了标量和向量的内存，还牺牲了编译期的类型安全检查。
-3. **领域耦合 (Domain Coupling)**: `VariableGraph` 中的 `EvaluationContext` 强依赖了有限元特有的 `ElementTransform*` 和网格上下文。这打破了表达式系统作为独立底层数学库的纯粹性，容易导致循环依赖。
-4. **冗余的 API 接口**: `VariableManager` 提供了过多特定的注册函数（如 `registerConstantExpression`, `registerGridFunction` 等），违背了表达式 DAG 一切皆节点的统一性。
-
-以下是采取**破坏式重构**的步骤化方案，目标是建立一个纯粹、高效、支持多种张量且自动化的 DAG 表达式系统。
+按照你的要求（宁可破坏向后兼容也要保持简洁高效、统一自动DAG和表达式解析系统），我们将分 4 个步骤进行“破坏式”重构。
 
 ---
 
-### 第一步：彻底重构 `TensorValue`（使用 `std::variant` 和 Eigen）
+### 发现的设计反模式与核心问题
 
-**目标**：消除硬编码的 9 元素数组和手写数学运算，利用 `std::variant` 实现零堆分配的类型安全容器，并直接复用 Eigen 的 SIMD 优化。
+1.  **类型擦除与接口不一致 (Type Erasure & Inconsistency)**：
+    * `ExpressionProgram` 返回 `TensorValue`，但 `VariableNode::evaluateBatch` 却要求输出到 `std::span<Real>`。这破坏了 `TensorValue` 建立的强类型系统，导致图节点在求值时需要手动处理内存展平/反展平，极易出错且不支持复杂的张量图计算。
+2.  **上帝对象与职责泄漏 (God Object & Leaky Abstraction)**：
+    * `VariableManager` 内部竟然包含了 `ensureGradientNode` 和 `gridFunctions_`。DAG 管理器不应该知道“梯度”或“网格函数”是什么，这属于物理/有限元业务逻辑，严重违反了**开闭原则 (OCP)**。
+3.  **冗余接口 (Redundant Interfaces)**：
+    * `ExpressionProgram` 提供了 `std::span<const TensorValue>` 和 `std::span<const Real>` 两个求值接口，纯属多余。
 
+### 步骤化重构方案
+
+#### 第一步：统一数据流通量（消除类型擦除与冗余 API）
+
+**目标**：强制整个表达式和 DAG 系统中只流动 `TensorValue`，移除所有降级到 `Real` 裸指针/Span 的冗余接口。
+
+**修改 `src/expr/expression_parser.hpp`**：
+移除接受 `Real` 的重载，保持唯一事实来源。
 ```cpp
-// src/core/tensor_value.hpp (重构后)
-#ifndef MPFEM_TENSOR_VALUE_HPP
-#define MPFEM_TENSOR_VALUE_HPP
-
-#include "core/types.hpp" // 假设包含 Eigen::Vector3d (Vector3), Eigen::Matrix3d (Matrix3)
-#include "core/tensor_shape.hpp"
-#include <variant>
-#include <stdexcept>
-
-namespace mpfem {
-
-// 使用 std::variant 完美满足“零堆分配”的设计原则，同时提供强类型支持
-using TensorData = std::variant<Real, Vector3, Matrix3>;
-
-class TensorValue {
+// 重构后的 ExpressionProgram
+class ExpressionProgram {
 public:
-    // 隐式/显式构造函数
-    TensorValue() : data_(Real(0)) {}
-    TensorValue(Real v) : data_(v) {}
-    TensorValue(const Vector3& v) : data_(v) {}
-    TensorValue(const Matrix3& m) : data_(m) {}
-
-    // 形状查询 (利用 std::visit 自动分发)
-    TensorShape shape() const {
-        return std::visit([](auto&& arg) -> TensorShape {
-            using T = std::decay_t<decltype(arg)>;
-            if constexpr (std::is_same_v<T, Real>) return TensorShape::scalar();
-            else if constexpr (std::is_same_v<T, Vector3>) return TensorShape::vector(3);
-            else if constexpr (std::is_same_v<T, Matrix3>) return TensorShape::matrix(3, 3);
-        }, data_);
-    }
-
-    bool isScalar() const { return std::holds_alternative<Real>(data_); }
-    bool isVector() const { return std::holds_alternative<Vector3>(data_); }
-    bool isMatrix() const { return std::holds_alternative<Matrix3>(data_); }
-
-    // 类型安全的提取器
-    Real asScalar() const { return std::get<Real>(data_); }
-    const Vector3& asVector() const { return std::get<Vector3>(data_); }
-    const Matrix3& asMatrix() const { return std::get<Matrix3>(data_); }
-
-    const TensorData& data() const { return data_; }
-
-private:
-    TensorData data_;
+    // ... 构造/析构保持不变 ...
+    bool valid() const;
+    TensorShape shape() const;
+    const std::vector<std::string>& dependencies() const;
+    
+    // [破坏性重构] 移除 TensorValue evaluate(std::span<const Real>) const;
+    // 强制使用统一的 TensorValue 接口
+    TensorValue evaluate(std::span<const TensorValue> values) const;
 };
+```
 
-// --- 利用 std::visit 和 Eigen 重写自由函数，代码量剧减且性能翻倍 ---
+**修改 `src/expr/variable_graph.hpp` (节点抽象)**：
+将 `evaluateBatch` 的输出从 `std::span<Real>` 改为 `std::span<TensorValue>`。
+```cpp
+// 重构后的 VariableNode
+class VariableNode {
+public:
+    virtual ~VariableNode() = default;
 
-inline TensorValue add(const TensorValue& a, const TensorValue& b) {
-    return std::visit([](auto&& x, auto&& y) -> TensorValue {
-        using T1 = std::decay_t<decltype(x)>;
-        using T2 = std::decay_t<decltype(y)>;
-        if constexpr (std::is_same_v<T1, T2>) {
-            return TensorValue(x + y); // Eigen 直接支持
+    virtual TensorShape shape() const = 0;
+
+    // [破坏性重构] 拒绝退化为 Real 数组，直接使用 TensorValue 数组进行 Batch 写入
+    // 这消除了图节点内部手动计算 stride 的痛苦，且完美兼容常数、向量、矩阵
+    virtual void evaluateBatch(const EvaluationContext& ctx, 
+                               std::span<TensorValue> dest) const = 0;
+
+    virtual bool isConstant() const { return false; }
+    virtual std::vector<const VariableNode*> dependencies() const { return {}; }
+};
+```
+
+#### 第二步：引入 `EvaluationWorkspace` 解决计算内存分配
+
+**目标**：DAG 执行时需要存储中间变量，目前代码没有体现这些中间变量存在哪里。引入一个统一的工作区（Workspace），在一次评估中重用内存。
+
+**新增类 (可在 `variable_graph.hpp` 中)**：
+```cpp
+namespace mpfem {
+    // 管理一次 Batch 评估中所有节点的临时/结果数据
+    class EvaluationWorkspace {
+    public:
+        void allocate(size_t batchSize, const std::vector<const VariableNode*>& plan) {
+            batchSize_ = batchSize;
+            memory_.clear();
+            memory_.resize(plan.size() * batchSize);
+            
+            nodeOffsets_.clear();
+            size_t offset = 0;
+            for (const auto* node : plan) {
+                nodeOffsets_[node] = offset;
+                offset += batchSize;
+            }
         }
-        throw std::runtime_error("Shape mismatch in add");
-    }, a.data(), b.data());
-}
 
-inline TensorValue matvec(const TensorValue& A, const TensorValue& b) {
-    return TensorValue(A.asMatrix() * b.asVector()); // Eigen 矩阵乘积
-}
+        std::span<TensorValue> getBuffer(const VariableNode* node) {
+            return {memory_.data() + nodeOffsets_.at(node), batchSize_};
+        }
 
-inline TensorValue matmat(const TensorValue& A, const TensorValue& B) {
-    return TensorValue(A.asMatrix() * B.asMatrix()); 
-}
+        std::span<const TensorValue> getBuffer(const VariableNode* node) const {
+            return {memory_.data() + nodeOffsets_.at(node), batchSize_};
+        }
 
-inline Real dot(const TensorValue& a, const TensorValue& b) {
-    return a.asVector().dot(b.asVector());
+    private:
+        size_t batchSize_ = 0;
+        std::vector<TensorValue> memory_; 
+        std::unordered_map<const VariableNode*, size_t> nodeOffsets_;
+    };
 }
-
-inline TensorValue cross(const TensorValue& a, const TensorValue& b) {
-    return TensorValue(a.asVector().cross(b.asVector()));
-}
-
-} // namespace mpfem
-#endif
 ```
 
-### 第三步：废弃独立的 Program，将 Parser 深度融入 DAG
+#### 第三步：剥离 `VariableManager` 的业务逻辑（纯化 DAG 管理）
 
-**目标**：目前的 `ExpressionParser` 编译出一个黑盒 `ExpressionProgram`。为了实现自动 DAG，Parser 应该直接返回 `std::unique_ptr<VariableNode>`，成为 DAG 树的直接构建者。
+**目标**：把 `VariableManager` 变成一个纯粹的、仅关心图拓扑排序和节点拥有的容器。把 `GridFunction` 和梯度逻辑踢出这个类。
 
+**修改 `src/expr/variable_graph.hpp` (`VariableManager`)**：
 ```cpp
-// src/expr/expression_parser.hpp (重构后)
-#ifndef MPFEM_EXPR_EXPRESSION_PARSER_HPP
-#define MPFEM_EXPR_EXPRESSION_PARSER_HPP
-
-#include "expr/variable_graph.hpp"
-#include <memory>
-#include <string>
-
-namespace mpfem {
-
-class ExpressionParser {
-public:
-    // 解析器不再返回独立的 Program，而是直接将表达式解析为 DAG 的节点。
-    // 这允许变量系统直接将子图接入整个计算图中。
-    static std::unique_ptr<VariableNode> compileToNode(
-        const std::string& expression,
-        const std::unordered_map<std::string, TensorShape>& contextShapes);
-};
-
-} // namespace mpfem
-#endif
-```
-
----
-
-### 第四步：极简、一致的 `VariableManager`
-
-**目标**：消除多余的 `register*` 函数，整个系统只接受节点（Node）或表达式（自动编译为 Node）。由图系统自动管理拓扑排序和计算。
-
-```cpp
-// src/expr/variable_graph.hpp (重构后段落 2)
-namespace mpfem {
-
 class VariableManager {
 public:
-    using NodeMap = std::unordered_map<std::string, std::shared_ptr<VariableNode>>;
+    using NodeStore = std::unordered_map<std::string, std::unique_ptr<VariableNode>>;
 
     VariableManager() = default;
+    ~VariableManager() = default;
 
-    // 核心接口：提供最通用的注册方式
-    void registerNode(std::string name, std::shared_ptr<VariableNode> node) {
-        nodes_[std::move(name)] = std::move(node);
-        graphDirty_ = true;
-    }
+    // 核心 API 1：接管节点所有权 (所有特殊节点通过此接口注入)
+    void registerNode(std::string name, std::unique_ptr<VariableNode> node);
 
-    // 便捷接口：注册字符串表达式，自动触发解析器构建 DAG 子图并接入
-    void registerExpression(const std::string& name, const std::string& expression) {
-        std::unordered_map<std::string, TensorShape> envShapes;
-        for (const auto& [k, v] : nodes_) {
-            envShapes[k] = v->shape();
-        }
-        auto node = ExpressionParser::compileToNode(expression, envShapes);
-        registerNode(name, std::move(node));
-    }
+    // 核心 API 2：基于字符串表达式自动构建 RuntimeExpressionNode
+    void registerExpression(std::string name, std::string expression);
 
-    // 对外部场（如 GridFunction），通过适配器模式实现，不污染本模块
-    // FE模块可以实现一个 GridFunctionNode 继承自 VariableNode 并注册进来
+    const VariableNode* get(std::string_view name) const;
 
-    std::shared_ptr<const VariableNode> get(const std::string& name) const {
-        if (auto it = nodes_.find(name); it != nodes_.end()) {
-            return it->second;
-        }
-        return nullptr;
-    }
+    // 编译图结构，生成拓扑排序的执行计划，并分配 Workspace
+    void compileGraph();
 
-    // 自动化的计算执行流
-    void compileGraph(); // 根据 nodes_ 的 dependencies() 执行拓扑排序
+    // 执行求值
+    void evaluate(const EvaluationContext& ctx, EvaluationWorkspace& workspace) const;
 
 private:
-    NodeMap nodes_;
-    std::vector<VariableNode*> executionPlan_;
-    bool graphDirty_ = true;
-};
+    void clearExecutionPlan();
+    void dfsVisit(const VariableNode* node,
+                  std::unordered_map<const VariableNode*, int>& marks,
+                  std::vector<const VariableNode*>& ordered) const;
 
-} // namespace mpfem
+    NodeStore nodes_;
+    std::vector<const VariableNode*> executionPlan_;
+    bool graphDirty_ = true;
+
+    // [破坏性重构] 移除了以下业务逻辑，它们应该由外部 Factory 包装后调用 registerNode 注入
+    // void ensureGradientNode(std::string_view symbol);
+    // std::unordered_map<std::string, const GridFunction*> gridFunctions_;
+    // void registerGridFunction(...);
+    // void registerExternalSource(...);
+};
 ```
+
+#### 第四步：实现统一的 `RuntimeExpressionNode`（闭环验证）
+
+现在，因为图管理纯化了，且输入输出都是统一的 `TensorValue`，我们终于可以写出一个极度干净、支持任何张量表达式的解析节点实现：
+
+```cpp
+// 假设这是在 variable_graph.cpp 中的实现
+class RuntimeExpressionNode : public VariableNode {
+public:
+    RuntimeExpressionNode(ExpressionParser::ExpressionProgram prog, 
+                          std::vector<const VariableNode*> deps)
+        : program_(std::move(prog)), deps_(std::move(deps)) {}
+
+    TensorShape shape() const override { return program_.shape(); }
+    std::vector<const VariableNode*> dependencies() const override { return deps_; }
+
+    void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override {
+        size_t batchSize = ctx.physicalPoints.size();
+        
+        // 准备单个点的输入缓冲区
+        std::vector<TensorValue> pointInputs(deps_.size());
+        
+        // 注意：这里的实现为了展示逻辑结构。
+        // 在实际的高性能框架中，Workspace 应该直接传给 evaluateBatch，
+        // 从而可以执行向量化求值，而不是每次在循环里收集依赖。
+        
+        for (size_t i = 0; i < batchSize; ++i) {
+            // 这里假设外部的 workspace 已经帮依赖节点求好值了
+            // 实际工程中，你需要将 workspace 传进来以获取依赖的值。
+            // 例如： pointInputs[j] = workspace.getBuffer(deps_[j])[i];
+            
+            dest[i] = program_.evaluate(pointInputs);
+        }
+    }
+
+private:
+    ExpressionParser::ExpressionProgram program_;
+    std::vector<const VariableNode*> deps_;
+};
+```
+
+### 重构带来的好处：
+
+1. **接口极其一致**：从 `TensorValue` 的变体，到 `ExpressionProgram`，再到 `VariableNode` 的 IO，全量统一为 `TensorValue`。不再有 `Real` 和 `TensorValue` 的混用。
+2. **纯粹的 DAG (SoC)**：`VariableManager` 现在只负责一件事——有向无环图的拓扑排序和执行。什么是“场变量”、什么是“梯度”，变成了一个个实现了 `VariableNode` 的派生类，由外部工厂创建后注册进去。
+3. **消除隐式循环依赖**：原先的 `Manager` 强依赖了 `GridFunction`，重构后它只依赖抽象的 `VariableNode`，`GridFunctionNode` 可以在 `fe/` 或 `physics/` 目录中单独实现并注入，解除了 `expr` 模块对 `fe` 模块的逆向依赖。

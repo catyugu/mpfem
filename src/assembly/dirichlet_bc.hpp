@@ -79,9 +79,9 @@ namespace mpfem {
                         ctx.referencePoints = std::span<const Vector3>(refPts.data(), refPts.size());
                         ctx.physicalPoints = std::span<const Vector3>(physPts.data(), physPts.size());
                         ctx.transform = &trans;
-                        std::array<Real, 1> out {0.0};
-                        coef->evaluateBatch(ctx, std::span<Real>(out.data(), out.size()));
-                        value = static_cast<Real>(out[0]);
+                        std::array<TensorValue, 1> out {};
+                        coef->evaluateBatch(ctx, std::span<TensorValue>(out.data(), out.size()));
+                        value = out[0].scalar();
                     }
 
                     dofVals[d] = value;

@@ -30,10 +30,10 @@ namespace mpfem {
             }
             std::array<Vector3, 1> refPts;
             std::array<Vector3, 1> physPts;
-            std::array<Real, 1> value {Real(0)};
+            std::array<TensorValue, 1> value {};
             const EvaluationContext ctx = makeSinglePointContext(trans, refPts, physPts);
-            node->evaluateBatch(ctx, std::span<Real>(value.data(), value.size()));
-            return value[0];
+            node->evaluateBatch(ctx, std::span<TensorValue>(value.data(), value.size()));
+            return value[0].scalar();
         }
 
         Matrix3 evalMatrixNode(const VariableNode* node, ElementTransform& trans)
@@ -44,17 +44,11 @@ namespace mpfem {
 
             std::array<Vector3, 1> refPts;
             std::array<Vector3, 1> physPts;
-            std::array<Real, 9> values {};
+            std::array<TensorValue, 1> value {};
             const EvaluationContext ctx = makeSinglePointContext(trans, refPts, physPts);
-            node->evaluateBatch(ctx, std::span<Real>(values.data(), values.size()));
+            node->evaluateBatch(ctx, std::span<TensorValue>(value.data(), value.size()));
 
-            Matrix3 result;
-            for (int r = 0; r < 3; ++r) {
-                for (int c = 0; c < 3; ++c) {
-                    result(r, c) = values[static_cast<size_t>(r * 3 + c)];
-                }
-            }
-            return result;
+            return value[0].toMatrix3();
         }
 
     } // namespace

@@ -24,14 +24,14 @@ namespace {
 
         TensorShape shape() const override { return TensorShape::scalar(); }
 
-        void evaluateBatch(const EvaluationContext& ctx, std::span<Real> dest) const override
+        void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
         {
             const size_t n = ctx.physicalPoints.empty() ? dest.size() : ctx.physicalPoints.size();
             if (dest.size() != n) {
                 throw std::runtime_error("ScalarConstantNode destination size mismatch");
             }
             for (size_t i = 0; i < dest.size(); ++i) {
-                dest[i] = value_;
+                dest[i] = TensorValue::scalar(value_);
             }
         }
 
@@ -45,19 +45,14 @@ namespace {
 
         TensorShape shape() const override { return TensorShape::matrix(3, 3); }
 
-        void evaluateBatch(const EvaluationContext& ctx, std::span<Real> dest) const override
+        void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
         {
-            const size_t n = ctx.physicalPoints.empty() ? (dest.size() / 9ull) : ctx.physicalPoints.size();
-            if (dest.size() != n * 9ull) {
+            const size_t n = ctx.physicalPoints.empty() ? dest.size() : ctx.physicalPoints.size();
+            if (dest.size() != n) {
                 throw std::runtime_error("MatrixConstantNode destination size mismatch");
             }
             for (size_t i = 0; i < n; ++i) {
-                const size_t base = i * 9ull;
-                for (int r = 0; r < 3; ++r) {
-                    for (int c = 0; c < 3; ++c) {
-                        dest[base + static_cast<size_t>(r * 3 + c)] = value_(r, c);
-                    }
-                }
+                dest[i] = TensorValue::matrix3(value_);
             }
         }
 

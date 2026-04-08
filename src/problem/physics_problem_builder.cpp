@@ -75,7 +75,7 @@ namespace mpfem {
 
             TensorShape shape() const override { return shape_; }
 
-            void evaluateBatch(const EvaluationContext& ctx, std::span<Real> dest) const override
+            void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
             {
                 int domainId = ctx.domainId;
                 if (domainId < 0 && ctx.transform) {
@@ -86,7 +86,17 @@ namespace mpfem {
                     MPFEM_THROW(ArgumentException,
                         "DomainMultiplexerNode missing child for domain " + std::to_string(domainId));
                 }
-                it->second->evaluateBatch(ctx, dest);
+
+                // Evaluate the child into a temporary scratchpad, then copy to dest
+                // This is necessary because child's RuntimeExpressionNode writes to its own
+                // scratchpad region, not to the parent's dest directly
+                const size_t n = dest.size();
+                if (mplexScratchpad.size() < n) {
+                    mplexScratchpad.resize(n);
+                }
+                std::span<TensorValue> childDest(mplexScratchpad.data(), n);
+                it->second->evaluateBatch(ctx, childDest);
+                std::copy(childDest.begin(), childDest.end(), dest.begin());
             }
 
             std::vector<const VariableNode*> dependencies() const override
@@ -102,7 +112,11 @@ namespace mpfem {
         private:
             TensorShape shape_;
             std::unordered_map<int, const VariableNode*> children_;
+            // Thread-local scratchpad for DomainMultiplexerNode evaluation
+            static thread_local std::vector<TensorValue> mplexScratchpad;
         };
+
+        thread_local std::vector<TensorValue> DomainMultiplexerNode::mplexScratchpad;
 
         const VariableNode* requireDomainPropertyNode(Problem& problem,
             std::string_view property,

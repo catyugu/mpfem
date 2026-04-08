@@ -23,34 +23,8 @@ namespace mpfem {
         }
 
         // =============================================================================
-        // Thread-local bump allocator：调用方完全隐形，零分配批量求值
-        // =============================================================================
-        struct ThreadScratchpad {
-            std::vector<Real> buffer;
-            std::vector<TensorValue> tensorArgs;
-            size_t offset = 0;
-
-            Real* allocate(size_t size)
-            {
-                if (offset + size > buffer.size()) {
-                    // 倍增扩容，仅前几次调用触发
-                    buffer.resize(std::max(buffer.size() * 2, offset + size + 1024));
-                }
-                Real* ptr = buffer.data() + offset;
-                offset += size;
-                return ptr;
-            }
-
-            void deallocate(size_t oldOffset)
-            {
-                offset = oldOffset;
-            }
-        };
-
-        thread_local ThreadScratchpad tls_scratchpad;
-
-        // =============================================================================
-        // Node implementations (unchanged)
+        // Node implementations
+        // Note: RuntimeExpressionNode uses local scratchpad vectors to avoid nesting issues
         // =============================================================================
 
         class ConstantNode final : public VariableNode {
@@ -60,31 +34,10 @@ namespace mpfem {
 
             TensorShape shape() const override { return shape_; }
 
-            void evaluateBatch(const EvaluationContext& ctx, std::span<Real> dest) const override
+            void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
             {
-                const size_t n = ctx.physicalPoints.empty() ? dest.size() / shape_.size() : ctx.physicalPoints.size();
-                const size_t valSize = shape_.size();
-
-                if (dest.size() != n * valSize) {
-                    MPFEM_THROW(ArgumentException, "ConstantNode evaluate destination size mismatch.");
-                }
-
-                // Flatten data for fast batch fill
-                const Real* rawData = value_.data();
-
-                if (valSize == 1) {
-                    const Real v = rawData[0];
-                    std::fill(dest.begin(), dest.end(), v);
-                }
-                else {
-                    // For vectors or matrices, tile components
-                    for (size_t i = 0; i < n; ++i) {
-                        const size_t base = i * valSize;
-                        for (size_t c = 0; c < valSize; ++c) {
-                            dest[base + c] = rawData[c];
-                        }
-                    }
-                }
+                const size_t n = dest.size();
+                std::fill(dest.begin(), dest.end(), value_);
             }
 
             bool isConstant() const override { return true; }
@@ -101,16 +54,16 @@ namespace mpfem {
 
             TensorShape shape() const override { return TensorShape::scalar(); }
 
-            void evaluateBatch(const EvaluationContext& ctx, std::span<Real> dest) const override
+            void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
             {
+                const size_t n = dest.size();
                 if (!field_) {
-                    std::fill(dest.begin(), dest.end(), Real(0));
+                    std::fill(dest.begin(), dest.end(), TensorValue::scalar(Real(0)));
                     return;
                 }
                 if (!ctx.transform) {
                     MPFEM_THROW(ArgumentException, "GridFunctionNode requires ElementTransform in EvaluationContext.");
                 }
-                const size_t n = ctx.physicalPoints.size();
                 for (size_t i = 0; i < n; ++i) {
                     const Real* xi = nullptr;
                     if (i < ctx.referencePoints.size()) {
@@ -119,7 +72,7 @@ namespace mpfem {
                     else {
                         xi = &ctx.transform->integrationPoint().xi;
                     }
-                    dest[i] = field_->eval(ctx.transform->elementIndex(), xi);
+                    dest[i] = TensorValue::scalar(field_->eval(ctx.transform->elementIndex(), xi));
                 }
             }
 
@@ -137,19 +90,15 @@ namespace mpfem {
 
             TensorShape shape() const override { return TensorShape::vector(3); }
 
-            void evaluateBatch(const EvaluationContext& ctx, std::span<Real> dest) const override
+            void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
             {
+                const size_t n = dest.size();
                 if (!field_) {
-                    std::fill(dest.begin(), dest.end(), Real(0));
+                    std::fill(dest.begin(), dest.end(), TensorValue::zero(TensorShape::vector(3)));
                     return;
                 }
                 if (!ctx.transform) {
                     MPFEM_THROW(ArgumentException, "GridFunctionGradientNode requires ElementTransform in EvaluationContext.");
-                }
-
-                const size_t n = ctx.physicalPoints.size();
-                if (dest.size() != n * 3ull) {
-                    MPFEM_THROW(ArgumentException, "GridFunctionGradientNode evaluate destination size mismatch.");
                 }
 
                 for (size_t i = 0; i < n; ++i) {
@@ -163,10 +112,7 @@ namespace mpfem {
                     }
 
                     const Vector3 g = field_->gradient(ctx.transform->elementIndex(), xi, *ctx.transform);
-                    const size_t base = i * 3ull;
-                    dest[base] = g.x();
-                    dest[base + 1] = g.y();
-                    dest[base + 2] = g.z();
+                    dest[i] = TensorValue::vector(g.x(), g.y(), g.z());
                 }
             }
 
@@ -186,11 +132,11 @@ namespace mpfem {
 
             TensorShape shape() const override { return TensorShape::scalar(); }
 
-            void evaluateBatch(const EvaluationContext& ctx, std::span<Real> dest) const override
+            void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
             {
-                const size_t n = ctx.physicalPoints.size();
+                const size_t n = dest.size();
                 for (size_t i = 0; i < n; ++i) {
-                    dest[i] = extractor_(ctx, i);
+                    dest[i] = TensorValue::scalar(extractor_(ctx, i));
                 }
             }
 
@@ -202,7 +148,7 @@ namespace mpfem {
         };
 
         // =============================================================================
-        // Runtime expression node with zero-allocation scratchpad
+        // Runtime expression node - original correct implementation
         // =============================================================================
 
         class RuntimeExpressionNode final : public VariableNode {
@@ -212,44 +158,32 @@ namespace mpfem {
                 ExpressionParser::ExpressionProgram program)
                 : expression_(std::move(expression)), dependencies_(std::move(dependencies)), program_(std::move(program)), shape_(program_.shape()), id_(nextProgramId())
             {
-                // 预计算依赖数据总大小和偏移量
-                totalDepSize_ = 0;
-                depSizes_.reserve(dependencies_.size());
-                depOffsets_.reserve(dependencies_.size());
-                for (const auto* dep : dependencies_) {
-                    depOffsets_.push_back(totalDepSize_);
-                    const size_t sz = dep->shape().size();
-                    depSizes_.push_back(sz);
-                    totalDepSize_ += sz;
-                }
             }
 
             TensorShape shape() const override { return shape_; }
 
-            void evaluateBatch(const EvaluationContext& ctx, std::span<Real> dest) const override
+            void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
             {
-                const size_t n = ctx.physicalPoints.empty() ? dest.size() / shape_.size() : ctx.physicalPoints.size();
-                const size_t valueSize = shape_.size();
-                if (dest.size() != n * valueSize) {
+                const size_t n = ctx.physicalPoints.empty() ? dest.size() : ctx.physicalPoints.size();
+                if (dest.size() != n) {
                     MPFEM_THROW(ArgumentException, "RuntimeExpressionNode evaluate destination size mismatch.");
                 }
 
-                // 1. 记录水位线，分配连续内存
-                const size_t oldOffset = tls_scratchpad.offset;
-                Real* depBuffer = tls_scratchpad.allocate(n * totalDepSize_);
+                const size_t m = dependencies_.size();
 
-                // 2. 递归求值依赖项
-                for (size_t d = 0; d < dependencies_.size(); ++d) {
-                    std::span<Real> depDest(depBuffer + depOffsets_[d] * n, n * depSizes_[d]);
+                // Allocate a FRESH scratchpad vector for this evaluation to avoid corruption
+                // This ensures nested RuntimeExpr calls don't interfere with parent data
+                std::vector<TensorValue> localScratchpad(m * n);
+
+                // Evaluate each dependency for all n points
+                // Layout: [dep0_p0, dep0_p1, ..., dep0_p{n-1}, dep1_p0, dep1_p1, ...]
+                for (size_t d = 0; d < m; ++d) {
+                    std::span<TensorValue> depDest(&localScratchpad[d * n], n);
                     dependencies_[d]->evaluateBatch(ctx, depDest);
                 }
 
-                // 3. 确保 tensorArgs 缓存足够大
-                if (tls_scratchpad.tensorArgs.size() < dependencies_.size()) {
-                    tls_scratchpad.tensorArgs.resize(dependencies_.size());
-                }
-
-                // 4. 对每个点执行表达式
+                // Per-point expression evaluation with local input buffer
+                std::vector<TensorValue> pointInputs(m);
                 for (size_t i = 0; i < n; ++i) {
                     if (ctx.transform && i < ctx.referencePoints.size()) {
                         const Real xi[3] = {
@@ -260,46 +194,14 @@ namespace mpfem {
                         ctx.transform->setIntegrationPoint(xi);
                     }
 
-                    // 反序列化为 TensorValue
-                    for (size_t d = 0; d < dependencies_.size(); ++d) {
-                        const Real* vals = &depBuffer[depOffsets_[d] * n + i * depSizes_[d]];
-                        if (depSizes_[d] == 1) {
-                            tls_scratchpad.tensorArgs[d] = TensorValue::scalar(vals[0]);
-                        }
-                        else if (depSizes_[d] == 3) {
-                            tls_scratchpad.tensorArgs[d] = TensorValue::vector(vals[0], vals[1], vals[2]);
-                        }
-                        else if (depSizes_[d] == 9) {
-                            tls_scratchpad.tensorArgs[d] = TensorValue::matrix3(
-                                vals[0], vals[1], vals[2],
-                                vals[3], vals[4], vals[5],
-                                vals[6], vals[7], vals[8]);
-                        }
+                    // Collect i-th value of each dependency into local buffer
+                    for (size_t d = 0; d < m; ++d) {
+                        pointInputs[d] = localScratchpad[d * n + i];
                     }
 
-                    const TensorValue exprResult = program_.evaluate(
-                        std::span<const TensorValue>(tls_scratchpad.tensorArgs.data(), dependencies_.size()));
-
-                    // 写回目标
-                    const size_t destBase = i * valueSize;
-                    if (shape_.isScalar()) {
-                        dest[destBase] = exprResult.scalar();
-                    }
-                    else if (shape_.isVector()) {
-                        for (size_t c = 0; c < valueSize; ++c)
-                            dest[destBase + c] = exprResult[static_cast<int>(c)];
-                    }
-                    else if (shape_.isMatrix()) {
-                        for (int r = 0; r < 3; ++r) {
-                            for (int c = 0; c < 3; ++c) {
-                                dest[destBase + static_cast<size_t>(r * 3 + c)] = exprResult.at(r, c);
-                            }
-                        }
-                    }
+                    dest[i] = program_.evaluate(
+                        std::span<const TensorValue>(pointInputs.data(), m));
                 }
-
-                // 5. 恢复水位线（保证递归安全）
-                tls_scratchpad.deallocate(oldOffset);
             }
 
             std::vector<const VariableNode*> dependencies() const override { return dependencies_; }
@@ -310,11 +212,6 @@ namespace mpfem {
             ExpressionParser::ExpressionProgram program_;
             TensorShape shape_;
             std::uint64_t id_ = 0;
-
-            // 预计算数据
-            size_t totalDepSize_ = 0;
-            std::vector<size_t> depSizes_;
-            std::vector<size_t> depOffsets_;
         };
 
     } // namespace
