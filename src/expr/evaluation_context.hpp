@@ -18,13 +18,6 @@ namespace mpfem {
         std::span<const Matrix3> invJacobianTransposes;
     };
 
-    class ExternalDataProvider {
-    public:
-        virtual ~ExternalDataProvider() = default;
-        virtual TensorShape shape() const = 0;
-        virtual void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const = 0;
-    };
-
 } // namespace mpfem
 
 #endif // MPFEM_EXPR_EVALUATION_CONTEXT_HPP

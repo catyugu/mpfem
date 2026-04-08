@@ -40,7 +40,7 @@ namespace mpfem {
 
         void define(std::string name, std::string expression);
 
-        void bindExternal(std::string name, std::unique_ptr<ExternalDataProvider> provider);
+        void bindNode(std::string name, std::unique_ptr<VariableNode> node);
 
         const VariableNode* get(std::string_view name) const;
 

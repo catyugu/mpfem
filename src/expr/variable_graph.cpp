@@ -25,11 +25,7 @@ namespace mpfem {
             RuntimeExpressionNode(std::string expression,
                 std::vector<const VariableNode*> dependencies,
                 ExpressionParser::ExpressionProgram program)
-                : expression_(std::move(expression)),
-                  dependencies_(std::move(dependencies)),
-                  program_(std::move(program)),
-                  shape_(program_.shape()),
-                  id_(nextProgramId())
+                : expression_(std::move(expression)), dependencies_(std::move(dependencies)), program_(std::move(program)), shape_(program_.shape()), id_(nextProgramId())
             {
             }
 
@@ -110,30 +106,11 @@ namespace mpfem {
             TensorShape shape_;
         };
 
-        class ExternalProviderNode final : public VariableNode {
-        public:
-            explicit ExternalProviderNode(std::unique_ptr<ExternalDataProvider> provider)
-                : provider_(std::move(provider))
-            {
-                MPFEM_ASSERT(provider_ != nullptr, "External provider must not be null.");
-            }
-
-            TensorShape shape() const override { return provider_->shape(); }
-
-            void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
-            {
-                provider_->evaluateBatch(ctx, dest);
-            }
-
-        private:
-            std::unique_ptr<ExternalDataProvider> provider_;
-        };
-
-        class PointScalarProvider final : public ExternalDataProvider {
+        class PointScalarNode final : public VariableNode {
         public:
             using Extractor = std::function<Real(const EvaluationContext&, size_t)>;
 
-            explicit PointScalarProvider(Extractor extractor)
+            explicit PointScalarNode(Extractor extractor)
                 : extractor_(std::move(extractor))
             {
             }
@@ -190,25 +167,21 @@ namespace mpfem {
 
     VariableManager::VariableManager()
     {
-        bindExternal("x", std::make_unique<PointScalarProvider>(
-                              [](const EvaluationContext& ctx, size_t pointIndex) -> Real {
-                                  return ctx.physicalPoints[pointIndex].x();
-                              }));
+        bindNode("x", std::make_unique<PointScalarNode>([](const EvaluationContext& ctx, size_t pointIndex) -> Real {
+            return ctx.physicalPoints[pointIndex].x();
+        }));
 
-        bindExternal("y", std::make_unique<PointScalarProvider>(
-                              [](const EvaluationContext& ctx, size_t pointIndex) -> Real {
-                                  return ctx.physicalPoints[pointIndex].y();
-                              }));
+        bindNode("y", std::make_unique<PointScalarNode>([](const EvaluationContext& ctx, size_t pointIndex) -> Real {
+            return ctx.physicalPoints[pointIndex].y();
+        }));
 
-        bindExternal("z", std::make_unique<PointScalarProvider>(
-                              [](const EvaluationContext& ctx, size_t pointIndex) -> Real {
-                                  return ctx.physicalPoints[pointIndex].z();
-                              }));
+        bindNode("z", std::make_unique<PointScalarNode>([](const EvaluationContext& ctx, size_t pointIndex) -> Real {
+            return ctx.physicalPoints[pointIndex].z();
+        }));
 
-        bindExternal("t", std::make_unique<PointScalarProvider>(
-                              [](const EvaluationContext& ctx, size_t) -> Real {
-                                  return ctx.time;
-                              }));
+        bindNode("t", std::make_unique<PointScalarNode>([](const EvaluationContext& ctx, size_t) -> Real {
+            return ctx.time;
+        }));
 
         graphDirty_ = true;
     }
@@ -219,10 +192,10 @@ namespace mpfem {
         graphDirty_ = true;
     }
 
-    void VariableManager::bindExternal(std::string name, std::unique_ptr<ExternalDataProvider> provider)
+    void VariableManager::bindNode(std::string name, std::unique_ptr<VariableNode> node)
     {
-        MPFEM_ASSERT(provider != nullptr, "bindExternal requires non-null provider.");
-        nodes_[std::move(name)] = std::make_unique<ExternalProviderNode>(std::move(provider));
+        MPFEM_ASSERT(node != nullptr, "bindNode requires non-null node.");
+        nodes_[std::move(name)] = std::move(node);
         graphDirty_ = true;
     }
 
