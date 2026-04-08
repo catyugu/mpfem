@@ -1,5 +1,4 @@
 #include "grid_function.hpp"
-#include "element_transform.hpp"
 #include "shape_function.hpp"
 
 namespace mpfem
@@ -55,7 +54,7 @@ namespace mpfem
         return val;
     }
 
-    Vector3 GridFunction::gradient(Index elem, const Real *xi, ElementTransform &trans) const
+    Vector3 GridFunction::gradient(Index elem, const Real *xi, const Matrix3 &invJacobianTranspose) const
     {
         if (!fes_)
             return Vector3::Zero();
@@ -79,8 +78,7 @@ namespace mpfem
             gRef += t_gradBuf[i] * values_[t_dofsBuf[static_cast<size_t>(i) * vdim]];
         }
 
-        trans.setIntegrationPoint(xi);
-        return trans.invJacobianT() * gRef;
+        return invJacobianTranspose * gRef;
     }
 
 } // namespace mpfem

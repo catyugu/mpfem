@@ -17,8 +17,8 @@ protected:
 TEST_F(VariableNodeTest, ConstantScalarNodeEvaluation)
 {
     VariableManager manager;
-    manager.registerConstantExpression("k", "3.14");
-    manager.compileGraph();
+    manager.define("k", "3.14");
+    manager.compile();
 
     const VariableNode* node = manager.get("k");
     ASSERT_NE(node, nullptr);
@@ -37,9 +37,9 @@ TEST_F(VariableNodeTest, ConstantScalarNodeEvaluation)
 TEST_F(VariableNodeTest, ScalarExpressionNodeEvaluation)
 {
     VariableManager manager;
-    manager.registerConstantExpression("k", "2.0");
-    manager.registerExpression("f", "k * x + 1.0");
-    manager.compileGraph();
+    manager.define("k", "2.0");
+    manager.define("f", "k * x + 1.0");
+    manager.compile();
 
     const VariableNode* node = manager.get("f");
     ASSERT_NE(node, nullptr);
@@ -58,9 +58,9 @@ TEST_F(VariableNodeTest, ScalarExpressionNodeEvaluation)
 TEST_F(VariableNodeTest, VectorLiteralMatMulAndDotEvaluation)
 {
     VariableManager manager;
-    manager.registerExpression("Iv", "[1,0,0;0,1,0;0,0,1] * [x,y,z]^T");
-    manager.registerExpression("norm2", "dot([x,y,z]^T, [x,y,z]^T)");
-    manager.compileGraph();
+    manager.define("Iv", "[1,0,0;0,1,0;0,0,1] * [x,y,z]^T");
+    manager.define("norm2", "dot([x,y,z]^T, [x,y,z]^T)");   
+    manager.compile();
 
     const VariableNode* ivNode = manager.get("Iv");
     const VariableNode* norm2Node = manager.get("norm2");
@@ -95,10 +95,10 @@ TEST_F(VariableNodeTest, VectorLiteralMatMulAndDotEvaluation)
 TEST_F(VariableNodeTest, TensorSymTraceTransposeEvaluation)
 {
     VariableManager manager;
-    manager.registerExpression("S", "sym([1,2,3;4,5,6;7,8,9])");
-    manager.registerExpression("St", "transpose([1,2,3;4,5,6;7,8,9])");
-    manager.registerExpression("trS", "trace(sym([1,2,3;4,5,6;7,8,9]))");
-    manager.compileGraph();
+    manager.define("S", "sym([1,2,3;4,5,6;7,8,9])");        
+    manager.define("St", "transpose([1,2,3;4,5,6;7,8,9])"); 
+    manager.define("trS", "trace(sym([1,2,3;4,5,6;7,8,9]))");
+    manager.compile();
 
     const VariableNode* sNode = manager.get("S");
     const VariableNode* stNode = manager.get("St");

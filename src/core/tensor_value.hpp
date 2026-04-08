@@ -141,34 +141,20 @@ namespace mpfem {
 
         TensorValue operator+(const TensorValue& rhs) const
         {
-            return std::visit(overloaded {
-                                  [](Real a, Real b) -> TensorValue { return TensorValue(a + b); },
-                                  [](const Vector3& a, const Vector3& b) -> TensorValue {
-                                      return TensorValue((a + b).eval());
-                                  },
-                                  [](const Matrix3& a, const Matrix3& b) -> TensorValue {
-                                      return TensorValue((a + b).eval());
-                                  },
-                                  [](auto&&, auto&&) -> TensorValue {
-                                      MPFEM_THROW(ArgumentException, "Tensor shape mismatch in add");
-                                  }},
-                data_, rhs.data_);
+            return applySameShapeBinary(data_, rhs.data_,
+                [](const auto& a, const auto& b) {
+                    return a + b;
+                },
+                "Tensor shape mismatch in add");
         }
 
         TensorValue operator-(const TensorValue& rhs) const
         {
-            return std::visit(overloaded {
-                                  [](Real a, Real b) -> TensorValue { return TensorValue(a - b); },
-                                  [](const Vector3& a, const Vector3& b) -> TensorValue {
-                                      return TensorValue((a - b).eval());
-                                  },
-                                  [](const Matrix3& a, const Matrix3& b) -> TensorValue {
-                                      return TensorValue((a - b).eval());
-                                  },
-                                  [](auto&&, auto&&) -> TensorValue {
-                                      MPFEM_THROW(ArgumentException, "Tensor shape mismatch in subtract");
-                                  }},
-                data_, rhs.data_);
+            return applySameShapeBinary(data_, rhs.data_,
+                [](const auto& a, const auto& b) {
+                    return a - b;
+                },
+                "Tensor shape mismatch in subtract");
         }
 
         TensorValue operator-() const
@@ -217,6 +203,23 @@ namespace mpfem {
         }
 
     private:
+        template <typename Op>
+        static TensorValue applySameShapeBinary(const TensorData& lhs, const TensorData& rhs, Op op, const char* error)
+        {
+            return std::visit(overloaded {
+                                  [&op](Real a, Real b) -> TensorValue { return TensorValue(op(a, b)); },
+                                  [&op](const Vector3& a, const Vector3& b) -> TensorValue {
+                                      return TensorValue(op(a, b).eval());
+                                  },
+                                  [&op](const Matrix3& a, const Matrix3& b) -> TensorValue {
+                                      return TensorValue(op(a, b).eval());
+                                  },
+                                  [error](auto&&, auto&&) -> TensorValue {
+                                      MPFEM_THROW(ArgumentException, error);
+                                  }},
+                lhs, rhs);
+        }
+
         TensorData data_;
     };
 

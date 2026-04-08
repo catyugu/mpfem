@@ -1,9 +1,7 @@
 #ifndef MPFEM_EXPR_VARIABLE_GRAPH_HPP
 #define MPFEM_EXPR_VARIABLE_GRAPH_HPP
 
-#include "core/tensor_shape.hpp"
-#include "core/tensor_value.hpp"
-#include "core/types.hpp"
+#include "expr/evaluation_context.hpp"
 
 #include <functional>
 #include <memory>
@@ -15,18 +13,6 @@
 #include <vector>
 
 namespace mpfem {
-
-    class ElementTransform;
-    class GridFunction;
-
-    struct EvaluationContext {
-        Real time = Real(0);
-        int domainId = -1;
-        Index elementId = InvalidIndex;
-        std::span<const Vector3> physicalPoints;
-        std::span<const Vector3> referencePoints;
-        ElementTransform* transform = nullptr;
-    };
 
     class VariableNode {
     public:
@@ -52,39 +38,25 @@ namespace mpfem {
 
         ~VariableManager() = default;
 
-        /**
-         * @brief Register a constant expression.
-         * @details If expression has no dependencies (pure constant), creates ConstantScalarNode.
-         *         Otherwise creates RuntimeExpressionNode.
-         */
-        void registerConstantExpression(std::string name, std::string expressionText);
+        void define(std::string name, std::string expression);
 
-        /**
-         * @brief Register an expression (scalar, vector, or matrix).
-         * @details Infers the shape from the expression itself via ExpressionProgram::shape().
-         */
-        void registerExpression(std::string name, std::string expression);
+        void bindExternal(std::string name, std::unique_ptr<ExternalDataProvider> provider);
 
         const VariableNode* get(std::string_view name) const;
 
-        void registerGridFunction(std::string name, const GridFunction* field);
+        void compile();
 
-        void registerExternalSource(std::string name,
-            std::function<Real(const EvaluationContext&, size_t pointIndex)> extractor);
-
-        void adoptNode(std::unique_ptr<VariableNode> node, std::string name);
-
-        void compileGraph();
+        void evaluate(std::string_view name,
+            const EvaluationContext& ctx,
+            std::span<TensorValue> dest) const;
 
     private:
-        void ensureGradientNode(std::string_view symbol);
         void clearExecutionPlan();
         void dfsVisit(const VariableNode* node,
             std::unordered_map<const VariableNode*, int>& marks,
             std::vector<const VariableNode*>& ordered) const;
 
         NodeStore nodes_;
-        std::unordered_map<std::string, const GridFunction*> gridFunctions_;
         std::vector<const VariableNode*> executionPlan_;
         bool graphDirty_ = true;
     };

@@ -2,7 +2,6 @@
 #include "core/exception.hpp"
 #include "core/logger.hpp"
 #include "expr/variable_graph.hpp"
-#include "fe/element_transform.hpp"
 #include "fe/grid_function.hpp"
 #include "io/problem_input_loader.hpp"
 #include "physics/electrostatics_solver.hpp"
@@ -12,6 +11,7 @@
 #include "problem.hpp"
 #include "steady_problem.hpp"
 #include "transient_problem.hpp"
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -59,9 +59,9 @@ namespace mpfem {
         const VariableNode* makeScalarExpressionNode(Problem& problem,
             const std::string& expression);
 
-        class DomainMultiplexerNode final : public VariableNode {
+        class DomainMultiplexerProvider final : public ExternalDataProvider {
         public:
-            explicit DomainMultiplexerNode(TensorShape shape)
+            explicit DomainMultiplexerProvider(TensorShape shape)
                 : shape_(std::move(shape))
             {
             }
@@ -77,46 +77,83 @@ namespace mpfem {
 
             void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
             {
-                int domainId = ctx.domainId;
-                if (domainId < 0 && ctx.transform) {
-                    domainId = static_cast<int>(ctx.transform->attribute());
-                }
+                const int domainId = ctx.domainId;
                 const auto it = children_.find(domainId);
                 if (it == children_.end() || !it->second) {
                     MPFEM_THROW(ArgumentException,
                         "DomainMultiplexerNode missing child for domain " + std::to_string(domainId));
                 }
-
-                // Evaluate the child into a temporary scratchpad, then copy to dest
-                // This is necessary because child's RuntimeExpressionNode writes to its own
-                // scratchpad region, not to the parent's dest directly
-                const size_t n = dest.size();
-                if (mplexScratchpad.size() < n) {
-                    mplexScratchpad.resize(n);
-                }
-                std::span<TensorValue> childDest(mplexScratchpad.data(), n);
-                it->second->evaluateBatch(ctx, childDest);
-                std::copy(childDest.begin(), childDest.end(), dest.begin());
-            }
-
-            std::vector<const VariableNode*> dependencies() const override
-            {
-                std::vector<const VariableNode*> deps;
-                deps.reserve(children_.size());
-                for (const auto& [_, node] : children_) {
-                    deps.push_back(node);
-                }
-                return deps;
+                it->second->evaluateBatch(ctx, dest);
             }
 
         private:
             TensorShape shape_;
             std::unordered_map<int, const VariableNode*> children_;
-            // Thread-local scratchpad for DomainMultiplexerNode evaluation
-            static thread_local std::vector<TensorValue> mplexScratchpad;
         };
 
-        thread_local std::vector<TensorValue> DomainMultiplexerNode::mplexScratchpad;
+        class GridFunctionValueProvider final : public ExternalDataProvider {
+        public:
+            explicit GridFunctionValueProvider(const GridFunction* field)
+                : field_(field)
+            {
+            }
+
+            TensorShape shape() const override { return TensorShape::scalar(); }
+
+            void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
+            {
+                if (!field_) {
+                    std::fill(dest.begin(), dest.end(), TensorValue::scalar(Real(0)));
+                    return;
+                }
+
+                for (size_t i = 0; i < dest.size(); ++i) {
+                    const Real* xi = nullptr;
+                    if (i < ctx.referencePoints.size()) {
+                        xi = &ctx.referencePoints[i].x();
+                    }
+                    else {
+                        MPFEM_THROW(ArgumentException, "GridFunctionValueProvider requires referencePoints in EvaluationContext.");
+                    }
+                    dest[i] = TensorValue::scalar(field_->eval(ctx.elementId, xi));
+                }
+            }
+
+        private:
+            const GridFunction* field_ = nullptr;
+        };
+
+        class GridFunctionGradientProvider final : public ExternalDataProvider {
+        public:
+            explicit GridFunctionGradientProvider(const GridFunction* field)
+                : field_(field)
+            {
+            }
+
+            TensorShape shape() const override { return TensorShape::vector(3); }
+
+            void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
+            {
+                if (!field_) {
+                    std::fill(dest.begin(), dest.end(), TensorValue::zero(TensorShape::vector(3)));
+                    return;
+                }
+
+                if (ctx.referencePoints.size() < dest.size() || ctx.invJacobianTransposes.size() < dest.size()) {
+                    MPFEM_THROW(ArgumentException,
+                        "GridFunctionGradientProvider requires referencePoints and invJacobianTransposes in EvaluationContext.");
+                }
+
+                for (size_t i = 0; i < dest.size(); ++i) {
+                    const Real* xi = &ctx.referencePoints[i].x();
+                    const Vector3 g = field_->gradient(ctx.elementId, xi, ctx.invJacobianTransposes[i]);
+                    dest[i] = TensorValue::vector(g.x(), g.y(), g.z());
+                }
+            }
+
+        private:
+            const GridFunction* field_ = nullptr;
+        };
 
         const VariableNode* requireDomainPropertyNode(Problem& problem,
             std::string_view property,
@@ -128,7 +165,7 @@ namespace mpfem {
             }
 
             TensorShape shape = matrixProperty ? TensorShape::matrix(3, 3) : TensorShape::scalar();
-            auto selector = std::make_unique<DomainMultiplexerNode>(shape);
+            auto selector = std::make_unique<DomainMultiplexerProvider>(shape);
 
             for (int domainId : problem.materials.domainIds()) {
                 const std::string leafName = std::string(property) + "$domain_" + std::to_string(domainId);
@@ -136,12 +173,12 @@ namespace mpfem {
                     const std::string& expression = matrixProperty
                         ? problem.materials.matrixExpressionByDomain(domainId, property)
                         : problem.materials.scalarExpressionByDomain(domainId, property);
-                    problem.globalVariables_.registerExpression(leafName, expression);
+                    problem.globalVariables_.define(leafName, expression);
                 }
                 selector->addDomain(domainId, problem.globalVariables_.get(leafName));
             }
 
-            problem.globalVariables_.adoptNode(std::move(selector), nodeName);
+            problem.globalVariables_.bindExternal(nodeName, std::move(selector));
             return problem.globalVariables_.get(nodeName);
         }
 
@@ -162,7 +199,7 @@ namespace mpfem {
         {
             static std::atomic<std::uint64_t> id {0};
             std::string name = "$expr_scalar_" + std::to_string(id++);
-            problem.globalVariables_.registerExpression(name, expression);
+            problem.globalVariables_.define(name, expression);
             return problem.globalVariables_.get(name);
         }
 
@@ -276,7 +313,8 @@ namespace mpfem {
             problem.electrostatics->initialize(*problem.mesh, problem.fieldValues, physics.order, icValue);
 
             // Register the electrostatics field as a DAG node for expression dependencies
-            problem.globalVariables_.registerGridFunction("V", &problem.electrostatics->field());
+            problem.globalVariables_.bindExternal("V", std::make_unique<GridFunctionValueProvider>(&problem.electrostatics->field()));
+            problem.globalVariables_.bindExternal("grad(V)", std::make_unique<GridFunctionGradientProvider>(&problem.electrostatics->field()));
 
             const VariableNode* sigma = requireDomainMatrixNode(problem, kPropElectricConductivity);
             for (int domainId : problem.materials.domainIds()) {
@@ -301,7 +339,8 @@ namespace mpfem {
             problem.heatTransfer->initialize(*problem.mesh, problem.fieldValues, physics.order, icValue);
 
             // Register the heat transfer field as a DAG node for expression dependencies
-            problem.globalVariables_.registerGridFunction("T", &problem.heatTransfer->field());
+            problem.globalVariables_.bindExternal("T", std::make_unique<GridFunctionValueProvider>(&problem.heatTransfer->field()));
+            problem.globalVariables_.bindExternal("grad(T)", std::make_unique<GridFunctionGradientProvider>(&problem.heatTransfer->field()));
 
             const VariableNode* k = requireDomainMatrixNode(problem, kPropThermalConductivity);
             const VariableNode* density = requireDomainScalarNode(problem, kPropDensity);
@@ -310,7 +349,7 @@ namespace mpfem {
             (void)heatCapacity;
 
             if (!problem.globalVariables_.get("thermal_mass")) {
-                problem.globalVariables_.registerExpression("thermal_mass", "density * heatcapacity");
+                problem.globalVariables_.define("thermal_mass", "density * heatcapacity");
             }
             const VariableNode* rhoCpNode = problem.globalVariables_.get("thermal_mass");
 
@@ -341,8 +380,6 @@ namespace mpfem {
             Real icValue = getInitialCondition(problem.caseDef, kPhysicsSolidMechanics, 0.0);
             problem.structural->initialize(*problem.mesh, problem.fieldValues, physics.order, icValue);
 
-            problem.globalVariables_.registerGridFunction("u", &problem.structural->field());
-
             const VariableNode* E = requireDomainScalarNode(problem, kPropYoungModulus);
             const VariableNode* nu = requireDomainScalarNode(problem, kPropPoissonRatio);
             for (int domainId : problem.materials.domainIds()) {
@@ -362,7 +399,7 @@ namespace mpfem {
             (void)requireDomainMatrixNode(problem, kPropElectricConductivity);
 
             if (!problem.globalVariables_.get("JouleHeat")) {
-                problem.globalVariables_.registerExpression("JouleHeat", "dot(grad(V), electricconductivity * grad(V))");
+                problem.globalVariables_.define("JouleHeat", "dot(grad(V), electricconductivity * grad(V))");
             }
             const VariableNode* joule = problem.globalVariables_.get("JouleHeat");
             problem.heatTransfer->setHeatSource(activeDomains, joule);
@@ -382,20 +419,20 @@ namespace mpfem {
             (void)requireDomainScalarNode(problem, kPropPoissonRatio);
 
             if (!problem.globalVariables_.get("lambda")) {
-                problem.globalVariables_.registerExpression("lambda", "E*nu/((1+nu)*(1-2*nu))");
+                problem.globalVariables_.define("lambda", "E*nu/((1+nu)*(1-2*nu))");
             }
             if (!problem.globalVariables_.get("mu")) {
-                problem.globalVariables_.registerExpression("mu", "E/(2*(1+nu))");
+                problem.globalVariables_.define("mu", "E/(2*(1+nu))");
             }
             if (!problem.globalVariables_.get("alpha_iso")) {
-                problem.globalVariables_.registerExpression(
+                problem.globalVariables_.define(
                     "alpha_iso",
                     "dot([1,1,1]^T, thermalexpansioncoefficient * [1,1,1]^T)/3.0");
             }
 
-            problem.globalVariables_.registerConstantExpression("T_ref", std::to_string(T_ref));
-            problem.globalVariables_.registerExpression("thermal_dT", "T - T_ref");
-            problem.globalVariables_.registerExpression(
+            problem.globalVariables_.define("T_ref", std::to_string(T_ref));
+            problem.globalVariables_.define("thermal_dT", "T - T_ref");
+            problem.globalVariables_.define(
                 "ThermalExpansionStress",
                 "2*mu*sym([alpha_iso,0,0;0,alpha_iso,0;0,0,alpha_iso]*thermal_dT)"
                 "+lambda*trace(sym([alpha_iso,0,0;0,alpha_iso,0;0,0,alpha_iso]*thermal_dT))*[1,0,0;0,1,0;0,0,1]");

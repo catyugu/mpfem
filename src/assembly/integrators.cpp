@@ -8,18 +8,20 @@ namespace mpfem {
 
         EvaluationContext makeSinglePointContext(ElementTransform& trans,
             std::array<Vector3, 1>& refPts,
-            std::array<Vector3, 1>& physPts)
+            std::array<Vector3, 1>& physPts,
+            std::array<Matrix3, 1>& invJTs)
         {
             const IntegrationPoint& ip = trans.integrationPoint();
             refPts[0] = Vector3(ip.xi, ip.eta, ip.zeta);
             trans.transform(ip, physPts[0]);
+            invJTs[0] = trans.invJacobianT();
 
             EvaluationContext ctx;
             ctx.domainId = static_cast<int>(trans.attribute());
             ctx.elementId = trans.elementIndex();
             ctx.referencePoints = std::span<const Vector3>(refPts.data(), refPts.size());
             ctx.physicalPoints = std::span<const Vector3>(physPts.data(), physPts.size());
-            ctx.transform = &trans;
+            ctx.invJacobianTransposes = std::span<const Matrix3>(invJTs.data(), invJTs.size());
             return ctx;
         }
 
@@ -30,8 +32,9 @@ namespace mpfem {
             }
             std::array<Vector3, 1> refPts;
             std::array<Vector3, 1> physPts;
+            std::array<Matrix3, 1> invJTs;
             std::array<TensorValue, 1> value {};
-            const EvaluationContext ctx = makeSinglePointContext(trans, refPts, physPts);
+            const EvaluationContext ctx = makeSinglePointContext(trans, refPts, physPts, invJTs);
             node->evaluateBatch(ctx, std::span<TensorValue>(value.data(), value.size()));
             return value[0].scalar();
         }
@@ -44,8 +47,9 @@ namespace mpfem {
 
             std::array<Vector3, 1> refPts;
             std::array<Vector3, 1> physPts;
+            std::array<Matrix3, 1> invJTs;
             std::array<TensorValue, 1> value {};
-            const EvaluationContext ctx = makeSinglePointContext(trans, refPts, physPts);
+            const EvaluationContext ctx = makeSinglePointContext(trans, refPts, physPts, invJTs);
             node->evaluateBatch(ctx, std::span<TensorValue>(value.data(), value.size()));
 
             return value[0].toMatrix3();
