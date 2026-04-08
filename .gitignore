@@ -2,3 +2,5 @@ build*
 .vscode
 results
 __pycache__
+.sisyphus
+*.log

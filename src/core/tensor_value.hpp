@@ -141,20 +141,12 @@ namespace mpfem {
 
         TensorValue operator+(const TensorValue& rhs) const
         {
-            return applySameShapeBinary(data_, rhs.data_,
-                [](const auto& a, const auto& b) {
-                    return a + b;
-                },
-                "Tensor shape mismatch in add");
+            return applySameShapeBinary(data_, rhs.data_, [](const auto& a, const auto& b) { return a + b; }, "Tensor shape mismatch in add");
         }
 
         TensorValue operator-(const TensorValue& rhs) const
         {
-            return applySameShapeBinary(data_, rhs.data_,
-                [](const auto& a, const auto& b) {
-                    return a - b;
-                },
-                "Tensor shape mismatch in subtract");
+            return applySameShapeBinary(data_, rhs.data_, [](const auto& a, const auto& b) { return a - b; }, "Tensor shape mismatch in subtract");
         }
 
         TensorValue operator-() const
