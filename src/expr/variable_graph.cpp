@@ -170,20 +170,25 @@ namespace mpfem {
                 }
 
                 const size_t m = dependencies_.size();
+                Workspace& workspace = workspaceFor(id_);
 
-                // Allocate a FRESH scratchpad vector for this evaluation to avoid corruption
-                // This ensures nested RuntimeExpr calls don't interfere with parent data
-                std::vector<TensorValue> localScratchpad(m * n);
+                // Keep workspace in-node to avoid per-batch heap allocations.
+                if (workspace.scratchpad.size() != m * n) {
+                    workspace.scratchpad.resize(m * n);
+                }
 
                 // Evaluate each dependency for all n points
                 // Layout: [dep0_p0, dep0_p1, ..., dep0_p{n-1}, dep1_p0, dep1_p1, ...]
                 for (size_t d = 0; d < m; ++d) {
-                    std::span<TensorValue> depDest(&localScratchpad[d * n], n);
+                    std::span<TensorValue> depDest(&workspace.scratchpad[d * n], n);
                     dependencies_[d]->evaluateBatch(ctx, depDest);
                 }
 
-                // Per-point expression evaluation with local input buffer
-                std::vector<TensorValue> pointInputs(m);
+                if (workspace.pointInputs.size() != m) {
+                    workspace.pointInputs.resize(m);
+                }
+
+                // Per-point expression evaluation.
                 for (size_t i = 0; i < n; ++i) {
                     if (ctx.transform && i < ctx.referencePoints.size()) {
                         const Real xi[3] = {
@@ -196,17 +201,28 @@ namespace mpfem {
 
                     // Collect i-th value of each dependency into local buffer
                     for (size_t d = 0; d < m; ++d) {
-                        pointInputs[d] = localScratchpad[d * n + i];
+                        workspace.pointInputs[d] = workspace.scratchpad[d * n + i];
                     }
 
                     dest[i] = program_.evaluate(
-                        std::span<const TensorValue>(pointInputs.data(), m));
+                        std::span<const TensorValue>(workspace.pointInputs.data(), m));
                 }
             }
 
             std::vector<const VariableNode*> dependencies() const override { return dependencies_; }
 
         private:
+            struct Workspace {
+                std::vector<TensorValue> scratchpad;
+                std::vector<TensorValue> pointInputs;
+            };
+
+            static Workspace& workspaceFor(std::uint64_t nodeId)
+            {
+                thread_local std::unordered_map<std::uint64_t, Workspace> workspaceByNode;
+                return workspaceByNode[nodeId];
+            }
+
             std::string expression_;
             std::vector<const VariableNode*> dependencies_;
             ExpressionParser::ExpressionProgram program_;

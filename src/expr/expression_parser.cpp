@@ -5,7 +5,6 @@
 #include "expr/unit_parser.hpp"
 
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <cstdlib>
 #include <string_view>
@@ -50,46 +49,6 @@ namespace mpfem {
             Real value = 0.0;
             std::string variableName;
             std::vector<std::unique_ptr<AstNode>> args;
-        };
-
-        enum class OpCode {
-            LoadConst,
-            LoadVar,
-            MakeVector3,
-            MakeMatrix3,
-            CallUnary, // BuiltinUnary
-            CallBinary, // BuiltinBinary
-            Return,
-        };
-
-        // Unified function dispatch for math operations
-        enum class BuiltinUnary { Sin,
-            Cos,
-            Tan,
-            Exp,
-            Log,
-            Sqrt,
-            Abs,
-            Negate,
-            Sym,
-            Trace,
-            Transpose };
-        enum class BuiltinBinary { Add,
-            Subtract,
-            Multiply,
-            Divide,
-            Min,
-            Max,
-            Pow,
-            Dot };
-
-        struct Instruction {
-            OpCode op = OpCode::LoadConst;
-            int dest = -1;
-            int operand1 = -1;
-            int operand2 = -1;
-            int funcId = 0; // Index into BuiltinUnary or BuiltinBinary
-            std::array<int, 9> operands {};
         };
 
         bool isSeparator(char c)
@@ -698,247 +657,93 @@ namespace mpfem {
             MPFEM_THROW(ArgumentException, "Unknown AST node kind for shape inference.");
         }
 
-        struct FlattenedProgram {
-            std::vector<Instruction> instructions;
-            std::vector<TensorValue> constants;
-            int registerCount = 0;
-        };
-
-        int allocateRegister(FlattenedProgram& program)
-        {
-            return program.registerCount++;
-        }
-
-        int emitAst(const AstNode& node,
-            const std::unordered_map<std::string, int>& dependencyIndices,
-            FlattenedProgram& program)
+        TensorValue evaluateAst(const AstNode& node,
+            std::span<const TensorValue> vars,
+            const std::unordered_map<std::string, size_t>& dependencyIndices)
         {
             switch (node.kind) {
-            case AstNode::Kind::Constant: {
-                const int dest = allocateRegister(program);
-                const int constantIndex = static_cast<int>(program.constants.size());
-                program.constants.push_back(TensorValue::scalar(node.value));
-                Instruction inst;
-                inst.op = OpCode::LoadConst;
-                inst.dest = dest;
-                inst.operand1 = constantIndex;
-                program.instructions.push_back(inst);
-                return dest;
-            }
+            case AstNode::Kind::Constant:
+                return TensorValue::scalar(node.value);
             case AstNode::Kind::Variable: {
                 const auto it = dependencyIndices.find(node.variableName);
-                if (it == dependencyIndices.end()) {
+                if (it == dependencyIndices.end() || it->second >= vars.size()) {
                     MPFEM_THROW(ArgumentException, "Variable index binding failed: " + node.variableName);
                 }
-                const int dest = allocateRegister(program);
-                Instruction inst;
-                inst.op = OpCode::LoadVar;
-                inst.dest = dest;
-                inst.operand1 = it->second;
-                program.instructions.push_back(inst);
-                return dest;
+                return vars[it->second];
             }
-            case AstNode::Kind::VectorLiteral: {
-                const int dest = allocateRegister(program);
-                Instruction inst;
-                inst.op = OpCode::MakeVector3;
-                inst.dest = dest;
-                inst.operands[0] = emitAst(*node.args[0], dependencyIndices, program);
-                inst.operands[1] = emitAst(*node.args[1], dependencyIndices, program);
-                inst.operands[2] = emitAst(*node.args[2], dependencyIndices, program);
-                program.instructions.push_back(inst);
-                return dest;
-            }
-            case AstNode::Kind::MatrixLiteral: {
-                const int dest = allocateRegister(program);
-                Instruction inst;
-                inst.op = OpCode::MakeMatrix3;
-                inst.dest = dest;
-                for (size_t i = 0; i < 9; ++i) {
-                    inst.operands[i] = emitAst(*node.args[i], dependencyIndices, program);
-                }
-                program.instructions.push_back(inst);
-                return dest;
-            }
-            case AstNode::Kind::Sin:
-            case AstNode::Kind::Cos:
-            case AstNode::Kind::Tan:
-            case AstNode::Kind::Exp:
-            case AstNode::Kind::Log:
-            case AstNode::Kind::Sqrt:
-            case AstNode::Kind::Abs:
-            case AstNode::Kind::Negate:
-            case AstNode::Kind::Sym:
-            case AstNode::Kind::Trace:
-            case AstNode::Kind::Transpose: {
-                const int dest = allocateRegister(program);
-                Instruction inst;
-                inst.op = OpCode::CallUnary;
-                inst.dest = dest;
-                inst.operand1 = emitAst(*node.args[0], dependencyIndices, program);
-                if (node.kind == AstNode::Kind::Sin)
-                    inst.funcId = static_cast<int>(BuiltinUnary::Sin);
-                else if (node.kind == AstNode::Kind::Cos)
-                    inst.funcId = static_cast<int>(BuiltinUnary::Cos);
-                else if (node.kind == AstNode::Kind::Tan)
-                    inst.funcId = static_cast<int>(BuiltinUnary::Tan);
-                else if (node.kind == AstNode::Kind::Exp)
-                    inst.funcId = static_cast<int>(BuiltinUnary::Exp);
-                else if (node.kind == AstNode::Kind::Log)
-                    inst.funcId = static_cast<int>(BuiltinUnary::Log);
-                else if (node.kind == AstNode::Kind::Sqrt)
-                    inst.funcId = static_cast<int>(BuiltinUnary::Sqrt);
-                else if (node.kind == AstNode::Kind::Abs)
-                    inst.funcId = static_cast<int>(BuiltinUnary::Abs);
-                else if (node.kind == AstNode::Kind::Negate)
-                    inst.funcId = static_cast<int>(BuiltinUnary::Negate);
-                else if (node.kind == AstNode::Kind::Sym)
-                    inst.funcId = static_cast<int>(BuiltinUnary::Sym);
-                else if (node.kind == AstNode::Kind::Trace)
-                    inst.funcId = static_cast<int>(BuiltinUnary::Trace);
-                else if (node.kind == AstNode::Kind::Transpose)
-                    inst.funcId = static_cast<int>(BuiltinUnary::Transpose);
-                program.instructions.push_back(inst);
-                return dest;
-            }
+            case AstNode::Kind::VectorLiteral:
+                return TensorValue::vector(
+                    evaluateAst(*node.args[0], vars, dependencyIndices).asScalar(),
+                    evaluateAst(*node.args[1], vars, dependencyIndices).asScalar(),
+                    evaluateAst(*node.args[2], vars, dependencyIndices).asScalar());
+            case AstNode::Kind::MatrixLiteral:
+                return TensorValue::matrix3(
+                    evaluateAst(*node.args[0], vars, dependencyIndices).asScalar(),
+                    evaluateAst(*node.args[1], vars, dependencyIndices).asScalar(),
+                    evaluateAst(*node.args[2], vars, dependencyIndices).asScalar(),
+                    evaluateAst(*node.args[3], vars, dependencyIndices).asScalar(),
+                    evaluateAst(*node.args[4], vars, dependencyIndices).asScalar(),
+                    evaluateAst(*node.args[5], vars, dependencyIndices).asScalar(),
+                    evaluateAst(*node.args[6], vars, dependencyIndices).asScalar(),
+                    evaluateAst(*node.args[7], vars, dependencyIndices).asScalar(),
+                    evaluateAst(*node.args[8], vars, dependencyIndices).asScalar());
             case AstNode::Kind::Add:
+                return evaluateAst(*node.args[0], vars, dependencyIndices) + evaluateAst(*node.args[1], vars, dependencyIndices);
             case AstNode::Kind::Subtract:
+                return evaluateAst(*node.args[0], vars, dependencyIndices) - evaluateAst(*node.args[1], vars, dependencyIndices);
             case AstNode::Kind::Multiply:
+                return evaluateAst(*node.args[0], vars, dependencyIndices) * evaluateAst(*node.args[1], vars, dependencyIndices);
             case AstNode::Kind::Divide:
+                return evaluateAst(*node.args[0], vars, dependencyIndices) / evaluateAst(*node.args[1], vars, dependencyIndices);
+            case AstNode::Kind::Power:
+                return TensorValue::scalar(std::pow(
+                    evaluateAst(*node.args[0], vars, dependencyIndices).asScalar(),
+                    evaluateAst(*node.args[1], vars, dependencyIndices).asScalar()));
+            case AstNode::Kind::Negate:
+                return -evaluateAst(*node.args[0], vars, dependencyIndices);
+            case AstNode::Kind::Sin:
+                return TensorValue::scalar(std::sin(evaluateAst(*node.args[0], vars, dependencyIndices).asScalar()));
+            case AstNode::Kind::Cos:
+                return TensorValue::scalar(std::cos(evaluateAst(*node.args[0], vars, dependencyIndices).asScalar()));
+            case AstNode::Kind::Tan:
+                return TensorValue::scalar(std::tan(evaluateAst(*node.args[0], vars, dependencyIndices).asScalar()));
+            case AstNode::Kind::Exp:
+                return TensorValue::scalar(std::exp(evaluateAst(*node.args[0], vars, dependencyIndices).asScalar()));
+            case AstNode::Kind::Log:
+                return TensorValue::scalar(std::log(evaluateAst(*node.args[0], vars, dependencyIndices).asScalar()));
+            case AstNode::Kind::Sqrt:
+                return TensorValue::scalar(std::sqrt(evaluateAst(*node.args[0], vars, dependencyIndices).asScalar()));
+            case AstNode::Kind::Abs:
+                return TensorValue::scalar(std::abs(evaluateAst(*node.args[0], vars, dependencyIndices).asScalar()));
             case AstNode::Kind::Min:
+                return TensorValue::scalar(std::min(
+                    evaluateAst(*node.args[0], vars, dependencyIndices).asScalar(),
+                    evaluateAst(*node.args[1], vars, dependencyIndices).asScalar()));
             case AstNode::Kind::Max:
+                return TensorValue::scalar(std::max(
+                    evaluateAst(*node.args[0], vars, dependencyIndices).asScalar(),
+                    evaluateAst(*node.args[1], vars, dependencyIndices).asScalar()));
             case AstNode::Kind::Dot:
-            case AstNode::Kind::Power: {
-                const int dest = allocateRegister(program);
-                Instruction inst;
-                inst.op = OpCode::CallBinary;
-                inst.dest = dest;
-                inst.operand1 = emitAst(*node.args[0], dependencyIndices, program);
-                inst.operand2 = emitAst(*node.args[1], dependencyIndices, program);
-                if (node.kind == AstNode::Kind::Add)
-                    inst.funcId = static_cast<int>(BuiltinBinary::Add);
-                else if (node.kind == AstNode::Kind::Subtract)
-                    inst.funcId = static_cast<int>(BuiltinBinary::Subtract);
-                else if (node.kind == AstNode::Kind::Multiply)
-                    inst.funcId = static_cast<int>(BuiltinBinary::Multiply);
-                else if (node.kind == AstNode::Kind::Divide)
-                    inst.funcId = static_cast<int>(BuiltinBinary::Divide);
-                else if (node.kind == AstNode::Kind::Min)
-                    inst.funcId = static_cast<int>(BuiltinBinary::Min);
-                else if (node.kind == AstNode::Kind::Max)
-                    inst.funcId = static_cast<int>(BuiltinBinary::Max);
-                else if (node.kind == AstNode::Kind::Dot)
-                    inst.funcId = static_cast<int>(BuiltinBinary::Dot);
-                else if (node.kind == AstNode::Kind::Power)
-                    inst.funcId = static_cast<int>(BuiltinBinary::Pow);
-                program.instructions.push_back(inst);
-                return dest;
+                return TensorValue::scalar(dot(
+                    evaluateAst(*node.args[0], vars, dependencyIndices),
+                    evaluateAst(*node.args[1], vars, dependencyIndices)));
+            case AstNode::Kind::Sym:
+                return sym(evaluateAst(*node.args[0], vars, dependencyIndices));
+            case AstNode::Kind::Trace:
+                return TensorValue::scalar(trace(evaluateAst(*node.args[0], vars, dependencyIndices)));
+            case AstNode::Kind::Transpose:
+                return transpose(evaluateAst(*node.args[0], vars, dependencyIndices));
             }
-            }
-            MPFEM_THROW(ArgumentException, "Unsupported AST node during instruction emission.");
-        }
-
-        // Dispatch functions for builtin operations
-        TensorValue executeUnary(BuiltinUnary op, const TensorValue& arg)
-        {
-            switch (op) {
-            case BuiltinUnary::Sin:
-                return TensorValue::scalar(std::sin(arg.scalar()));
-            case BuiltinUnary::Cos:
-                return TensorValue::scalar(std::cos(arg.scalar()));
-            case BuiltinUnary::Tan:
-                return TensorValue::scalar(std::tan(arg.scalar()));
-            case BuiltinUnary::Exp:
-                return TensorValue::scalar(std::exp(arg.scalar()));
-            case BuiltinUnary::Log:
-                return TensorValue::scalar(std::log(arg.scalar()));
-            case BuiltinUnary::Sqrt:
-                return TensorValue::scalar(std::sqrt(arg.scalar()));
-            case BuiltinUnary::Abs:
-                return TensorValue::scalar(std::abs(arg.scalar()));
-            case BuiltinUnary::Negate:
-                return -arg;
-            case BuiltinUnary::Sym:
-                return sym(arg);
-            case BuiltinUnary::Trace:
-                return TensorValue::scalar(trace(arg));
-            case BuiltinUnary::Transpose:
-                return transpose(arg);
-            }
-            MPFEM_THROW(ArgumentException, "Unknown BuiltinUnary");
-        }
-
-        TensorValue executeBinary(BuiltinBinary op, const TensorValue& lhs, const TensorValue& rhs)
-        {
-            switch (op) {
-            case BuiltinBinary::Add:
-                return lhs + rhs;
-            case BuiltinBinary::Subtract:
-                return lhs - rhs;
-            case BuiltinBinary::Multiply:
-                return lhs * rhs;
-            case BuiltinBinary::Divide:
-                return lhs / rhs;
-            case BuiltinBinary::Min:
-                return TensorValue::scalar(std::min(lhs.scalar(), rhs.scalar()));
-            case BuiltinBinary::Max:
-                return TensorValue::scalar(std::max(lhs.scalar(), rhs.scalar()));
-            case BuiltinBinary::Pow:
-                return TensorValue::scalar(std::pow(lhs.scalar(), rhs.scalar()));
-            case BuiltinBinary::Dot:
-                return TensorValue::scalar(dot(lhs, rhs));
-            }
-            MPFEM_THROW(ArgumentException, "Unknown BuiltinBinary");
-        }
-
-        TensorValue runProgram(const FlattenedProgram& program, std::span<const TensorValue> vars)
-        {
-            std::vector<TensorValue> registers(static_cast<size_t>(program.registerCount));
-            for (const Instruction& inst : program.instructions) {
-                switch (inst.op) {
-                case OpCode::LoadConst:
-                    registers[static_cast<size_t>(inst.dest)] = program.constants[static_cast<size_t>(inst.operand1)];
-                    break;
-                case OpCode::LoadVar:
-                    registers[static_cast<size_t>(inst.dest)] = vars[static_cast<size_t>(inst.operand1)];
-                    break;
-                case OpCode::MakeVector3:
-                    registers[static_cast<size_t>(inst.dest)] = TensorValue::vector(
-                        registers[static_cast<size_t>(inst.operands[0])].scalar(),
-                        registers[static_cast<size_t>(inst.operands[1])].scalar(),
-                        registers[static_cast<size_t>(inst.operands[2])].scalar());
-                    break;
-                case OpCode::MakeMatrix3:
-                    registers[static_cast<size_t>(inst.dest)] = TensorValue::matrix3(
-                        registers[static_cast<size_t>(inst.operands[0])].scalar(),
-                        registers[static_cast<size_t>(inst.operands[1])].scalar(),
-                        registers[static_cast<size_t>(inst.operands[2])].scalar(),
-                        registers[static_cast<size_t>(inst.operands[3])].scalar(),
-                        registers[static_cast<size_t>(inst.operands[4])].scalar(),
-                        registers[static_cast<size_t>(inst.operands[5])].scalar(),
-                        registers[static_cast<size_t>(inst.operands[6])].scalar(),
-                        registers[static_cast<size_t>(inst.operands[7])].scalar(),
-                        registers[static_cast<size_t>(inst.operands[8])].scalar());
-                    break;
-                case OpCode::CallUnary:
-                    registers[inst.dest] = executeUnary(static_cast<BuiltinUnary>(inst.funcId), registers[inst.operand1]);
-                    break;
-                case OpCode::CallBinary:
-                    registers[inst.dest] = executeBinary(static_cast<BuiltinBinary>(inst.funcId), registers[inst.operand1], registers[inst.operand2]);
-                    break;
-                case OpCode::Return:
-                    return registers[inst.operand1];
-                }
-            }
-            MPFEM_THROW(ArgumentException, "Expression program did not emit a return instruction.");
+            MPFEM_THROW(ArgumentException, "Unknown AST node kind in evaluation.");
         }
 
     } // namespace
 
     struct ExpressionParser::ExpressionProgram::Impl {
         TensorShape shape = TensorShape::scalar();
-        FlattenedProgram program;
+        std::unique_ptr<AstNode> root;
         std::vector<std::string> dependencies;
+        std::unordered_map<std::string, size_t> dependencyIndices;
     };
 
     ExpressionParser::ExpressionProgram::ExpressionProgram()
@@ -957,7 +762,7 @@ namespace mpfem {
 
     bool ExpressionParser::ExpressionProgram::valid() const
     {
-        return impl_ && !impl_->program.instructions.empty();
+        return impl_ && impl_->root != nullptr;
     }
 
     TensorShape ExpressionParser::ExpressionProgram::shape() const
@@ -977,7 +782,7 @@ namespace mpfem {
         MPFEM_ASSERT(values.size() == impl_->dependencies.size(),
             "Expression input size does not match dependency size.");
 
-        return runProgram(impl_->program, values);
+        return evaluateAst(*impl_->root, values, impl_->dependencyIndices);
     }
 
     ExpressionParser::ExpressionParser() = default;
@@ -1006,17 +811,13 @@ namespace mpfem {
         std::unordered_set<std::string> seen;
         collectDependencies(*root, seen, impl->dependencies);
 
-        std::unordered_map<std::string, int> dependencyIndices;
-        dependencyIndices.reserve(impl->dependencies.size());
+        impl->dependencyIndices.clear();
+        impl->dependencyIndices.reserve(impl->dependencies.size());
         for (size_t i = 0; i < impl->dependencies.size(); ++i) {
-            dependencyIndices.emplace(impl->dependencies[i], static_cast<int>(i));
+            impl->dependencyIndices.emplace(impl->dependencies[i], i);
         }
 
-        const int resultRegister = emitAst(*root, dependencyIndices, impl->program);
-        Instruction ret;
-        ret.op = OpCode::Return;
-        ret.operand1 = resultRegister;
-        impl->program.instructions.push_back(ret);
+        impl->root = std::move(root);
 
         return ExpressionProgram(std::move(impl));
     }
