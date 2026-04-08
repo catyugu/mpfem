@@ -18,9 +18,6 @@ namespace mpfem {
     public:
         virtual ~VariableNode() = default;
 
-        /// 返回张量形状，标量=empty/{}, 向量={n}, 矩阵={3,3}
-        virtual TensorShape shape() const = 0;
-
         /// 批量求值：计算该节点在每个物理点的值
         /// @param ctx 评估上下文
         /// @param dest 输出缓冲区，大小 = physicalPoints.size()

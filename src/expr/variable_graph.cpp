@@ -25,11 +25,9 @@ namespace mpfem {
             RuntimeExpressionNode(std::string expression,
                 std::vector<const VariableNode*> dependencies,
                 ExpressionParser::ExpressionProgram program)
-                : expression_(std::move(expression)), dependencies_(std::move(dependencies)), program_(std::move(program)), shape_(program_.shape()), id_(nextProgramId())
+                : expression_(std::move(expression)), dependencies_(std::move(dependencies)), program_(std::move(program)), id_(nextProgramId())
             {
             }
-
-            TensorShape shape() const override { return shape_; }
 
             void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
             {
@@ -80,7 +78,6 @@ namespace mpfem {
             std::string expression_;
             std::vector<const VariableNode*> dependencies_;
             ExpressionParser::ExpressionProgram program_;
-            TensorShape shape_;
             std::uint64_t id_ = 0;
         };
 
@@ -90,8 +87,6 @@ namespace mpfem {
                 : value_(std::move(value)), shape_(value_.shape())
             {
             }
-
-            TensorShape shape() const override { return shape_; }
 
             void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
             {
@@ -115,8 +110,6 @@ namespace mpfem {
             {
             }
 
-            TensorShape shape() const override { return TensorShape::scalar(); }
-
             void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
             {
                 for (size_t i = 0; i < dest.size(); ++i) {
@@ -133,15 +126,8 @@ namespace mpfem {
             const std::unordered_map<std::string, std::unique_ptr<VariableNode>>& nodes)
         {
             ExpressionParser parser;
-            std::unordered_map<std::string, TensorShape> registeredShapes;
-            registeredShapes.reserve(nodes.size());
-            for (const auto& [symbol, node] : nodes) {
-                if (node) {
-                    registeredShapes.emplace(symbol, node->shape());
-                }
-            }
 
-            ExpressionParser::ExpressionProgram program = parser.compile(expression, registeredShapes);
+            ExpressionParser::ExpressionProgram program = parser.compile(expression);
             if (program.dependencies().empty()) {
                 const std::array<TensorValue, 0> noInputs {};
                 TensorValue value = program.evaluate(std::span<const TensorValue>(noInputs.data(), noInputs.size()));

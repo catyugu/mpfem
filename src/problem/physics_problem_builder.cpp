@@ -69,11 +69,8 @@ namespace mpfem {
             void addDomain(int domainId, const VariableNode* node)
             {
                 MPFEM_ASSERT(node != nullptr, "DomainMultiplexerNode child must not be null.");
-                MPFEM_ASSERT(node->shape() == shape_, "DomainMultiplexerNode child shape mismatch.");
                 children_[domainId] = node;
             }
-
-            TensorShape shape() const override { return shape_; }
 
             void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
             {
@@ -97,8 +94,6 @@ namespace mpfem {
                 : field_(field)
             {
             }
-
-            TensorShape shape() const override { return TensorShape::scalar(); }
 
             void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
             {
@@ -129,8 +124,6 @@ namespace mpfem {
                 : field_(field)
             {
             }
-
-            TensorShape shape() const override { return TensorShape::vector(3); }
 
             void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
             {

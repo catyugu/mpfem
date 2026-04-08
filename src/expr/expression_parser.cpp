@@ -393,7 +393,6 @@ namespace mpfem {
                 if (args.size() == 1) {
                     if (name == "grad") {
                         // grad(V) is treated as a variable reference to "grad(V)"
-                        // Shape inference happens at DAG layer via registeredShapes
                         if (args[0]->kind != AstNode::Kind::Variable) {
                             MPFEM_THROW(ArgumentException, "grad() requires a single field variable argument.");
                         }
@@ -601,62 +600,6 @@ namespace mpfem {
             }
         }
 
-        TensorShape inferShape(const AstNode& node,
-            const std::unordered_map<std::string, TensorShape>& registeredShapes)
-        {
-            switch (node.kind) {
-            case AstNode::Kind::Constant:
-                return TensorShape::scalar();
-            case AstNode::Kind::Variable:
-                if (const auto it = registeredShapes.find(node.variableName); it != registeredShapes.end()) {
-                    return it->second;
-                }
-                return TensorShape::scalar();
-            case AstNode::Kind::VectorLiteral:
-                return TensorShape::vector(3);
-            case AstNode::Kind::MatrixLiteral:
-                return TensorShape::matrix(3, 3);
-            case AstNode::Kind::Dot:
-                return TensorShape::scalar();
-            case AstNode::Kind::Trace:
-                return TensorShape::scalar();
-            case AstNode::Kind::Sym:
-            case AstNode::Kind::Transpose:
-                return inferShape(*node.args[0], registeredShapes);
-            case AstNode::Kind::Add:
-            case AstNode::Kind::Subtract:
-                return inferShape(*node.args[0], registeredShapes);
-            case AstNode::Kind::Multiply: {
-                const TensorShape lhs = inferShape(*node.args[0], registeredShapes);
-                const TensorShape rhs = inferShape(*node.args[1], registeredShapes);
-                if (lhs.isScalar())
-                    return rhs;
-                if (rhs.isScalar())
-                    return lhs;
-                if (lhs.isMatrix() && rhs.isVector())
-                    return TensorShape::vector(3);
-                if (lhs.isMatrix() && rhs.isMatrix())
-                    return TensorShape::matrix(3, 3);
-                MPFEM_THROW(ArgumentException, "Unsupported multiply shape combination.");
-            }
-            case AstNode::Kind::Divide:
-                return inferShape(*node.args[0], registeredShapes);
-            case AstNode::Kind::Power:
-            case AstNode::Kind::Negate:
-            case AstNode::Kind::Sin:
-            case AstNode::Kind::Cos:
-            case AstNode::Kind::Tan:
-            case AstNode::Kind::Exp:
-            case AstNode::Kind::Log:
-            case AstNode::Kind::Sqrt:
-            case AstNode::Kind::Abs:
-            case AstNode::Kind::Min:
-            case AstNode::Kind::Max:
-                return inferShape(*node.args[0], registeredShapes);
-            }
-            MPFEM_THROW(ArgumentException, "Unknown AST node kind for shape inference.");
-        }
-
         TensorValue evaluateAst(const AstNode& node,
             std::span<const TensorValue> vars,
             const std::unordered_map<std::string, size_t>& dependencyIndices)
@@ -740,7 +683,6 @@ namespace mpfem {
     } // namespace
 
     struct ExpressionParser::ExpressionProgram::Impl {
-        TensorShape shape = TensorShape::scalar();
         std::unique_ptr<AstNode> root;
         std::vector<std::string> dependencies;
         std::unordered_map<std::string, size_t> dependencyIndices;
@@ -765,11 +707,6 @@ namespace mpfem {
         return impl_ && impl_->root != nullptr;
     }
 
-    TensorShape ExpressionParser::ExpressionProgram::shape() const
-    {
-        return impl_ ? impl_->shape : TensorShape::scalar();
-    }
-
     const std::vector<std::string>& ExpressionParser::ExpressionProgram::dependencies() const
     {
         static const std::vector<std::string> empty;
@@ -788,8 +725,7 @@ namespace mpfem {
     ExpressionParser::ExpressionParser() = default;
     ExpressionParser::~ExpressionParser() = default;
 
-    ExpressionParser::ExpressionProgram ExpressionParser::compile(const std::string& expression,
-        const std::unordered_map<std::string, TensorShape>& registeredShapes) const
+    ExpressionParser::ExpressionProgram ExpressionParser::compile(const std::string& expression) const
     {
         std::string expressionText = strings::trim(expression);
 
@@ -806,7 +742,6 @@ namespace mpfem {
 
         TensorAstCompiler compiler(expressionText);
         auto root = compiler.compile();
-        impl->shape = inferShape(*root, registeredShapes);
 
         std::unordered_set<std::string> seen;
         collectDependencies(*root, seen, impl->dependencies);
@@ -820,12 +755,6 @@ namespace mpfem {
         impl->root = std::move(root);
 
         return ExpressionProgram(std::move(impl));
-    }
-
-    ExpressionParser::ExpressionProgram ExpressionParser::compile(const std::string& expression) const
-    {
-        static const std::unordered_map<std::string, TensorShape> emptyShapes;
-        return compile(expression, emptyShapes);
     }
 
 } // namespace mpfem

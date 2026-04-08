@@ -66,9 +66,6 @@ namespace mpfem {
                     trans.setIntegrationPoint(xi);
                     Real value = 0.0;
                     if (coef) {
-                        if (!coef->shape().isScalar()) {
-                            MPFEM_THROW(ArgumentException, "Dirichlet scalar BC expects scalar variable node.");
-                        }
                         std::array<Vector3, 1> refPts {Vector3(xi[0], xi[1], xi[2])};
                         std::array<Vector3, 1> physPts;
                         const IntegrationPoint& ip = trans.integrationPoint();
@@ -82,7 +79,7 @@ namespace mpfem {
                         ctx.invJacobianTransposes = std::span<const Matrix3>(invJTs.data(), invJTs.size());
                         std::array<TensorValue, 1> out {};
                         coef->evaluateBatch(ctx, std::span<TensorValue>(out.data(), out.size()));
-                        value = out[0].scalar();
+                        value = out[0].asScalar();
                     }
 
                     dofVals[d] = value;

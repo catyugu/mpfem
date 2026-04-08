@@ -27,7 +27,6 @@ namespace mpfem {
             ExpressionProgram& operator=(const ExpressionProgram&) = delete;
 
             bool valid() const;
-            TensorShape shape() const;
             const std::vector<std::string>& dependencies() const;
             TensorValue evaluate(std::span<const TensorValue> values) const;
 
@@ -40,9 +39,7 @@ namespace mpfem {
 
         ExpressionParser();
         ~ExpressionParser();
-
-        ExpressionProgram compile(const std::string& expression,
-            const std::unordered_map<std::string, TensorShape>& registeredShapes) const;
+        
         ExpressionProgram compile(const std::string& expression) const;
     };
 

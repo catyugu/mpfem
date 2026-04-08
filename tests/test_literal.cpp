@@ -19,13 +19,13 @@ TEST_F(BracketLiteralTest, ScalarBracketLiteral)
     m.compile();
     const VariableNode* node = m.get("s");
     ASSERT_NE(node, nullptr);
-    EXPECT_TRUE(node->shape().isScalar());
 
     std::array<Vector3, 1> pts {Vector3(0, 0, 0)};
     EvaluationContext ctx;
     ctx.physicalPoints = std::span<const Vector3>(pts.data(), pts.size());
     std::array<TensorValue, 1> out {};
     node->evaluateBatch(ctx, std::span<TensorValue>(out.data(), out.size()));
+    EXPECT_TRUE(out[0].isScalar());
     EXPECT_NEAR(out[0].scalar(), 5.0, 1e-12);
 }
 
@@ -37,14 +37,14 @@ TEST_F(BracketLiteralTest, VectorBracketLiteral)
     m.compile();
     const VariableNode* node = m.get("v");
     ASSERT_NE(node, nullptr);
-    EXPECT_TRUE(node->shape().isVector());
-    EXPECT_EQ(node->shape().dimension(0), 3);
 
     std::array<Vector3, 1> pts {Vector3(0, 0, 0)};
     EvaluationContext ctx;
     ctx.physicalPoints = std::span<const Vector3>(pts.data(), pts.size());
     std::array<TensorValue, 1> out {};
     node->evaluateBatch(ctx, std::span<TensorValue>(out.data(), out.size()));
+    EXPECT_TRUE(out[0].isVector());
+    EXPECT_EQ(out[0].asVector().size(), 3);
     Vector3 v = out[0].toVector3();
     EXPECT_NEAR(v(0), 1.0, 1e-12);
     EXPECT_NEAR(v(1), 2.0, 1e-12);
@@ -59,15 +59,15 @@ TEST_F(BracketLiteralTest, MatrixBracketLiteral)
     m.compile();
     const VariableNode* node = m.get("M");
     ASSERT_NE(node, nullptr);
-    EXPECT_TRUE(node->shape().isMatrix());
-    EXPECT_EQ(node->shape().rows(), 3);
-    EXPECT_EQ(node->shape().cols(), 3);
 
     std::array<Vector3, 1> pts {Vector3(0, 0, 0)};
     EvaluationContext ctx;
     ctx.physicalPoints = std::span<const Vector3>(pts.data(), pts.size());
     std::array<TensorValue, 1> out {};
     node->evaluateBatch(ctx, std::span<TensorValue>(out.data(), out.size()));
+    EXPECT_TRUE(out[0].isMatrix());
+    EXPECT_EQ(out[0].asMatrix().rows(), 3);
+    EXPECT_EQ(out[0].asMatrix().cols(), 3);
     Matrix3 M = out[0].toMatrix3();
 
     // Row 0
@@ -92,14 +92,14 @@ TEST_F(BracketLiteralTest, MatrixVectorExpression)
     m.compile();
     const VariableNode* node = m.get("Iv");
     ASSERT_NE(node, nullptr);
-    EXPECT_TRUE(node->shape().isVector());
-    EXPECT_EQ(node->shape().dimension(0), 3);
 
     std::array<Vector3, 1> pts {Vector3(1.0, 2.0, 3.0)};
     EvaluationContext ctx;
     ctx.physicalPoints = std::span<const Vector3>(pts.data(), pts.size());
     std::array<TensorValue, 1> out {};
     node->evaluateBatch(ctx, std::span<TensorValue>(out.data(), out.size()));
+    EXPECT_TRUE(out[0].isVector());
+    EXPECT_EQ(out[0].asVector().size(), 3);
     Vector3 v = out[0].toVector3();
     // Identity matrix times [x,y,z] should give [x,y,z]
     EXPECT_NEAR(v(0), 1.0, 1e-12);
