@@ -1,6 +1,8 @@
 #ifndef MPFEM_BDF1_INTEGRATOR_HPP
 #define MPFEM_BDF1_INTEGRATOR_HPP
 
+#include "physics/field_values.hpp"
+#include "physics/physics_field_solver.hpp"
 #include "time_integrator.hpp"
 
 namespace mpfem {
@@ -9,7 +11,7 @@ namespace mpfem {
     public:
         BDF1Integrator() = default;
 
-        bool step(TransientProblem& problem) override;
+        bool step(PhysicsFieldSolver& solver, FieldValues& history, Real dt, int currentStep) override;
     };
 
 } // namespace mpfem

@@ -18,21 +18,21 @@ namespace mpfem {
         virtual ~PhysicsFieldSolver() = default;
 
         virtual std::string fieldName() const = 0;
-        virtual void assemble() = 0;
 
-        void solve()
+        // Matrix building interface - Problem class orchestrates assembly
+        virtual void buildStiffnessMatrix(SparseMatrix& K) = 0;
+        virtual void buildMassMatrix(SparseMatrix& M) { M.resize(0, 0); } // Default: no mass
+        virtual void buildRHS(Vector& F) = 0;
+        virtual void applyBoundaryConditions(SparseMatrix& A, Vector& rhs, Vector& solution) = 0;
+
+        // Default linear system solve implementation
+        virtual bool solveLinearSystem(SparseMatrix& A, Vector& x, const Vector& b)
         {
-            MPFEM_ASSERT(solver_ != nullptr, "Solver not configured - call setSolverConfig() first");
-            MPFEM_ASSERT(matAsm_ != nullptr, "Matrix assembler not configured");
-            MPFEM_ASSERT(vecAsm_ != nullptr, "Vector assembler not configured");
-            MPFEM_ASSERT(fieldValues_ != nullptr, "FieldValues not set");
-
-            solver_->setup(&matAsm_->matrix());
-            solver_->apply(vecAsm_->vector(), field().values());
-
+            A.makeCompressed();
+            solver_->setup(&A);
+            solver_->apply(b, x);
             field().markUpdated();
-            LOG_INFO << fieldName() << " solver iterations: " << solver_->iterations()
-                     << ", residual: " << solver_->residual();
+            return true;
         }
 
         const GridFunction& field() const
@@ -56,18 +56,6 @@ namespace mpfem {
         Real residual() const { return solver_->residual(); }
 
     protected:
-        void clearAssemblers()
-        {
-            if (matAsm_) {
-                matAsm_->clear();
-                matAsm_->clearIntegrators();
-            }
-            if (vecAsm_) {
-                vecAsm_->clear();
-                vecAsm_->clearIntegrators();
-            }
-        }
-
         int order_ = 1;
         std::unique_ptr<LinearOperatorConfig> solverConfig_;
 

@@ -35,32 +35,53 @@ namespace mpfem {
         voltageBindings_.push_back({boundaryIds, voltage});
     }
 
-    void ElectrostaticsSolver::assemble()
+    void ElectrostaticsSolver::buildStiffnessMatrix(SparseMatrix& K)
     {
-        ScopedTimer timer("Electrostatics assemble");
-
-        if (conductivityBindings_.empty()) {
-            LOG_ERROR << "ElectrostaticsSolver: conductivity not set";
-            return;
-        }
-
-        clearAssemblers();
+        matAsm_->clear();
+        matAsm_->clearIntegrators();
 
         for (const auto& binding : conductivityBindings_) {
-            matAsm_->addDomainIntegrator(std::make_unique<DiffusionIntegrator>(binding.sigma), binding.domains);
+            matAsm_->addDomainIntegrator(
+                std::make_unique<DiffusionIntegrator>(binding.sigma),
+                binding.domains);
         }
         matAsm_->assemble();
-        vecAsm_->assemble();
+        K = matAsm_->matrix();
+    }
 
-        // Flatten voltageBindings_ to map for applyDirichletBC
+    void ElectrostaticsSolver::buildRHS(Vector& F)
+    {
+        // Electrostatics typically has no volume source, but keep the pattern
+        vecAsm_->clear();
+        vecAsm_->assemble();
+        F = vecAsm_->vector();
+    }
+
+    void ElectrostaticsSolver::applyBoundaryConditions(SparseMatrix& A, Vector& rhs, Vector& solution)
+    {
         std::map<int, const VariableNode*> voltageBCs;
         for (const auto& binding : voltageBindings_) {
             for (int bid : binding.boundaryIds) {
                 voltageBCs[bid] = binding.voltage;
             }
         }
-        applyDirichletBC(matAsm_->matrix(), vecAsm_->vector(), field().values(), *fes_, *mesh_, voltageBCs);
-        matAsm_->finalize();
+        applyDirichletBC(A, rhs, solution, *fes_, *mesh_, voltageBCs);
+    }
+
+    bool ElectrostaticsSolver::solveLinearSystem(SparseMatrix& A, Vector& x, const Vector& b)
+    {
+        if (!solver_) {
+            LOG_ERROR << "ElectrostaticsSolver: solver not available";
+            return false;
+        }
+        Vector rhs = b;
+        applyBoundaryConditions(A, rhs, x);
+        A.makeCompressed();
+        solver_->setup(&A);
+        solver_->apply(rhs, x);
+        field().markUpdated();
+        LOG_INFO << fieldName() << " linear solve converged in " << iterations() << " iterations";
+        return true;
     }
 
 } // namespace mpfem

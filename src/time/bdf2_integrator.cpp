@@ -1,62 +1,61 @@
 #include "time/bdf2_integrator.hpp"
 
 #include "core/logger.hpp"
-#include "physics/heat_transfer_solver.hpp"
-#include "problem/transient_problem.hpp"
 
 namespace mpfem {
 
-    bool BDF2Integrator::step(TransientProblem& problem)
+    bool BDF2Integrator::step(PhysicsFieldSolver& solver, FieldValues& history, Real dt, int currentStep)
     {
-        if (!problem.heatTransfer) {
-            LOG_ERROR << "BDF2Integrator: HeatTransfer solver not available";
+        SparseMatrix M, K;
+        Vector F;
+
+        solver.buildMassMatrix(M);
+        solver.buildStiffnessMatrix(K);
+        solver.buildRHS(F);
+
+        if (M.rows() == 0 || M.cols() == 0) {
+            LOG_ERROR << "BDF2Integrator: Mass matrix not available for " << solver.fieldName();
             return false;
         }
-
-        auto* heatSolver = problem.heatTransfer.get();
-        if (!heatSolver->massMatrixAssembled()) {
-            LOG_ERROR << "BDF2Integrator: Mass matrix not assembled";
-            return false;
-        }
-
-        const SparseMatrix& M = heatSolver->massMatrix();
-        const SparseMatrix& K = heatSolver->stiffnessMatrixBeforeBC();
-        const Vector& Q = heatSolver->rhsBeforeBC();
-        GridFunction& Tcurr = heatSolver->field();
-        const Real dt = problem.timeStep;
 
         ensureSize(M.rows(), M.cols());
 
-        if (problem.currentStep > 0) {
-            const GridFunction& Tprev1 = problem.history("T", 1);
-            const GridFunction& Tprev2 = problem.history("T", 2);
+        GridFunction& curr = solver.field();
+
+        if (currentStep > 0) {
+            // Full BDF2 formula
+            const GridFunction& Tprev1 = history.history(solver.fieldName(), 1);
+            const GridFunction& Tprev2 = history.history(solver.fieldName(), 2);
 
             A_ = (1.5 * M) + (dt * K);
             A_.makeCompressed();
 
             const Vector historyCombo = 2.0 * Tprev1.values() - 0.5 * Tprev2.values();
-            rhs_ = M * historyCombo + dt * Q;
+            rhs_ = M * historyCombo + dt * F;
 
-            LOG_INFO << "BDF2Integrator: Step " << (problem.currentStep + 1) << " (using BDF2)";
+            LOG_INFO << "BDF2Integrator: Step " << (currentStep + 1) << " (using BDF2)";
         }
         else {
-            const GridFunction& Tprev = problem.history("T", 1);
+            // BDF1 starter for first step
+            const GridFunction& Tprev = history.history(solver.fieldName(), 1);
 
             A_ = M + (dt * K);
             A_.makeCompressed();
 
-            rhs_ = M * Tprev.values() + dt * Q;
+            rhs_ = M * Tprev.values() + dt * F;
 
-            LOG_INFO << "BDF2Integrator: Step " << (problem.currentStep + 1)
-                     << " (using BDF1 starter)";
+            LOG_INFO << "BDF2Integrator: Step " << (currentStep + 1) << " (using BDF1 starter)";
         }
 
-        if (!heatSolver->solveLinearSystem(A_, Tcurr.values(), rhs_)) {
-            LOG_ERROR << "BDF2Integrator: Linear solve failed";
+        solver.applyBoundaryConditions(A_, rhs_, curr.values());
+
+        if (!solver.solveLinearSystem(A_, curr.values(), rhs_)) {
+            LOG_ERROR << "BDF2Integrator: Linear solve failed for " << solver.fieldName();
             return false;
         }
 
-        LOG_INFO << "BDF2Integrator: Step completed, iterations: " << heatSolver->iterations();
+        LOG_INFO << "BDF2Integrator: Step completed for " << solver.fieldName()
+                 << ", iterations: " << solver.iterations();
         return true;
     }
 

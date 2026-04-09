@@ -34,7 +34,11 @@ namespace mpfem {
         void setStrainLoad(const std::set<int>& domains, const VariableNode* stress);
         bool hasStrainLoad() const { return !strainLoadBindings_.empty(); }
 
-        void assemble() override;
+        void buildStiffnessMatrix(SparseMatrix& K) override;
+        void buildMassMatrix(SparseMatrix& M) override { M.resize(0, 0); } // No mass matrix (quasi-static)
+        void buildRHS(Vector& F) override;
+        void applyBoundaryConditions(SparseMatrix& A, Vector& rhs, Vector& solution) override;
+        bool solveLinearSystem(SparseMatrix& A, Vector& x, const Vector& b) override;
 
     private:
         struct ElasticityBinding {
@@ -55,9 +59,6 @@ namespace mpfem {
         std::vector<ElasticityBinding> elasticityBindings_;
         std::vector<StrainLoadBinding> strainLoadBindings_;
         std::vector<DisplacementBinding> displacementBindings_;
-
-        SparseMatrix stiffnessMatrixBeforeBC_;
-        Vector rhsBeforeBC_;
     };
 
 } // namespace mpfem

@@ -45,18 +45,8 @@ namespace mpfem {
         displacementBindings_.push_back({boundaryIds, displacement});
     }
 
-    void StructuralSolver::assemble()
+    void StructuralSolver::buildStiffnessMatrix(SparseMatrix& K)
     {
-        ScopedTimer timer("Structural assemble");
-
-        if (!fes_)
-            return;
-
-        if (elasticityBindings_.empty()) {
-            LOG_ERROR << "StructuralSolver: material not set";
-            return;
-        }
-
         matAsm_->clear();
         matAsm_->clearIntegrators();
 
@@ -66,28 +56,48 @@ namespace mpfem {
                 binding.domains);
         }
         matAsm_->assemble();
-        stiffnessMatrixBeforeBC_ = matAsm_->matrix();
+        K = matAsm_->matrix();
+    }
 
+    void StructuralSolver::buildRHS(Vector& F)
+    {
         vecAsm_->clear();
         vecAsm_->clearIntegrators();
 
         for (const auto& binding : strainLoadBindings_) {
-            vecAsm_->addDomainIntegrator(std::make_unique<StrainLoadIntegrator>(
-                                             binding.stress, fes_->vdim()),
+            vecAsm_->addDomainIntegrator(
+                std::make_unique<StrainLoadIntegrator>(binding.stress, fes_->vdim()),
                 binding.domains);
         }
         vecAsm_->assemble();
-        rhsBeforeBC_ = vecAsm_->vector();
+        F = vecAsm_->vector();
+    }
 
-        // Flatten displacementBindings_ to map for applyDirichletBC
+    void StructuralSolver::applyBoundaryConditions(SparseMatrix& A, Vector& rhs, Vector& solution)
+    {
         std::map<int, Vector3> displacementBCs;
         for (const auto& binding : displacementBindings_) {
             for (int bid : binding.boundaryIds) {
                 displacementBCs[bid] = binding.displacement;
             }
         }
-        applyDirichletBC(matAsm_->matrix(), vecAsm_->vector(), field().values(), *fes_, *mesh_, displacementBCs, 3);
-        matAsm_->finalize();
+        applyDirichletBC(A, rhs, solution, *fes_, *mesh_, displacementBCs, 3);
+    }
+
+    bool StructuralSolver::solveLinearSystem(SparseMatrix& A, Vector& x, const Vector& b)
+    {
+        if (!solver_) {
+            LOG_ERROR << "StructuralSolver: solver not available";
+            return false;
+        }
+        Vector rhs = b;
+        applyBoundaryConditions(A, rhs, x);
+        A.makeCompressed();
+        solver_->setup(&A);
+        solver_->apply(rhs, x);
+        field().markUpdated();
+        LOG_INFO << fieldName() << " linear solve converged in " << iterations() << " iterations";
+        return true;
     }
 
 } // namespace mpfem
