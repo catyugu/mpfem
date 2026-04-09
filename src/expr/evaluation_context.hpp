@@ -15,7 +15,7 @@ namespace mpfem {
         Index elementId = InvalidIndex;
         std::span<const Vector3> physicalPoints;
         std::span<const Vector3> referencePoints;
-        std::span<const Matrix3> invJacobianTransposes;
+        std::span<const Matrix> invJacobianTransposes;
     };
 
 } // namespace mpfem
