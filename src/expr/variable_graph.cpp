@@ -12,250 +12,127 @@
 #include <utility>
 
 namespace mpfem {
-    namespace {
 
-        std::uint64_t nextProgramId()
+    // =========================================================================
+    // Built-in VariableNode implementations for x, y, z, t coordinates and time
+    // =========================================================================
+
+    class PointScalarNode final : public VariableNode {
+    public:
+        using Extractor = Real (*)(const Vector3&);
+
+        explicit PointScalarNode(Extractor extractor) : extractor_(extractor) { }
+
+        void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
         {
-            static std::atomic<std::uint64_t> id {1};
-            return id.fetch_add(1, std::memory_order_relaxed);
+            for (size_t i = 0; i < dest.size(); ++i) {
+                dest[i] = TensorValue::scalar(extractor_(ctx.physicalPoints[i]));
+            }
         }
 
-        class RuntimeExpressionNode final : public VariableNode {
-        public:
-            RuntimeExpressionNode(std::string expression,
-                std::vector<const VariableNode*> dependencies,
-                ExpressionParser::ExpressionProgram program)
-                : expression_(std::move(expression)), dependencies_(std::move(dependencies)), program_(std::move(program)), id_(nextProgramId())
-            {
-            }
+    private:
+        Extractor extractor_;
+    };
 
-            void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
-            {
-                const size_t n = ctx.physicalPoints.empty() ? dest.size() : ctx.physicalPoints.size();
-                if (dest.size() != n) {
-                    MPFEM_THROW(ArgumentException, "RuntimeExpressionNode evaluate destination size mismatch.");
-                }
-
-                const size_t m = dependencies_.size();
-                Workspace& workspace = workspaceFor(id_);
-
-                if (workspace.scratchpad.size() != m * n) {
-                    workspace.scratchpad.resize(m * n);
-                }
-
-                for (size_t d = 0; d < m; ++d) {
-                    std::span<TensorValue> depDest(&workspace.scratchpad[d * n], n);
-                    dependencies_[d]->evaluateBatch(ctx, depDest);
-                }
-
-                if (workspace.pointInputs.size() != m) {
-                    workspace.pointInputs.resize(m);
-                }
-
-                for (size_t i = 0; i < n; ++i) {
-                    for (size_t d = 0; d < m; ++d) {
-                        workspace.pointInputs[d] = workspace.scratchpad[d * n + i];
-                    }
-
-                    dest[i] = program_.evaluate(std::span<const TensorValue>(workspace.pointInputs.data(), m));
-                }
-            }
-
-            std::vector<const VariableNode*> dependencies() const override { return dependencies_; }
-
-        private:
-            struct Workspace {
-                std::vector<TensorValue> scratchpad;
-                std::vector<TensorValue> pointInputs;
-            };
-
-            static Workspace& workspaceFor(std::uint64_t nodeId)
-            {
-                thread_local std::unordered_map<std::uint64_t, Workspace> workspaceByNode;
-                return workspaceByNode[nodeId];
-            }
-
-            std::string expression_;
-            std::vector<const VariableNode*> dependencies_;
-            ExpressionParser::ExpressionProgram program_;
-            std::uint64_t id_ = 0;
-        };
-
-        class ConstantNode final : public VariableNode {
-        public:
-            explicit ConstantNode(TensorValue value)
-                : value_(std::move(value)), shape_(value_.shape())
-            {
-            }
-
-            void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
-            {
-                (void)ctx;
-                std::fill(dest.begin(), dest.end(), value_);
-            }
-
-            bool isConstant() const override { return true; }
-
-        private:
-            TensorValue value_;
-            TensorShape shape_;
-        };
-
-        class PointScalarNode final : public VariableNode {
-        public:
-            using Extractor = std::function<Real(const EvaluationContext&, size_t)>;
-
-            explicit PointScalarNode(Extractor extractor)
-                : extractor_(std::move(extractor))
-            {
-            }
-
-            void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
-            {
-                for (size_t i = 0; i < dest.size(); ++i) {
-                    dest[i] = TensorValue::scalar(extractor_(ctx, i));
-                }
-            }
-
-        private:
-            Extractor extractor_;
-        };
-
-        std::unique_ptr<VariableNode> makeExpressionNode(
-            const std::string& expression,
-            const std::unordered_map<std::string, std::unique_ptr<VariableNode>>& nodes)
+    class TimeNode final : public VariableNode {
+    public:
+        void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
         {
-            ExpressionParser parser;
-
-            ExpressionParser::ExpressionProgram program = parser.compile(expression);
-            if (program.dependencies().empty()) {
-                const std::array<TensorValue, 0> noInputs {};
-                TensorValue value = program.evaluate(std::span<const TensorValue>(noInputs.data(), noInputs.size()));
-                return std::make_unique<ConstantNode>(std::move(value));
-            }
-
-            std::vector<const VariableNode*> dependencies;
-            dependencies.reserve(program.dependencies().size());
-            for (const std::string& symbol : program.dependencies()) {
-                const auto it = nodes.find(symbol);
-                MPFEM_ASSERT(it != nodes.end() && it->second != nullptr,
-                    "Unbound symbol in expression: " + symbol);
-                dependencies.push_back(it->second.get());
-            }
-
-            return std::make_unique<RuntimeExpressionNode>(
-                expression,
-                std::move(dependencies),
-                std::move(program));
+            for (auto& v : dest)
+                v = TensorValue::scalar(ctx.time);
         }
+    };
 
-    } // namespace
+    // =========================================================================
+    // VariableManager implementation
+    // =========================================================================
 
     VariableManager::VariableManager()
     {
-        bindNode("x", std::make_unique<PointScalarNode>([](const EvaluationContext& ctx, size_t pointIndex) -> Real {
-            return ctx.physicalPoints[pointIndex].x();
-        }));
-
-        bindNode("y", std::make_unique<PointScalarNode>([](const EvaluationContext& ctx, size_t pointIndex) -> Real {
-            return ctx.physicalPoints[pointIndex].y();
-        }));
-
-        bindNode("z", std::make_unique<PointScalarNode>([](const EvaluationContext& ctx, size_t pointIndex) -> Real {
-            return ctx.physicalPoints[pointIndex].z();
-        }));
-
-        bindNode("t", std::make_unique<PointScalarNode>([](const EvaluationContext& ctx, size_t) -> Real {
-            return ctx.time;
-        }));
-
-        graphDirty_ = true;
+        // Bind built-in spatial coordinate variables
+        bindNode("x", std::make_unique<PointScalarNode>([](const Vector3& p) { return p.x(); }));
+        bindNode("y", std::make_unique<PointScalarNode>([](const Vector3& p) { return p.y(); }));
+        bindNode("z", std::make_unique<PointScalarNode>([](const Vector3& p) { return p.z(); }));
+        bindNode("t", std::make_unique<TimeNode>());
     }
 
-    void VariableManager::define(std::string name, std::string expression)
+    void VariableManager::define(std::string name, const std::string& expression)
     {
-        nodes_[std::move(name)] = makeExpressionNode(expression, nodes_);
-        graphDirty_ = true;
+        // Parse expression into AST tree - VariableRefNode nodes are unresolved at this point
+        nodes_[std::move(name)] = ExpressionParser::parse(expression);
+        isCompiled_ = false;
     }
 
     void VariableManager::bindNode(std::string name, std::unique_ptr<VariableNode> node)
     {
         MPFEM_ASSERT(node != nullptr, "bindNode requires non-null node.");
         nodes_[std::move(name)] = std::move(node);
-        graphDirty_ = true;
+        isCompiled_ = false;
     }
 
     const VariableNode* VariableManager::get(std::string_view name) const
     {
-        const auto it = nodes_.find(std::string(name));
-        if (it == nodes_.end()) {
-            return nullptr;
-        }
-        return it->second.get();
-    }
-
-    void VariableManager::clearExecutionPlan()
-    {
-        executionPlan_.clear();
-    }
-
-    void VariableManager::dfsVisit(const VariableNode* node,
-        std::unordered_map<const VariableNode*, int>& marks,
-        std::vector<const VariableNode*>& ordered) const
-    {
-        auto it = marks.find(node);
-        if (it != marks.end()) {
-            if (it->second == 1) {
-                MPFEM_THROW(ArgumentException, "Variable graph has cyclic dependencies.");
-            }
-            if (it->second == 2) {
-                return;
-            }
-        }
-
-        marks[node] = 1;
-        for (const VariableNode* dep : node->dependencies()) {
-            if (dep) {
-                dfsVisit(dep, marks, ordered);
-            }
-        }
-        marks[node] = 2;
-        ordered.push_back(node);
+        auto it = nodes_.find(std::string(name));
+        return it != nodes_.end() ? it->second.get() : nullptr;
     }
 
     void VariableManager::compile()
     {
-        if (!graphDirty_) {
+        if (isCompiled_)
             return;
+
+        // Phase 1: Resolve all VariableRefNode references to actual pointers
+        for (const auto& [name, node] : nodes_) {
+            (void)name; // suppress unused warning
+            node->resolve(*this);
         }
 
-        clearExecutionPlan();
+        // Phase 2: Check for cyclic dependencies
+        checkCycles();
 
-        std::unordered_map<const VariableNode*, int> marks;
-        marks.reserve(nodes_.size() * 2);
-
-        std::vector<const VariableNode*> ordered;
-        ordered.reserve(nodes_.size());
-
-        for (const auto& [_, node] : nodes_) {
-            if (node) {
-                dfsVisit(node.get(), marks, ordered);
-            }
-        }
-
-        executionPlan_ = std::move(ordered);
-        graphDirty_ = false;
+        isCompiled_ = true;
     }
 
     void VariableManager::evaluate(std::string_view name,
         const EvaluationContext& ctx,
         std::span<TensorValue> dest) const
     {
+        MPFEM_ASSERT(isCompiled_, "VariableManager must be compiled before evaluation.");
         const VariableNode* node = get(name);
         if (!node) {
             MPFEM_THROW(ArgumentException, "Variable not found: " + std::string(name));
         }
         node->evaluateBatch(ctx, dest);
+    }
+
+    void VariableManager::checkCycles() const
+    {
+        std::unordered_map<const VariableNode*, int> state;
+        for (const auto& [name, node] : nodes_) {
+            (void)name;
+            if (state[node.get()] == 0) {
+                dfsVisit(node.get(), state);
+            }
+        }
+    }
+
+    void VariableManager::dfsVisit(const VariableNode* node,
+        std::unordered_map<const VariableNode*, int>& state) const
+    {
+        state[node] = 1; // visiting
+
+        for (const VariableNode* child : node->getChildren()) {
+            if (!child)
+                continue;
+            if (state[child] == 1) {
+                MPFEM_THROW(ArgumentException, "Cyclic dependency detected in variable expressions.");
+            }
+            if (state[child] == 0) {
+                dfsVisit(child, state);
+            }
+        }
+
+        state[node] = 2; // visited
     }
 
 } // namespace mpfem
