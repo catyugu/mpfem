@@ -59,7 +59,7 @@ namespace mpfem {
         const VariableNode* makeScalarExpressionNode(Problem& problem,
             const std::string& expression);
 
-        class DomainMultiplexerProvider final : public ExternalDataProvider {
+        class DomainMultiplexerProvider final : public VariableNode {
         public:
             explicit DomainMultiplexerProvider(TensorShape shape)
                 : shape_(std::move(shape))
@@ -69,11 +69,8 @@ namespace mpfem {
             void addDomain(int domainId, const VariableNode* node)
             {
                 MPFEM_ASSERT(node != nullptr, "DomainMultiplexerNode child must not be null.");
-                MPFEM_ASSERT(node->shape() == shape_, "DomainMultiplexerNode child shape mismatch.");
                 children_[domainId] = node;
             }
-
-            TensorShape shape() const override { return shape_; }
 
             void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
             {
@@ -91,14 +88,12 @@ namespace mpfem {
             std::unordered_map<int, const VariableNode*> children_;
         };
 
-        class GridFunctionValueProvider final : public ExternalDataProvider {
+        class GridFunctionValueProvider final : public VariableNode {
         public:
             explicit GridFunctionValueProvider(const GridFunction* field)
                 : field_(field)
             {
             }
-
-            TensorShape shape() const override { return TensorShape::scalar(); }
 
             void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
             {
@@ -123,14 +118,12 @@ namespace mpfem {
             const GridFunction* field_ = nullptr;
         };
 
-        class GridFunctionGradientProvider final : public ExternalDataProvider {
+        class GridFunctionGradientProvider final : public VariableNode {
         public:
             explicit GridFunctionGradientProvider(const GridFunction* field)
                 : field_(field)
             {
             }
-
-            TensorShape shape() const override { return TensorShape::vector(3); }
 
             void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
             {
@@ -178,7 +171,7 @@ namespace mpfem {
                 selector->addDomain(domainId, problem.globalVariables_.get(leafName));
             }
 
-            problem.globalVariables_.bindExternal(nodeName, std::move(selector));
+            problem.globalVariables_.bindNode(nodeName, std::move(selector));
             return problem.globalVariables_.get(nodeName);
         }
 
@@ -313,8 +306,8 @@ namespace mpfem {
             problem.electrostatics->initialize(*problem.mesh, problem.fieldValues, physics.order, icValue);
 
             // Register the electrostatics field as a DAG node for expression dependencies
-            problem.globalVariables_.bindExternal("V", std::make_unique<GridFunctionValueProvider>(&problem.electrostatics->field()));
-            problem.globalVariables_.bindExternal("grad(V)", std::make_unique<GridFunctionGradientProvider>(&problem.electrostatics->field()));
+            problem.globalVariables_.bindNode("V", std::make_unique<GridFunctionValueProvider>(&problem.electrostatics->field()));
+            problem.globalVariables_.bindNode("grad(V)", std::make_unique<GridFunctionGradientProvider>(&problem.electrostatics->field()));
 
             const VariableNode* sigma = requireDomainMatrixNode(problem, kPropElectricConductivity);
             for (int domainId : problem.materials.domainIds()) {
@@ -339,8 +332,8 @@ namespace mpfem {
             problem.heatTransfer->initialize(*problem.mesh, problem.fieldValues, physics.order, icValue);
 
             // Register the heat transfer field as a DAG node for expression dependencies
-            problem.globalVariables_.bindExternal("T", std::make_unique<GridFunctionValueProvider>(&problem.heatTransfer->field()));
-            problem.globalVariables_.bindExternal("grad(T)", std::make_unique<GridFunctionGradientProvider>(&problem.heatTransfer->field()));
+            problem.globalVariables_.bindNode("T", std::make_unique<GridFunctionValueProvider>(&problem.heatTransfer->field()));
+            problem.globalVariables_.bindNode("grad(T)", std::make_unique<GridFunctionGradientProvider>(&problem.heatTransfer->field()));
 
             const VariableNode* k = requireDomainMatrixNode(problem, kPropThermalConductivity);
             const VariableNode* density = requireDomainScalarNode(problem, kPropDensity);

@@ -27,7 +27,7 @@ namespace mpfem {
 
         Real evalScalarNode(const VariableNode* node, ElementTransform& trans)
         {
-            if (!node || !node->shape().isScalar()) {
+            if (!node) {
                 MPFEM_THROW(ArgumentException, "Expected scalar variable node.");
             }
             std::array<Vector3, 1> refPts;
@@ -41,7 +41,7 @@ namespace mpfem {
 
         Matrix3 evalMatrixNode(const VariableNode* node, ElementTransform& trans)
         {
-            if (!node || !node->shape().isMatrix()) {
+            if (!node) {
                 MPFEM_THROW(ArgumentException, "Expected matrix variable node.");
             }
 

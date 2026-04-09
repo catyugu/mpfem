@@ -62,9 +62,9 @@ mpfem_add_test(mpfem_test_curved_element mpfem::fe test_curved_element.cpp)
 mpfem_add_test(mpfem_test_fe_space_quadratic mpfem::fe test_fe_space_quadratic.cpp)
 
 # =============================================================================
-# Coefficient Tests (includes order 1 and order 2 tests)
+# Variable Tests (includes order 1 and order 2 tests)
 # =============================================================================
-mpfem_add_test(mpfem_test_coefficient mpfem::problem test_coefficient.cpp)
+mpfem_add_test(mpfem_test_variable mpfem::problem test_variable.cpp)
 
 # =============================================================================
 # Integrator Tests (Assembly module)
@@ -75,3 +75,8 @@ mpfem_add_test(mpfem_test_integrator mpfem::assembly test_integrator.cpp)
 # Electrostatics Solver Tests (Physics module)
 # =============================================================================
 mpfem_add_test(mpfem_test_electrostatics_solver mpfem::problem test_electrostatics_solver.cpp)
+
+# =============================================================================
+# Literal Tests (BracketLiteral - expr module)
+# =============================================================================
+mpfem_add_test(mpfem_test_literal mpfem::expr test_literal.cpp)

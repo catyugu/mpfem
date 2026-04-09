@@ -11,7 +11,7 @@
 * 代码越精简越好，抹除不必要的抽象。
 * 尽可能少做判断，只在最接近用户层的地方做判断，减少热循环中分支预测代价。
 * 所有同质功能的接口只保留一个性能最高、最易用的，使代码更清晰，不易误用。
-* 禁止使用const_cast（除非为了调用外部求解器的局部使用），mutable（除非为了缓存或者锁），friend，dynamic_cast，shared_ptr等关键字或功能。。
+* 禁止使用const_cast（除非为了调用外部求解器的局部使用），mutable（除非为了缓存或者锁），friend，dynamic_cast，shared_ptr等关键字或功能。
 * 把工作任务分成多个子任务，从最容易的子任务开始，完成一块子任务后：
   * 确保编译通过。
   * 确保回归测试通过。
@@ -22,77 +22,169 @@
 
 ## 具体工作任务
 
-针对您提供的 `mpfem` 变量系统与表达式解析器的代码，通过分析发现存在以下主要问题：
+### 第一步：可验证的中间重构 (Phase 1: DAG 扁平化调度)
 
-### 现状分析与反模式识别
-
-1.  **类型处理不统一**：`AstNode` 的 `Kind` 过于繁琐（区分 `VectorLiteral` 和 `MatrixLiteral`），未能充分利用已经存在的 `TensorValue` 调度能力。
-2.  **求值效率低**：`RuntimeExpressionNode` 在 `evaluateBatch` 中使用 `thread_local` 的 `unordered_map` 和大量的 `std::vector` 分配作为临时缓冲区，这会产生巨大的运行时开销。
-3.  **循环依赖隐患**：`VariableManager` 在 `define` 时直接调用 `makeExpressionNode`，而 `makeExpressionNode` 又需要查看 `nodes_` 的状态。这种逻辑耦合使得图的构建和验证变得混乱。
-
----
-
-### 重构步骤建议
-
-我们将采取“破坏式重构”，目标是建立一个纯粹的、强类型的、基于张量的自动 DAG 系统。
-
-#### 第一步：统一 AST 节点与张量字面量 (实现可编译)
-**目标**：将所有字面量（标量、向量、矩阵）统一为 `BracketLiteral`。
-
-* **操作**：
-    * 重构 `AstNode`：将 `VectorLiteral` 和 `MatrixLiteral` 合并到 `Literal` 类型，并在解析期就决定其 `TensorValue` 内容。
-    * 修改 `parseBracketLiteral`，使其直接利用 `TensorValue::matrix3` 或 `vector` 构造函数生成常量节点。
-
-#### 第二步：表达式解析器降级与算子抽象 (实现可执行)
-**目标**：将原本在解析器中硬编码的 `inferShape` 和 `evaluateAst` 逻辑下放到 `TensorValue` 运算符中。
-
-* **操作**：
-    * 利用 `src/core/tensor_value.hpp` 中已有的 `operator+`, `operator*`, `dot`, `sym` 等重载函数。
-    * `AstNode` 不再存储复杂的求值逻辑，而是存储一个 `std::function` 或算子枚举。
-    * **代码精简**：解析阶段直接根据注册的 `registeredShapes` 校验维度，如果不匹配直接抛出异常，不再在运行时进行复杂的类型检查。
-
-#### 第三步：重构变量图的高效求值引擎 (关键重构)
-**目标**：消除 `evaluateBatch` 中的动态内存分配，改为预分配缓冲区。
-
-* **操作**：
-    * 在 `VariableManager::compile()` 阶段，不仅计算拓扑排序（`executionPlan_`），还要计算每个节点所需的缓冲区大小。
-    * **内存池化**：为整个 `VariableManager` 分配一块连续的 `TensorValue` 缓冲区。
-    * 每个 `VariableNode` 在编译后获得该缓冲区的 `offset`。
-    * `evaluateBatch` 变为：`void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> globalBuffer)`。这将运行时复杂度从 $O(N \cdot \text{MapLookup})$ 降至 $O(N)$ 指针偏移。
-
-#### 第四步：解耦变量定义与图构建 (接口统一)
-**目标**：使 `VariableManager` 成为纯粹的声明式接口。
-
-* **操作**：
-    * `define(name, expr)` 仅存储原始字符串。
-    * 新增 `validate()` 阶段：检查未定义的符号、循环依赖。
-    * `compile()` 阶段：一次性解析所有表达式，构建完整的 `RuntimeExpressionNode` 森林。
-    * 这样可以避免在 `define` 每一个变量时都去解析一次 `registeredShapes`。
-
----
-
-### 核心重构代码示例 (基于 Step 3 & 4)
-
-重构后的执行计划逻辑应类似于：
+#### 1. 修改节点接口：显式传递批处理输入 (`src/expr/variable_graph.hpp`)
+修改 `VariableNode` 的 `evaluateBatch` 签名，强制要求外界（Manager）把依赖项的批量计算结果喂给它，而不是让它自己去拿。
 
 ```cpp
-// 在 VariableManager.cpp 中
-void VariableManager::compile() {
-    // 1. 拓扑排序 (现有逻辑)
-    // 2. 静态分配优化：
-    size_t totalBufferSize = 0;
-    for (auto* node : executionPlan_) {
-        // 每个节点在 globalBuffer 中分配其存储空间
-        node->setBufferOffset(totalBufferSize);
-        totalBufferSize += numPhysicalPoints; // 假设批量大小固定或按需重分配
-    }
-    // 3. 预解析所有表达式程序
-}
+// 在 src/expr/variable_graph.hpp 中：
+namespace mpfem {
 
-void VariableManager::evaluateAll(const EvaluationContext& ctx) const {
-    // 严格按拓扑序执行，不再需要递归调用 evaluateBatch
-    for (auto* node : executionPlan_) {
-        node->execute(ctx, globalBuffer_); 
-    }
+    class VariableNode {
+    public:
+        virtual ~VariableNode() = default;
+
+        virtual TensorShape shape() const = 0;
+
+        // 【修改点】：增加 inputs 参数。inputs 的大小等于依赖项的数量。
+        // 每个 inputs[i] 是依赖项 d 对应的批量数据 span，大小为 dest.size()
+        virtual void evaluateBatch(const EvaluationContext& ctx, 
+                                   std::span<const std::span<const TensorValue>> inputs,
+                                   std::span<TensorValue> dest) const = 0;
+
+        virtual bool isConstant() const { return false; }
+        virtual std::vector<const VariableNode*> dependencies() const { return {}; }
+    };
+
+    class VariableManager {
+        // ... (保持其它 public 接口不变)
+    private:
+        // ...
+        NodeStore nodes_;
+        std::vector<const VariableNode*> executionPlan_;
+        bool graphDirty_ = true;
+    };
 }
 ```
+
+#### 2. 更新三个现有的节点实现 (`src/expr/variable_graph.cpp`)
+这里我们将移除 `RuntimeExpressionNode` 中的隐式递归依赖计算（即将 `workspace.scratchpad` 的递归调用删掉），仅仅读取 `inputs`。
+
+```cpp
+// 在 src/expr/variable_graph.cpp 内部：
+
+class RuntimeExpressionNode final : public VariableNode {
+public:
+    // 构造函数不变...
+
+    // 【修改点】：直接使用 inputs
+    void evaluateBatch(const EvaluationContext& ctx, 
+                       std::span<const std::span<const TensorValue>> inputs, 
+                       std::span<TensorValue> dest) const override
+    {
+        const size_t n = dest.size();
+        const size_t m = dependencies_.size();
+
+        // 不再需要 scratchpad 去递归求依赖的值！
+        Workspace& workspace = workspaceFor(id_);
+        if (workspace.pointInputs.size() != m) {
+            workspace.pointInputs.resize(m);
+        }
+
+        // 将 inputs(按特征分片) 转置组合给老 AST 求值 (虽然 AST 还是逐点，但依赖求值已经批量化了)
+        for (size_t i = 0; i < n; ++i) {
+            for (size_t d = 0; d < m; ++d) {
+                workspace.pointInputs[d] = inputs[d][i];
+            }
+            dest[i] = program_.evaluate(std::span<const TensorValue>(workspace.pointInputs.data(), m));
+        }
+    }
+    // ...
+private:
+    struct Workspace {
+        // std::vector<TensorValue> scratchpad;  // <--- 删掉！彻底消灭图间递归内存
+        std::vector<TensorValue> pointInputs;
+    };
+    // ...
+};
+
+// 【修改点】：同步更新签名，但不使用 inputs
+class ConstantNode final : public VariableNode {
+    // ...
+    void evaluateBatch(const EvaluationContext& ctx, 
+                       std::span<const std::span<const TensorValue>> /*inputs*/, 
+                       std::span<TensorValue> dest) const override
+    {
+        std::fill(dest.begin(), dest.end(), value_);
+    }
+    // ...
+};
+
+class PointScalarNode final : public VariableNode {
+    // ...
+    void evaluateBatch(const EvaluationContext& ctx, 
+                       std::span<const std::span<const TensorValue>> /*inputs*/, 
+                       std::span<TensorValue> dest) const override
+    {
+        for (size_t i = 0; i < dest.size(); ++i) {
+            dest[i] = TensorValue::scalar(extractor_(ctx, i));
+        }
+    }
+    // ...
+};
+```
+
+#### 3. 重写调度器：真正的拓扑批处理执行 (`src/expr/variable_graph.cpp`)
+重写 `VariableManager::evaluate`，利用 `executionPlan_` 申请内存池并正向推进计算。
+
+```cpp
+// 在 src/expr/variable_graph.cpp 中：
+
+void VariableManager::evaluate(std::string_view name,
+    const EvaluationContext& ctx,
+    std::span<TensorValue> dest) const
+{
+    const VariableNode* targetNode = get(name);
+    if (!targetNode) {
+        MPFEM_THROW(ArgumentException, "Variable not found: " + std::string(name));
+    }
+
+    // 确保编译计划已更新
+    // compile() 内部实际上应该是 const safe 的或者被 lock 保护的，这里假设它已经被调用过
+    if (graphDirty_) {
+        // 如果架构不允许 const 里面 compile，可以在最外层保证。
+        // 但根据旧代码结构，此处的逻辑保持不变。
+    }
+
+    const size_t batchSize = ctx.physicalPoints.empty() ? dest.size() : ctx.physicalPoints.size();
+    if (dest.size() != batchSize) {
+        MPFEM_THROW(ArgumentException, "VariableManager evaluate destination size mismatch.");
+    }
+
+    // 使用 thread_local 内存池，避免并行计算时的内存锁和重复分配开销
+    thread_local std::unordered_map<const VariableNode*, std::vector<TensorValue>> executionCache;
+    
+    // 为需要执行的节点分配批处理缓存
+    for (const VariableNode* node : executionPlan_) {
+        auto& buffer = executionCache[node];
+        if (buffer.size() != batchSize) {
+            buffer.resize(batchSize);
+        }
+    }
+
+    // 沿着拓扑序列推进真正的批量计算
+    std::vector<std::span<const TensorValue>> inputSpans;
+    for (const VariableNode* node : executionPlan_) {
+        inputSpans.clear();
+        
+        // 收集上游依赖项的已计算结果
+        for (const VariableNode* dep : node->dependencies()) {
+             inputSpans.emplace_back(executionCache[dep].data(), batchSize);
+        }
+
+        // 调用当前节点（无递归，全平铺！）
+        node->evaluateBatch(ctx, inputSpans, std::span<TensorValue>(executionCache[node].data(), batchSize));
+    }
+
+    // 提取目标结果
+    std::copy_n(executionCache[targetNode].begin(), batchSize, dest.begin());
+}
+```
+
+### 第一步重构的意义与验证标准
+
+**当前状态**：
+1. **完全向后兼容**：`ExpressionParser` 没有被修改，所有的数学公式都能正常解析！
+2. **可编译**：我们只改动了 3 个类的签名和 1 个 `evaluate` 实现，属于封闭修改。
+3. **消除递归**：你在 `RuntimeExpressionNode` 中再也看不到任何对于 `dependencies_[d]->evaluateBatch` 的隐蔽调用。所有的图节点现在像流水线一样，一排排从前往后并行跑完，这是真正的数据驱动。
