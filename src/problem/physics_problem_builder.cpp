@@ -11,12 +11,8 @@
 #include "problem.hpp"
 #include "steady_problem.hpp"
 #include "transient_problem.hpp"
-#include <algorithm>
-#include <array>
+
 #include <atomic>
-#include <cstdint>
-#include <string_view>
-#include <unordered_map>
 
 namespace mpfem {
 
@@ -33,6 +29,7 @@ namespace mpfem {
         constexpr std::string_view kPropYoungModulus = "E";
         constexpr std::string_view kPropPoissonRatio = "nu";
         constexpr std::string_view kPropThermalExpansion = "thermalexpansioncoefficient";
+
         Real getInitialCondition(const CaseDefinition& caseDef,
             std::string_view fieldKind,
             Real defaultVal)
@@ -56,44 +53,57 @@ namespace mpfem {
             throw ArgumentException("Unsupported transient time scheme: " + scheme + ". Supported values: BDF1, BDF2.");
         }
 
-        const VariableNode* makeScalarExpressionNode(Problem& problem,
-            const std::string& expression);
-
+        // =====================================================================
+        // DomainMultiplexerProvider - selects child based on domain at runtime
+        // =====================================================================
         class DomainMultiplexerProvider final : public VariableNode {
         public:
-            explicit DomainMultiplexerProvider(TensorShape shape)
-                : shape_(std::move(shape))
+            explicit DomainMultiplexerProvider(TensorShape /*shape*/) { }
+
+            void addDomain(int domainId, std::string targetName)
             {
+                targetNames_[domainId] = std::move(targetName);
             }
 
-            void addDomain(int domainId, const VariableNode* node)
+            void resolve(const VariableManager& mgr) override
             {
-                MPFEM_ASSERT(node != nullptr, "DomainMultiplexerNode child must not be null.");
-                children_[domainId] = node;
+                for (const auto& [did, name] : targetNames_) {
+                    const VariableNode* child = mgr.get(name);
+                    if (!child)
+                        MPFEM_THROW(ArgumentException, "Unbound domain ref: " + name);
+                    children_[did] = child;
+                }
+            }
+
+            std::vector<const VariableNode*> getChildren() const override
+            {
+                std::vector<const VariableNode*> ret;
+                for (const auto& [_, child] : children_) {
+                    ret.push_back(child);
+                }
+                return ret;
             }
 
             void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
             {
-                const int domainId = ctx.domainId;
-                const auto it = children_.find(domainId);
-                if (it == children_.end() || !it->second) {
-                    MPFEM_THROW(ArgumentException,
-                        "DomainMultiplexerNode missing child for domain " + std::to_string(domainId));
+                auto it = children_.find(ctx.domainId);
+                if (it == children_.end()) {
+                    MPFEM_THROW(ArgumentException, "DomainMultiplexerProvider missing child for domain " + std::to_string(ctx.domainId));
                 }
                 it->second->evaluateBatch(ctx, dest);
             }
 
         private:
-            TensorShape shape_;
+            std::unordered_map<int, std::string> targetNames_;
             std::unordered_map<int, const VariableNode*> children_;
         };
 
+        // =====================================================================
+        // GridFunctionValueProvider - evaluates GridFunction at quadrature points
+        // =====================================================================
         class GridFunctionValueProvider final : public VariableNode {
         public:
-            explicit GridFunctionValueProvider(const GridFunction* field)
-                : field_(field)
-            {
-            }
+            explicit GridFunctionValueProvider(const GridFunction* field) : field_(field) { }
 
             void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
             {
@@ -118,12 +128,12 @@ namespace mpfem {
             const GridFunction* field_ = nullptr;
         };
 
+        // =====================================================================
+        // GridFunctionGradientProvider - evaluates gradient of GridFunction
+        // =====================================================================
         class GridFunctionGradientProvider final : public VariableNode {
         public:
-            explicit GridFunctionGradientProvider(const GridFunction* field)
-                : field_(field)
-            {
-            }
+            explicit GridFunctionGradientProvider(const GridFunction* field) : field_(field) { }
 
             void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
             {
@@ -139,7 +149,7 @@ namespace mpfem {
 
                 for (size_t i = 0; i < dest.size(); ++i) {
                     const Real* xi = &ctx.referencePoints[i].x();
-                    const Vector3 g = field_->gradient(ctx.elementId, xi, ctx.invJacobianTransposes[i]);
+                    Vector3 g = field_->gradient(ctx.elementId, xi, ctx.invJacobianTransposes[i]);
                     dest[i] = TensorValue::vector(g.x(), g.y(), g.z());
                 }
             }
@@ -147,6 +157,10 @@ namespace mpfem {
         private:
             const GridFunction* field_ = nullptr;
         };
+
+        // =====================================================================
+        // Helper functions
+        // =====================================================================
 
         const VariableNode* requireDomainPropertyNode(Problem& problem,
             std::string_view property,
@@ -168,30 +182,27 @@ namespace mpfem {
                         : problem.materials.scalarExpressionByDomain(domainId, property);
                     problem.globalVariables_.define(leafName, expression);
                 }
-                selector->addDomain(domainId, problem.globalVariables_.get(leafName));
+                selector->addDomain(domainId, leafName);
             }
 
             problem.globalVariables_.bindNode(nodeName, std::move(selector));
             return problem.globalVariables_.get(nodeName);
         }
 
-        const VariableNode* requireDomainMatrixNode(Problem& problem,
-            std::string_view property)
+        const VariableNode* requireDomainMatrixNode(Problem& problem, std::string_view property)
         {
             return requireDomainPropertyNode(problem, property, true);
         }
 
-        const VariableNode* requireDomainScalarNode(Problem& problem,
-            std::string_view property)
+        const VariableNode* requireDomainScalarNode(Problem& problem, std::string_view property)
         {
             return requireDomainPropertyNode(problem, property, false);
         }
 
-        const VariableNode* makeScalarExpressionNode(Problem& problem,
-            const std::string& expression)
+        const VariableNode* makeScalarExpressionNode(Problem& problem, const std::string& expression)
         {
             static std::atomic<std::uint64_t> id {0};
-            std::string name = "$expr_scalar_" + std::to_string(id++);
+            std::string name = "$expr_" + std::to_string(id++);
             problem.globalVariables_.define(name, expression);
             return problem.globalVariables_.get(name);
         }
@@ -199,6 +210,7 @@ namespace mpfem {
     } // namespace
 
     namespace PhysicsProblemBuilder {
+
         void buildSolvers(Problem& problem);
         void setupCoupling(Problem& problem);
         void buildElectrostatics(Problem& problem, CaseDefinition::Physics& physics);
@@ -225,7 +237,6 @@ namespace mpfem {
                 transientProb->startTime = input.caseDefinition.timeConfig.start;
                 transientProb->endTime = input.caseDefinition.timeConfig.end;
                 transientProb->timeStep = input.caseDefinition.timeConfig.step;
-
                 transientProb->scheme = parseTimeScheme(input.caseDefinition.timeConfig.scheme);
 
                 problem = std::move(transientProb);
@@ -249,6 +260,12 @@ namespace mpfem {
             problem->registerCaseDefinitionVariables();
 
             buildSolvers(*problem);
+
+            // ==========================================
+            // KEY REFACTORING POINT: Build完毕后，统一执行compile()进行全树链接
+            // ==========================================
+            LOG_INFO << "Compiling variable expression ASTs...";
+            problem->globalVariables_.compile();
 
             // Initialize transient after building solvers
             if (isTransient) {
@@ -288,7 +305,6 @@ namespace mpfem {
                     buildStructural(problem, physics);
                     continue;
                 }
-                // heat_transfer already handled above
             }
 
             if (problem.hasJouleHeating() || problem.hasThermalExpansion()) {

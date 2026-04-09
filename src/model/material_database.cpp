@@ -1,7 +1,6 @@
 #include "model/material_database.hpp"
 
 #include "core/exception.hpp"
-#include "expr/expression_parser.hpp"
 
 #include <algorithm>
 #include <unordered_map>
@@ -29,39 +28,19 @@ namespace mpfem {
             return materialIt->second;
         }
 
-        std::vector<TensorValue> buildInputValues(const std::vector<std::string>& dependencies,
-            const std::map<std::string, Real>& variables)
-        {
-            std::vector<TensorValue> inputs;
-            inputs.reserve(dependencies.size());
-
-            for (const std::string& symbol : dependencies) {
-                const auto it = variables.find(symbol);
-                if (it == variables.end()) {
-                    MPFEM_THROW(ArgumentException, "Unbound variable in material expression: " + symbol);
-                }
-                inputs.emplace_back(it->second);
-            }
-
-            return inputs;
-        }
-
-    } // namespace
-
-    struct MaterialPropertyModel::Impl {
-        std::string tag;
-        std::string label;
-        std::unordered_map<std::string, std::string> scalarExpressions;
-        std::unordered_map<std::string, std::string> matrixExpressions;
-    };
+    } // anonymous namespace
 
     MaterialPropertyModel::MaterialPropertyModel()
-        : impl_(std::make_unique<Impl>()) { }
+        : impl_(std::make_unique<MaterialPropertyModel::Impl>())
+    {
+    }
 
     MaterialPropertyModel::~MaterialPropertyModel() = default;
 
     MaterialPropertyModel::MaterialPropertyModel(const MaterialPropertyModel& other)
-        : impl_(std::make_unique<Impl>(*other.impl_)) { }
+        : impl_(std::make_unique<MaterialPropertyModel::Impl>(*other.impl_))
+    {
+    }
 
     MaterialPropertyModel::MaterialPropertyModel(MaterialPropertyModel&& other) noexcept = default;
 
@@ -93,26 +72,6 @@ namespace mpfem {
     void MaterialPropertyModel::setLabel(std::string label)
     {
         impl_->label = std::move(label);
-    }
-
-    Real MaterialPropertyModel::getScalar(
-        const std::string& name,
-        const std::map<std::string, Real>& variables) const
-    {
-        ExpressionParser parser;
-        ExpressionParser::ExpressionProgram program = parser.compile(scalarExpression(name));
-        const std::vector<TensorValue> inputs = buildInputValues(program.dependencies(), variables);
-        return program.evaluate(std::span<const TensorValue>(inputs.data(), inputs.size())).scalar();
-    }
-
-    Matrix3 MaterialPropertyModel::getMatrix(
-        const std::string& name,
-        const std::map<std::string, Real>& variables) const
-    {
-        ExpressionParser parser;
-        ExpressionParser::ExpressionProgram program = parser.compile(matrixExpression(name));
-        const std::vector<TensorValue> inputs = buildInputValues(program.dependencies(), variables);
-        return program.evaluate(std::span<const TensorValue>(inputs.data(), inputs.size())).toMatrix3();
     }
 
     const std::string& MaterialPropertyModel::scalarExpression(const std::string& name) const
@@ -160,12 +119,16 @@ namespace mpfem {
     };
 
     MaterialDatabase::MaterialDatabase()
-        : impl_(std::make_unique<Impl>()) { }
+        : impl_(std::make_unique<Impl>())
+    {
+    }
 
     MaterialDatabase::~MaterialDatabase() = default;
 
     MaterialDatabase::MaterialDatabase(const MaterialDatabase& other)
-        : impl_(std::make_unique<Impl>(*other.impl_)) { }
+        : impl_(std::make_unique<Impl>(*other.impl_))
+    {
+    }
 
     MaterialDatabase::MaterialDatabase(MaterialDatabase&& other) noexcept = default;
 

@@ -1,35 +1,30 @@
 #include "expr/expression_parser.hpp"
-
 #include "core/exception.hpp"
 #include "core/string_utils.hpp"
 #include "expr/unit_parser.hpp"
 
-#include <algorithm>
 #include <cmath>
-#include <cstdlib>
-#include <string_view>
-#include <unordered_set>
+#include <vector>
 
 namespace mpfem {
-    namespace {
 
-        struct MatrixTemplate {
-            bool literalMatrix = false;
-            std::vector<std::string> components;
-        };
+    // =========================================================================
+    // 数据驱动的 AST 定义：使用 Enum + Switch 代替虚函数，极限压榨缓存与分支预测
+    // =========================================================================
+
+    namespace {
 
         struct AstNode {
             enum class Kind {
                 Constant,
-                Variable,
-                VectorLiteral,
-                MatrixLiteral,
+                VarIndex,
                 Add,
-                Subtract,
-                Multiply,
-                Divide,
-                Power,
-                Negate,
+                Sub,
+                Mul,
+                Div,
+                Pow,
+                Dot,
+                Neg,
                 Sin,
                 Cos,
                 Tan,
@@ -39,110 +34,250 @@ namespace mpfem {
                 Abs,
                 Min,
                 Max,
-                Dot,
                 Sym,
                 Trace,
                 Transpose,
-            };
+                VectorLit,
+                MatrixLit
+            } kind;
 
-            Kind kind = Kind::Constant;
-            Real value = 0.0;
-            std::string variableName;
+            TensorValue val; // 供 Constant 节点使用
+            int var_index = -1; // 供 VarIndex (变量引用) 节点使用
             std::vector<std::unique_ptr<AstNode>> args;
         };
 
-        bool isSeparator(char c)
+        // 数据驱动的极速递归求值
+        TensorValue evalAst(const AstNode* node, const TensorValue* vars)
         {
-            return std::isspace(static_cast<unsigned char>(c)) != 0 || c == ',';
+            switch (node->kind) {
+            case AstNode::Kind::Constant:
+                return node->val;
+            case AstNode::Kind::VarIndex:
+                return vars[node->var_index];
+
+            // 二元运算
+            case AstNode::Kind::Add:
+                return evalAst(node->args[0].get(), vars) + evalAst(node->args[1].get(), vars);
+            case AstNode::Kind::Sub:
+                return evalAst(node->args[0].get(), vars) - evalAst(node->args[1].get(), vars);
+            case AstNode::Kind::Mul:
+                return evalAst(node->args[0].get(), vars) * evalAst(node->args[1].get(), vars);
+            case AstNode::Kind::Div:
+                return evalAst(node->args[0].get(), vars) / evalAst(node->args[1].get(), vars);
+            case AstNode::Kind::Pow: {
+                Real b = evalAst(node->args[1].get(), vars).scalar();
+                return TensorValue::scalar(std::pow(evalAst(node->args[0].get(), vars).scalar(), b));
+            }
+            case AstNode::Kind::Dot:
+                return TensorValue::scalar(dot(evalAst(node->args[0].get(), vars), evalAst(node->args[1].get(), vars)));
+            case AstNode::Kind::Min:
+                return TensorValue::scalar(std::min(evalAst(node->args[0].get(), vars).scalar(), evalAst(node->args[1].get(), vars).scalar()));
+            case AstNode::Kind::Max:
+                return TensorValue::scalar(std::max(evalAst(node->args[0].get(), vars).scalar(), evalAst(node->args[1].get(), vars).scalar()));
+
+            // 一元运算
+            case AstNode::Kind::Neg:
+                return -evalAst(node->args[0].get(), vars);
+            case AstNode::Kind::Sin:
+                return TensorValue::scalar(std::sin(evalAst(node->args[0].get(), vars).scalar()));
+            case AstNode::Kind::Cos:
+                return TensorValue::scalar(std::cos(evalAst(node->args[0].get(), vars).scalar()));
+            case AstNode::Kind::Tan:
+                return TensorValue::scalar(std::tan(evalAst(node->args[0].get(), vars).scalar()));
+            case AstNode::Kind::Exp:
+                return TensorValue::scalar(std::exp(evalAst(node->args[0].get(), vars).scalar()));
+            case AstNode::Kind::Log:
+                return TensorValue::scalar(std::log(evalAst(node->args[0].get(), vars).scalar()));
+            case AstNode::Kind::Sqrt:
+                return TensorValue::scalar(std::sqrt(evalAst(node->args[0].get(), vars).scalar()));
+            case AstNode::Kind::Abs:
+                return TensorValue::scalar(std::abs(evalAst(node->args[0].get(), vars).scalar()));
+            case AstNode::Kind::Sym:
+                return sym(evalAst(node->args[0].get(), vars));
+            case AstNode::Kind::Trace:
+                return TensorValue::scalar(trace(evalAst(node->args[0].get(), vars)));
+            case AstNode::Kind::Transpose:
+                return transpose(evalAst(node->args[0].get(), vars));
+
+            // 字面量结构
+            case AstNode::Kind::VectorLit:
+                return TensorValue::vector(
+                    evalAst(node->args[0].get(), vars).scalar(),
+                    evalAst(node->args[1].get(), vars).scalar(),
+                    evalAst(node->args[2].get(), vars).scalar());
+            case AstNode::Kind::MatrixLit:
+                return TensorValue::matrix3(
+                    evalAst(node->args[0].get(), vars).scalar(), evalAst(node->args[1].get(), vars).scalar(), evalAst(node->args[2].get(), vars).scalar(),
+                    evalAst(node->args[3].get(), vars).scalar(), evalAst(node->args[4].get(), vars).scalar(), evalAst(node->args[5].get(), vars).scalar(),
+                    evalAst(node->args[6].get(), vars).scalar(), evalAst(node->args[7].get(), vars).scalar(), evalAst(node->args[8].get(), vars).scalar());
+            }
+            return TensorValue::scalar(0.0);
         }
 
-        MatrixTemplate parseComsolMatrixTemplate(std::string_view expression)
+        // 常量折叠 (Constant Folding): 编译期计算静态树，消除运行时开销
+        bool foldConstants(AstNode* node)
         {
-            MatrixTemplate matrixTemplate;
-            const std::string trimmed = strings::trim(std::string(expression));
+            if (node->kind == AstNode::Kind::Constant)
+                return true;
+            if (node->kind == AstNode::Kind::VarIndex)
+                return false;
 
-            if (trimmed.size() < 2 || trimmed.front() != '{' || trimmed.back() != '}') {
-                return matrixTemplate;
+            bool all_const = true;
+            for (auto& arg : node->args) {
+                if (!foldConstants(arg.get()))
+                    all_const = false;
             }
 
-            matrixTemplate.literalMatrix = true;
-            const std::string_view content(trimmed.data() + 1, trimmed.size() - 2);
-
-            size_t index = 0;
-            while (index < content.size()) {
-                while (index < content.size() && isSeparator(content[index])) {
-                    ++index;
-                }
-                if (index >= content.size()) {
-                    break;
-                }
-
-                if (content[index] != '\'') {
-                    MPFEM_THROW(ArgumentException,
-                        "Invalid comsol matrix literal. Expected quoted component near: " + trimmed);
-                }
-
-                const size_t endQuote = content.find('\'', index + 1);
-                if (endQuote == std::string_view::npos) {
-                    MPFEM_THROW(ArgumentException,
-                        "Invalid comsol matrix literal. Unterminated quoted component: " + trimmed);
-                }
-
-                std::string component = strings::trim(std::string(content.substr(index + 1, endQuote - index - 1)));
-                if (component.empty()) {
-                    MPFEM_THROW(ArgumentException, "Invalid comsol matrix literal with empty component.");
-                }
-
-                matrixTemplate.components.push_back(std::move(component));
-                index = endQuote + 1;
+            if (all_const) {
+                node->val = evalAst(node, nullptr);
+                node->kind = AstNode::Kind::Constant;
+                node->args.clear();
+                return true;
             }
+            return false;
+        }
+    } // namespace
 
-            if (matrixTemplate.components.size() != 1 && matrixTemplate.components.size() != 9) {
-                MPFEM_THROW(ArgumentException,
-                    "Invalid comsol matrix literal: expected 1 or 9 components, got " + std::to_string(matrixTemplate.components.size()));
+    // =========================================================================
+    // 最终封装入 VariableNode 的实体：持有 AST 与 唯一的依赖去重列表
+    // =========================================================================
+
+    class CompiledExpressionNode final : public VariableNode {
+    public:
+        CompiledExpressionNode(std::unique_ptr<AstNode> ast, std::vector<std::string> deps)
+            : ast_(std::move(ast)), dep_names_(std::move(deps)) { }
+
+        void resolve(const VariableManager& mgr) override
+        {
+            resolved_deps_.clear();
+            resolved_deps_.reserve(dep_names_.size());
+            for (const auto& name : dep_names_) {
+                const VariableNode* n = mgr.get(name);
+                if (!n)
+                    MPFEM_THROW(ArgumentException, "Unbound variable: " + name);
+                resolved_deps_.push_back(n);
             }
-
-            return matrixTemplate;
         }
 
-        std::string convertComsolMatrixToBracketLiteral(const MatrixTemplate& tpl)
+        std::vector<const VariableNode*> getChildren() const override
         {
-            MPFEM_ASSERT(tpl.literalMatrix, "Matrix template must be comsol literal.");
-            if (tpl.components.size() == 1) {
-                const std::string& c = tpl.components[0];
-                return "[" + c + ",0,0;0," + c + ",0;0,0," + c + "]";
+            return resolved_deps_;
+        }
+
+        void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
+        {
+            const size_t n = dest.size();
+            const size_t m = resolved_deps_.size();
+
+            // 极速单点路径 (N=1), 无堆分配, 无虚函数嵌套, 彻底解决冗余评估
+            if (n == 1) {
+                TensorValue vars_stack[32]; // 分配在寄存器/栈上
+                std::vector<TensorValue> vars_heap;
+                TensorValue* vars = vars_stack;
+
+                if (m > 32) {
+                    vars_heap.resize(m);
+                    vars = vars_heap.data();
+                }
+
+                // 核心：仅对去重后的依赖项各自求值一次！(如 grad(V) 只求一次)
+                for (size_t d = 0; d < m; ++d) {
+                    std::span<TensorValue> s(&vars[d], 1);
+                    resolved_deps_[d]->evaluateBatch(ctx, s);
+                }
+
+                // 通过极速 Switch 执行 AST
+                dest[0] = evalAst(ast_.get(), vars);
+                return;
             }
 
-            MPFEM_ASSERT(tpl.components.size() == 9, "Comsol matrix literal expects 9 components.");
-            return "["
-                + tpl.components[0] + "," + tpl.components[3] + "," + tpl.components[6] + ";"
-                + tpl.components[1] + "," + tpl.components[4] + "," + tpl.components[7] + ";"
-                + tpl.components[2] + "," + tpl.components[5] + "," + tpl.components[8] + "]";
+            // 兼容的 N>1 回退路径
+            std::vector<TensorValue> scratchpad(m * n);
+            for (size_t d = 0; d < m; ++d) {
+                std::span<TensorValue> depDest(&scratchpad[d * n], n);
+                resolved_deps_[d]->evaluateBatch(ctx, depDest);
+            }
+
+            std::vector<TensorValue> pointVars(m);
+            for (size_t i = 0; i < n; ++i) {
+                for (size_t d = 0; d < m; ++d) {
+                    pointVars[d] = scratchpad[d * n + i];
+                }
+                dest[i] = evalAst(ast_.get(), pointVars.data());
+            }
         }
 
-        bool isNearOne(Real value)
+        bool isConstant() const override
         {
-            return std::abs(value - 1.0) < 1e-15;
+            return ast_->kind == AstNode::Kind::Constant;
         }
+
+    private:
+        std::unique_ptr<AstNode> ast_;
+        std::vector<std::string> dep_names_;
+        std::vector<const VariableNode*> resolved_deps_;
+    };
+
+    // =========================================================================
+    // Parser: 将文本解析为 AST，并提取去重的依赖项列表
+    // =========================================================================
+
+    namespace {
+
+        bool isNearOne(Real value) { return std::abs(value - 1.0) < 1e-15; }
 
         class TensorAstCompiler {
         public:
-            explicit TensorAstCompiler(std::string_view text)
-                : text_(text)
-            {
-            }
+            explicit TensorAstCompiler(std::string_view text) : text_(text) { }
 
-            std::unique_ptr<AstNode> compile()
+            std::unique_ptr<VariableNode> compile()
             {
                 auto root = parseExpression();
                 skipWhitespace();
-                if (!eof()) {
+                if (!eof())
                     MPFEM_THROW(ArgumentException, "Unexpected token near: " + std::string(text_.substr(pos_)));
-                }
-                return root;
+
+                // 常量折叠：直接在编译期算掉所有类似 2*pi, E/(1+nu) 这种纯数字的分支
+                foldConstants(root.get());
+
+                return std::make_unique<CompiledExpressionNode>(std::move(root), std::move(dep_names_));
             }
 
         private:
+            std::vector<std::string> dep_names_;
+
+            int getOrAddDep(const std::string& name)
+            {
+                for (size_t i = 0; i < dep_names_.size(); ++i) {
+                    if (dep_names_[i] == name)
+                        return static_cast<int>(i);
+                }
+                dep_names_.push_back(name);
+                return static_cast<int>(dep_names_.size() - 1);
+            }
+
+            std::unique_ptr<AstNode> makeNode(AstNode::Kind k)
+            {
+                auto n = std::make_unique<AstNode>();
+                n->kind = k;
+                return n;
+            }
+
+            std::unique_ptr<AstNode> makeBinary(AstNode::Kind k, std::unique_ptr<AstNode> l, std::unique_ptr<AstNode> r)
+            {
+                auto n = makeNode(k);
+                n->args.push_back(std::move(l));
+                n->args.push_back(std::move(r));
+                return n;
+            }
+
+            std::unique_ptr<AstNode> makeUnary(AstNode::Kind k, std::unique_ptr<AstNode> arg)
+            {
+                auto n = makeNode(k);
+                n->args.push_back(std::move(arg));
+                return n;
+            }
+
             std::unique_ptr<AstNode> parseExpression()
             {
                 auto lhs = parseTerm();
@@ -153,7 +288,7 @@ namespace mpfem {
                         continue;
                     }
                     if (match('-')) {
-                        lhs = makeBinary(AstNode::Kind::Subtract, std::move(lhs), parseTerm());
+                        lhs = makeBinary(AstNode::Kind::Sub, std::move(lhs), parseTerm());
                         continue;
                     }
                     return lhs;
@@ -166,11 +301,11 @@ namespace mpfem {
                 for (;;) {
                     skipWhitespace();
                     if (match('*')) {
-                        lhs = makeBinary(AstNode::Kind::Multiply, std::move(lhs), parsePower());
+                        lhs = makeBinary(AstNode::Kind::Mul, std::move(lhs), parsePower());
                         continue;
                     }
                     if (match('/')) {
-                        lhs = makeBinary(AstNode::Kind::Divide, std::move(lhs), parsePower());
+                        lhs = makeBinary(AstNode::Kind::Div, std::move(lhs), parsePower());
                         continue;
                     }
                     return lhs;
@@ -181,24 +316,18 @@ namespace mpfem {
             {
                 auto lhs = parseUnary();
                 skipWhitespace();
-                if (!match('^')) {
-                    return lhs;
-                }
-                return makeBinary(AstNode::Kind::Power, std::move(lhs), parsePower());
+                if (match('^'))
+                    return makeBinary(AstNode::Kind::Pow, std::move(lhs), parsePower());
+                return lhs;
             }
 
             std::unique_ptr<AstNode> parseUnary()
             {
                 skipWhitespace();
-                if (match('+')) {
+                if (match('+'))
                     return parseUnary();
-                }
-                if (match('-')) {
-                    auto node = std::make_unique<AstNode>();
-                    node->kind = AstNode::Kind::Negate;
-                    node->args.push_back(parseUnary());
-                    return node;
-                }
+                if (match('-'))
+                    return makeUnary(AstNode::Kind::Neg, parseUnary());
                 return parsePrimary();
             }
 
@@ -208,37 +337,124 @@ namespace mpfem {
                 if (match('(')) {
                     auto inner = parseExpression();
                     skipWhitespace();
-                    if (!match(')')) {
-                        MPFEM_THROW(ArgumentException, "Missing closing ')' in expression.");
-                    }
-                    return applyUnitSuffixIfPresent(std::move(inner));
+                    if (!match(')'))
+                        MPFEM_THROW(ArgumentException, "Missing closing ')'");
+                    return applyUnitSuffix(std::move(inner));
                 }
-
-                if (peek() == '[') {
-                    return applyUnitSuffixIfPresent(parseBracketLiteral());
-                }
-
-                if (peekIsNumberStart()) {
-                    return applyUnitSuffixIfPresent(parseNumber());
-                }
-
+                if (peek() == '[')
+                    return applyUnitSuffix(parseBracketLiteral());
+                if (peekIsNumberStart())
+                    return applyUnitSuffix(parseNumber());
                 if (peekIsIdentifierStart()) {
-                    const std::string name = parseIdentifier();
+                    std::string name = parseIdentifier();
                     skipWhitespace();
-                    if (match('(')) {
-                        return applyUnitSuffixIfPresent(parseFunction(name));
+                    if (match('('))
+                        return applyUnitSuffix(parseFunction(name));
+
+                    if (name == "pi") {
+                        auto n = makeNode(AstNode::Kind::Constant);
+                        n->val = TensorValue::scalar(3.141592653589793);
+                        return n;
                     }
-                    return applyUnitSuffixIfPresent(parseVariableOrConstant(name));
+                    if (name == "e") {
+                        auto n = makeNode(AstNode::Kind::Constant);
+                        n->val = TensorValue::scalar(2.718281828459045);
+                        return n;
+                    }
+
+                    // 变量引用 -> 提取并去重依赖项 -> 转换成极速的数组索引
+                    int idx = getOrAddDep(name);
+                    auto node = makeNode(AstNode::Kind::VarIndex);
+                    node->var_index = idx;
+                    return applyUnitSuffix(std::move(node));
+                }
+                MPFEM_THROW(ArgumentException, "Unexpected token near: " + std::string(text_.substr(pos_)));
+            }
+
+            std::unique_ptr<AstNode> parseNumber()
+            {
+                const char* begin = text_.data() + pos_;
+                char* end = nullptr;
+                Real value = std::strtod(begin, &end);
+                pos_ += (end - begin);
+                auto n = makeNode(AstNode::Kind::Constant);
+                n->val = TensorValue::scalar(value);
+                return n;
+            }
+
+            std::string parseIdentifier()
+            {
+                size_t begin = pos_++;
+                while (!eof() && (std::isalnum(text_[pos_]) || text_[pos_] == '_'))
+                    ++pos_;
+                return std::string(text_.substr(begin, pos_ - begin));
+            }
+
+            std::unique_ptr<AstNode> parseFunction(const std::string& name)
+            {
+                // 特殊处理 grad 语法：grad(V) 作为一个单一的整体依赖项
+                if (name == "grad") {
+                    skipWhitespace();
+                    std::string fieldName = parseIdentifier();
+                    skipWhitespace();
+                    if (!match(')'))
+                        MPFEM_THROW(ArgumentException, "Missing ')' after grad argument");
+
+                    int idx = getOrAddDep("grad(" + fieldName + ")");
+                    auto node = makeNode(AstNode::Kind::VarIndex);
+                    node->var_index = idx;
+                    return node;
                 }
 
-                MPFEM_THROW(ArgumentException, "Unexpected token near: " + std::string(text_.substr(pos_)));
+                std::vector<std::unique_ptr<AstNode>> args;
+                if (!match(')')) {
+                    do {
+                        args.push_back(parseExpression());
+                        skipWhitespace();
+                    } while (match(','));
+                    if (!match(')'))
+                        MPFEM_THROW(ArgumentException, "Missing ')' in function " + name);
+                }
+
+                if (args.size() == 1) {
+                    if (name == "sin")
+                        return makeUnary(AstNode::Kind::Sin, std::move(args[0]));
+                    if (name == "cos")
+                        return makeUnary(AstNode::Kind::Cos, std::move(args[0]));
+                    if (name == "tan")
+                        return makeUnary(AstNode::Kind::Tan, std::move(args[0]));
+                    if (name == "exp")
+                        return makeUnary(AstNode::Kind::Exp, std::move(args[0]));
+                    if (name == "log")
+                        return makeUnary(AstNode::Kind::Log, std::move(args[0]));
+                    if (name == "sqrt")
+                        return makeUnary(AstNode::Kind::Sqrt, std::move(args[0]));
+                    if (name == "abs")
+                        return makeUnary(AstNode::Kind::Abs, std::move(args[0]));
+                    if (name == "sym")
+                        return makeUnary(AstNode::Kind::Sym, std::move(args[0]));
+                    if (name == "trace" || name == "tr")
+                        return makeUnary(AstNode::Kind::Trace, std::move(args[0]));
+                    if (name == "transpose")
+                        return makeUnary(AstNode::Kind::Transpose, std::move(args[0]));
+                }
+                else if (args.size() == 2) {
+                    if (name == "dot")
+                        return makeBinary(AstNode::Kind::Dot, std::move(args[0]), std::move(args[1]));
+                    if (name == "pow")
+                        return makeBinary(AstNode::Kind::Pow, std::move(args[0]), std::move(args[1]));
+                    if (name == "min")
+                        return makeBinary(AstNode::Kind::Min, std::move(args[0]), std::move(args[1]));
+                    if (name == "max")
+                        return makeBinary(AstNode::Kind::Max, std::move(args[0]), std::move(args[1]));
+                }
+                MPFEM_THROW(ArgumentException, "Unsupported function or wrong arity: " + name);
             }
 
             std::unique_ptr<AstNode> parseBracketLiteral()
             {
-                if (!match('[')) {
-                    MPFEM_THROW(ArgumentException, "Internal parser error: bracket literal expected.");
-                }
+                if (!match('['))
+                    MPFEM_THROW(ArgumentException, "Internal error: expected '['");
 
                 std::vector<std::vector<std::unique_ptr<AstNode>>> rows;
                 rows.emplace_back();
@@ -246,515 +462,205 @@ namespace mpfem {
                 for (;;) {
                     skipWhitespace();
                     const size_t partBegin = pos_;
-                    int parenDepth = 0;
-                    int unitBracketDepth = 0;
+                    int parenDepth = 0, unitBracketDepth = 0;
                     while (!eof()) {
                         const char c = text_[pos_];
-                        if (c == '(') {
+                        if (c == '(')
                             ++parenDepth;
-                        }
-                        else if (c == ')') {
+                        else if (c == ')')
                             --parenDepth;
-                        }
-                        else if (c == '[') {
+                        else if (c == '[')
                             ++unitBracketDepth;
-                        }
                         else if (c == ']') {
-                            if (unitBracketDepth > 0) {
+                            if (unitBracketDepth > 0)
                                 --unitBracketDepth;
-                            }
-                            else if (parenDepth == 0) {
+                            else if (parenDepth == 0)
                                 break;
-                            }
                         }
-                        else if (parenDepth == 0 && unitBracketDepth == 0 && (c == ',' || c == ';')) {
+                        else if (parenDepth == 0 && unitBracketDepth == 0 && (c == ',' || c == ';'))
                             break;
-                        }
                         ++pos_;
                     }
+                    if (eof())
+                        MPFEM_THROW(ArgumentException, "Missing closing ']'");
 
-                    if (eof()) {
-                        MPFEM_THROW(ArgumentException, "Missing closing ']' in literal expression.");
+                    std::string part = strings::trim(std::string(text_.substr(partBegin, pos_ - partBegin)));
+
+                    UnitRegistry registry;
+                    auto unitPart = registry.stripUnit(part);
+
+                    // 巧妙递归：替换文本流，让本 Compiler 直接解析这个子字符串，这保证它能使用当前的依赖集合
+                    std::string inner_expr = std::string(unitPart.expression);
+                    std::string_view old_text = text_;
+                    size_t old_pos = pos_;
+
+                    text_ = inner_expr;
+                    pos_ = 0;
+                    auto comp = parseExpression();
+                    if (!eof())
+                        MPFEM_THROW(ArgumentException, "Failed to parse literal component: " + part);
+
+                    text_ = old_text;
+                    pos_ = old_pos;
+
+                    if (!isNearOne(unitPart.multiplier)) {
+                        auto c = makeNode(AstNode::Kind::Constant);
+                        c->val = TensorValue::scalar(unitPart.multiplier);
+                        comp = makeBinary(AstNode::Kind::Mul, std::move(c), std::move(comp));
                     }
-
-                    const std::string part = strings::trim(std::string(text_.substr(partBegin, pos_ - partBegin)));
-                    if (part.empty()) {
-                        MPFEM_THROW(ArgumentException, "Empty component in bracket literal.");
-                    }
-
-                    UnitRegistry unitRegistry;
-                    const UnitParseResult unitPart = unitRegistry.stripUnit(part);
-                    TensorAstCompiler scalarCompiler(unitPart.expression);
-                    auto component = scalarCompiler.compile();
-                    rows.back().push_back(applyMultiplierIfNeeded(std::move(component), unitPart.multiplier));
+                    rows.back().push_back(std::move(comp));
 
                     const char delim = text_[pos_];
                     ++pos_;
-                    if (delim == ',') {
+                    if (delim == ',')
                         continue;
-                    }
                     if (delim == ';') {
                         rows.emplace_back();
                         continue;
                     }
-                    if (delim == ']') {
+                    if (delim == ']')
                         break;
-                    }
                 }
 
                 skipWhitespace();
-                if (match('^')) {
+                bool isTranspose = match('^');
+                if (isTranspose) {
                     skipWhitespace();
-                    if (!match('T')) {
-                        MPFEM_THROW(ArgumentException, "Expected '^T' after vector literal.");
-                    }
+                    if (!match('T'))
+                        MPFEM_THROW(ArgumentException, "Expected '^T'");
                 }
 
                 const size_t rowCount = rows.size();
                 const size_t colCount = rows.front().size();
-                for (const auto& row : rows) {
-                    if (row.size() != colCount) {
-                        MPFEM_THROW(ArgumentException, "Inconsistent row size in bracket literal.");
-                    }
-                }
 
-                if (rowCount == 1 && colCount == 1) {
+                if (rowCount == 1 && colCount == 1)
                     return std::move(rows.front().front());
-                }
 
-                auto node = std::make_unique<AstNode>();
                 if (rowCount == 1 && colCount == 3) {
-                    node->kind = AstNode::Kind::VectorLiteral;
-                    for (auto& entry : rows.front()) {
-                        node->args.push_back(std::move(entry));
-                    }
-                    return node;
+                    auto n = makeNode(AstNode::Kind::VectorLit);
+                    n->args.push_back(std::move(rows[0][0]));
+                    n->args.push_back(std::move(rows[0][1]));
+                    n->args.push_back(std::move(rows[0][2]));
+                    return n;
                 }
 
                 if (rowCount == 3 && colCount == 3) {
-                    node->kind = AstNode::Kind::MatrixLiteral;
-                    for (auto& row : rows) {
-                        for (auto& entry : row) {
-                            node->args.push_back(std::move(entry));
-                        }
-                    }
-                    return node;
+                    auto n = makeNode(AstNode::Kind::MatrixLit);
+                    for (int i = 0; i < 3; ++i)
+                        for (int j = 0; j < 3; ++j)
+                            n->args.push_back(std::move(rows[i][j]));
+                    return n;
                 }
 
-                MPFEM_THROW(ArgumentException,
-                    "Unsupported bracket literal shape [" + std::to_string(rowCount) + "x" + std::to_string(colCount) + "]");
+                MPFEM_THROW(ArgumentException, "Unsupported bracket literal shape");
             }
 
-            std::unique_ptr<AstNode> parseFunction(const std::string& name)
+            std::unique_ptr<AstNode> applyUnitSuffix(std::unique_ptr<AstNode> node)
             {
-                std::vector<std::unique_ptr<AstNode>> args;
                 skipWhitespace();
-                if (!match(')')) {
-                    for (;;) {
-                        args.push_back(parseExpression());
-                        skipWhitespace();
-                        if (match(')')) {
-                            break;
-                        }
-                        if (!match(',')) {
-                            MPFEM_THROW(ArgumentException,
-                                "Expected ',' or ')' in function call: " + name);
-                        }
-                    }
-                }
-
-                auto node = std::make_unique<AstNode>();
-                if (name == "dot") {
-                    if (args.size() != 2) {
-                        MPFEM_THROW(ArgumentException, "dot(a,b) requires exactly 2 arguments.");
-                    }
-                    node->kind = AstNode::Kind::Dot;
-                    node->args = std::move(args);
+                if (!match('['))
                     return node;
-                }
+                size_t begin = pos_;
+                while (!eof() && text_[pos_] != ']')
+                    ++pos_;
+                if (eof())
+                    MPFEM_THROW(ArgumentException, "Missing ']' for unit suffix");
 
-                if (name == "sym" || name == "trace" || name == "tr" || name == "transpose") {
-                    if (args.size() != 1) {
-                        MPFEM_THROW(ArgumentException, name + "() requires exactly 1 argument.");
-                    }
-                    if (name == "sym") {
-                        node->kind = AstNode::Kind::Sym;
-                    }
-                    else if (name == "transpose") {
-                        node->kind = AstNode::Kind::Transpose;
-                    }
-                    else {
-                        node->kind = AstNode::Kind::Trace;
-                    }
-                    node->args = std::move(args);
-                    return node;
-                }
-
-                if (args.size() == 1) {
-                    if (name == "grad") {
-                        // grad(V) is treated as a variable reference to "grad(V)"
-                        if (args[0]->kind != AstNode::Kind::Variable) {
-                            MPFEM_THROW(ArgumentException, "grad() requires a single field variable argument.");
-                        }
-                        auto gradVar = std::make_unique<AstNode>();
-                        gradVar->kind = AstNode::Kind::Variable;
-                        gradVar->variableName = "grad(" + args[0]->variableName + ")";
-                        return gradVar;
-                    }
-                    if (name == "sin")
-                        node->kind = AstNode::Kind::Sin;
-                    else if (name == "cos")
-                        node->kind = AstNode::Kind::Cos;
-                    else if (name == "tan")
-                        node->kind = AstNode::Kind::Tan;
-                    else if (name == "exp")
-                        node->kind = AstNode::Kind::Exp;
-                    else if (name == "log")
-                        node->kind = AstNode::Kind::Log;
-                    else if (name == "sqrt")
-                        node->kind = AstNode::Kind::Sqrt;
-                    else if (name == "abs")
-                        node->kind = AstNode::Kind::Abs;
-                    else {
-                        MPFEM_THROW(ArgumentException, "Unsupported unary function: " + name);
-                    }
-                    node->args = std::move(args);
-                    return node;
-                }
-
-                if (args.size() == 2) {
-                    if (name == "pow")
-                        node->kind = AstNode::Kind::Power;
-                    else if (name == "min")
-                        node->kind = AstNode::Kind::Min;
-                    else if (name == "max")
-                        node->kind = AstNode::Kind::Max;
-                    else {
-                        MPFEM_THROW(ArgumentException, "Unsupported binary function: " + name);
-                    }
-                    node->args = std::move(args);
-                    return node;
-                }
-
-                MPFEM_THROW(ArgumentException, "Unsupported arity for function: " + name);
-            }
-
-            std::unique_ptr<AstNode> parseVariableOrConstant(const std::string& name)
-            {
-                auto node = std::make_unique<AstNode>();
-                if (name == "pi") {
-                    node->kind = AstNode::Kind::Constant;
-                    node->value = 3.141592653589793238462643383279502884;
-                    return node;
-                }
-                if (name == "e") {
-                    node->kind = AstNode::Kind::Constant;
-                    node->value = 2.718281828459045235360287471352662498;
-                    return node;
-                }
-                node->kind = AstNode::Kind::Variable;
-                node->variableName = name;
-                return node;
-            }
-
-            std::unique_ptr<AstNode> parseNumber()
-            {
-                const char* begin = text_.data() + pos_;
-                char* end = nullptr;
-                const Real value = std::strtod(begin, &end);
-                if (end == begin) {
-                    MPFEM_THROW(ArgumentException,
-                        "Invalid numeric literal near: " + std::string(text_.substr(pos_)));
-                }
-                pos_ += static_cast<size_t>(end - begin);
-                auto node = std::make_unique<AstNode>();
-                node->kind = AstNode::Kind::Constant;
-                node->value = value;
-                return node;
-            }
-
-            std::string parseIdentifier()
-            {
-                const size_t begin = pos_;
+                std::string unit = strings::trim(std::string(text_.substr(begin, pos_ - begin)));
                 ++pos_;
-                while (!eof()) {
-                    const char c = text_[pos_];
-                    if (std::isalnum(static_cast<unsigned char>(c)) == 0 && c != '_') {
-                        break;
-                    }
-                    ++pos_;
-                }
-                return std::string(text_.substr(begin, pos_ - begin));
-            }
 
-            std::unique_ptr<AstNode> makeBinary(AstNode::Kind kind,
-                std::unique_ptr<AstNode> lhs,
-                std::unique_ptr<AstNode> rhs)
-            {
-                auto node = std::make_unique<AstNode>();
-                node->kind = kind;
-                node->args.push_back(std::move(lhs));
-                node->args.push_back(std::move(rhs));
-                return node;
-            }
-
-            static std::unique_ptr<AstNode> applyMultiplierIfNeeded(std::unique_ptr<AstNode> node, Real multiplier)
-            {
-                if (isNearOne(multiplier)) {
+                Real mult = UnitRegistry().getMultiplier(unit);
+                if (isNearOne(mult))
                     return node;
-                }
-                auto mulNode = std::make_unique<AstNode>();
-                mulNode->kind = AstNode::Kind::Multiply;
-                auto c = std::make_unique<AstNode>();
-                c->kind = AstNode::Kind::Constant;
-                c->value = multiplier;
-                mulNode->args.push_back(std::move(c));
-                mulNode->args.push_back(std::move(node));
-                return mulNode;
+
+                auto c = makeNode(AstNode::Kind::Constant);
+                c->val = TensorValue::scalar(mult);
+                return makeBinary(AstNode::Kind::Mul, std::move(c), std::move(node));
             }
 
-            std::unique_ptr<AstNode> applyUnitSuffixIfPresent(std::unique_ptr<AstNode> node)
+            char peek() const { return eof() ? '\0' : text_[pos_]; }
+            bool peekIsIdentifierStart() const { return !eof() && (std::isalpha(text_[pos_]) || text_[pos_] == '_'); }
+            bool peekIsNumberStart() const { return !eof() && (std::isdigit(text_[pos_]) || text_[pos_] == '.'); }
+            bool eof() const { return pos_ >= text_.size(); }
+            void skipWhitespace()
             {
-                skipWhitespace();
-                if (!match('[')) {
-                    return node;
-                }
-
-                const size_t unitBegin = pos_;
-                while (!eof() && text_[pos_] != ']') {
+                while (!eof() && std::isspace(text_[pos_]))
                     ++pos_;
-                }
-                if (eof()) {
-                    MPFEM_THROW(ArgumentException, "Missing closing ']' for unit suffix.");
-                }
-                const std::string unit = strings::trim(std::string(text_.substr(unitBegin, pos_ - unitBegin)));
-                ++pos_; // consume ']'
-
-                UnitRegistry registry;
-                const Real multiplier = registry.getMultiplier(unit);
-                return applyMultiplierIfNeeded(std::move(node), multiplier);
             }
-
-            char peek() const
+            bool match(char c)
             {
-                return eof() ? '\0' : text_[pos_];
-            }
-
-            bool peekIsIdentifierStart() const
-            {
-                if (eof()) {
-                    return false;
-                }
-                const char c = text_[pos_];
-                return std::isalpha(static_cast<unsigned char>(c)) != 0 || c == '_';
-            }
-
-            bool peekIsNumberStart() const
-            {
-                if (eof()) {
-                    return false;
-                }
-                const char c = text_[pos_];
-                if (std::isdigit(static_cast<unsigned char>(c)) != 0 || c == '.') {
+                if (peek() == c) {
+                    ++pos_;
                     return true;
-                }
-                if ((c == '+' || c == '-') && pos_ + 1 < text_.size()) {
-                    const char next = text_[pos_ + 1];
-                    return std::isdigit(static_cast<unsigned char>(next)) != 0 || next == '.';
                 }
                 return false;
             }
-
-            void skipWhitespace()
-            {
-                while (!eof() && std::isspace(static_cast<unsigned char>(text_[pos_])) != 0) {
-                    ++pos_;
-                }
-            }
-
-            bool match(char expected)
-            {
-                if (eof() || text_[pos_] != expected) {
-                    return false;
-                }
-                ++pos_;
-                return true;
-            }
-
-            bool eof() const { return pos_ >= text_.size(); }
 
             std::string_view text_;
             size_t pos_ = 0;
         };
 
-        void collectDependencies(const AstNode& node, std::unordered_set<std::string>& seen, std::vector<std::string>& deps)
+        // Comsol 矩阵模板预处理
+        struct MatrixTemplate {
+            bool literalMatrix = false;
+            std::vector<std::string> components;
+        };
+
+        bool isSeparator(char c) { return std::isspace(static_cast<unsigned char>(c)) != 0 || c == ','; }
+
+        MatrixTemplate parseComsolMatrixTemplate(std::string_view expression)
         {
-            if (node.kind == AstNode::Kind::Variable) {
-                if (seen.insert(node.variableName).second) {
-                    deps.push_back(node.variableName);
-                }
-                return;
+            MatrixTemplate tpl;
+            const std::string trimmed = strings::trim(std::string(expression));
+
+            if (trimmed.size() < 2 || trimmed.front() != '{' || trimmed.back() != '}')
+                return tpl;
+
+            tpl.literalMatrix = true;
+            const std::string_view content(trimmed.data() + 1, trimmed.size() - 2);
+
+            size_t index = 0;
+            while (index < content.size()) {
+                while (index < content.size() && isSeparator(content[index]))
+                    ++index;
+                if (index >= content.size())
+                    break;
+                if (content[index] != '\'')
+                    MPFEM_THROW(ArgumentException, "Invalid comsol matrix");
+                const size_t endQuote = content.find('\'', index + 1);
+                if (endQuote == std::string_view::npos)
+                    MPFEM_THROW(ArgumentException, "Unterminated quote");
+                tpl.components.push_back(strings::trim(std::string(content.substr(index + 1, endQuote - index - 1))));
+                index = endQuote + 1;
             }
-            for (const auto& arg : node.args) {
-                collectDependencies(*arg, seen, deps);
-            }
+            return tpl;
         }
 
-        TensorValue evaluateAst(const AstNode& node,
-            std::span<const TensorValue> vars,
-            const std::unordered_map<std::string, size_t>& dependencyIndices)
+        std::string convertComsolMatrixToBracketLiteral(const MatrixTemplate& tpl)
         {
-            switch (node.kind) {
-            case AstNode::Kind::Constant:
-                return TensorValue::scalar(node.value);
-            case AstNode::Kind::Variable: {
-                const auto it = dependencyIndices.find(node.variableName);
-                if (it == dependencyIndices.end() || it->second >= vars.size()) {
-                    MPFEM_THROW(ArgumentException, "Variable index binding failed: " + node.variableName);
-                }
-                return vars[it->second];
+            if (tpl.components.size() == 1) {
+                const std::string& c = tpl.components[0];
+                return "[" + c + ",0,0;0," + c + ",0;0,0," + c + "]";
             }
-            case AstNode::Kind::VectorLiteral:
-                return TensorValue::vector(
-                    evaluateAst(*node.args[0], vars, dependencyIndices).asScalar(),
-                    evaluateAst(*node.args[1], vars, dependencyIndices).asScalar(),
-                    evaluateAst(*node.args[2], vars, dependencyIndices).asScalar());
-            case AstNode::Kind::MatrixLiteral:
-                return TensorValue::matrix3(
-                    evaluateAst(*node.args[0], vars, dependencyIndices).asScalar(),
-                    evaluateAst(*node.args[1], vars, dependencyIndices).asScalar(),
-                    evaluateAst(*node.args[2], vars, dependencyIndices).asScalar(),
-                    evaluateAst(*node.args[3], vars, dependencyIndices).asScalar(),
-                    evaluateAst(*node.args[4], vars, dependencyIndices).asScalar(),
-                    evaluateAst(*node.args[5], vars, dependencyIndices).asScalar(),
-                    evaluateAst(*node.args[6], vars, dependencyIndices).asScalar(),
-                    evaluateAst(*node.args[7], vars, dependencyIndices).asScalar(),
-                    evaluateAst(*node.args[8], vars, dependencyIndices).asScalar());
-            case AstNode::Kind::Add:
-                return evaluateAst(*node.args[0], vars, dependencyIndices) + evaluateAst(*node.args[1], vars, dependencyIndices);
-            case AstNode::Kind::Subtract:
-                return evaluateAst(*node.args[0], vars, dependencyIndices) - evaluateAst(*node.args[1], vars, dependencyIndices);
-            case AstNode::Kind::Multiply:
-                return evaluateAst(*node.args[0], vars, dependencyIndices) * evaluateAst(*node.args[1], vars, dependencyIndices);
-            case AstNode::Kind::Divide:
-                return evaluateAst(*node.args[0], vars, dependencyIndices) / evaluateAst(*node.args[1], vars, dependencyIndices);
-            case AstNode::Kind::Power:
-                return TensorValue::scalar(std::pow(
-                    evaluateAst(*node.args[0], vars, dependencyIndices).asScalar(),
-                    evaluateAst(*node.args[1], vars, dependencyIndices).asScalar()));
-            case AstNode::Kind::Negate:
-                return -evaluateAst(*node.args[0], vars, dependencyIndices);
-            case AstNode::Kind::Sin:
-                return TensorValue::scalar(std::sin(evaluateAst(*node.args[0], vars, dependencyIndices).asScalar()));
-            case AstNode::Kind::Cos:
-                return TensorValue::scalar(std::cos(evaluateAst(*node.args[0], vars, dependencyIndices).asScalar()));
-            case AstNode::Kind::Tan:
-                return TensorValue::scalar(std::tan(evaluateAst(*node.args[0], vars, dependencyIndices).asScalar()));
-            case AstNode::Kind::Exp:
-                return TensorValue::scalar(std::exp(evaluateAst(*node.args[0], vars, dependencyIndices).asScalar()));
-            case AstNode::Kind::Log:
-                return TensorValue::scalar(std::log(evaluateAst(*node.args[0], vars, dependencyIndices).asScalar()));
-            case AstNode::Kind::Sqrt:
-                return TensorValue::scalar(std::sqrt(evaluateAst(*node.args[0], vars, dependencyIndices).asScalar()));
-            case AstNode::Kind::Abs:
-                return TensorValue::scalar(std::abs(evaluateAst(*node.args[0], vars, dependencyIndices).asScalar()));
-            case AstNode::Kind::Min:
-                return TensorValue::scalar(std::min(
-                    evaluateAst(*node.args[0], vars, dependencyIndices).asScalar(),
-                    evaluateAst(*node.args[1], vars, dependencyIndices).asScalar()));
-            case AstNode::Kind::Max:
-                return TensorValue::scalar(std::max(
-                    evaluateAst(*node.args[0], vars, dependencyIndices).asScalar(),
-                    evaluateAst(*node.args[1], vars, dependencyIndices).asScalar()));
-            case AstNode::Kind::Dot:
-                return TensorValue::scalar(dot(
-                    evaluateAst(*node.args[0], vars, dependencyIndices),
-                    evaluateAst(*node.args[1], vars, dependencyIndices)));
-            case AstNode::Kind::Sym:
-                return sym(evaluateAst(*node.args[0], vars, dependencyIndices));
-            case AstNode::Kind::Trace:
-                return TensorValue::scalar(trace(evaluateAst(*node.args[0], vars, dependencyIndices)));
-            case AstNode::Kind::Transpose:
-                return transpose(evaluateAst(*node.args[0], vars, dependencyIndices));
-            }
-            MPFEM_THROW(ArgumentException, "Unknown AST node kind in evaluation.");
+            return "[" + tpl.components[0] + "," + tpl.components[3] + "," + tpl.components[6] + ";"
+                + tpl.components[1] + "," + tpl.components[4] + "," + tpl.components[7] + ";"
+                + tpl.components[2] + "," + tpl.components[5] + "," + tpl.components[8] + "]";
         }
-
     } // namespace
 
-    struct ExpressionParser::ExpressionProgram::Impl {
-        std::unique_ptr<AstNode> root;
-        std::vector<std::string> dependencies;
-        std::unordered_map<std::string, size_t> dependencyIndices;
-    };
-
-    ExpressionParser::ExpressionProgram::ExpressionProgram()
-        : impl_(std::make_unique<Impl>())
-    {
-    }
-
-    ExpressionParser::ExpressionProgram::ExpressionProgram(std::unique_ptr<Impl> impl) noexcept
-        : impl_(std::move(impl))
-    {
-    }
-
-    ExpressionParser::ExpressionProgram::~ExpressionProgram() = default;
-    ExpressionParser::ExpressionProgram::ExpressionProgram(ExpressionProgram&&) noexcept = default;
-    ExpressionParser::ExpressionProgram& ExpressionParser::ExpressionProgram::operator=(ExpressionProgram&&) noexcept = default;
-
-    bool ExpressionParser::ExpressionProgram::valid() const
-    {
-        return impl_ && impl_->root != nullptr;
-    }
-
-    const std::vector<std::string>& ExpressionParser::ExpressionProgram::dependencies() const
-    {
-        static const std::vector<std::string> empty;
-        return impl_ ? impl_->dependencies : empty;
-    }
-
-    TensorValue ExpressionParser::ExpressionProgram::evaluate(std::span<const TensorValue> values) const
-    {
-        MPFEM_ASSERT(valid(), "Attempting to evaluate an invalid expression program.");
-        MPFEM_ASSERT(values.size() == impl_->dependencies.size(),
-            "Expression input size does not match dependency size.");
-
-        return evaluateAst(*impl_->root, values, impl_->dependencyIndices);
-    }
-
-    ExpressionParser::ExpressionParser() = default;
-    ExpressionParser::~ExpressionParser() = default;
-
-    ExpressionParser::ExpressionProgram ExpressionParser::compile(const std::string& expression) const
+    std::unique_ptr<VariableNode> ExpressionParser::parse(const std::string& expression)
     {
         std::string expressionText = strings::trim(expression);
+        if (expressionText.empty())
+            MPFEM_THROW(ArgumentException, "Empty expression string");
 
         MatrixTemplate comsol = parseComsolMatrixTemplate(expressionText);
         if (comsol.literalMatrix) {
             expressionText = convertComsolMatrixToBracketLiteral(comsol);
         }
 
-        if (expressionText.empty()) {
-            MPFEM_THROW(ArgumentException, "Expression is empty after unit stripping: " + expression);
-        }
-
-        auto impl = std::make_unique<ExpressionProgram::Impl>();
-
         TensorAstCompiler compiler(expressionText);
-        auto root = compiler.compile();
-
-        std::unordered_set<std::string> seen;
-        collectDependencies(*root, seen, impl->dependencies);
-
-        impl->dependencyIndices.clear();
-        impl->dependencyIndices.reserve(impl->dependencies.size());
-        for (size_t i = 0; i < impl->dependencies.size(); ++i) {
-            impl->dependencyIndices.emplace(impl->dependencies[i], i);
-        }
-
-        impl->root = std::move(root);
-
-        return ExpressionProgram(std::move(impl));
+        return compiler.compile();
     }
 
 } // namespace mpfem

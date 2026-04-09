@@ -1,46 +1,21 @@
 #ifndef MPFEM_EXPR_EXPRESSION_PARSER_HPP
 #define MPFEM_EXPR_EXPRESSION_PARSER_HPP
 
-#include "core/tensor_shape.hpp"
-#include "core/tensor_value.hpp"
-#include "core/types.hpp"
-
+#include "expr/variable_graph.hpp"
 #include <memory>
-#include <span>
 #include <string>
-#include <unordered_map>
-#include <vector>
 
 namespace mpfem {
 
     class ExpressionParser {
     public:
-        class ExpressionProgram {
-        public:
-            struct Impl;
-            ExpressionProgram();
-            explicit ExpressionProgram(std::unique_ptr<Impl> impl) noexcept;
-            ~ExpressionProgram();
-            ExpressionProgram(ExpressionProgram&&) noexcept;
-            ExpressionProgram& operator=(ExpressionProgram&&) noexcept;
-            ExpressionProgram(const ExpressionProgram&) = delete;
-            ExpressionProgram& operator=(const ExpressionProgram&) = delete;
+        ExpressionParser() = delete; // 纯静态工具类
 
-            bool valid() const;
-            const std::vector<std::string>& dependencies() const;
-            TensorValue evaluate(std::span<const TensorValue> values) const;
-
-        private:
-            std::unique_ptr<Impl> impl_;
-        };
-
-        ExpressionParser(const ExpressionParser&) = delete;
-        ExpressionParser& operator=(const ExpressionParser&) = delete;
-
-        ExpressionParser();
-        ~ExpressionParser();
-        
-        ExpressionProgram compile(const std::string& expression) const;
+        /**
+         * @brief 将表达式字符串解析为纯 AST 树。
+         * 变量被解析为 VariableRefNode，在 Manager::compile() 时链接。
+         */
+        static std::unique_ptr<VariableNode> parse(const std::string& expression);
     };
 
 } // namespace mpfem
