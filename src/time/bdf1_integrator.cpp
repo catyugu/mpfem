@@ -4,9 +4,10 @@
 
 namespace mpfem {
 
-    bool BDF1Integrator::step(PhysicsFieldSolver& solver, FieldValues& history, Real dt, int currentStep)
+    bool BDF1Integrator::step(PhysicsFieldSolver& solver, FieldValues& history, Real dt, Real prev_dt, int currentStep)
     {
         (void)currentStep;
+        (void)prev_dt;
 
         // For BDF1: historyCombo is just the previous step value
         const GridFunction& prev = history.history(solver.fieldName(), 1);

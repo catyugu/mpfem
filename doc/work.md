@@ -21,287 +21,230 @@
 
 ## 具体工作任务
 
-针对代码中存在的设计反模式、冗余代码以及向后兼容遗留问题，我们能够通过**“基于泛型的接口统一”**与**“装配器状态常驻化 (Stateful Assembler)”**这两个核心思路进行重构。
+识别并重构这个代码是一个非常经典的架构优化过程。当前代码确实存在明显的架构缺陷，导致难以支持自适应步长。
 
-以下是四个步骤的系统化重构，每一步都会消除大量样板代码，提升执行效率（消除热路径上的堆分配），并且每步皆可单独编译验证。
+### 1. 现有设计反模式与问题分析
+
+1. **上帝对象 (God Object) 与职责混淆**：`TransientProblem` 既是“数据容器”（持有哪些求解器、求解参数），又充当了“控制器”（实现了硬编码的 `while` 循环和 Picard 耦合迭代）。这违反了**单一职责原则 (SRP)**。
+2. **僵化设计 (Rigidity)**：时间步进逻辑被“钉死”在 `TransientProblem::solve` 中，要想加入自适应步长，原方法会变得极其臃肿，且无法实现策略的灵活替换（违反**开闭原则 OCP**）。
+3. **隐式的时间推进假设**：
+   - 现有的 `FieldValues::advanceTime()` 是一种“推进后不可逆”的操作。如果自适应步长在某一步发散，缺乏状态回滚机制。
+   - `BDF2Integrator` 硬编码了常数步长的系数（1.5, 2.0, -0.5），在变步长下这些系数是错误的，这是一种**隐蔽的数学缺陷**。
+   - 快照（Snapshot）输出与时间步进强绑定，导致无法在“内部小步长”和“外部采样点”之间解耦。
 
 ---
 
-### 第一步：重构强制边界条件 (Dirichlet BC) 的接口与实现
-**当前反模式**：`dirichlet_bc.hpp` 中存在大量用于“向后兼容”的重载方法（如针对标量、针对 `Vector3`，针对 `Component` 等）。每次调用都会触发大量的临时 `std::map` 以及动态 `std::vector` 内存分配。
-**重构目标**：利用表达式树节点 `VariableNode` 已经支持的 `TensorValue` 特性，统一标量和矢量的边界计算，只保留一个最简接口。
+### 2. 步骤化重构方案
 
-**修改文件：`assembly/dirichlet_bc.hpp`**
+我们的目标是：完全剥离 `TransientProblem` 中的控制流，引入独立的 `TimeStepper` 策略接口；解耦“计算步长”与“采样步长”；并修正变步长下所需的底层支持。
+
+#### 第 1 步：定义 `TimeStepper` 接口，实现责任分离
+将控制流从 `TransientProblem` 中抽离。
+
 ```cpp
-#ifndef MPFEM_DIRICHLET_BC_HPP
-#define MPFEM_DIRICHLET_BC_HPP
+// file: time/time_stepper.hpp
+#ifndef MPFEM_TIME_STEPPER_HPP
+#define MPFEM_TIME_STEPPER_HPP
 
-#include "core/sparse_matrix.hpp"
-#include "expr/variable_graph.hpp"
-#include "fe/facet_element_transform.hpp"
-#include "fe/fe_space.hpp"
-#include "mesh/mesh.hpp"
-#include <vector>
-#include <utility>
+#include "problem/transient_problem.hpp"
+#include "time/time_integrator.hpp"
 
 namespace mpfem {
 
-// 统一的 Dirichlet 边界处理，直接抛弃向后兼容的过时重载
-inline void applyDirichletBC(SparseMatrix& mat, Vector& rhs, Vector& sol,
-    const FESpace& fes, const Mesh& mesh,
-    const std::vector<std::pair<int, const VariableNode*>>& bcs, // 统一传入 List
-    bool updateMatrix = true)
-{
-    const Index numDofs = fes.numDofs();
-    if (numDofs == 0 || bcs.empty()) return;
+class TimeStepper {
+public:
+    virtual ~TimeStepper() = default;
 
-    std::vector<Real> dofVals(numDofs, 0.0);
-    std::vector<char> hasVal(numDofs, 0);
-    std::vector<Index> eliminated;
+    // 接收问题实例并接管整个瞬态求解循环
+    virtual TransientResult solve(TransientProblem& problem, TimeIntegrator& integrator) = 0;
+};
 
-    FacetElementTransform trans;
-    trans.setMesh(&mesh);
-    const int vdim = fes.vdim();
+} // namespace mpfem
+#endif // MPFEM_TIME_STEPPER_HPP
+```
 
-    for (const auto& [bid, coef] : bcs) {
-        if (!coef || !fes.isExternalBoundaryId(bid)) continue;
+#### 第 2 步：完善底层支持 (变步长 BDF 积分器 & 状态管理)
+自适应步长必须处理 `dt` 的动态变化，现有的 BDF2 是常步长公式，必须升级为变步长公式，同时引入 `TimeHistory` 记录历史步长。
 
-        for (Index b = 0; b < mesh.numBdrElements(); ++b) {
-            if (mesh.bdrElement(b).attribute() != bid) continue;
+```cpp
+// 修改 time_integrator.hpp
+class TimeIntegrator {
+public:
+    virtual ~TimeIntegrator() = default;
+    
+    // 增加 prev_dt 参数支持变步长
+    virtual bool step(PhysicsFieldSolver& solver, FieldValues& history, 
+                      Real dt, Real prev_dt, int currentStep) = 0;
+};
 
-            const ReferenceElement* refElem = fes.bdrElementRefElement(b);
-            if (!refElem) continue;
+// 修改 time/bdf2_integrator.cpp
+bool BDF2Integrator::step(PhysicsFieldSolver& solver, FieldValues& history, 
+                          Real dt, Real prev_dt, int currentStep) {
+    if (currentStep == 0 || prev_dt <= 0.0) {
+        // 第一步退化为 BDF1
+        const Vector historyCombo = history.history(solver.fieldName(), 1).values();
+        return solver.solveTransientStep(1.0, dt, dt, historyCombo);
+    }
+    
+    // 变步长 BDF2 系数计算 (omega = dt / prev_dt)
+    Real omega = dt / prev_dt;
+    Real alpha = (1.0 + 2.0 * omega) / (1.0 + omega);
+    Real beta_n = (1.0 + omega);
+    Real beta_nm1 = -(omega * omega) / (1.0 + omega);
+    
+    const GridFunction& prev1 = history.history(solver.fieldName(), 1);
+    const GridFunction& prev2 = history.history(solver.fieldName(), 2);
+    
+    Vector historyCombo = beta_n * prev1.values() + beta_nm1 * prev2.values();
+    
+    return solver.solveTransientStep(alpha, dt, dt, historyCombo);
+}
+```
 
-            const int nd = refElem->numDofs();
-            std::vector<Index> dofs(nd * vdim);
-            fes.getBdrElementDofs(b, dofs); // 获取全分量 dof
-            trans.setBoundaryElement(b);
+#### 第 3 步：实现自适应步长策略 (AdaptiveTimeStepper)
+实现核心要求：初始步长为采样的 1/5，最大步长为 10s，并且保证精确踩在采样点上以输出正确的值。
 
-            for (int i = 0; i < nd; ++i) {
-                Real xi[3] = {refElem->dofCoords()[i][0], refElem->dofCoords()[i][1], refElem->dofCoords()[i][2]};
-                trans.setIntegrationPoint(xi);
+```cpp
+// file: time/adaptive_time_stepper.hpp
+#include "time/time_stepper.hpp"
+#include "core/logger.hpp"
+#include <algorithm>
 
-                std::array<Vector3, 1> refPts {Vector3(xi[0], xi[1], xi[2])};
-                std::array<Vector3, 1> physPts;
-                trans.transform(trans.integrationPoint(), physPts[0]);
-                std::array<Matrix3, 1> invJTs {trans.invJacobianT()};
+namespace mpfem {
+
+class AdaptiveTimeStepper : public TimeStepper {
+public:
+    AdaptiveTimeStepper(Real sampleStep, Real maxDt = 10.0) 
+        : sampleStep_(sampleStep), maxDt_(maxDt) {}
+
+    TransientResult solve(TransientProblem& problem, TimeIntegrator& integrator) override {
+        TransientResult result;
+        Real currentTime = problem.startTime;
+        
+        // 按照需求：初始步长为指定采样步长的 1/5
+        Real dt = sampleStep_ / 5.0; 
+        Real prev_dt = dt;
+        int stepCount = 0;
+        
+        problem.initializeSteadyState();
+        problem.fieldValues.advanceTime();
+        result.addSnapshot(currentTime, problem.fieldValues);
+
+        Real nextSampleTime = currentTime + sampleStep_;
+
+        while (currentTime < problem.endTime - 1e-12) {
+            // 保证精确落在采样点上
+            bool isSamplingStep = false;
+            if (currentTime + dt >= nextSampleTime - 1e-12) {
+                dt = nextSampleTime - currentTime;
+                isSamplingStep = true;
+            }
+
+            LOG_INFO << "Attempting step " << stepCount + 1 << ", t=" << currentTime + dt << ", dt=" << dt;
+
+            // 耦合迭代
+            Real errT = 0.0;
+            bool converged = tryCouplingStep(problem, integrator, dt, prev_dt, errT);
+
+            if (converged) {
+                // 成功推进
+                if (problem.hasStructural()) {
+                    problem.structural->solveSteady();
+                }
                 
-                EvaluationContext ctx;
-                ctx.domainId = static_cast<int>(trans.attribute());
-                ctx.elementId = trans.elementIndex();
-                ctx.physicalPoints = physPts;
-                ctx.referencePoints = refPts;
-                ctx.invJacobianTransposes = invJTs;
+                currentTime += dt;
+                prev_dt = dt;
+                stepCount++;
+                problem.fieldValues.advanceTime(); // 确认步进，将结果推入历史栈
 
-                std::array<TensorValue, 1> out {};
-                coef->evaluateBatch(ctx, out); // 多态计算
+                // 采样点输出
+                if (isSamplingStep) {
+                    result.addSnapshot(currentTime, problem.fieldValues);
+                    nextSampleTime += sampleStep_;
+                }
 
-                // 统一处理多维度场：标量或矢量
-                for (int c = 0; c < vdim; ++c) {
-                    Index d = dofs[i * vdim + c];
-                    if (d != InvalidIndex && !hasVal[d]) {
-                        dofVals[d] = out[0].isVector() ? out[0].asVector()[c] : out[0].asScalar();
-                        hasVal[d] = 1;
-                        eliminated.push_back(d);
-                    }
+                // 步长自适应策略：收敛良好则放大步长
+                dt = std::min(dt * 1.2, maxDt_); 
+            } else {
+                // 步进失败，无需调用 advanceTime()，状态自动回滚
+                LOG_WARN << "Convergence failed at dt=" << dt << ", shrinking time step.";
+                dt *= 0.5; 
+                if (dt < 1e-6) {
+                    LOG_ERROR << "Time step too small. Aborting.";
+                    break;
                 }
             }
         }
-    }
-
-    if (updateMatrix) mat.eliminateRows(eliminated, dofVals, rhs);
-    else mat.eliminateRhsOnly(eliminated, dofVals, rhs);
-    for (Index d : eliminated) sol(d) = dofVals[d];
-}
-
-} // namespace mpfem
-#endif // MPFEM_DIRICHLET_BC_HPP
-```
-
----
-
-### 第二步：重构积分器与装配器，实现原生的依赖追踪
-**当前反模式**：目前的装配行为是在热路径上（例如 `buildStiffnessMatrix` 时），手动清理 `matAsm_->clearIntegrators()` 然后重新用 `make_unique` 将积分器塞回去。同时，物理求解器不得不手写如 `if (b.E) rev = std::max(rev, b.E->revision())` 来做缓存一致性检测，代码极其丑陋。
-**重构目标**：为所有 Integrator 增加 `revision()`，让装配器能直接管理和返回当前状态的版本号。积分器注入一次即常驻。
-
-**修改文件：`assembly/integrator.hpp` 和 `assembly/assembler.hpp`**
-1. 在 `integrator.hpp` 的四个基类（`DomainBilinearIntegratorBase`，`FaceBilinearIntegratorBase`，等）中增加接口：
-```cpp
-virtual std::uint64_t revision() const { return 0; }
-```
-2. 在 `integrators.hpp` 所有的具体积分器实现中添加 `revision` 追踪。例如对于 `DiffusionIntegrator`：
-```cpp
-std::uint64_t revision() const override { return coef_ ? coef_->revision() : 0; }
-```
-3. 在 `assembler.hpp` 中，给 `BilinearFormAssembler` 和 `LinearFormAssembler` 添加统计方法：
-```cpp
-std::uint64_t revision() const {
-    std::uint64_t rev = 0;
-    for (const auto& integ : domainIntegs_) rev = std::max(rev, integ->revision());
-    for (const auto& integ : bdrIntegs_) rev = std::max(rev, integ->revision());
-    return rev;
-}
-```
-
----
-
-### 第三步：将样板代码提升至 `PhysicsFieldSolver` (Template Method Pattern)
-**当前反模式**：`ElectrostaticsSolver`，`HeatTransferSolver` 都有数百行几乎复制粘贴的 `initialize`、`buildRHS` 逻辑。每个子类都用诸如 `ConductivityBinding` 这样的多余结构体去管理生命周期。
-**重构目标**：剥夺子类的所有“内务管理”权限，全部收拢在基类统一处理。
-
-**修改文件：`physics/physics_field_solver.hpp`**
-```cpp
-#ifndef MPFEM_PHYSICS_FIELD_SOLVER_HPP
-#define MPFEM_PHYSICS_FIELD_SOLVER_HPP
-//... headers ...
-
-namespace mpfem {
-class PhysicsFieldSolver {
-public:
-    virtual ~PhysicsFieldSolver() = default;
-
-    // 基类统管一切资源分配，子类从此再无 initialize 方法
-    bool initialize(const Mesh& mesh, FieldValues& fieldValues, 
-                    std::string fieldName, int vdim, int order, Real initVal = 0.0) {
-        mesh_ = &mesh;
-        fieldValues_ = &fieldValues;
-        fieldName_ = std::move(fieldName);
-        order_ = order;
         
-        auto fec = std::make_unique<FECollection>(order_, FECollection::Type::H1);
-        fes_ = std::make_unique<FESpace>(&mesh, std::move(fec), vdim);
+        result.timeSteps = stepCount;
+        result.finalTime = currentTime;
+        result.converged = (currentTime >= problem.endTime - 1e-12);
+        return result;
+    }
+
+private:
+    bool tryCouplingStep(TransientProblem& problem, TimeIntegrator& integrator, 
+                         Real dt, Real prev_dt, Real& residual) {
+        const bool hasE = problem.hasElectrostatics();
+        const bool hasT = problem.hasHeatTransfer();
         
-        fieldValues.createField(fieldName_, fes_.get(), 
-                                vdim == 1 ? TensorShape::scalar() : TensorShape::vector(vdim), initVal);
-        
-        // 装配器提前准备好，且配备专属的质量矩阵装配器
-        matAsm_ = std::make_unique<BilinearFormAssembler>(fes_.get());
-        massAsm_ = std::make_unique<BilinearFormAssembler>(fes_.get()); 
-        vecAsm_ = std::make_unique<LinearFormAssembler>(fes_.get());
-        
-        if (solverConfig_) solver_ = SolverFactory::create(*solverConfig_);
-        return true;
-    }
-
-    std::string fieldName() const { return fieldName_; }
-    void setSolverConfig(std::unique_ptr<LinearOperatorConfig> config) { solverConfig_ = std::move(config); }
-
-    // 核心：暴露统一的边界添加接口
-    void addDirichletBC(int bid, const VariableNode* coef) {
-        essentialBCs_.push_back({bid, coef});
-    }
-
-    // 原生获取版本号：直接代理给子装配器，避免各子类自造轮子
-    std::uint64_t getMatrixRevision() const { return matAsm_ ? matAsm_->revision() : 0; }
-    std::uint64_t getMassRevision() const { return massAsm_ ? massAsm_->revision() : 0; }
-    std::uint64_t getRhsRevision() const { return vecAsm_ ? vecAsm_->revision() : 0; }
-    std::uint64_t getBcRevision() const {
-        std::uint64_t rev = 0;
-        for (const auto& bc : essentialBCs_) if (bc.second) rev = std::max(rev, bc.second->revision());
-        return rev;
-    }
-
-protected:
-    // 子类不再需要实现 buildStiffnessMatrix，基类代劳
-    void buildStiffnessMatrix(SparseMatrix& K) { matAsm_->assemble(); K = matAsm_->matrix(); }
-    void buildMassMatrix(SparseMatrix& M) { massAsm_->assemble(); M = massAsm_->matrix(); }
-    void buildRHS(Vector& F) { vecAsm_->assemble(); F = vecAsm_->vector(); }
-
-    void applyEssentialBCs(SparseMatrix& A, Vector& rhs, Vector& solution, bool updateMatrix) {
-        applyDirichletBC(A, rhs, solution, *fes_, *mesh_, essentialBCs_, updateMatrix);
-    }
-
-protected:
-    std::string fieldName_;
-    int order_ = 1;
-    std::vector<std::pair<int, const VariableNode*>> essentialBCs_; // 统一管辖边界
-    
-    const Mesh* mesh_ = nullptr;
-    FieldValues* fieldValues_ = nullptr;
-    std::unique_ptr<FESpace> fes_;
-    
-    std::unique_ptr<BilinearFormAssembler> matAsm_;
-    std::unique_ptr<BilinearFormAssembler> massAsm_;
-    std::unique_ptr<LinearFormAssembler> vecAsm_;
-    std::unique_ptr<LinearOperator> solver_;
-    std::unique_ptr<LinearOperatorConfig> solverConfig_;
-    
-    // ... 保留内部缓存控制 ...
-};
-}
-#endif
-```
-
----
-
-### 第四步：极简化具体物理的实现 (Minimalist Specific Physics)
-**当前反模式**：以 `StructuralSolver` 和 `ElectrostaticsSolver` 为首的各个子类存在数百行僵尸代码（包括复杂的 `getMatrixRevision` 等）。
-**重构结果**：在基类完全代理后，特定的物理系统退化为“提供装配参数注册”的外壳。不再清理或重置内存。
-
-**修改文件：`physics/electrostatics_solver.hpp` (cpp 文件可以直接被删除或仅保留空壳)**
-```cpp
-#ifndef MPFEM_ELECTROSTATICS_SOLVER_HPP
-#define MPFEM_ELECTROSTATICS_SOLVER_HPP
-
-#include "physics_field_solver.hpp"
-#include "assembly/integrators.hpp"
-
-namespace mpfem {
-
-class ElectrostaticsSolver : public PhysicsFieldSolver {
-public:
-    ElectrostaticsSolver() = default;
-    
-    // 直接向装配器注入项，且生命周期常驻
-    void setElectricalConductivity(const std::set<int>& domains, const VariableNode* sigma) {
-        matAsm_->addDomainIntegrator(std::make_unique<DiffusionIntegrator>(sigma), domains);
-    }
-
-    void addVoltageBC(const std::set<int>& boundaryIds, const VariableNode* voltage) {
-        for (int bid : boundaryIds) {
-            addDirichletBC(bid, voltage);
+        if (!hasT) {
+            if (hasE) problem.electrostatics->solveSteady();
+            return true;
         }
-    }
-};
 
-} // namespace mpfem
-#endif // MPFEM_ELECTROSTATICS_SOLVER_HPP
-```
-
-**修改文件：`physics/structural_solver.hpp`**
-```cpp
-#ifndef MPFEM_STRUCTURAL_SOLVER_HPP
-#define MPFEM_STRUCTURAL_SOLVER_HPP
-
-#include "physics_field_solver.hpp"
-#include "assembly/integrators.hpp"
-
-namespace mpfem {
-
-class StructuralSolver : public PhysicsFieldSolver {
-public:
-    StructuralSolver() = default;
-
-    void addElasticity(const std::set<int>& domains, const VariableNode* E, const VariableNode* nu) {
-        matAsm_->addDomainIntegrator(std::make_unique<ElasticityIntegrator>(E, nu, fes_->vdim()), domains);
-    }
-
-    void setStrainLoad(const std::set<int>& domains, const VariableNode* stress) {
-        vecAsm_->addDomainIntegrator(std::make_unique<StrainLoadIntegrator>(stress, fes_->vdim()), domains);
-    }
-
-    void addFixedDisplacementBC(const std::set<int>& boundaryIds, const VariableNode* displacement) {
-        for (int bid : boundaryIds) {
-            addDirichletBC(bid, displacement);
+        Vector prevT;
+        for (int iter = 0; iter < problem.couplingMaxIter; ++iter) {
+            if (hasE) problem.electrostatics->solveSteady();
+            
+            if (!integrator.step(*problem.heatTransfer, problem.fieldValues, dt, prev_dt, 1)) {
+                return false;
+            }
+            
+            const auto& currentT = problem.heatTransfer->field().values();
+            if (iter == 0) { prevT = currentT; continue; }
+            
+            residual = (currentT - prevT).norm() / (currentT.norm() + 1e-15);
+            prevT = currentT;
+            
+            if (residual < problem.couplingTol) return true;
         }
+        return false;
     }
+
+    Real sampleStep_;
+    Real maxDt_;
 };
 
 } // namespace mpfem
-#endif // MPFEM_STRUCTURAL_SOLVER_HPP
 ```
 
-**验证结论**：
-1. **彻底解耦**：子类中全部的 `buildStiffnessMatrix`、`getBcRevision`、各类繁冗的 `Binding` 结构体均被清空。各物理模型的 cpp 代码由几百行缩减至零。
-2. **消灭性能瓶颈**：原本每个组装步都会摧毁再重建的 `unique_ptr<Integrator>` 如今变成了装配器的持久挂载项（`addDomainIntegrator` 只调用一次）。`matAsm_->assemble()` 被调用时，将直接复用这些预分配对象。
-3. **接口统一**：由一版多态的 `applyDirichletBC` 替换了曾经因未正确利用 Tensor 特性而复制的三份边界加载代码。无需要任何显式的后向兼容分支。
+#### 第 4 步：清理 `TransientProblem` (瘦身)
+将 `TransientProblem` 简化为纯粹的模型表达，它不再包含 `while` 循环，并将 `solve` 方法委托给接口。这样我们在外面就可以轻松换掉 `Stepper`。
+
+```cpp
+// 修改 transient_problem.cpp
+TransientResult TransientProblem::solve() {
+    ScopedTimer timer("Transient solve");
+    
+    int requiredHistoryDepth = (scheme == TimeScheme::BDF2) ? 3 : 2;
+    if (fieldValues.maxHistorySteps() < requiredHistoryDepth) {
+        initializeTransient(requiredHistoryDepth);
+    }
+    
+    auto integrator = createTimeIntegrator(scheme);
+    
+    // 使用注入的自适应步长策略替换原本僵化的 while 循环
+    // 默认行为：指定的 timeStep 作为采样步长，最大限制为 10s
+    AdaptiveTimeStepper stepper(timeStep, 10.0);
+    
+    return stepper.solve(*this, *integrator);
+}
+```
+
+### 总结
+这套重构方案做了以下几件事：
+1. **控制反转**：剥离出了 `TimeStepper` 接口，解耦了业务逻辑。
+2. **逻辑安全**：在重试阶段利用 `FieldValues` 不调用 `advanceTime` 即可实现天然的隐式**状态回滚**。
+3. **数学严谨**：修正了 `BDF2` 算法以支持变步长 (`omega = dt/prev_dt`)，防止在自适应过程中产生数值上的虚假解。
+4. **精准采样**：通过 `isSamplingStep` 判断和余量切割(`nextSampleTime - currentTime`)，保证了哪怕内部以 0.1s 或者 10s 在疯跑，到了 5s 整数倍时一定能切出一个刚好踩在这个时间点的帧并输出。不需要修改结果后处理代码，完全无痛。

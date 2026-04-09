@@ -11,7 +11,7 @@ namespace mpfem {
     public:
         BDF2Integrator() = default;
 
-        bool step(PhysicsFieldSolver& solver, FieldValues& history, Real dt, int currentStep) override;
+        bool step(PhysicsFieldSolver& solver, FieldValues& history, Real dt, Real prev_dt, int currentStep) override;
     };
 
 } // namespace mpfem
