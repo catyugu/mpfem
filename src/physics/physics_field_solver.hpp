@@ -22,47 +22,72 @@ namespace mpfem {
         // Public solve interface (Template Method pattern - final, not overridable)
         bool solveSteady()
         {
+            std::uint64_t currentMatRev = getMatrixRevision();
+            std::uint64_t currentRhsRev = getRhsRevision();
+            std::uint64_t currentBcRev = getBcRevision();
 
-            buildStiffnessMatrix(K_uneliminated_);
+            bool matOrBcChanged = (currentMatRev != matrixRevision_) || (currentBcRev != bcRevision_) || isFirstIteration;
+            bool rhsChanged = (currentRhsRev != rhsRevision_) || isFirstIteration;
 
-            // Build RHS
-            buildRHS(F_);
+            if (matOrBcChanged) {
+                buildStiffnessMatrix(K_uneliminated_);
+                matrixRevision_ = currentMatRev;
+            }
 
-            // Prepare eliminated matrix
-            K_eliminated_ = K_uneliminated_;
+            if (matOrBcChanged || rhsChanged) {
+                buildRHS(F_);
+                rhsRevision_ = currentRhsRev;
+            }
 
-            // Apply essential boundary conditions
-            applyEssentialBCs(K_eliminated_, F_, field().values());
+            if (matOrBcChanged) {
+                // Prepare eliminated matrix
+                K_eliminated_ = K_uneliminated_;
 
+                // Apply essential boundary conditions - update matrix and RHS
+                applyEssentialBCs(K_eliminated_, F_, field().values(), true);
 
-            K_eliminated_.makeCompressed();
-            solver_->setup(&K_eliminated_);
+                K_eliminated_.makeCompressed();
+                solver_->setup(&K_eliminated_);
+                bcRevision_ = currentBcRev;
+            }
+            else if (rhsChanged) {
+                // Fast path: only update RHS for changed source terms
+                applyEssentialBCs(K_eliminated_, F_, field().values(), false);
+            }
 
             // Solve
             solver_->apply(F_, field().values());
             field().markUpdated();
+            isFirstIteration = false;
+            
             return true;
         }
 
         bool solveTransient(Real dt, const Vector& historyCombo)
         {
+            std::uint64_t currentMatRev = getMatrixRevision();
+            std::uint64_t currentMassRev = getMassRevision();
+            std::uint64_t currentRhsRev = getRhsRevision();
+            std::uint64_t currentBcRev = getBcRevision();
 
-            buildStiffnessMatrix(K_uneliminated_);
-            buildMassMatrix(M_);     
+            bool dtChanged = (dt != previous_dt_);
+            bool operatorChanged = (currentMatRev != matrixRevision_) || (currentMassRev != massRevision_) || dtChanged || isFirstIteration ;
+            bool rhsChanged = (currentRhsRev != rhsRevision_) || isFirstIteration;
 
-            bool M_is_empty = (M_.rows() == 0 || M_.cols() == 0);
-            if (M_is_empty) {
-                A_uneliminated_ = dt * K_uneliminated_;
+            if (operatorChanged) {
+                buildStiffnessMatrix(K_uneliminated_);
+                buildMassMatrix(M_);
+                matrixRevision_ = currentMatRev;
+                massRevision_ = currentMassRev;
             }
-            else {
-                A_uneliminated_ = M_ + (dt * K_uneliminated_);
-            }
-            previous_dt_ = dt;
 
-            // Build RHS
-            buildRHS(F_);
+            if (operatorChanged || rhsChanged) {
+                buildRHS(F_);
+                rhsRevision_ = currentRhsRev;
+            }
 
             // Compute transient RHS = M*historyCombo + dt*F (or dt*F if M is empty)
+            bool M_is_empty = (M_.rows() == 0 || M_.cols() == 0);
             Vector transient_rhs;
             if (M_is_empty) {
                 transient_rhs = dt * F_;
@@ -71,23 +96,34 @@ namespace mpfem {
                 transient_rhs = M_ * historyCombo + (dt * F_);
             }
 
-            // Prepare eliminated matrix
-            A_eliminated_ = A_uneliminated_;
+            if (operatorChanged) {
+                bool M_is_empty_check = (M_.rows() == 0 || M_.cols() == 0);
+                if (M_is_empty_check) {
+                    A_uneliminated_ = dt * K_uneliminated_;
+                }
+                else {
+                    A_uneliminated_ = M_ + (dt * K_uneliminated_);
+                }
+                previous_dt_ = dt;
 
-            // Apply essential boundary conditions
-            applyEssentialBCs(A_eliminated_, transient_rhs, field().values());
-
-            A_eliminated_.makeCompressed();
-            solver_->setup(&A_eliminated_);
+                // Prepare eliminated matrix and apply BCs with full matrix update
+                A_eliminated_ = A_uneliminated_;
+                applyEssentialBCs(A_eliminated_, transient_rhs, field().values(), true);
+                A_eliminated_.makeCompressed();
+                solver_->setup(&A_eliminated_);
+                bcRevision_ = currentBcRev;
+            }
+            else if (rhsChanged || dtChanged) {
+                // Fast path: matrix unchanged, only update RHS
+                applyEssentialBCs(A_eliminated_, transient_rhs, field().values(), false);
+            }
 
             // Solve
             solver_->apply(transient_rhs, field().values());
             field().markUpdated();
+            isFirstIteration = false;
             return true;
         }
-
-        // Mark matrix as changed to force rebuild on next solve
-        void markMatrixChanged() { systemMatrixNeedsRebuild_ = true; }
 
         const GridFunction& field() const
         {
@@ -124,7 +160,13 @@ namespace mpfem {
         virtual void buildStiffnessMatrix(SparseMatrix& K) = 0;
         virtual void buildMassMatrix(SparseMatrix& M) { M.resize(0, 0); } // Default: no mass
         virtual void buildRHS(Vector& F) = 0;
-        virtual void applyEssentialBCs(SparseMatrix& A, Vector& rhs, Vector& solution) = 0;
+        virtual void applyEssentialBCs(SparseMatrix& A, Vector& rhs, Vector& solution, bool updateMatrix) = 0;
+
+        // Revision tracking for smart matrix assembly skipping
+        virtual std::uint64_t getMatrixRevision() const { return matrixRevision_; }
+        virtual std::uint64_t getMassRevision() const { return massRevision_; }
+        virtual std::uint64_t getRhsRevision() const { return rhsRevision_; }
+        virtual std::uint64_t getBcRevision() const { return bcRevision_; }
 
         // Cached matrices
         SparseMatrix K_uneliminated_, K_eliminated_;
@@ -132,8 +174,14 @@ namespace mpfem {
         SparseMatrix A_uneliminated_, A_eliminated_;
         Vector F_;
         Real previous_dt_ = -1.0;
-        bool systemMatrixNeedsRebuild_ = true;
-        bool solverNeedsSetup_ = true;
+
+        bool isFirstIteration = true; // Flag to track first iteration for mandatory initial assembly
+
+        // Revision tracking state
+        std::uint64_t matrixRevision_ = 0;
+        std::uint64_t massRevision_ = 0;
+        std::uint64_t rhsRevision_ = 0;
+        std::uint64_t bcRevision_ = 0;
     };
 
 } // namespace mpfem

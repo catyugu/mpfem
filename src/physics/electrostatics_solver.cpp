@@ -57,7 +57,7 @@ namespace mpfem {
         F = vecAsm_->vector();
     }
 
-    void ElectrostaticsSolver::applyEssentialBCs(SparseMatrix& A, Vector& rhs, Vector& solution)
+    void ElectrostaticsSolver::applyEssentialBCs(SparseMatrix& A, Vector& rhs, Vector& solution, bool updateMatrix)
     {
         std::map<int, const VariableNode*> voltageBCs;
         for (const auto& binding : voltageBindings_) {
@@ -65,7 +65,32 @@ namespace mpfem {
                 voltageBCs[bid] = binding.voltage;
             }
         }
-        applyDirichletBC(A, rhs, solution, *fes_, *mesh_, voltageBCs);
+        applyDirichletBC(A, rhs, solution, *fes_, *mesh_, voltageBCs, updateMatrix);
+    }
+
+    std::uint64_t ElectrostaticsSolver::getMatrixRevision() const
+    {
+        std::uint64_t rev = 0;
+        for (const auto& b : conductivityBindings_) {
+            if (b.sigma)
+                rev = std::max(rev, b.sigma->revision());
+        }
+        return rev;
+    }
+
+    std::uint64_t ElectrostaticsSolver::getRhsRevision() const
+    {
+        return 0; // Electrostatics typically has no volume source
+    }
+
+    std::uint64_t ElectrostaticsSolver::getBcRevision() const
+    {
+        std::uint64_t rev = 0;
+        for (const auto& b : voltageBindings_) {
+            if (b.voltage)
+                rev = std::max(rev, b.voltage->revision());
+        }
+        return rev;
     }
 
 } // namespace mpfem

@@ -3,6 +3,7 @@
 
 #include "expr/evaluation_context.hpp"
 
+#include <cstdint>
 #include <memory>
 #include <span>
 #include <string>
@@ -33,6 +34,8 @@ namespace mpfem {
         virtual std::vector<const VariableNode*> getChildren() const { return {}; }
 
         virtual bool isConstant() const { return false; }
+
+        virtual std::uint64_t revision() const { return 0; }
     };
 
     /**

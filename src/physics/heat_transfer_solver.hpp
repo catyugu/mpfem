@@ -41,7 +41,12 @@ namespace mpfem {
         void buildStiffnessMatrix(SparseMatrix& K) override;
         void buildMassMatrix(SparseMatrix& M) override;
         void buildRHS(Vector& F) override;
-        void applyEssentialBCs(SparseMatrix& A, Vector& rhs, Vector& solution) override;
+        void applyEssentialBCs(SparseMatrix& A, Vector& rhs, Vector& solution, bool updateMatrix) override;
+
+        std::uint64_t getMatrixRevision() const override;
+        std::uint64_t getMassRevision() const override;
+        std::uint64_t getRhsRevision() const override;
+        std::uint64_t getBcRevision() const override;
 
     private:
         struct TemperatureBinding {

@@ -114,7 +114,7 @@ namespace mpfem {
         F = vecAsm_->vector();
     }
 
-    void HeatTransferSolver::applyEssentialBCs(SparseMatrix& A, Vector& rhs, Vector& solution)
+    void HeatTransferSolver::applyEssentialBCs(SparseMatrix& A, Vector& rhs, Vector& solution, bool updateMatrix)
     {
         std::map<int, const VariableNode*> temperatureBCs;
         for (const auto& binding : temperatureBindings_) {
@@ -122,7 +122,57 @@ namespace mpfem {
                 temperatureBCs[bid] = binding.temperature;
             }
         }
-        applyDirichletBC(A, rhs, solution, *fes_, *mesh_, temperatureBCs);
+        applyDirichletBC(A, rhs, solution, *fes_, *mesh_, temperatureBCs, updateMatrix);
+    }
+
+    std::uint64_t HeatTransferSolver::getMatrixRevision() const
+    {
+        std::uint64_t rev = 0;
+        for (const auto& b : conductivityBindings_) {
+            if (b.conductivity)
+                rev = std::max(rev, b.conductivity->revision());
+        }
+        for (const auto& b : convectionBindings_) {
+            if (b.h)
+                rev = std::max(rev, b.h->revision());
+        }
+        return rev;
+    }
+
+    std::uint64_t HeatTransferSolver::getMassRevision() const
+    {
+        std::uint64_t rev = 0;
+        for (const auto& b : massBindings_) {
+            if (b.thermalMass)
+                rev = std::max(rev, b.thermalMass->revision());
+        }
+        return rev;
+    }
+
+    std::uint64_t HeatTransferSolver::getRhsRevision() const
+    {
+        std::uint64_t rev = 0;
+        for (const auto& b : heatSourceBindings_) {
+            if (b.source)
+                rev = std::max(rev, b.source->revision());
+        }
+        for (const auto& b : convectionBindings_) {
+            if (b.h)
+                rev = std::max(rev, b.h->revision());
+            if (b.Tinf)
+                rev = std::max(rev, b.Tinf->revision());
+        }
+        return rev;
+    }
+
+    std::uint64_t HeatTransferSolver::getBcRevision() const
+    {
+        std::uint64_t rev = 0;
+        for (const auto& b : temperatureBindings_) {
+            if (b.temperature)
+                rev = std::max(rev, b.temperature->revision());
+        }
+        return rev;
     }
 
 } // namespace mpfem

@@ -40,7 +40,7 @@ namespace mpfem {
         strainLoadBindings_.push_back({domains, stress});
     }
 
-    void StructuralSolver::addFixedDisplacementBC(const std::set<int>& boundaryIds, const Vector3& displacement)
+    void StructuralSolver::addFixedDisplacementBC(const std::set<int>& boundaryIds, const VariableNode* displacement)
     {
         displacementBindings_.push_back({boundaryIds, displacement});
     }
@@ -73,15 +73,37 @@ namespace mpfem {
         F = vecAsm_->vector();
     }
 
-    void StructuralSolver::applyEssentialBCs(SparseMatrix& A, Vector& rhs, Vector& solution)
+    void StructuralSolver::applyEssentialBCs(SparseMatrix& A, Vector& rhs, Vector& solution, bool updateMatrix)
     {
-        std::map<int, Vector3> displacementBCs;
+        std::map<int, const VariableNode*> displacementBCs;
         for (const auto& binding : displacementBindings_) {
             for (int bid : binding.boundaryIds) {
                 displacementBCs[bid] = binding.displacement;
             }
         }
-        applyDirichletBC(A, rhs, solution, *fes_, *mesh_, displacementBCs, 3);
+        applyDirichletBC(A, rhs, solution, *fes_, *mesh_, displacementBCs, updateMatrix);
+    }
+
+    std::uint64_t StructuralSolver::getMatrixRevision() const
+    {
+        std::uint64_t rev = 0;
+        for (const auto& b : elasticityBindings_) {
+            if (b.E)
+                rev = std::max(rev, b.E->revision());
+            if (b.nu)
+                rev = std::max(rev, b.nu->revision());
+        }
+        return rev;
+    }
+
+    std::uint64_t StructuralSolver::getRhsRevision() const
+    {
+        std::uint64_t rev = 0;
+        for (const auto& b : strainLoadBindings_) {
+            if (b.stress)
+                rev = std::max(rev, b.stress->revision());
+        }
+        return rev;
     }
 
 } // namespace mpfem

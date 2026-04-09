@@ -185,6 +185,51 @@ namespace mpfem {
             }
         }
 
+        /**
+         * @brief Only modify RHS for Dirichlet BCs without touching the matrix.
+         *
+         * Use this when matrix topology is unchanged but BC values changed.
+         * Avoids matrix copy and preserves the pre-eliminated matrix structure.
+         *
+         * @param eliminated Vector of eliminated DOF indices (must be sorted).
+         * @param dofValues Vector of values for eliminated DOFs (aligned with eliminated).
+         * @param b RHS vector.
+         */
+        void eliminateRhsOnly(const std::vector<Index>& eliminated,
+            const std::vector<Real>& dofValues,
+            Vector& b) const
+        {
+            if (eliminated.empty())
+                return;
+
+            const Index n = mat_.rows();
+            const size_t numEliminated = eliminated.size();
+
+            std::vector<char> isEliminated(n, 0);
+            std::vector<Real> eliminatedValues(n, 0.0);
+            for (size_t i = 0; i < numEliminated; ++i) {
+                isEliminated[eliminated[i]] = 1;
+                eliminatedValues[eliminated[i]] = dofValues[eliminated[i]];
+            }
+
+            // Modify RHS to account for eliminated DOF values
+            for (Index col = 0; col < mat_.outerSize(); ++col) {
+                if (isEliminated[col]) {
+                    for (Storage::InnerIterator it(mat_, col); it; ++it) {
+                        Index row = it.row();
+                        if (!isEliminated[row]) {
+                            b(row) -= it.value() * eliminatedValues[col];
+                        }
+                    }
+                }
+            }
+
+            // Set eliminated DOF values in RHS
+            for (size_t i = 0; i < numEliminated; ++i) {
+                b(eliminated[i]) = dofValues[eliminated[i]];
+            }
+        }
+
         /// Write to Matrix Market format
         void writeToMatrixMarket(const std::string& filename) const
         {

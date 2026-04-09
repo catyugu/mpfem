@@ -212,6 +212,17 @@ namespace mpfem {
             return ast_->kind == AstNode::Kind::Constant;
         }
 
+        std::uint64_t revision() const override
+        {
+            if (isConstant())
+                return 0;
+            std::uint64_t rev = 0;
+            for (const auto* dep : resolved_deps_) {
+                rev = std::max(rev, dep->revision());
+            }
+            return rev;
+        }
+
     private:
         std::unique_ptr<AstNode> ast_;
         std::vector<std::string> dep_names_;
