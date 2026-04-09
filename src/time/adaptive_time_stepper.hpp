@@ -7,10 +7,20 @@
 
 namespace mpfem {
 
+    struct AdaptiveTimeStepperConfig {
+        Real sampleStep = 0.01; ///< Sampling interval
+        Real maxDt = 10.0; ///< Maximum step size
+        Real growFactor = 1.5; ///< Step growth factor on success
+        Real shrinkFactor = 0.5; ///< Step shrink factor on failure
+        Real minDt = 1e-6; ///< Minimum step size threshold
+        Real residualEps = 1e-15; ///< Normalization for residual computation
+        Real initialDt = 0.1; ///< Optional initial dt
+    };
+
     class AdaptiveTimeStepper : public TimeStepper {
     public:
-        AdaptiveTimeStepper(Real sampleStep, Real maxDt = 10.0, Real growFactor = 2.0, Real shrinkFactor = 0.5, Real minDt = 1e-6)
-            : sampleStep_(sampleStep), maxDt_(maxDt), growFactor_(growFactor), shrinkFactor_(shrinkFactor), minDt_(minDt) { }
+        explicit AdaptiveTimeStepper(const AdaptiveTimeStepperConfig& config)
+            : cfg_(config) { }
 
         TransientResult solve(TransientProblem& problem, TimeIntegrator& integrator) override
         {
@@ -18,53 +28,58 @@ namespace mpfem {
             Real currentTime = problem.startTime;
 
             // Initial dt = sampleStep / 5 (as per specification)
-            Real dt = sampleStep_ / 5.0;
-            Real prev_dt = dt;
+            Real underlyingDt = cfg_.initialDt;
+            Real prev_dt = underlyingDt;
             int stepCount = 0;
 
             problem.initializeSteadyState();
             problem.fieldValues.advanceTime();
             result.addSnapshot(currentTime, problem.fieldValues);
 
-            Real nextSampleTime = currentTime + sampleStep_;
+            Real nextSampleTime = currentTime + cfg_.sampleStep;
             constexpr Real kTimeEps = 1e-12;
 
             while (currentTime < problem.endTime - kTimeEps) {
-                // Ensure exact sampling times - cut dt to hit exact sample point
+                // Determine actual dt for this step
+                Real actualDt = underlyingDt;
                 bool isSamplingStep = false;
-                if (currentTime + dt >= nextSampleTime - kTimeEps) {
-                    dt = nextSampleTime - currentTime;
+
+                // Cut only to hit exact sample point - does NOT affect underlyingDt
+                if (currentTime + actualDt >= nextSampleTime - kTimeEps) {
+                    actualDt = nextSampleTime - currentTime;
                     isSamplingStep = true;
                 }
 
-                LOG_INFO << "Attempting step " << stepCount + 1
-                         << ", t=" << currentTime + dt << ", dt=" << dt;
+                LOG_INFO << "Step " << (stepCount + 1)
+                         << ", t=" << (currentTime + actualDt)
+                         << ", dt=" << actualDt
+                         << " (underlying=" << underlyingDt << ")";
 
                 Real errT = 0.0;
-                bool converged = tryCouplingStep(problem, integrator, dt, prev_dt, errT);
+                bool converged = tryCouplingStep(problem, integrator, actualDt, prev_dt, errT);
 
                 if (converged) {
                     if (problem.hasStructural()) {
                         problem.structural->solveSteady();
                     }
 
-                    currentTime += dt;
-                    prev_dt = dt;
+                    currentTime += actualDt;
+                    prev_dt = actualDt;
                     stepCount++;
                     problem.fieldValues.advanceTime();
 
                     if (isSamplingStep) {
                         result.addSnapshot(currentTime, problem.fieldValues);
-                        nextSampleTime += sampleStep_;
+                        nextSampleTime += cfg_.sampleStep;
                     }
 
-                    // Grow dt by factor on success, cap at maxDt_
-                    dt = std::min(dt * growFactor_, maxDt_);
+                    // Grow UNDERLYING dt on success - actualDt may have been cut for sampling
+                    underlyingDt = std::min(underlyingDt * cfg_.growFactor, cfg_.maxDt);
                 }
                 else {
-                    LOG_WARN << "Convergence failed at dt=" << dt << ", shrinking time step.";
-                    dt *= shrinkFactor_;
-                    if (dt < minDt_) {
+                    LOG_WARN << "Convergence failed, shrinking time step.";
+                    underlyingDt *= cfg_.shrinkFactor;
+                    if (underlyingDt < cfg_.minDt) {
                         LOG_ERROR << "Time step too small. Aborting.";
                         break;
                     }
@@ -81,8 +96,6 @@ namespace mpfem {
         bool tryCouplingStep(TransientProblem& problem, TimeIntegrator& integrator,
             Real dt, Real prev_dt, Real& residual)
         {
-            constexpr Real kResidualEps = 1e-15;
-
             const bool hasE = problem.hasElectrostatics();
             const bool hasT = problem.hasHeatTransfer();
 
@@ -107,7 +120,7 @@ namespace mpfem {
                     continue;
                 }
 
-                residual = (currentT - prevT).norm() / (currentT.norm() + kResidualEps);
+                residual = (currentT - prevT).norm() / (currentT.norm() + cfg_.residualEps);
                 prevT = currentT;
 
                 if (residual < problem.couplingTol)
@@ -116,11 +129,7 @@ namespace mpfem {
             return false;
         }
 
-        Real sampleStep_;
-        Real maxDt_;
-        Real growFactor_;
-        Real shrinkFactor_;
-        Real minDt_;
+        AdaptiveTimeStepperConfig cfg_;
     };
 
 } // namespace mpfem

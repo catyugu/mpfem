@@ -43,8 +43,12 @@ namespace mpfem {
         LOG_INFO << "Starting transient solve: t=[" << startTime << ", " << endTime
                  << "], sampleStep=" << timeStep << ", scheme=" << static_cast<int>(scheme);
 
-        // Delegate to AdaptiveTimeStepper - maxDt=10.0 as specified
-        AdaptiveTimeStepper stepper(timeStep, 10.0);
+        // Delegate to AdaptiveTimeStepper
+        AdaptiveTimeStepper stepper(AdaptiveTimeStepperConfig {
+            .sampleStep = timeStep,
+            .maxDt = 10.0,
+            .growFactor = 2.0
+        });
         return stepper.solve(*this, *integrator);
     }
 

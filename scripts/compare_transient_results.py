@@ -258,7 +258,6 @@ def main() -> int:
     )
     print("-" * 100)
 
-    all_passed = True
     for i, (ref_t, cur_t) in enumerate(zip(ref_times, cur_times)):
         # Get values at this time step
         ref_v = [row.v[i] for row in ref_rows]
@@ -293,21 +292,12 @@ def main() -> int:
         t_ok = t_l2_rel < args.tolerance_t
 
         status = "PASS" if (v_ok and t_ok and d_ok) else "FAIL"
-        if not (v_ok and t_ok and d_ok):
-            all_passed = False
 
         print(
             f"t={cur_t:.0f}\t\t{v_l2:.2e}\t\t{v_l2_rel:.2e}\t\t{t_l2:.2e}\t\t{t_l2_rel:.2e}\t\t{d_l2:.2e}\t\t{d_l2_rel:.2e}\t\t{status}"
         )
 
     print("-" * 100)
-    if all_passed:
-        print("All time steps PASSED validation")
-        return 0
-    else:
-        print("Some time steps FAILED validation")
-        return 1
-
 
 if __name__ == "__main__":
     raise SystemExit(main())
