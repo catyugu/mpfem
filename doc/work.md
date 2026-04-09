@@ -49,7 +49,7 @@ public:
     virtual void buildStiffnessMatrix(SparseMatrix& K) = 0;
     virtual void buildMassMatrix(SparseMatrix& M) { M.resize(0, 0); } // 默认无质量矩阵
     virtual void buildRHS(Vector& F) = 0;
-    virtual void applyBoundaryConditions(SparseMatrix& A, Vector& rhs, Vector& solution) = 0;
+    virtual void applyEssentialBCs(SparseMatrix& A, Vector& rhs, Vector& solution) = 0;
 
     // 通用的线性系统求解
     virtual bool solveLinearSystem(SparseMatrix& A, const Vector& b, Vector& x) {
@@ -108,7 +108,7 @@ void HeatTransferSolver::buildRHS(Vector& F) {
     F = vecAsm_->vector();
 }
 
-void HeatTransferSolver::applyBoundaryConditions(SparseMatrix& A, Vector& rhs, Vector& solution) {
+void HeatTransferSolver::applyEssentialBCs(SparseMatrix& A, Vector& rhs, Vector& solution) {
     std::map<int, const VariableNode*> temperatureBCs;
     for (const auto& binding : temperatureBindings_) {
         for (int bid : binding.boundaryIds) temperatureBCs[bid] = binding.temperature;
@@ -156,7 +156,7 @@ bool BDF1Integrator::step(PhysicsFieldSolver& solver, FieldValues& history, Real
     rhs_ = M * prev.values() + dt * F;
     
     // 统一施加边界条件并进行系统求解
-    solver.applyBoundaryConditions(A_, rhs_, curr.values());
+    solver.applyEssentialBCs(A_, rhs_, curr.values());
     
     if (!solver.solveLinearSystem(A_, rhs_, curr.values())) {
         LOG_ERROR << "BDF1Integrator: Linear solve failed for " << solver.fieldName();

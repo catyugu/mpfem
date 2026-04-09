@@ -6,6 +6,8 @@ namespace mpfem {
 
     bool BDF1Integrator::step(PhysicsFieldSolver& solver, FieldValues& history, Real dt, int currentStep)
     {
+        (void)currentStep;
+
         SparseMatrix M, K;
         Vector F;
 
@@ -27,7 +29,7 @@ namespace mpfem {
         A_.makeCompressed();
         rhs_ = M * prev.values() + dt * F;
 
-        solver.applyBoundaryConditions(A_, rhs_, curr.values());
+        solver.applyEssentialBCs(A_, rhs_, curr.values());
 
         if (!solver.solveLinearSystem(A_, curr.values(), rhs_)) {
             LOG_ERROR << "BDF1Integrator: Linear solve failed for " << solver.fieldName();

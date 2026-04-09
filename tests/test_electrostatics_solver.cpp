@@ -35,7 +35,7 @@ TEST_F(BusbarElectrostaticsTest, SolverConvergence)
     Vector F;
     solver->buildStiffnessMatrix(K);
     solver->buildRHS(F);
-    solver->applyBoundaryConditions(K, F, solver->field().values());
+    solver->applyEssentialBCs(K, F, solver->field().values());
     solver->solveLinearSystem(K, solver->field().values(), F);
 
     int iterations = solver->iterations();

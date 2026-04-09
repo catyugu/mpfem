@@ -57,7 +57,7 @@ namespace mpfem {
         F = vecAsm_->vector();
     }
 
-    void ElectrostaticsSolver::applyBoundaryConditions(SparseMatrix& A, Vector& rhs, Vector& solution)
+    void ElectrostaticsSolver::applyEssentialBCs(SparseMatrix& A, Vector& rhs, Vector& solution)
     {
         std::map<int, const VariableNode*> voltageBCs;
         for (const auto& binding : voltageBindings_) {
@@ -75,7 +75,7 @@ namespace mpfem {
             return false;
         }
         Vector rhs = b;
-        applyBoundaryConditions(A, rhs, x);
+        applyEssentialBCs(A, rhs, x);
         A.makeCompressed();
         solver_->setup(&A);
         solver_->apply(rhs, x);

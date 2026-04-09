@@ -33,7 +33,7 @@ namespace mpfem {
                     Vector F;
                     problem.electrostatics->buildStiffnessMatrix(K);
                     problem.electrostatics->buildRHS(F);
-                    problem.electrostatics->applyBoundaryConditions(K, F, problem.electrostatics->field().values());
+                    problem.electrostatics->applyEssentialBCs(K, F, problem.electrostatics->field().values());
                     problem.electrostatics->solveLinearSystem(K, problem.electrostatics->field().values(), F);
                 }
                 return true;
@@ -46,7 +46,7 @@ namespace mpfem {
                     Vector F;
                     problem.electrostatics->buildStiffnessMatrix(K);
                     problem.electrostatics->buildRHS(F);
-                    problem.electrostatics->applyBoundaryConditions(K, F, problem.electrostatics->field().values());
+                    problem.electrostatics->applyEssentialBCs(K, F, problem.electrostatics->field().values());
                     problem.electrostatics->solveLinearSystem(K, problem.electrostatics->field().values(), F);
                 }
 
@@ -75,7 +75,7 @@ namespace mpfem {
             Vector F;
             electrostatics->buildStiffnessMatrix(K);
             electrostatics->buildRHS(F);
-            electrostatics->applyBoundaryConditions(K, F, electrostatics->field().values());
+            electrostatics->applyEssentialBCs(K, F, electrostatics->field().values());
             electrostatics->solveLinearSystem(K, electrostatics->field().values(), F);
         }
 
@@ -84,7 +84,7 @@ namespace mpfem {
             Vector F;
             structural->buildStiffnessMatrix(K);
             structural->buildRHS(F);
-            structural->applyBoundaryConditions(K, F, structural->field().values());
+            structural->applyEssentialBCs(K, F, structural->field().values());
             structural->solveLinearSystem(K, structural->field().values(), F);
         }
 
@@ -137,7 +137,7 @@ namespace mpfem {
                 Vector F;
                 structural->buildStiffnessMatrix(K);
                 structural->buildRHS(F);
-                structural->applyBoundaryConditions(K, F, structural->field().values());
+                structural->applyEssentialBCs(K, F, structural->field().values());
                 structural->solveLinearSystem(K, structural->field().values(), F);
             }
 

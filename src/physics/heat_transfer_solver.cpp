@@ -114,7 +114,7 @@ namespace mpfem {
         F = vecAsm_->vector();
     }
 
-    void HeatTransferSolver::applyBoundaryConditions(SparseMatrix& A, Vector& rhs, Vector& solution)
+    void HeatTransferSolver::applyEssentialBCs(SparseMatrix& A, Vector& rhs, Vector& solution)
     {
         std::map<int, const VariableNode*> temperatureBCs;
         for (const auto& binding : temperatureBindings_) {
@@ -132,7 +132,7 @@ namespace mpfem {
             return false;
         }
         Vector rhs = b;
-        applyBoundaryConditions(A, rhs, x);
+        applyEssentialBCs(A, rhs, x);
         A.makeCompressed();
         solver_->setup(&A);
         solver_->apply(rhs, x);

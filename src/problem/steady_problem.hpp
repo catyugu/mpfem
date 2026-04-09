@@ -8,7 +8,7 @@
 #include "physics/heat_transfer_solver.hpp"
 #include "physics/structural_solver.hpp"
 #include "problem.hpp"
-#include "solver/sparse_matrix.hpp"
+#include "core/sparse_matrix.hpp"
 
 namespace mpfem {
 
@@ -32,7 +32,7 @@ namespace mpfem {
                     Vector F;
                     electrostatics->buildStiffnessMatrix(K);
                     electrostatics->buildRHS(F);
-                    electrostatics->applyBoundaryConditions(K, F, electrostatics->field().values());
+                    electrostatics->applyEssentialBCs(K, F, electrostatics->field().values());
                     electrostatics->solveLinearSystem(K, electrostatics->field().values(), F);
                 }
                 result.fields = fieldValues;
@@ -49,7 +49,7 @@ namespace mpfem {
                     Vector F;
                     electrostatics->buildStiffnessMatrix(K);
                     electrostatics->buildRHS(F);
-                    electrostatics->applyBoundaryConditions(K, F, electrostatics->field().values());
+                    electrostatics->applyEssentialBCs(K, F, electrostatics->field().values());
                     electrostatics->solveLinearSystem(K, electrostatics->field().values(), F);
                 }
                 if (hasHeatTransfer) {
@@ -57,7 +57,7 @@ namespace mpfem {
                     Vector F;
                     heatTransfer->buildStiffnessMatrix(K);
                     heatTransfer->buildRHS(F);
-                    heatTransfer->applyBoundaryConditions(K, F, heatTransfer->field().values());
+                    heatTransfer->applyEssentialBCs(K, F, heatTransfer->field().values());
                     heatTransfer->solveLinearSystem(K, heatTransfer->field().values(), F);
                 }
 
@@ -76,7 +76,7 @@ namespace mpfem {
                 Vector F;
                 structural->buildStiffnessMatrix(K);
                 structural->buildRHS(F);
-                structural->applyBoundaryConditions(K, F, structural->field().values());
+                structural->applyEssentialBCs(K, F, structural->field().values());
                 structural->solveLinearSystem(K, structural->field().values(), F);
             }
             result.fields = fieldValues;

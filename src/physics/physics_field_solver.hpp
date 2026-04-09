@@ -23,7 +23,7 @@ namespace mpfem {
         virtual void buildStiffnessMatrix(SparseMatrix& K) = 0;
         virtual void buildMassMatrix(SparseMatrix& M) { M.resize(0, 0); } // Default: no mass
         virtual void buildRHS(Vector& F) = 0;
-        virtual void applyBoundaryConditions(SparseMatrix& A, Vector& rhs, Vector& solution) = 0;
+        virtual void applyEssentialBCs(SparseMatrix& A, Vector& rhs, Vector& solution) = 0;
 
         // Default linear system solve implementation
         virtual bool solveLinearSystem(SparseMatrix& A, Vector& x, const Vector& b)

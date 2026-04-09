@@ -73,7 +73,7 @@ namespace mpfem {
         F = vecAsm_->vector();
     }
 
-    void StructuralSolver::applyBoundaryConditions(SparseMatrix& A, Vector& rhs, Vector& solution)
+    void StructuralSolver::applyEssentialBCs(SparseMatrix& A, Vector& rhs, Vector& solution)
     {
         std::map<int, Vector3> displacementBCs;
         for (const auto& binding : displacementBindings_) {
@@ -91,7 +91,7 @@ namespace mpfem {
             return false;
         }
         Vector rhs = b;
-        applyBoundaryConditions(A, rhs, x);
+        applyEssentialBCs(A, rhs, x);
         A.makeCompressed();
         solver_->setup(&A);
         solver_->apply(rhs, x);

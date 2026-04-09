@@ -8,7 +8,7 @@
 #include "fe/facet_element_transform.hpp"
 #include "fe/fe_space.hpp"
 #include "mesh/mesh.hpp"
-#include "solver/sparse_matrix.hpp"
+#include "core/sparse_matrix.hpp"
 #include <array>
 #include <map>
 #include <vector>

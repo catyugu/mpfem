@@ -47,7 +47,7 @@ namespace mpfem {
             LOG_INFO << "BDF2Integrator: Step " << (currentStep + 1) << " (using BDF1 starter)";
         }
 
-        solver.applyBoundaryConditions(A_, rhs_, curr.values());
+        solver.applyEssentialBCs(A_, rhs_, curr.values());
 
         if (!solver.solveLinearSystem(A_, curr.values(), rhs_)) {
             LOG_ERROR << "BDF2Integrator: Linear solve failed for " << solver.fieldName();

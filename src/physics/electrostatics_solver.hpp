@@ -33,7 +33,7 @@ namespace mpfem {
         void buildStiffnessMatrix(SparseMatrix& K) override;
         void buildMassMatrix(SparseMatrix& M) override { M.resize(0, 0); }
         void buildRHS(Vector& F) override;
-        void applyBoundaryConditions(SparseMatrix& A, Vector& rhs, Vector& solution) override;
+        void applyEssentialBCs(SparseMatrix& A, Vector& rhs, Vector& solution) override;
         bool solveLinearSystem(SparseMatrix& A, Vector& x, const Vector& b) override;
 
     private:

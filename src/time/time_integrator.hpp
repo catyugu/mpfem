@@ -4,7 +4,7 @@
 #include "core/types.hpp"
 #include "physics/field_values.hpp"
 #include "physics/physics_field_solver.hpp"
-#include "solver/sparse_matrix.hpp"
+#include "core/sparse_matrix.hpp"
 #include "time/time_scheme.hpp"
 #include <memory>
 
