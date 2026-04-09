@@ -164,27 +164,4 @@ namespace mpfem {
 
 } // namespace mpfem
 
-// =============================================================================
-// Eigen vector output for debugging
-// =============================================================================
-
-namespace Eigen {
-    template <typename Derived>
-    std::ostream& operator<<(std::ostream& os, const MatrixBase<Derived>& m)
-    {
-        os << "[";
-        for (Index i = 0; i < m.rows(); ++i) {
-            if (i > 0)
-                os << "; ";
-            for (Index j = 0; j < m.cols(); ++j) {
-                if (j > 0)
-                    os << " ";
-                os << m(i, j);
-            }
-        }
-        os << "]";
-        return os;
-    }
-} // namespace Eigen
-
 #endif // MPFEM_TYPES_HPP

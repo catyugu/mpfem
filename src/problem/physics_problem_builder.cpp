@@ -84,6 +84,15 @@ namespace mpfem {
                 return ret;
             }
 
+            std::uint64_t revision() const override
+            {
+                std::uint64_t rev = 0;
+                for (const auto& [_, child] : children_) {
+                    rev = std::max(rev, child->revision());
+                }
+                return rev;
+            }
+
             void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
             {
                 auto it = children_.find(ctx.domainId);
@@ -124,6 +133,11 @@ namespace mpfem {
                 }
             }
 
+            std::uint64_t revision() const override
+            {
+                return field_ ? field_->revision() : 0;
+            }
+
         private:
             const GridFunction* field_ = nullptr;
         };
@@ -152,6 +166,11 @@ namespace mpfem {
                     Vector3 g = field_->gradient(ctx.elementId, xi, ctx.invJacobianTransposes[i]);
                     dest[i] = TensorValue::vector(g.x(), g.y(), g.z());
                 }
+            }
+
+            std::uint64_t revision() const override
+            {
+                return field_ ? field_->revision() : 0;
             }
 
         private:
@@ -397,7 +416,7 @@ namespace mpfem {
 
             for (const auto& bc : physics.boundaries) {
                 if (bc.type == "Fixed") {
-                    problem.structural->addFixedDisplacementBC(bc.ids, Vector3::Zero());
+                    problem.structural->addFixedDisplacementBC(bc.ids, problem.globalVariables_.get("[0, 0, 0]") );
                 }
             }
         }

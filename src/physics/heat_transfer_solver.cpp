@@ -23,11 +23,6 @@ namespace mpfem {
 
         LOG_INFO << "HeatTransferSolver: " << fes_->numDofs() << " DOFs";
 
-        // Assemble mass matrix if density and specific heat are set
-        if (!massBindings_.empty()) {
-            assembleMassMatrix();
-        }
-
         return true;
     }
 
@@ -47,29 +42,6 @@ namespace mpfem {
         binding.domains = domains;
         binding.thermalMass = rhoCp;
         massBindings_.push_back(std::move(binding));
-        massMatrixAssembled_ = false;
-    }
-
-    void HeatTransferSolver::assembleMassMatrix()
-    {
-        if (massBindings_.empty()) {
-            LOG_ERROR << "HeatTransferSolver: mass properties not set for mass matrix";
-            return;
-        }
-
-        auto massAsm = std::make_unique<BilinearFormAssembler>(fes_.get());
-
-        for (const auto& binding : massBindings_) {
-            massAsm->addDomainIntegrator(
-                std::make_unique<MassIntegrator>(binding.thermalMass),
-                binding.domains);
-        }
-        massAsm->assemble();
-
-        massMatrix_ = std::move(massAsm->matrix());
-        massMatrixAssembled_ = true;
-
-        LOG_INFO << "HeatTransferSolver: mass matrix assembled (" << massMatrix_.rows() << "x" << massMatrix_.cols() << ")";
     }
 
     void HeatTransferSolver::addTemperatureBC(const std::set<int>& boundaryIds, const VariableNode* temperature)
@@ -82,18 +54,8 @@ namespace mpfem {
         convectionBindings_.push_back({boundaryIds, h, Tinf});
     }
 
-    void HeatTransferSolver::assemble()
+    void HeatTransferSolver::buildStiffnessMatrix(SparseMatrix& K)
     {
-        ScopedTimer timer("HeatTransfer assemble");
-
-        if (conductivityBindings_.empty()) {
-            LOG_ERROR << "HeatTransferSolver: conductivity not set";
-            return;
-        }
-
-        if (!massBindings_.empty()) {
-            assembleMassMatrix();
-        }
         matAsm_->clear();
         matAsm_->clearIntegrators();
 
@@ -105,19 +67,40 @@ namespace mpfem {
 
         for (const auto& binding : convectionBindings_) {
             for (int bid : binding.boundaryIds) {
-                matAsm_->addBoundaryIntegrator(std::make_unique<ConvectionMassIntegrator>(binding.h), bid);
+                matAsm_->addBoundaryIntegrator(
+                    std::make_unique<ConvectionMassIntegrator>(binding.h), bid);
             }
         }
 
         matAsm_->assemble();
-        stiffnessMatrixBeforeBC_ = matAsm_->matrix();
+        K = matAsm_->matrix();
+    }
 
+    void HeatTransferSolver::buildMassMatrix(SparseMatrix& M)
+    {
+        if (massBindings_.empty()) {
+            M.resize(0, 0);
+            return;
+        }
+        BilinearFormAssembler massAsm(fes_.get());
+        for (const auto& binding : massBindings_) {
+            massAsm.addDomainIntegrator(
+                std::make_unique<MassIntegrator>(binding.thermalMass),
+                binding.domains);
+        }
+        massAsm.assemble();
+        M = massAsm.matrix();
+    }
+
+    void HeatTransferSolver::buildRHS(Vector& F)
+    {
         vecAsm_->clear();
         vecAsm_->clearIntegrators();
 
         for (const auto& binding : convectionBindings_) {
             for (int bid : binding.boundaryIds) {
-                vecAsm_->addBoundaryIntegrator(std::make_unique<ConvectionLFIntegrator>(binding.h, binding.Tinf), bid);
+                vecAsm_->addBoundaryIntegrator(
+                    std::make_unique<ConvectionLFIntegrator>(binding.h, binding.Tinf), bid);
             }
         }
 
@@ -126,50 +109,70 @@ namespace mpfem {
                 std::make_unique<DomainLFIntegrator>(binding.source),
                 binding.domains);
         }
-        vecAsm_->assemble();
-        rhsBeforeBC_ = vecAsm_->vector();
 
-        // Flatten temperatureBindings_ to map for applyDirichletBC
-        std::map<int, const VariableNode*> temperatureBCs;
-        for (const auto& binding : temperatureBindings_) {
-            for (int bid : binding.boundaryIds) {
-                temperatureBCs[bid] = binding.temperature;
-            }
-        }
-        applyDirichletBC(matAsm_->matrix(), vecAsm_->vector(), this->field().values(), *fes_, *mesh_, temperatureBCs);
-        matAsm_->finalize();
+        vecAsm_->assemble();
+        F = vecAsm_->vector();
     }
 
-    bool HeatTransferSolver::solveLinearSystem(SparseMatrix& A, Vector& x, const Vector& b)
+    void HeatTransferSolver::applyEssentialBCs(SparseMatrix& A, Vector& rhs, Vector& solution, bool updateMatrix)
     {
-        if (!solver_) {
-            LOG_ERROR << "HeatTransferSolver: solver not available";
-            return false;
-        }
-
-        // Use A directly instead of copying to persistent buffer
-        systemRhs_ = b;
-
-        // Flatten temperatureBindings_ to map for applyDirichletBC
         std::map<int, const VariableNode*> temperatureBCs;
         for (const auto& binding : temperatureBindings_) {
             for (int bid : binding.boundaryIds) {
                 temperatureBCs[bid] = binding.temperature;
             }
         }
+        applyDirichletBC(A, rhs, solution, *fes_, *mesh_, temperatureBCs, updateMatrix);
+    }
 
-        // Apply boundary conditions to the combined system (A is modified in-place)
-        applyDirichletBC(A, systemRhs_, x, *fes_, *mesh_, temperatureBCs);
-        A.makeCompressed();
+    std::uint64_t HeatTransferSolver::getMatrixRevision() const
+    {
+        std::uint64_t rev = 0;
+        for (const auto& b : conductivityBindings_) {
+            if (b.conductivity)
+                rev = std::max(rev, b.conductivity->revision());
+        }
+        for (const auto& b : convectionBindings_) {
+            if (b.h)
+                rev = std::max(rev, b.h->revision());
+        }
+        return rev;
+    }
 
-        // Two-stage solve: setup then apply
-        solver_->setup(&A);
-        solver_->apply(systemRhs_, x);
+    std::uint64_t HeatTransferSolver::getMassRevision() const
+    {
+        std::uint64_t rev = 0;
+        for (const auto& b : massBindings_) {
+            if (b.thermalMass)
+                rev = std::max(rev, b.thermalMass->revision());
+        }
+        return rev;
+    }
 
-        this->field().markUpdated();
-        LOG_INFO << fieldName() << " linear solve converged in " << this->iterations() << " iterations";
+    std::uint64_t HeatTransferSolver::getRhsRevision() const
+    {
+        std::uint64_t rev = 0;
+        for (const auto& b : heatSourceBindings_) {
+            if (b.source)
+                rev = std::max(rev, b.source->revision());
+        }
+        for (const auto& b : convectionBindings_) {
+            if (b.h)
+                rev = std::max(rev, b.h->revision());
+            if (b.Tinf)
+                rev = std::max(rev, b.Tinf->revision());
+        }
+        return rev;
+    }
 
-        return true;
+    std::uint64_t HeatTransferSolver::getBcRevision() const
+    {
+        std::uint64_t rev = 0;
+        for (const auto& b : temperatureBindings_) {
+            if (b.temperature)
+                rev = std::max(rev, b.temperature->revision());
+        }
+        return rev;
     }
 
 } // namespace mpfem

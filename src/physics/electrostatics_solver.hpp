@@ -30,7 +30,16 @@ namespace mpfem {
         void addVoltageBC(const std::set<int>& boundaryIds, const VariableNode* voltage);
         void clearBoundaryConditions() { voltageBindings_.clear(); }
 
-        void assemble() override;
+    protected:
+        void buildStiffnessMatrix(SparseMatrix& K) override;
+        void buildMassMatrix(SparseMatrix& M) override { M.resize(0, 0); }
+        void buildRHS(Vector& F) override;
+        void applyEssentialBCs(SparseMatrix& A, Vector& rhs, Vector& solution, bool updateMatrix) override;
+
+        std::uint64_t getMatrixRevision() const override;
+        std::uint64_t getMassRevision() const override { return 0; }
+        std::uint64_t getRhsRevision() const override;
+        std::uint64_t getBcRevision() const override;
 
     private:
         struct ConductivityBinding {

@@ -3,7 +3,7 @@
 
 #include "core/types.hpp"
 #include "solver/solver_config.hpp"
-#include "solver/sparse_matrix.hpp"
+#include "core/sparse_matrix.hpp"
 #include <memory>
 #include <string>
 #include <string_view>

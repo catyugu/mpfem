@@ -28,22 +28,17 @@ namespace mpfem {
         {
             residual = 0.0;
             if (!hasHeatTransfer) {
-                if (hasElectrostatics) {
-                    problem.electrostatics->assemble();
-                    problem.electrostatics->solve();
-                }
+                if (hasElectrostatics)
+                    problem.electrostatics->solveSteady();
                 return true;
             }
 
             Vector prevT;
             for (int picardIter = 0; picardIter < problem.couplingMaxIter; ++picardIter) {
-                if (hasElectrostatics) {
-                    problem.electrostatics->assemble();
-                    problem.electrostatics->solve();
-                }
+                if (hasElectrostatics)
+                    problem.electrostatics->solveSteady();
 
-                problem.heatTransfer->assemble();
-                if (!integrator.step(problem)) {
+                if (!integrator.step(*problem.heatTransfer, problem.fieldValues, problem.timeStep, problem.currentStep)) {
                     LOG_ERROR << "TransientProblem::solve: Time step failed";
                     return false;
                 }
@@ -63,15 +58,10 @@ namespace mpfem {
     {
         LOG_INFO << "Steady-state initialization at t=0";
 
-        if (hasElectrostatics()) {
-            electrostatics->assemble();
-            electrostatics->solve();
-        }
-
-        if (hasStructural()) {
-            structural->assemble();
-            structural->solve();
-        }
+        if (hasElectrostatics())
+            electrostatics->solveSteady();
+        if (hasStructural())
+            structural->solveSteady();
 
         LOG_INFO << "Steady-state initialization complete";
     }
@@ -118,8 +108,7 @@ namespace mpfem {
             }
 
             if (hasStructural) {
-                structural->assemble();
-                structural->solve();
+                structural->solveSteady();
             }
 
             currentTime = nextTime;

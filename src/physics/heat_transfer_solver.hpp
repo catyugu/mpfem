@@ -28,11 +28,6 @@ namespace mpfem {
         void setHeatSource(const std::set<int>& domains, const VariableNode* Q);
         void setMassProperties(const std::set<int>& domains, const VariableNode* rhoCp);
 
-        // Mass matrix for transient terms: M = ∫ ρCp φᵢ φⱼ dΩ
-        void assembleMassMatrix();
-        const SparseMatrix& massMatrix() const { return massMatrix_; }
-        bool massMatrixAssembled() const { return massMatrixAssembled_; }
-
         // Boundary conditions
         void addTemperatureBC(const std::set<int>& boundaryIds, const VariableNode* temperature);
         void addConvectionBC(const std::set<int>& boundaryIds, const VariableNode* h, const VariableNode* Tinf);
@@ -42,40 +37,16 @@ namespace mpfem {
             convectionBindings_.clear();
         }
 
-        void assemble() override;
+    protected:
+        void buildStiffnessMatrix(SparseMatrix& K) override;
+        void buildMassMatrix(SparseMatrix& M) override;
+        void buildRHS(Vector& F) override;
+        void applyEssentialBCs(SparseMatrix& A, Vector& rhs, Vector& solution, bool updateMatrix) override;
 
-        /**
-         * @brief Solve a custom linear system Ax = b with applied boundary conditions
-         *
-         * This is useful for time integrators like BDF1 that need to solve
-         * a modified system (e.g., M + dt*K) rather than the standard K.
-         *
-         * @param A System matrix
-         * @param x Solution vector (output)
-         * @param b Right-hand side vector
-         * @return true if solved successfully
-         */
-        bool solveLinearSystem(SparseMatrix& A, Vector& x, const Vector& b);
-
-        /**
-         * @brief Get stiffness matrix before BC application
-         *
-         * This is needed for transient time integrators like BDF1 that need
-         * to form the combined system (M + dt*K) before BCs are applied.
-         *
-         * @return Stiffness matrix K (without BC modifications)
-         */
-        const SparseMatrix& stiffnessMatrixBeforeBC() const { return stiffnessMatrixBeforeBC_; }
-
-        /**
-         * @brief Get RHS vector before BC application
-         *
-         * This is needed for transient time integrators like BDF1 that need
-         * to form the combined RHS (M*T_prev + dt*Q) before BCs are applied.
-         *
-         * @return RHS vector Q (without BC modifications)
-         */
-        const Vector& rhsBeforeBC() const { return rhsBeforeBC_; }
+        std::uint64_t getMatrixRevision() const override;
+        std::uint64_t getMassRevision() const override;
+        std::uint64_t getRhsRevision() const override;
+        std::uint64_t getBcRevision() const override;
 
     private:
         struct TemperatureBinding {
@@ -107,18 +78,6 @@ namespace mpfem {
         std::vector<MassBinding> massBindings_;
         std::vector<TemperatureBinding> temperatureBindings_;
         std::vector<ConvectionBinding> convectionBindings_;
-        SparseMatrix massMatrix_;
-        bool massMatrixAssembled_ = false;
-
-        /// @brief Stiffness matrix before BC application (for transient time integrators)
-        SparseMatrix stiffnessMatrixBeforeBC_;
-
-        /// @brief RHS vector before BC application (for transient time integrators)
-        Vector rhsBeforeBC_;
-
-        // Reusable buffers for transient linear systems after BC application.
-        SparseMatrix systemMatrix_;
-        Vector systemRhs_;
     };
 
 } // namespace mpfem
