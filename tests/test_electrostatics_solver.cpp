@@ -31,12 +31,8 @@ TEST_F(BusbarElectrostaticsTest, SolverConvergence)
     auto setup = PhysicsProblemBuilder::build(caseDir_);
     auto& solver = setup->electrostatics;
 
-    SparseMatrix K;
-    Vector F;
-    solver->buildStiffnessMatrix(K);
-    solver->buildRHS(F);
-    solver->applyEssentialBCs(K, F, solver->field().values());
-    solver->solveLinearSystem(K, solver->field().values(), F);
+    bool success = solver->solveSteady();
+    EXPECT_TRUE(success);
 
     int iterations = solver->iterations();
     Real residual = solver->residual();

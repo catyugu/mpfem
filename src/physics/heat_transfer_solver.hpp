@@ -37,12 +37,11 @@ namespace mpfem {
             convectionBindings_.clear();
         }
 
-        // IoC pattern: build methods
+    protected:
         void buildStiffnessMatrix(SparseMatrix& K) override;
         void buildMassMatrix(SparseMatrix& M) override;
         void buildRHS(Vector& F) override;
         void applyEssentialBCs(SparseMatrix& A, Vector& rhs, Vector& solution) override;
-        bool solveLinearSystem(SparseMatrix& A, Vector& x, const Vector& b) override;
 
     private:
         struct TemperatureBinding {

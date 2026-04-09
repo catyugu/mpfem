@@ -125,20 +125,4 @@ namespace mpfem {
         applyDirichletBC(A, rhs, solution, *fes_, *mesh_, temperatureBCs);
     }
 
-    bool HeatTransferSolver::solveLinearSystem(SparseMatrix& A, Vector& x, const Vector& b)
-    {
-        if (!solver_) {
-            LOG_ERROR << "HeatTransferSolver: solver not available";
-            return false;
-        }
-        Vector rhs = b;
-        applyEssentialBCs(A, rhs, x);
-        A.makeCompressed();
-        solver_->setup(&A);
-        solver_->apply(rhs, x);
-        field().markUpdated();
-        LOG_INFO << fieldName() << " linear solve converged in " << iterations() << " iterations";
-        return true;
-    }
-
 } // namespace mpfem

@@ -21,182 +21,359 @@
 
 ## 具体工作任务
 
-通过对代码的分析，现有的实现存在以下严重的设计反模式和耦合问题：
+这是一个非常典型的有限元/科学计算代码中的设计反模式：**状态泄露与缺乏缓存（State Leakage & Lack of Caching）**。
 
-### 🚨 识别出的设计反模式与问题
-1. **胖接口与破坏封装 (Broken Encapsulation)**：`HeatTransferSolver` 为了适应时间积分器，被迫暴露出内部状态缓存 `stiffnessMatrixBeforeBC_` 和 `rhsBeforeBC_`。不仅打破了封装，还导致 `StructuralSolver` 和 `HeatTransferSolver` 的 API 极度不一致。
-2. **急切计算导致冗余 (Eager Computation)**：即使是在 `SteadyProblem`（稳态求解）中，只要材料定了密度和比热，`HeatTransferSolver::initialize` 就会去强行组装一个无用的 `massMatrix`。
-3. **极高的模块循环依赖 (Cyclic Dependency)**：`time/bdf1_integrator.cpp` 中竟然包含了 `problem/transient_problem.hpp` 并硬编码 `if (!problem.heatTransfer) return false;`。时间积分算法不应该知道“热传导”的存在，它只能看到 $M$、$K$ 矩阵，这种硬编码导致代码无法复用于力学或电磁学的时变求解。
-4. **内存翻倍的冗余 (Memory Bloat)**：为了时间积分，显式将未加边界条件的矩阵拷贝保存（`stiffnessMatrixBeforeBC_`），浪费了大量的内存。
+在当前的代码中，系统矩阵 $K, M$ 和右端项 $F$ 的生命周期是由调用方（`Problem` 或 `TimeIntegrator`）管理的。这意味着每次迭代都会重新创建矩阵、重新遍历单元进行装配、并强制底层求解器（如 PARDISO/UMFPACK）重新进行代价高昂的符号分解和数值分解（`setup()`），即使对于线性问题，刚度矩阵 $K$ 从头到尾都没变过！
+
+为了彻底解决这个问题，我们需要使用 **模板方法模式（Template Method Pattern）**，将矩阵的状态、装配逻辑和求解器缓存统一封装到 `PhysicsFieldSolver` 基类中，反转依赖关系。
+
+以下是分四步进行的重构计划，每一步都保持编译通过且功能正确。
 
 ---
 
-### 🛠️ 步骤化重构方案
+### 第一步：重构 `PhysicsFieldSolver` 基类接口
 
-我们的核心重构思路是**控制反转 (Inversion of Control)**：物理场求解器（Solver）只负责提供 $M, K, F$ 矩阵和边界条件，由通用的外部算法（稳态/时间积分器）自由组合它们。
+我们将系统矩阵、RHS 向量以及“脏标记（Dirty Flags）”移入基类。将公开的 `build*` 方法改为受保护的方法，并对外提供高级的 `solveSteady()` 和 `solveTransient()` 接口。
 
-#### Step 1: 重新定义基类并统一接口 (PhysicsFieldSolver)
-将原先大杂烩的 `assemble()` 拆分为按需组装的纯虚函数。这消除了物理场类对自己运行环境（瞬态/稳态）的猜测。
+修改 **`physics\physics_field_solver.hpp`**：
 
-**修改 `physics\physics_field_solver.hpp`**：
 ```cpp
-class PhysicsFieldSolver {
-public:
-    virtual ~PhysicsFieldSolver() = default;
-    virtual std::string fieldName() const = 0;
+#ifndef MPFEM_PHYSICS_FIELD_SOLVER_HPP
+#define MPFEM_PHYSICS_FIELD_SOLVER_HPP
 
-    // 核心重构：将组装拆分为标准的数学分量
-    virtual void buildStiffnessMatrix(SparseMatrix& K) = 0;
-    virtual void buildMassMatrix(SparseMatrix& M) { M.resize(0, 0); } // 默认无质量矩阵
-    virtual void buildRHS(Vector& F) = 0;
-    virtual void applyEssentialBCs(SparseMatrix& A, Vector& rhs, Vector& solution) = 0;
+#include "assembly/assembler.hpp"
+#include "core/logger.hpp"
+#include "fe/fe_space.hpp"
+#include "fe/grid_function.hpp"
+#include "mesh/mesh.hpp"
+#include "physics/field_values.hpp"
+#include "solver/linear_operator.hpp"
+#include "solver/solver_config.hpp"
+#include <memory>
 
-    // 通用的线性系统求解
-    virtual bool solveLinearSystem(SparseMatrix& A, const Vector& b, Vector& x) {
-        A.makeCompressed();
-        solver_->setup(&A);
-        solver_->apply(b, x);
-        field().markUpdated();
-        return true;
-    }
-    // ... 保持原有 getter / setter 不变 ...
-};
-```
+namespace mpfem {
 
-#### Step 2: 瘦身热传导求解器 (HeatTransferSolver)
-移除所有与时间步相关的历史包裹（删除 `massMatrixAssembled_`、`stiffnessMatrixBeforeBC_`、`rhsBeforeBC_` 成员），按需提供矩阵。
+    class PhysicsFieldSolver {
+    public:
+        virtual ~PhysicsFieldSolver() = default;
 
-**修改 `physics\heat_transfer_solver.cpp`**：
-```cpp
-// 在 initialize 中，删除之前强制调用的 if(!massBindings_.empty()) assembleMassMatrix();
+        virtual std::string fieldName() const = 0;
 
-void HeatTransferSolver::buildStiffnessMatrix(SparseMatrix& K) {
-    matAsm_->clear(); matAsm_->clearIntegrators();
-    for (const auto& binding : conductivityBindings_) {
-        matAsm_->addDomainIntegrator(std::make_unique<DiffusionIntegrator>(binding.conductivity), binding.domains);
-    }
-    for (const auto& binding : convectionBindings_) {
-        for (int bid : binding.boundaryIds) {
-            matAsm_->addBoundaryIntegrator(std::make_unique<ConvectionMassIntegrator>(binding.h), bid);
-        }
-    }
-    matAsm_->assemble();
-    K = matAsm_->matrix();
-}
-
-void HeatTransferSolver::buildMassMatrix(SparseMatrix& M) {
-    if (massBindings_.empty()) { M.resize(0, 0); return; }
-    BilinearFormAssembler massAsm(fes_.get());
-    for (const auto& binding : massBindings_) {
-        massAsm.addDomainIntegrator(std::make_unique<MassIntegrator>(binding.thermalMass), binding.domains);
-    }
-    massAsm.assemble();
-    M = massAsm.matrix();
-}
-
-void HeatTransferSolver::buildRHS(Vector& F) {
-    vecAsm_->clear(); vecAsm_->clearIntegrators();
-    for (const auto& binding : heatSourceBindings_) {
-        vecAsm_->addDomainIntegrator(std::make_unique<DomainLFIntegrator>(binding.source), binding.domains);
-    }
-    for (const auto& binding : convectionBindings_) {
-        for (int bid : binding.boundaryIds) {
-            vecAsm_->addBoundaryIntegrator(std::make_unique<ConvectionLFIntegrator>(binding.h, binding.Tinf), bid);
-        }
-    }
-    vecAsm_->assemble();
-    F = vecAsm_->vector();
-}
-
-void HeatTransferSolver::applyEssentialBCs(SparseMatrix& A, Vector& rhs, Vector& solution) {
-    std::map<int, const VariableNode*> temperatureBCs;
-    for (const auto& binding : temperatureBindings_) {
-        for (int bid : binding.boundaryIds) temperatureBCs[bid] = binding.temperature;
-    }
-    applyDirichletBC(A, rhs, solution, *fes_, *mesh_, temperatureBCs);
-}
-```
-*(注：对于 `ElectrostaticsSolver` 和 `StructuralSolver`，可进行相同的拆分适配重构，使整个物理场模块的底层协议严格一致。)*
-
-#### Step 3: 泛化且解耦时间积分器 (TimeIntegrator)
-消除对 `TransientProblem` 的硬依赖，让 TimeIntegrator 回归纯数学组装的本质。以 BDF1 为例。
-
-**修改 `time\time_integrator.hpp` 和 `bdf1_integrator.cpp`**：
-```cpp
-// time_integrator.hpp
-class TimeIntegrator {
-public:
-    virtual ~TimeIntegrator() = default;
-    // 依赖反转：只认识 FieldValues 和通用的 PhysicsFieldSolver，不再认识 Problem
-    virtual bool step(PhysicsFieldSolver& solver, FieldValues& history, Real dt, int currentStep) = 0;
-// ...
-};
-
-// bdf1_integrator.cpp
-bool BDF1Integrator::step(PhysicsFieldSolver& solver, FieldValues& history, Real dt, int currentStep) {
-    SparseMatrix M, K;
-    Vector F;
-    
-    solver.buildMassMatrix(M);
-    solver.buildStiffnessMatrix(K);
-    solver.buildRHS(F);
-    
-    if (M.rows() == 0 || M.cols() == 0) {
-        LOG_ERROR << "BDF1Integrator: Mass matrix is not available for " << solver.fieldName();
-        return false;
-    }
-
-    ensureSize(M.rows(), M.cols());
-    
-    const GridFunction& prev = history.history(solver.fieldName(), 1);
-    GridFunction& curr = history.current(solver.fieldName());
-    
-    // 组装广义方程：(M + dt * K) * x_{n+1} = M * x_n + dt * F
-    A_ = M + (dt * K);
-    rhs_ = M * prev.values() + dt * F;
-    
-    // 统一施加边界条件并进行系统求解
-    solver.applyEssentialBCs(A_, rhs_, curr.values());
-    
-    if (!solver.solveLinearSystem(A_, rhs_, curr.values())) {
-        LOG_ERROR << "BDF1Integrator: Linear solve failed for " << solver.fieldName();
-        return false;
-    }
-    
-    return true;
-}
-```
-
-#### Step 4: 规整系统调用层 (Steady & Transient Problem)
-移除业务层的丑陋逻辑，利用接口多态性调用流程。
-
-**修改 `problem\transient_problem.cpp` 中的耦合步骤**：
-```cpp
-bool solveCouplingStep(TransientProblem& problem, TimeIntegrator& integrator, bool hasElec, bool hasHeat, Real& residual) {
-    residual = 0.0;
-    Vector prevT;
-    
-    for (int picardIter = 0; picardIter < problem.couplingMaxIter; ++picardIter) {
-        if (hasElec) {
-            problem.electrostatics->solveSteady(); // 电磁场是准稳态
-        }
-        if (hasHeat) {
-            // 通过接口直接积分，完全解耦
-            if (!integrator.step(*problem.heatTransfer, problem.fieldValues, problem.timeStep, problem.currentStep)) {
-                return false;
+        // 对外提供的统一稳态/准静态求解接口
+        virtual bool solveSteady() {
+            if (systemMatrixNeedsRebuild_) {
+                buildStiffnessMatrix(K_uneliminated_);
+                systemMatrixNeedsRebuild_ = false;
+                solverNeedsSetup_ = true;
             }
-        }
-        
-        residual = temperatureResidual(*problem.heatTransfer, prevT, picardIter);
-        if (residual < problem.couplingTol) {
+
+            // 右端项可能包含非线性耦合源项，目前每次都重新装配
+            buildRHS(F_);
+
+            // 拷贝未消除的矩阵，并应用边界条件
+            K_eliminated_ = K_uneliminated_;
+            applyEssentialBCs(K_eliminated_, F_, field().values());
+
+            if (solverNeedsSetup_) {
+                K_eliminated_.makeCompressed();
+                solver_->setup(&K_eliminated_);
+                solverNeedsSetup_ = false;
+            }
+
+            solver_->apply(F_, field().values());
+            field().markUpdated();
             return true;
         }
-    }
-    return false;
-}
+
+        // 对外提供的瞬态求解接口
+        virtual bool solveTransient(Real dt, const Vector& historyCombo) {
+            bool matrixChanged = systemMatrixNeedsRebuild_;
+            if (matrixChanged) {
+                buildStiffnessMatrix(K_uneliminated_);
+                buildMassMatrix(M_);
+                systemMatrixNeedsRebuild_ = false;
+            }
+
+            // 如果矩阵变了，或者时间步长变了，重新计算 A = M + dt * K
+            if (matrixChanged || std::abs(dt - previous_dt_) > 1e-12) {
+                if (M_.rows() == 0) {
+                    A_uneliminated_ = dt * K_uneliminated_;
+                } else {
+                    A_uneliminated_ = M_ + (dt * K_uneliminated_);
+                }
+                previous_dt_ = dt;
+                solverNeedsSetup_ = true;
+            }
+
+            buildRHS(F_);
+            
+            // 组装瞬态右端项: RHS = M * historyCombo + dt * F
+            Vector transient_rhs;
+            if (M_.rows() > 0) {
+                transient_rhs = M_ * historyCombo + (dt * F_);
+            } else {
+                transient_rhs = dt * F_;
+            }
+
+            A_eliminated_ = A_uneliminated_;
+            applyEssentialBCs(A_eliminated_, transient_rhs, field().values());
+
+            if (solverNeedsSetup_) {
+                A_eliminated_.makeCompressed();
+                solver_->setup(&A_eliminated_);
+                solverNeedsSetup_ = false;
+            }
+
+            solver_->apply(transient_rhs, field().values());
+            field().markUpdated();
+            return true;
+        }
+
+        // 供外部在材料参数改变时调用
+        void markMatrixChanged() {
+            systemMatrixNeedsRebuild_ = true;
+        }
+
+        const GridFunction& field() const { return fieldValues_->current(fieldName()); }
+        GridFunction& field() { return fieldValues_->current(fieldName()); }
+        const FESpace& feSpace() const { return *fes_; }
+        Index numDofs() const { return fes_ ? fes_->numDofs() : 0; }
+        const Mesh& mesh() const { return *mesh_; }
+        void setSolverConfig(std::unique_ptr<LinearOperatorConfig> config) { solverConfig_ = std::move(config); }
+        int iterations() const { return solver_->iterations(); }
+        Real residual() const { return solver_->residual(); }
+
+    protected:
+        // 内部接口：子类只需负责具体的组装逻辑
+        virtual void buildStiffnessMatrix(SparseMatrix& K) = 0;
+        virtual void buildMassMatrix(SparseMatrix& M) { M.resize(0, 0); }
+        virtual void buildRHS(Vector& F) = 0;
+        virtual void applyEssentialBCs(SparseMatrix& A, Vector& rhs, Vector& solution) = 0;
+
+        int order_ = 1;
+        std::unique_ptr<LinearOperatorConfig> solverConfig_;
+        const Mesh* mesh_ = nullptr;
+        FieldValues* fieldValues_ = nullptr;
+        std::unique_ptr<FESpace> fes_;
+        std::unique_ptr<BilinearFormAssembler> matAsm_;
+        std::unique_ptr<LinearFormAssembler> vecAsm_;
+        std::unique_ptr<LinearOperator> solver_;
+
+        // 缓存状态
+        SparseMatrix K_uneliminated_, K_eliminated_;
+        SparseMatrix M_;
+        SparseMatrix A_uneliminated_, A_eliminated_;
+        Vector F_;
+        
+        Real previous_dt_ = -1.0;
+        bool systemMatrixNeedsRebuild_ = true;
+        bool solverNeedsSetup_ = true;
+    };
+
+} // namespace mpfem
+
+#endif
 ```
 
-### 🏆 重构收益总结：
-1. **接口一致**：所有 Physics 类的接口完全一致，不再存在专属特供版的 `solveLinearSystem` 和状态缓存，代码极为紧凑简洁。
-2. **0无用开销**：稳态程序不会再因为材质设置了密度参数就莫名其妙占用内存去装配 `MassMatrix`，实现真正的懒计算 (Lazy Assembly)。
-3. **开闭原则(OCP)**：打破了 `time` 层和 `problem` 层的互相 `#include`。现在如果你要让固体力学（Structural）实现时变动力学求解，时间积分器（BDF1/2）**一行代码都不用改**，直接传入即可复用。
+---
+
+### 第二步：适配具体的物理场求解器
+
+由于基础控制流（包括调用 `setup()` 和 `apply()`）已经被提到了基类，我们需要从具体的子类中删除 `solveLinearSystem` 等冗余的公有方法，并将 `build*` 方法改为受保护的 `protected` 访问权限。
+
+请对 **`electrostatics_solver.hpp`**, **`heat_transfer_solver.hpp`**, **`structural_solver.hpp`** 进行相同的修改：
+1. 删除 `solveLinearSystem` 的声明。
+2. 将 `buildStiffnessMatrix`、`buildMassMatrix`、`buildRHS`、`applyEssentialBCs` 的访问权限移至 `protected` 区域。
+
+同时，在对应的 **`.cpp` 文件** 中：
+删除 `ElectrostaticsSolver::solveLinearSystem`、`HeatTransferSolver::solveLinearSystem`、`StructuralSolver::solveLinearSystem` 的实现代码（因为逻辑已经被基类的 `solveSteady` 和 `solveTransient` 取代）。
+
+---
+
+### 第三步：重构时间积分器 (Time Integrator)
+
+现在，时间积分器不需要自己维护矩阵或计算 `A = M + dt * K` 了。它只需要计算历史项组合（`historyCombo`），并传给 `PhysicsFieldSolver` 即可。
+
+修改 **`time\time_integrator.hpp`**：
+删除 `A_`, `rhs_`, `initialized_`, `ensureSize()`。使其成为一个纯粹的接口。
+```cpp
+    class TimeIntegrator {
+    public:
+        virtual ~TimeIntegrator() = default;
+        virtual bool step(PhysicsFieldSolver& solver, FieldValues& history, Real dt, int currentStep) = 0;
+    };
+```
+
+修改 **`time\bdf1_integrator.cpp`**：
+```cpp
+#include "time/bdf1_integrator.hpp"
+#include "core/logger.hpp"
+
+namespace mpfem {
+
+    bool BDF1Integrator::step(PhysicsFieldSolver& solver, FieldValues& history, Real dt, int currentStep)
+    {
+        const GridFunction& prev = history.history(solver.fieldName(), 1);
+        
+        // 对于 BDF1，历史项组合就是前一步的值
+        const Vector historyCombo = prev.values();
+
+        if (!solver.solveTransient(dt, historyCombo)) {
+            LOG_ERROR << "BDF1Integrator: Transient solve failed for " << solver.fieldName();
+            return false;
+        }
+
+        LOG_INFO << "BDF1Integrator: Step completed for " << solver.fieldName()
+                 << ", iterations: " << solver.iterations();
+        return true;
+    }
+
+} // namespace mpfem
+```
+
+修改 **`time\bdf2_integrator.cpp`**：
+```cpp
+#include "time/bdf2_integrator.hpp"
+#include "core/logger.hpp"
+
+namespace mpfem {
+
+    bool BDF2Integrator::step(PhysicsFieldSolver& solver, FieldValues& history, Real dt, int currentStep)
+    {
+        Vector historyCombo;
+        
+        if (currentStep > 0) {
+            // BDF2 formula: (2 * u_{n} - 0.5 * u_{n-1})
+            const GridFunction& prev1 = history.history(solver.fieldName(), 1);
+            const GridFunction& prev2 = history.history(solver.fieldName(), 2);
+            historyCombo = 2.0 * prev1.values() - 0.5 * prev2.values();
+            LOG_INFO << "BDF2Integrator: Step " << (currentStep + 1) << " (using BDF2)";
+        } else {
+            // 第一个时间步退化为 BDF1
+            const GridFunction& prev = history.history(solver.fieldName(), 1);
+            historyCombo = prev.values();
+            LOG_INFO << "BDF2Integrator: Step " << (currentStep + 1) << " (using BDF1 starter)";
+        }
+
+        if (!solver.solveTransient(dt, historyCombo)) {
+            LOG_ERROR << "BDF2Integrator: Transient solve failed for " << solver.fieldName();
+            return false;
+        }
+
+        LOG_INFO << "BDF2Integrator: Step completed for " << solver.fieldName()
+                 << ", iterations: " << solver.iterations();
+        return true;
+    }
+
+} // namespace mpfem
+```
+
+---
+
+### 第四步：清理 Problem 类调用端
+
+现在最激动人心的地方来了。我们可以在 `SteadyProblem` 和 `TransientProblem` 中把冗长的矩阵分配全部删掉，调用代码变得极度精简！
+
+修改 **`problem\steady_problem.hpp`** 的 `solve()` 方法：
+
+```cpp
+        SteadyResult solve()
+        {
+            ScopedTimer timer("Coupling solve");
+            SteadyResult result;
+
+            if (!isCoupled()) {
+                if (hasElectrostatics()) electrostatics->solveSteady();
+                if (hasHeatTransfer()) heatTransfer->solveSteady();
+                if (hasStructural()) structural->solveSteady();
+                result.fields = fieldValues;
+                return result;
+            }
+
+            const bool hasE = hasElectrostatics();
+            const bool hasT = hasHeatTransfer();
+
+            for (int i = 0; i < couplingMaxIter; ++i) {
+                if (hasE) electrostatics->solveSteady();
+                if (hasT) heatTransfer->solveSteady();
+
+                Real err = computeCouplingError();
+                result.iterations = i + 1;
+                result.residual = err;
+                LOG_INFO << "Coupling iteration " << (i + 1) << ", residual = " << err;
+                if (err < couplingTol) {
+                    result.converged = true;
+                    break;
+                }
+                
+                // 【注意】如果材料参数(如电导率)依赖于温度，此处应该标记矩阵需要重建：
+                // if (hasE) electrostatics->markMatrixChanged(); 
+            }
+
+            if (hasStructural()) structural->solveSteady();
+            
+            result.fields = fieldValues;
+            return result;
+        }
+```
+
+修改 **`problem\transient_problem.cpp`** 中辅助函数 `solveCouplingStep`：
+
+```cpp
+        bool solveCouplingStep(TransientProblem& problem,
+            TimeIntegrator& integrator,
+            bool hasElectrostatics,
+            bool hasHeatTransfer,
+            Real& residual)
+        {
+            residual = 0.0;
+            if (!hasHeatTransfer) {
+                // 如果没有热传递，电场视为准静态求解
+                if (hasElectrostatics) problem.electrostatics->solveSteady();
+                return true;
+            }
+
+            Vector prevT;
+            for (int picardIter = 0; picardIter < problem.couplingMaxIter; ++picardIter) {
+                // 准静态电场
+                if (hasElectrostatics) problem.electrostatics->solveSteady();
+
+                // 瞬态热传导
+                if (!integrator.step(*problem.heatTransfer, problem.fieldValues, problem.timeStep, problem.currentStep)) {
+                    LOG_ERROR << "TransientProblem::solve: Time step failed";
+                    return false;
+                }
+
+                residual = temperatureResidual(*problem.heatTransfer, prevT, picardIter);
+                LOG_INFO << "  Picard iter " << (picardIter + 1) << ", T residual = " << residual;
+
+                if (residual < problem.couplingTol) {
+                    return true;
+                }
+                // 如有强非线性耦合，视情况取消注释: problem.electrostatics->markMatrixChanged();
+            }
+            return false;
+        }
+```
+
+修改 **`problem\transient_problem.cpp`** 中 `initializeSteadyState`：
+```cpp
+    void TransientProblem::initializeSteadyState()
+    {
+        LOG_INFO << "Steady-state initialization at t=0";
+        if (hasElectrostatics()) electrostatics->solveSteady();
+        if (hasStructural()) structural->solveSteady();
+        LOG_INFO << "Steady-state initialization complete";
+    }
+```
+再修改 `solve` 尾部的力学计算：
+```cpp
+            if (hasStructural) {
+                structural->solveSteady();
+            }
+```
+
+### 重构收益总结：
+1. **彻底消除泄漏：** `SparseMatrix` 和 `Vector` 不再在最高层的业务代码（Problem）中满天飞，降低了内存申请和移动的开销。
+2. **获得极高收益的缓存（极速求解）：** `K_uneliminated_` 只会在第一步计算一次。接下来如果调用 `solveSteady()` 或时间积分器中 `dt` 不变，底层的 `PardisoSolver` 或 `UmfpackSolver` 会**直接跳过符号分解和数值分解（Factorization）**，纯粹只做前代后代回代（Forward/Backward substitution），性能可提升数十倍。
+3. **接口极度统一：** 时间积分算法只需要关心 `historyCombo`（$2u_n - 0.5u_{n-1}$ 等），而不需要关心偏微分方程是怎么变成矩阵的。这完美符合了科学计算软件分层解耦的黄金法则。

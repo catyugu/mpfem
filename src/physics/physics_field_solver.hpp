@@ -19,21 +19,75 @@ namespace mpfem {
 
         virtual std::string fieldName() const = 0;
 
-        // Matrix building interface - Problem class orchestrates assembly
-        virtual void buildStiffnessMatrix(SparseMatrix& K) = 0;
-        virtual void buildMassMatrix(SparseMatrix& M) { M.resize(0, 0); } // Default: no mass
-        virtual void buildRHS(Vector& F) = 0;
-        virtual void applyEssentialBCs(SparseMatrix& A, Vector& rhs, Vector& solution) = 0;
-
-        // Default linear system solve implementation
-        virtual bool solveLinearSystem(SparseMatrix& A, Vector& x, const Vector& b)
+        // Public solve interface (Template Method pattern - final, not overridable)
+        bool solveSteady()
         {
-            A.makeCompressed();
-            solver_->setup(&A);
-            solver_->apply(b, x);
+
+            buildStiffnessMatrix(K_uneliminated_);
+
+            // Build RHS
+            buildRHS(F_);
+
+            // Prepare eliminated matrix
+            K_eliminated_ = K_uneliminated_;
+
+            // Apply essential boundary conditions
+            applyEssentialBCs(K_eliminated_, F_, field().values());
+
+
+            K_eliminated_.makeCompressed();
+            solver_->setup(&K_eliminated_);
+
+            // Solve
+            solver_->apply(F_, field().values());
             field().markUpdated();
             return true;
         }
+
+        bool solveTransient(Real dt, const Vector& historyCombo)
+        {
+
+            buildStiffnessMatrix(K_uneliminated_);
+            buildMassMatrix(M_);     
+
+            bool M_is_empty = (M_.rows() == 0 || M_.cols() == 0);
+            if (M_is_empty) {
+                A_uneliminated_ = dt * K_uneliminated_;
+            }
+            else {
+                A_uneliminated_ = M_ + (dt * K_uneliminated_);
+            }
+            previous_dt_ = dt;
+
+            // Build RHS
+            buildRHS(F_);
+
+            // Compute transient RHS = M*historyCombo + dt*F (or dt*F if M is empty)
+            Vector transient_rhs;
+            if (M_is_empty) {
+                transient_rhs = dt * F_;
+            }
+            else {
+                transient_rhs = M_ * historyCombo + (dt * F_);
+            }
+
+            // Prepare eliminated matrix
+            A_eliminated_ = A_uneliminated_;
+
+            // Apply essential boundary conditions
+            applyEssentialBCs(A_eliminated_, transient_rhs, field().values());
+
+            A_eliminated_.makeCompressed();
+            solver_->setup(&A_eliminated_);
+
+            // Solve
+            solver_->apply(transient_rhs, field().values());
+            field().markUpdated();
+            return true;
+        }
+
+        // Mark matrix as changed to force rebuild on next solve
+        void markMatrixChanged() { systemMatrixNeedsRebuild_ = true; }
 
         const GridFunction& field() const
         {
@@ -65,6 +119,21 @@ namespace mpfem {
         std::unique_ptr<BilinearFormAssembler> matAsm_;
         std::unique_ptr<LinearFormAssembler> vecAsm_;
         std::unique_ptr<LinearOperator> solver_;
+
+        // Template Method interfaces - Problem class orchestrates assembly
+        virtual void buildStiffnessMatrix(SparseMatrix& K) = 0;
+        virtual void buildMassMatrix(SparseMatrix& M) { M.resize(0, 0); } // Default: no mass
+        virtual void buildRHS(Vector& F) = 0;
+        virtual void applyEssentialBCs(SparseMatrix& A, Vector& rhs, Vector& solution) = 0;
+
+        // Cached matrices
+        SparseMatrix K_uneliminated_, K_eliminated_;
+        SparseMatrix M_;
+        SparseMatrix A_uneliminated_, A_eliminated_;
+        Vector F_;
+        Real previous_dt_ = -1.0;
+        bool systemMatrixNeedsRebuild_ = true;
+        bool solverNeedsSetup_ = true;
     };
 
 } // namespace mpfem

@@ -28,27 +28,15 @@ namespace mpfem {
         {
             residual = 0.0;
             if (!hasHeatTransfer) {
-                if (hasElectrostatics) {
-                    SparseMatrix K;
-                    Vector F;
-                    problem.electrostatics->buildStiffnessMatrix(K);
-                    problem.electrostatics->buildRHS(F);
-                    problem.electrostatics->applyEssentialBCs(K, F, problem.electrostatics->field().values());
-                    problem.electrostatics->solveLinearSystem(K, problem.electrostatics->field().values(), F);
-                }
+                if (hasElectrostatics)
+                    problem.electrostatics->solveSteady();
                 return true;
             }
 
             Vector prevT;
             for (int picardIter = 0; picardIter < problem.couplingMaxIter; ++picardIter) {
-                if (hasElectrostatics) {
-                    SparseMatrix K;
-                    Vector F;
-                    problem.electrostatics->buildStiffnessMatrix(K);
-                    problem.electrostatics->buildRHS(F);
-                    problem.electrostatics->applyEssentialBCs(K, F, problem.electrostatics->field().values());
-                    problem.electrostatics->solveLinearSystem(K, problem.electrostatics->field().values(), F);
-                }
+                if (hasElectrostatics)
+                    problem.electrostatics->solveSteady();
 
                 if (!integrator.step(*problem.heatTransfer, problem.fieldValues, problem.timeStep, problem.currentStep)) {
                     LOG_ERROR << "TransientProblem::solve: Time step failed";
@@ -70,23 +58,10 @@ namespace mpfem {
     {
         LOG_INFO << "Steady-state initialization at t=0";
 
-        if (hasElectrostatics()) {
-            SparseMatrix K;
-            Vector F;
-            electrostatics->buildStiffnessMatrix(K);
-            electrostatics->buildRHS(F);
-            electrostatics->applyEssentialBCs(K, F, electrostatics->field().values());
-            electrostatics->solveLinearSystem(K, electrostatics->field().values(), F);
-        }
-
-        if (hasStructural()) {
-            SparseMatrix K;
-            Vector F;
-            structural->buildStiffnessMatrix(K);
-            structural->buildRHS(F);
-            structural->applyEssentialBCs(K, F, structural->field().values());
-            structural->solveLinearSystem(K, structural->field().values(), F);
-        }
+        if (hasElectrostatics())
+            electrostatics->solveSteady();
+        if (hasStructural())
+            structural->solveSteady();
 
         LOG_INFO << "Steady-state initialization complete";
     }
@@ -133,12 +108,7 @@ namespace mpfem {
             }
 
             if (hasStructural) {
-                SparseMatrix K;
-                Vector F;
-                structural->buildStiffnessMatrix(K);
-                structural->buildRHS(F);
-                structural->applyEssentialBCs(K, F, structural->field().values());
-                structural->solveLinearSystem(K, structural->field().values(), F);
+                structural->solveSteady();
             }
 
             currentTime = nextTime;

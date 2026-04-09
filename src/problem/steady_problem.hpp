@@ -8,7 +8,6 @@
 #include "physics/heat_transfer_solver.hpp"
 #include "physics/structural_solver.hpp"
 #include "problem.hpp"
-#include "core/sparse_matrix.hpp"
 
 namespace mpfem {
 
@@ -27,39 +26,24 @@ namespace mpfem {
             SteadyResult result;
 
             if (!isCoupled()) {
-                if (hasElectrostatics()) {
-                    SparseMatrix K;
-                    Vector F;
-                    electrostatics->buildStiffnessMatrix(K);
-                    electrostatics->buildRHS(F);
-                    electrostatics->applyEssentialBCs(K, F, electrostatics->field().values());
-                    electrostatics->solveLinearSystem(K, electrostatics->field().values(), F);
-                }
+                if (hasElectrostatics())
+                    electrostatics->solveSteady();
+                if (hasHeatTransfer())
+                    heatTransfer->solveSteady();
+                if (hasStructural())
+                    structural->solveSteady();
                 result.fields = fieldValues;
                 return result;
             }
 
-            // Hoist physics checks outside loop to avoid per-iteration branching
-            const bool hasElectrostatics = this->hasElectrostatics();
-            const bool hasHeatTransfer = this->hasHeatTransfer();
+            const bool hasE = hasElectrostatics();
+            const bool hasT = hasHeatTransfer();
 
             for (int i = 0; i < couplingMaxIter; ++i) {
-                if (hasElectrostatics) {
-                    SparseMatrix K;
-                    Vector F;
-                    electrostatics->buildStiffnessMatrix(K);
-                    electrostatics->buildRHS(F);
-                    electrostatics->applyEssentialBCs(K, F, electrostatics->field().values());
-                    electrostatics->solveLinearSystem(K, electrostatics->field().values(), F);
-                }
-                if (hasHeatTransfer) {
-                    SparseMatrix K;
-                    Vector F;
-                    heatTransfer->buildStiffnessMatrix(K);
-                    heatTransfer->buildRHS(F);
-                    heatTransfer->applyEssentialBCs(K, F, heatTransfer->field().values());
-                    heatTransfer->solveLinearSystem(K, heatTransfer->field().values(), F);
-                }
+                if (hasE)
+                    electrostatics->solveSteady();
+                if (hasT)
+                    heatTransfer->solveSteady();
 
                 Real err = computeCouplingError();
                 result.iterations = i + 1;
@@ -71,14 +55,9 @@ namespace mpfem {
                 }
             }
 
-            if (hasStructural()) {
-                SparseMatrix K;
-                Vector F;
-                structural->buildStiffnessMatrix(K);
-                structural->buildRHS(F);
-                structural->applyEssentialBCs(K, F, structural->field().values());
-                structural->solveLinearSystem(K, structural->field().values(), F);
-            }
+            if (hasStructural())
+                structural->solveSteady();
+
             result.fields = fieldValues;
             return result;
         }
