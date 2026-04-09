@@ -21,11 +21,15 @@ namespace mpfem {
             LOG_INFO << "BDF2Integrator: Step " << (currentStep + 1) << " (using BDF1 starter)";
         }
 
-        // Delegate to solver's transient solve (handles M, K, A, RHS, BCs, caching)
-        if (!solver.solveTransient(dt, historyCombo)) {
+        // BDF2 formula: (1.5*M + dt*K) * u^{n+1} = M * (2*u^n - 0.5*u^{n-1}) + dt * F
+        // => solveTransientStep(alpha=1.5, beta=dt, gamma=dt, historyRhs=2*u^n - 0.5*u^{n-1})
+        if (!solver.solveTransientStep(1.5, dt, dt, historyCombo)) {
             LOG_ERROR << "BDF2Integrator: Transient solve failed for " << solver.fieldName();
             return false;
         }
+
+        // Mark field updated - this is the BDF2 integrator's responsibility
+        solver.field().markUpdated();
 
         LOG_INFO << "BDF2Integrator: Step completed for " << solver.fieldName()
                  << ", iterations: " << solver.iterations();

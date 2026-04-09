@@ -12,11 +12,15 @@ namespace mpfem {
         const GridFunction& prev = history.history(solver.fieldName(), 1);
         const Vector historyCombo = prev.values();
 
-        // Delegate to solver's transient solve (handles M, K, A, RHS, BCs, caching)
-        if (!solver.solveTransient(dt, historyCombo)) {
+        // BDF1 formula: (1*M + dt*K) * u^{n+1} = M * u^n + dt * F
+        // => solveTransientStep(alpha=1.0, beta=dt, gamma=dt, historyRhs=u^n)
+        if (!solver.solveTransientStep(1.0, dt, dt, historyCombo)) {
             LOG_ERROR << "BDF1Integrator: Transient solve failed for " << solver.fieldName();
             return false;
         }
+
+        // Mark field updated - this is applyEssentialBCsor's responsibility
+        solver.field().markUpdated();
 
         LOG_INFO << "BDF1Integrator: Step completed for " << solver.fieldName()
                  << ", iterations: " << solver.iterations();
