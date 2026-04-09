@@ -19,8 +19,7 @@ namespace mpfem {
         HeatTransferSolver() = default;
         explicit HeatTransferSolver(int order) { order_ = order; }
         std::string fieldName() const override { return "T"; }
-
-        bool initialize(const Mesh& mesh, FieldValues& fieldValues, int order, Real initialTemperature = 293.15);
+        int VDim() const override { return 1; } // Scalar field
 
         // Material bindings
         void setThermalConductivity(const std::set<int>& domains, const VariableNode* k);

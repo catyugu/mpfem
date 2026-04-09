@@ -20,8 +20,7 @@ namespace mpfem {
         explicit StructuralSolver(int order) { order_ = order; }
 
         std::string fieldName() const override { return "u"; }
-
-        bool initialize(const Mesh& mesh, FieldValues& fieldValues, int order, Real initialDisplacement = 0.0);
+        int VDim() const override { return 3; } // 3D displacement vector
 
         // Material bindings
         void addElasticity(const std::set<int>& domains, const VariableNode* E, const VariableNode* nu);

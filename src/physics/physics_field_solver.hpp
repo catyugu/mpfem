@@ -9,6 +9,7 @@
 #include "physics/field_values.hpp"
 #include "solver/linear_operator.hpp"
 #include "solver/solver_config.hpp"
+#include "solver/solver_factory.hpp"
 #include <memory>
 
 namespace mpfem {
@@ -18,6 +19,31 @@ namespace mpfem {
         virtual ~PhysicsFieldSolver() = default;
 
         virtual std::string fieldName() const = 0;
+        virtual int VDim() const { return 1; } // Scalar field default
+
+        // Unified initialize - pushes common initialization logic to base class
+        virtual bool initialize(const Mesh& mesh, FieldValues& fieldValues, int order, Real initialVal = 0.0)
+        {
+            mesh_ = &mesh;
+            fieldValues_ = &fieldValues;
+            order_ = order;
+
+            auto fec = std::make_unique<FECollection>(order_, FECollection::Type::H1);
+            fes_ = std::make_unique<FESpace>(&mesh, std::move(fec), VDim());
+
+            TensorShape shape = VDim() == 1 ? TensorShape::scalar() : TensorShape::vector(VDim());
+            fieldValues.createField(fieldName(), fes_.get(), shape);
+            fieldValues.current(fieldName()).values().setConstant(initialVal);
+
+            matAsm_ = std::make_unique<BilinearFormAssembler>(fes_.get());
+            vecAsm_ = std::make_unique<LinearFormAssembler>(fes_.get());
+            if (solverConfig_) {
+                solver_ = SolverFactory::create(*solverConfig_);
+            }
+
+            LOG_INFO << fieldName() << " Solver: " << fes_->numDofs() << " DOFs initialized.";
+            return true;
+        }
 
         // Public solve interface (Template Method pattern - final, not overridable)
         bool solveSteady()
@@ -59,7 +85,7 @@ namespace mpfem {
             solver_->apply(F_, field().values());
             field().markUpdated();
             isFirstIteration = false;
-            
+
             return true;
         }
 
@@ -71,7 +97,7 @@ namespace mpfem {
             std::uint64_t currentBcRev = getBcRevision();
 
             bool dtChanged = (dt != previous_dt_);
-            bool operatorChanged = (currentMatRev != matrixRevision_) || (currentMassRev != massRevision_) || dtChanged || isFirstIteration ;
+            bool operatorChanged = (currentMatRev != matrixRevision_) || (currentMassRev != massRevision_) || dtChanged || isFirstIteration;
             bool rhsChanged = (currentRhsRev != rhsRevision_) || isFirstIteration;
 
             if (operatorChanged) {
