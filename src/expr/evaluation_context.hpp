@@ -9,13 +9,15 @@
 
 namespace mpfem {
 
+    class ElementTransform;
+
     struct EvaluationContext {
         Real time = Real(0);
         int domainId = -1;
         Index elementId = InvalidIndex;
         std::span<const Vector3> physicalPoints;
         std::span<const Vector3> referencePoints;
-        std::span<const Matrix> invJacobianTransposes;
+        std::span<ElementTransform* const> transforms;
     };
 
 } // namespace mpfem

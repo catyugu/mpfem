@@ -156,14 +156,20 @@ namespace mpfem {
                     return;
                 }
 
-                if (ctx.referencePoints.size() < dest.size() || ctx.invJacobianTransposes.size() < dest.size()) {
+                if (ctx.referencePoints.size() < dest.size() || ctx.transforms.size() < dest.size()) {
                     MPFEM_THROW(ArgumentException,
-                        "GridFunctionGradientProvider requires referencePoints and invJacobianTransposes in EvaluationContext.");
+                        "GridFunctionGradientProvider requires referencePoints and transforms in EvaluationContext.");
                 }
 
                 for (size_t i = 0; i < dest.size(); ++i) {
+                    ElementTransform* trans = ctx.transforms[i];
+                    if (!trans) {
+                        MPFEM_THROW(ArgumentException,
+                            "GridFunctionGradientProvider received null transform in EvaluationContext.");
+                    }
                     const Real* xi = &ctx.referencePoints[i].x();
-                    Vector3 g = field_->gradient(ctx.elementId, xi, ctx.invJacobianTransposes[i]);
+                    Matrix3 invJT = trans->invJacobianT();
+                    Vector3 g = field_->gradient(ctx.elementId, xi, invJT);
                     dest[i] = Tensor::vector(g.x(), g.y(), g.z());
                 }
             }

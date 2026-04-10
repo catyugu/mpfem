@@ -197,8 +197,8 @@ namespace mpfem {
                 if (!ctx.referencePoints.empty()) {
                     pointCtx.referencePoints = ctx.referencePoints.subspan(i, 1);
                 }
-                if (!ctx.invJacobianTransposes.empty()) {
-                    pointCtx.invJacobianTransposes = ctx.invJacobianTransposes.subspan(i, 1);
+                if (!ctx.transforms.empty()) {
+                    pointCtx.transforms = ctx.transforms.subspan(i, 1);
                 }
 
                 // 求取该积分点所有依赖项的值
