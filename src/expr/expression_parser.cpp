@@ -164,44 +164,51 @@ namespace mpfem {
             return resolved_deps_;
         }
 
+        // 重构：expr/expression_parser.cpp 中的 CompiledExpressionNode::evaluateBatch
         void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
         {
-            const size_t n = dest.size();
-            const size_t m = resolved_deps_.size();
+            const size_t n = dest.size(); // 积分点数量
+            const size_t m = resolved_deps_.size(); // 依赖变量数量
 
-            // 极速单点路径 (N=1), 无堆分配, 无虚函数嵌套, 彻底解决冗余评估
-            if (n == 1) {
-                TensorValue vars_stack[32]; // 分配在寄存器/栈上
-                std::vector<TensorValue> vars_heap;
-                TensorValue* vars = vars_stack;
-
-                if (m > 32) {
-                    vars_heap.resize(m);
-                    vars = vars_heap.data();
-                }
-
-                for (size_t d = 0; d < m; ++d) {
-                    std::span<TensorValue> s(&vars[d], 1);
-                    resolved_deps_[d]->evaluateBatch(ctx, s);
-                }
-
-                dest[0] = evalAst(ast_.get(), vars);
+            if (m == 0) {
+                // 无依赖的纯常量，直接填充
+                TensorValue val = evalAst(ast_.get(), nullptr);
+                std::fill(dest.begin(), dest.end(), val);
                 return;
             }
 
-            // 兼容的 N>1 回退路径
-            std::vector<TensorValue> scratchpad(m * n);
-            for (size_t d = 0; d < m; ++d) {
-                std::span<TensorValue> depDest(&scratchpad[d * n], n);
-                resolved_deps_[d]->evaluateBatch(ctx, depDest);
+            // 栈上分配变量求值缓存（一个积分点最多不会超过32个依赖项）
+            TensorValue stack_vars[32];
+            std::vector<TensorValue> heap_vars;
+            TensorValue* pointVars = stack_vars;
+
+            if (m > 32) {
+                heap_vars.resize(m);
+                pointVars = heap_vars.data();
             }
 
-            std::vector<TensorValue> pointVars(m);
+            // 将外层循环从“按依赖项”改为“按积分点”，消除巨大的 scratchpad
+            // 复用 EvaluationContext 为单个积分点创建子上下文
             for (size_t i = 0; i < n; ++i) {
-                for (size_t d = 0; d < m; ++d) {
-                    pointVars[d] = scratchpad[d * n + i];
+                EvaluationContext pointCtx = ctx;
+                if (!ctx.physicalPoints.empty()) {
+                    pointCtx.physicalPoints = ctx.physicalPoints.subspan(i, 1);
                 }
-                dest[i] = evalAst(ast_.get(), pointVars.data());
+                if (!ctx.referencePoints.empty()) {
+                    pointCtx.referencePoints = ctx.referencePoints.subspan(i, 1);
+                }
+                if (!ctx.invJacobianTransposes.empty()) {
+                    pointCtx.invJacobianTransposes = ctx.invJacobianTransposes.subspan(i, 1);
+                }
+
+                // 求取该积分点所有依赖项的值
+                for (size_t d = 0; d < m; ++d) {
+                    std::span<TensorValue> singleSpan(&pointVars[d], 1);
+                    resolved_deps_[d]->evaluateBatch(pointCtx, singleSpan);
+                }
+
+                // 使用准备好的变量数组执行极速 AST
+                dest[i] = evalAst(ast_.get(), pointVars);
             }
         }
 
