@@ -371,14 +371,11 @@ namespace mpfem {
             problem.globalVariables_.bindNode("grad(T)", std::make_unique<GridFunctionGradientProvider>(&problem.heatTransfer->field()));
 
             const VariableNode* k = requireDomainMatrixNode(problem, kPropThermalConductivity);
-            const VariableNode* density = requireDomainScalarNode(problem, kPropDensity);
-            const VariableNode* heatCapacity = requireDomainScalarNode(problem, kPropHeatCapacity);
-            (void)density;
-            (void)heatCapacity;
+            (void)requireDomainScalarNode(problem, kPropDensity);
+            (void)requireDomainScalarNode(problem, kPropHeatCapacity);
 
-            if (!problem.globalVariables_.get("thermal_mass")) {
-                problem.globalVariables_.define("thermal_mass", "density * heatcapacity");
-            }
+            problem.globalVariables_.define("thermal_mass", "density * heatcapacity");
+            
             const VariableNode* rhoCpNode = problem.globalVariables_.get("thermal_mass");
 
             for (int domainId : problem.materials.domainIds()) {
@@ -425,10 +422,7 @@ namespace mpfem {
         {
             const std::set<int> activeDomains = cp.domainIds;
             (void)requireDomainMatrixNode(problem, kPropElectricConductivity);
-
-            if (!problem.globalVariables_.get("JouleHeat")) {
-                problem.globalVariables_.define("JouleHeat", "dot(grad_V, electricconductivity * grad_V)");
-            }
+            problem.globalVariables_.define("JouleHeat", "dot(grad_V, electricconductivity * grad_V)");
             const VariableNode* joule = problem.globalVariables_.get("JouleHeat");
             problem.heatTransfer->setHeatSource(activeDomains, joule);
             LOG_INFO << "Joule heating domains: " << activeDomains.size() << " domains";
@@ -446,18 +440,11 @@ namespace mpfem {
             (void)requireDomainScalarNode(problem, kPropYoungModulus);
             (void)requireDomainScalarNode(problem, kPropPoissonRatio);
 
-            if (!problem.globalVariables_.get("lambda")) {
-                problem.globalVariables_.define("lambda", "E*nu/((1+nu)*(1-2*nu))");
-            }
-            if (!problem.globalVariables_.get("mu")) {
-                problem.globalVariables_.define("mu", "E/(2*(1+nu))");
-            }
-            if (!problem.globalVariables_.get("alpha_iso")) {
-                problem.globalVariables_.define(
-                    "alpha_iso",
-                    "dot([1,1,1]^T, thermalexpansioncoefficient * [1,1,1]^T)/3.0");
-            }
-
+            problem.globalVariables_.define("lambda", "E*nu/((1+nu)*(1-2*nu))");
+            problem.globalVariables_.define("mu", "E/(2*(1+nu))");
+            problem.globalVariables_.define(
+                "alpha_iso",
+                "dot([1,1,1]^T, thermalexpansioncoefficient * [1,1,1]^T)/3.0");
             problem.globalVariables_.define("T_ref", std::to_string(T_ref));
             problem.globalVariables_.define("thermal_dT", "T - T_ref");
             problem.globalVariables_.define(
