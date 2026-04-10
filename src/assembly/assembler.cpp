@@ -1,6 +1,7 @@
 #include "assembler.hpp"
 #include "fe/element_transform.hpp"
 #include "fe/facet_element_transform.hpp"
+#include "fe/fe_space.hpp"
 #include <algorithm>
 #include <cmath>
 #include <unordered_map>

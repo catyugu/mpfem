@@ -2,18 +2,21 @@
 #define MPFEM_ASSEMBLER_HPP
 
 #include "assembly/integrator.hpp"
-#include "fe/fe_space.hpp"
 #include "core/sparse_matrix.hpp"
 #include <algorithm>
 #include <memory>
 #include <set>
 #include <vector>
-
 #ifdef _OPENMP
 #include <omp.h>
 #endif
 
 namespace mpfem {
+
+    // Forward declarations
+    class FESpace;
+
+
 
     // =============================================================================
     // 线程本地缓冲区（零分配）
