@@ -342,7 +342,7 @@ namespace mpfem {
 
             // Register the electrostatics field as a DAG node for expression dependencies
             problem.globalVariables_.bindNode("V", std::make_unique<GridFunctionValueProvider>(&problem.electrostatics->field()));
-            problem.globalVariables_.bindNode("grad(V)", std::make_unique<GridFunctionGradientProvider>(&problem.electrostatics->field()));
+            problem.globalVariables_.bindNode("grad_V", std::make_unique<GridFunctionGradientProvider>(&problem.electrostatics->field()));
 
             const VariableNode* sigma = requireDomainMatrixNode(problem, kPropElectricConductivity);
             for (int domainId : problem.materials.domainIds()) {
@@ -427,7 +427,7 @@ namespace mpfem {
             (void)requireDomainMatrixNode(problem, kPropElectricConductivity);
 
             if (!problem.globalVariables_.get("JouleHeat")) {
-                problem.globalVariables_.define("JouleHeat", "dot(grad(V), electricconductivity * grad(V))");
+                problem.globalVariables_.define("JouleHeat", "dot(grad_V, electricconductivity * grad_V)");
             }
             const VariableNode* joule = problem.globalVariables_.get("JouleHeat");
             problem.heatTransfer->setHeatSource(activeDomains, joule);

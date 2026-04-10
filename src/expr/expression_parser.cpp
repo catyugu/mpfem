@@ -180,7 +180,7 @@ namespace mpfem {
                     vars = vars_heap.data();
                 }
 
-                // 核心：仅对去重后的依赖项各自求值一次！(如 grad(V) 只求一次)
+                // 核心：仅对去重后的依赖项各自求值一次！(如 grad_V 只求一次)
                 for (size_t d = 0; d < m; ++d) {
                     std::span<TensorValue> s(&vars[d], 1);
                     resolved_deps_[d]->evaluateBatch(ctx, s);
@@ -403,20 +403,6 @@ namespace mpfem {
 
             std::unique_ptr<AstNode> parseFunction(const std::string& name)
             {
-                // 特殊处理 grad 语法：grad(V) 作为一个单一的整体依赖项
-                if (name == "grad") {
-                    skipWhitespace();
-                    std::string fieldName = parseIdentifier();
-                    skipWhitespace();
-                    if (!match(')'))
-                        MPFEM_THROW(ArgumentException, "Missing ')' after grad argument");
-
-                    int idx = getOrAddDep("grad(" + fieldName + ")");
-                    auto node = makeNode(AstNode::Kind::VarIndex);
-                    node->var_index = idx;
-                    return node;
-                }
-
                 std::vector<std::unique_ptr<AstNode>> args;
                 if (!match(')')) {
                     do {
