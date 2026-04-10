@@ -47,7 +47,7 @@ Mesh createQuadraticTriangleMesh() {
     mesh.addVertex(1.0, 0.0, 0.0);  // 1
     mesh.addVertex(0.5, 1.0, 0.0);  // 2
     mesh.addVertex(1.5, 1.0, 0.0);  // 3
-    
+
     // Edge midpoint vertices
     mesh.addVertex(0.5, 0.0, 0.0);  // 4: edge 0-1
     mesh.addVertex(0.75, 0.5, 0.0); // 5: edge 1-2
@@ -55,9 +55,9 @@ Mesh createQuadraticTriangleMesh() {
     mesh.addVertex(1.25, 0.5, 0.0); // 7: edge 1-3
     mesh.addVertex(1.0, 1.0, 0.0);  // 8: edge 2-3 (shared edge)
     
-    // Triangle2 ordering: V0, V1, V2, E01, E12, E20
-    mesh.addElement(Geometry::Triangle, {0, 1, 2, 4, 5, 6}, 1, 2);
-    mesh.addElement(Geometry::Triangle, {2, 1, 3, 8, 7, 5}, 2, 2);
+    // Triangle2 COMSOL ordering: V0, V1, V2, E01, E20, E12
+    mesh.addElement(Geometry::Triangle, {0, 1, 2, 4, 6, 5}, 1, 2);
+    mesh.addElement(Geometry::Triangle, {2, 1, 3, 5, 8, 7}, 2, 2);
     
     return mesh;
 }
@@ -90,10 +90,9 @@ Mesh createQuadraticTetrahedronMesh() {
     mesh.addVertex(1.0, 0.75, 0.5);  // 12: edge 2-4
     mesh.addVertex(1.0, 0.5, 1.0);   // 13: edge 3-4
     
-    // Tetrahedron2 ordering: V0, V1, V2, V3, E01, E02, E03, E12, E13, E23
-    // Using COMSOL ordering: V0, V1, V2, V3, E01, E12, E02, E13, E23, E03
-    mesh.addElement(Geometry::Tetrahedron, {0, 1, 2, 3, 5, 6, 7, 8, 9, 10}, 1, 2);
-    mesh.addElement(Geometry::Tetrahedron, {1, 4, 2, 3, 11, 12, 6, 9, 13, 12}, 2, 2);
+    // Tetrahedron2 COMSOL ordering: V0, V1, V2, V3, E01, E02, E12, E03, E13, E23
+    mesh.addElement(Geometry::Tetrahedron, {0, 1, 2, 3, 5, 7, 6, 8, 9, 10}, 1, 2);
+    mesh.addElement(Geometry::Tetrahedron, {1, 4, 2, 3, 11, 6, 12, 9, 13, 10}, 2, 2);
     
     return mesh;
 }
@@ -141,8 +140,8 @@ TEST_F(QuadraticFESpaceTest, EdgeDofSharing) {
     std::vector<Index> dofs1 = getElementDofsVec(fes, 1);
     
     // Edge DOFs on shared edge should be the same
-    // For triangle0: edge DOFs are at indices 3,4,5 (E01, E12, E20)
-    // For triangle1: edge DOFs are at indices 3,4,5 (E21, E13, E32)
+    // For triangle0: edge DOFs are at indices 3,4,5 (E01, E20, E12)
+    // For triangle1: edge DOFs are at indices 3,4,5 (E21, E32, E13)
     // Edge 1-2 in tri0 corresponds to edge 2-1 in tri1
     
     // Check that both elements have valid DOFs
@@ -335,8 +334,8 @@ TEST(QuadraticIntegrationTest, IntegrateQuadraticFunctionExactly) {
     mesh.addVertex(1.0, 0.0, 0.0);  // 1
     mesh.addVertex(0.0, 1.0, 0.0);  // 2
     mesh.addVertex(0.5, 0.0, 0.0);  // 3: edge 0-1 midpoint
-    mesh.addVertex(0.5, 0.5, 0.0);  // 4: edge 1-2 midpoint
-    mesh.addVertex(0.0, 0.5, 0.0);  // 5: edge 2-0 midpoint
+    mesh.addVertex(0.0, 0.5, 0.0);  // 4: edge 2-0 midpoint
+    mesh.addVertex(0.5, 0.5, 0.0);  // 5: edge 1-2 midpoint
     
     mesh.addElement(Geometry::Triangle, {0, 1, 2, 3, 4, 5}, 1, 2);
     
@@ -435,8 +434,7 @@ TEST_F(COMSOLMeshTest, LoadQuadraticMesh) {
 }
 
 TEST_F(COMSOLMeshTest, Tetrahedron2EdgeMidpoints) {
-    // Verify that edge midpoints are correctly positioned
-    // This tests the node reordering fix for COMSOL compatibility
+    // Verify that edge midpoints are correctly positioned in COMSOL edge order
     Mesh mesh = MphtxtReader::read(meshPath_);
     
     int checkedTets = 0;
@@ -457,11 +455,11 @@ TEST_F(COMSOLMeshTest, Tetrahedron2EdgeMidpoints) {
         auto v2 = mesh.vertex(vertices[2]);
         auto v3 = mesh.vertex(vertices[3]);
         
-        // Edge midpoints (mpfem ordering after reordering)
-        // dof 4: E01, dof 5: E12, dof 6: E20, dof 7: E03, dof 8: E13, dof 9: E23
+        // Edge midpoints in COMSOL ordering:
+        // dof 4: E01, dof 5: E02, dof 6: E12, dof 7: E03, dof 8: E13, dof 9: E23
         auto e01 = mesh.vertex(vertices[4]);  // Edge 0-1
-        auto e12 = mesh.vertex(vertices[5]);  // Edge 1-2
-        auto e20 = mesh.vertex(vertices[6]);  // Edge 2-0
+        auto e02 = mesh.vertex(vertices[5]);  // Edge 0-2
+        auto e12 = mesh.vertex(vertices[6]);  // Edge 1-2
         auto e03 = mesh.vertex(vertices[7]);  // Edge 0-3
         auto e13 = mesh.vertex(vertices[8]);  // Edge 1-3
         auto e23 = mesh.vertex(vertices[9]);  // Edge 2-3
@@ -482,8 +480,8 @@ TEST_F(COMSOLMeshTest, Tetrahedron2EdgeMidpoints) {
         };
         
         checkMidpoint(e01, v0, v1, "E01");
+        checkMidpoint(e02, v0, v2, "E02");
         checkMidpoint(e12, v1, v2, "E12");
-        checkMidpoint(e20, v2, v0, "E20");
         checkMidpoint(e03, v0, v3, "E03");
         checkMidpoint(e13, v1, v3, "E13");
         checkMidpoint(e23, v2, v3, "E23");

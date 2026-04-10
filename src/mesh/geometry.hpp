@@ -311,7 +311,7 @@ namespace mpfem
         namespace edge_table {
             /// Edge vertices for Triangle: 3 edges
             inline constexpr std::array<std::pair<int, int>, 3> Triangle = {{
-                {1, 2}, {2, 0}, {0, 1}
+                {0, 1}, {2, 0}, {1, 2}
             }};
             /// Edge vertices for Square: 4 edges
             inline constexpr std::array<std::pair<int, int>, 4> Square = {{
@@ -319,7 +319,7 @@ namespace mpfem
             }};
             /// Edge vertices for Tetrahedron: 6 edges
             inline constexpr std::array<std::pair<int, int>, 6> Tetrahedron = {{
-                {0, 1}, {1, 2}, {2, 0},  // Base edges
+                {0, 1}, {0, 2}, {1, 2},  // Base edges
                 {0, 3}, {1, 3}, {2, 3}   // Side edges
             }};
             /// Edge vertices for Cube: 12 edges
@@ -360,9 +360,9 @@ namespace mpfem
         /// Edge ordering matches edge_table::Triangle
         /// Coordinates are (xi, eta) in reference triangle
         inline constexpr std::array<std::array<Real, 2>, 3> edgeMidpoint_Triangle = {{
-            {{0.5, 0.0}},  // Edge 0: between vertices 1-2 (midpoint of edge from (1,0) to (0,1))
-            {{0.0, 0.5}},  // Edge 1: between vertices 2-0 (midpoint of edge from (0,1) to (0,0))
-            {{0.5, 0.5}}   // Edge 2: between vertices 0-1 (midpoint of edge from (0,0) to (1,0))
+            {{0.5, 0.0}},  // Edge 0: between vertices 0-1
+            {{0.0, 0.5}},  // Edge 1: between vertices 2-0
+            {{0.5, 0.5}}   // Edge 2: between vertices 1-2
         }};
 
         /// Edge midpoint reference coordinates for Square2
@@ -378,8 +378,8 @@ namespace mpfem
         /// Edge ordering matches edge_table::Tetrahedron
         inline constexpr std::array<std::array<Real, 3>, 6> edgeMidpoint_Tetrahedron = {{
             {{0.5, 0.0, 0.0}},  // Edge 0: between vertices 0-1
-            {{0.5, 0.5, 0.0}},  // Edge 1: between vertices 1-2
-            {{0.0, 0.5, 0.0}},  // Edge 2: between vertices 2-0
+            {{0.0, 0.5, 0.0}},  // Edge 1: between vertices 0-2
+            {{0.5, 0.5, 0.0}},  // Edge 2: between vertices 1-2
             {{0.0, 0.0, 0.5}},  // Edge 3: between vertices 0-3
             {{0.5, 0.0, 0.5}},  // Edge 4: between vertices 1-3
             {{0.0, 0.5, 0.5}}   // Edge 5: between vertices 2-3
@@ -441,10 +441,10 @@ namespace mpfem
             /// Each face has 3 edges
             /// Edge ordering follows edge_table::Tetrahedron
             inline constexpr std::array<std::array<int, 3>, 4> Tetrahedron = {{
-                {{1, 5, 4}},  // Face 0: opposite vertex 0, edges (1-2), (2-3), (1-3)
-                {{0, 3, 2}},  // Face 1: opposite vertex 1, edges (0-1), (0-3), (2-0)
+                {{2, 5, 4}},  // Face 0: opposite vertex 0, edges (1-2), (2-3), (1-3)
+                {{3, 5, 1}},  // Face 1: opposite vertex 1, edges (0-3), (2-3), (0-2)
                 {{0, 4, 3}},  // Face 2: opposite vertex 2, edges (0-1), (1-3), (0-3)
-                {{2, 5, 1}}   // Face 3: opposite vertex 3, edges (2-0), (2-3), (1-2)
+                {{1, 2, 0}}   // Face 3: opposite vertex 3, edges (0-2), (1-2), (0-1)
             }};
 
             /// Face edges for Cube: 6 quadrilateral faces
@@ -664,6 +664,12 @@ namespace mpfem
 
             switch (g)
             {
+            case Geometry::Segment:
+                if (edgeIdx == 0)
+                {
+                    return {0, 1};
+                }
+                return {0, 0};
             case Geometry::Triangle:
                 table = edge_table::Triangle.data();
                 nEdges = 3;
