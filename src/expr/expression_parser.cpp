@@ -180,13 +180,11 @@ namespace mpfem {
                     vars = vars_heap.data();
                 }
 
-                // 核心：仅对去重后的依赖项各自求值一次！(如 grad_V 只求一次)
                 for (size_t d = 0; d < m; ++d) {
                     std::span<TensorValue> s(&vars[d], 1);
                     resolved_deps_[d]->evaluateBatch(ctx, s);
                 }
 
-                // 通过极速 Switch 执行 AST
                 dest[0] = evalAst(ast_.get(), vars);
                 return;
             }
@@ -207,10 +205,7 @@ namespace mpfem {
             }
         }
 
-        bool isConstant() const override
-        {
-            return ast_->kind == AstNode::Kind::Constant;
-        }
+        bool isConstant() const override { return ast_->kind == AstNode::Kind::Constant; }
 
         std::uint64_t revision() const override
         {
@@ -248,9 +243,8 @@ namespace mpfem {
                 if (!eof())
                     MPFEM_THROW(ArgumentException, "Unexpected token near: " + std::string(text_.substr(pos_)));
 
-                // 常量折叠：直接在编译期算掉所有类似 2*pi, E/(1+nu) 这种纯数字的分支
+                // 常量折叠
                 foldConstants(root.get());
-
                 return std::make_unique<CompiledExpressionNode>(std::move(root), std::move(dep_names_));
             }
 
@@ -352,15 +346,22 @@ namespace mpfem {
                         MPFEM_THROW(ArgumentException, "Missing closing ')'");
                     return applyUnitSuffix(std::move(inner));
                 }
-                if (peek() == '[')
+
+                // 如果恰好是一个 '['，必定是向量/矩阵的字面量开端
+                if (peek() == '[') {
                     return applyUnitSuffix(parseBracketLiteral());
-                if (peekIsNumberStart())
+                }
+
+                if (peekIsNumberStart()) {
                     return applyUnitSuffix(parseNumber());
+                }
+
                 if (peekIsIdentifierStart()) {
                     std::string name = parseIdentifier();
                     skipWhitespace();
-                    if (match('('))
+                    if (match('(')) {
                         return applyUnitSuffix(parseFunction(name));
+                    }
 
                     if (name == "pi") {
                         auto n = makeNode(AstNode::Kind::Constant);
@@ -373,7 +374,6 @@ namespace mpfem {
                         return n;
                     }
 
-                    // 变量引用 -> 提取并去重依赖项 -> 转换成极速的数组索引
                     int idx = getOrAddDep(name);
                     auto node = makeNode(AstNode::Kind::VarIndex);
                     node->var_index = idx;
@@ -448,75 +448,26 @@ namespace mpfem {
                 MPFEM_THROW(ArgumentException, "Unsupported function or wrong arity: " + name);
             }
 
+            // 直接通过嵌套调用 parseExpression 解析，彻底移除了老版丑陋的切割字符串、查单位的操作
             std::unique_ptr<AstNode> parseBracketLiteral()
             {
-                if (!match('['))
-                    MPFEM_THROW(ArgumentException, "Internal error: expected '['");
-
+                match('[');
                 std::vector<std::vector<std::unique_ptr<AstNode>>> rows;
                 rows.emplace_back();
 
-                for (;;) {
+                while (!eof()) {
                     skipWhitespace();
-                    const size_t partBegin = pos_;
-                    int parenDepth = 0, unitBracketDepth = 0;
-                    while (!eof()) {
-                        const char c = text_[pos_];
-                        if (c == '(')
-                            ++parenDepth;
-                        else if (c == ')')
-                            --parenDepth;
-                        else if (c == '[')
-                            ++unitBracketDepth;
-                        else if (c == ']') {
-                            if (unitBracketDepth > 0)
-                                --unitBracketDepth;
-                            else if (parenDepth == 0)
-                                break;
-                        }
-                        else if (parenDepth == 0 && unitBracketDepth == 0 && (c == ',' || c == ';'))
-                            break;
-                        ++pos_;
-                    }
-                    if (eof())
-                        MPFEM_THROW(ArgumentException, "Missing closing ']'");
-
-                    std::string part = strings::trim(std::string(text_.substr(partBegin, pos_ - partBegin)));
-
-                    UnitRegistry registry;
-                    auto unitPart = registry.stripUnit(part);
-
-                    // 巧妙递归：替换文本流，让本 Compiler 直接解析这个子字符串，这保证它能使用当前的依赖集合
-                    std::string inner_expr = std::string(unitPart.expression);
-                    std::string_view old_text = text_;
-                    size_t old_pos = pos_;
-
-                    text_ = inner_expr;
-                    pos_ = 0;
-                    auto comp = parseExpression();
-                    if (!eof())
-                        MPFEM_THROW(ArgumentException, "Failed to parse literal component: " + part);
-
-                    text_ = old_text;
-                    pos_ = old_pos;
-
-                    if (!isNearOne(unitPart.multiplier)) {
-                        auto c = makeNode(AstNode::Kind::Constant);
-                        c->val = TensorValue::scalar(unitPart.multiplier);
-                        comp = makeBinary(AstNode::Kind::Mul, std::move(c), std::move(comp));
-                    }
-                    rows.back().push_back(std::move(comp));
-
-                    const char delim = text_[pos_];
-                    ++pos_;
-                    if (delim == ',')
+                    rows.back().push_back(parseExpression());
+                    skipWhitespace();
+                    if (match(','))
                         continue;
-                    if (delim == ';') {
+                    if (match(';')) {
                         rows.emplace_back();
                         continue;
                     }
-                    if (delim == ']')
+                    if (match(']'))
                         break;
+                    MPFEM_THROW(ArgumentException, "Expected ',', ';', or ']' in bracket literal");
                 }
 
                 skipWhitespace();
@@ -543,8 +494,8 @@ namespace mpfem {
 
                 if (rowCount == 3 && colCount == 3) {
                     auto n = makeNode(AstNode::Kind::MatrixLit);
-                    for (int i = 0; i < 3; ++i)
-                        for (int j = 0; j < 3; ++j)
+                    for (size_t i = 0; i < 3; ++i)
+                        for (size_t j = 0; j < 3; ++j)
                             n->args.push_back(std::move(rows[i][j]));
                     return n;
                 }
@@ -552,11 +503,13 @@ namespace mpfem {
                 MPFEM_THROW(ArgumentException, "Unsupported bracket literal shape");
             }
 
+            // 无歧义的应用单位乘数
             std::unique_ptr<AstNode> applyUnitSuffix(std::unique_ptr<AstNode> node)
             {
                 skipWhitespace();
                 if (!match('['))
                     return node;
+
                 size_t begin = pos_;
                 while (!eof() && text_[pos_] != ']')
                     ++pos_;
@@ -566,7 +519,7 @@ namespace mpfem {
                 std::string unit = strings::trim(std::string(text_.substr(begin, pos_ - begin)));
                 ++pos_;
 
-                Real mult = UnitRegistry().getMultiplier(unit);
+                Real mult = parseUnit(unit);
                 if (isNearOne(mult))
                     return node;
 
@@ -579,11 +532,13 @@ namespace mpfem {
             bool peekIsIdentifierStart() const { return !eof() && (std::isalpha(text_[pos_]) || text_[pos_] == '_'); }
             bool peekIsNumberStart() const { return !eof() && (std::isdigit(text_[pos_]) || text_[pos_] == '.'); }
             bool eof() const { return pos_ >= text_.size(); }
+
             void skipWhitespace()
             {
                 while (!eof() && std::isspace(text_[pos_]))
                     ++pos_;
             }
+
             bool match(char c)
             {
                 if (peek() == c) {

@@ -1,234 +1,154 @@
 #include "expr/unit_parser.hpp"
-
+#include "core/exception.hpp"
+#include "core/string_utils.hpp"
 #include <cctype>
 #include <cmath>
-#include <stdexcept>
 #include <string>
 #include <unordered_map>
 
 namespace mpfem {
+
 namespace {
 
-std::string_view trimView(std::string_view text) {
-    size_t first = 0;
-    while (first < text.size() && std::isspace(static_cast<unsigned char>(text[first])) != 0) {
-        ++first;
-    }
-
-    size_t last = text.size();
-    while (last > first && std::isspace(static_cast<unsigned char>(text[last - 1])) != 0) {
-        --last;
-    }
-
-    return text.substr(first, last - first);
+const std::unordered_map<std::string_view, Real>& getBaseUnits() {
+    static const std::unordered_map<std::string_view, Real> units = {
+        {"GPa", 1e9}, {"MPa", 1e6}, {"kPa", 1e3}, {"Pa", 1.0},
+        {"V", 1.0}, {"mV", 1e-3},
+        {"W/(m*K)", 1.0}, {"W m^-1 K^-1", 1.0}, {"W/m^2/K", 1.0},
+        {"J/(kg*K)", 1.0}, {"J", 1.0}, {"kJ", 1e3},
+        {"W", 1.0}, {"K", 1.0},
+        {"kg", 1.0}, {"g", 1e-3},
+        {"m", 1.0}, {"cm", 1e-2}, {"mm", 1e-3},
+        {"s", 1.0}, {"S/m", 1.0},
+        {"1/K", 1.0}, {"1/m", 1.0},
+        {"kg/m^3", 1.0}, {"kg/m^2", 1.0}, {"kg/m", 1.0}
+    };
+    return units;
 }
 
-std::string_view stripOuterParens(std::string_view text) {
-    text = trimView(text);
-    while (text.size() >= 2 && text.front() == '(' && text.back() == ')') {
-        int depth = 0;
-        bool wrapsAll = true;
+class UnitEvaluator {
+    std::string_view text;
+    size_t pos = 0;
 
-        for (size_t i = 0; i < text.size(); ++i) {
-            const char c = text[i];
-            if (c == '(') {
-                ++depth;
-                continue;
-            }
-            if (c == ')') {
-                --depth;
-                if (depth == 0 && i + 1 < text.size()) {
-                    wrapsAll = false;
-                    break;
-                }
-            }
+public:
+    explicit UnitEvaluator(std::string_view t) : text(t) {}
+
+    Real parse() {
+        Real res = parseExpr();
+        skipSpace();
+        if (pos < text.size()) {
+            MPFEM_THROW(ArgumentException, "Unexpected trailing characters in unit: " + std::string(text));
         }
-
-        if (!wrapsAll || depth != 0) {
-            break;
-        }
-
-        text = trimView(text.substr(1, text.size() - 2));
+        return res;
     }
 
-    return text;
-}
-
-}  // namespace
-
-struct UnitRegistry::Impl {
-    std::unordered_map<std::string, Real> units;
-
-    Impl() {
-        units.reserve(40);
-        units["GPa"] = 1e9;
-        units["MPa"] = 1e6;
-        units["kPa"] = 1e3;
-        units["Pa"] = 1.0;
-        units["V"] = 1.0;
-        units["mV"] = 1e-3;
-        units["W/(m*K)"] = 1.0;
-        units["W m^-1 K^-1"] = 1.0;
-        units["W/m^2/K"] = 1.0;
-        units["J/(kg*K)"] = 1.0;
-        units["J"] = 1.0;
-        units["kJ"] = 1e3;
-        units["W"] = 1.0;
-        units["K"] = 1.0;
-        units["kg"] = 1.0;
-        units["g"] = 1e-3;
-        units["m"] = 1.0;
-        units["cm"] = 1e-2;
-        units["mm"] = 1e-3;
-        units["s"] = 1.0;
-        units["S/m"] = 1.0;
-        units["1/K"] = 1.0;
-        units["1/m"] = 1.0;
-        units["kg/m^3"] = 1.0;
-        units["kg/m^2"] = 1.0;
-        units["kg/m"] = 1.0;
+private:
+    void skipSpace() {
+        while (pos < text.size() && std::isspace(static_cast<unsigned char>(text[pos]))) pos++;
     }
 
-    Real getBaseMultiplier(std::string_view baseUnit) const {
-        baseUnit = trimView(baseUnit);
-        std::string unitKey(baseUnit);
-        auto it = units.find(unitKey);
-        if (it != units.end()) {
-            return it->second;
+    bool match(char c) {
+        skipSpace();
+        if (pos < text.size() && text[pos] == c) {
+            pos++;
+            return true;
         }
-
-        throw std::invalid_argument("Unknown unit: " + unitKey);
+        return false;
     }
 
-    Real parseUnitElement(std::string_view text) const {
-        text = stripOuterParens(text);
-
-        auto caretPos = text.find('^');
-        if (caretPos == std::string_view::npos) {
-            return getBaseMultiplier(text);
-        }
-
-        std::string_view base = trimView(text.substr(0, caretPos));
-        std::string_view exponentText = trimView(text.substr(caretPos + 1));
-        if (exponentText.empty()) {
-            throw std::invalid_argument("Missing unit exponent in: " + std::string(text));
-        }
-
-        const Real exponent = std::stod(std::string(exponentText));
-        return std::pow(getBaseMultiplier(base), exponent);
-    }
-
-    Real parseUnitTerms(std::string_view text) const {
-        text = stripOuterParens(text);
-        if (text.empty()) {
-            return 1.0;
-        }
-
-        size_t multiplyPos = std::string_view::npos;
-        int depth = 0;
-        for (size_t i = 0; i < text.size(); ++i) {
-            if (text[i] == '(') {
-                ++depth;
-                continue;
-            }
-            if (text[i] == ')') {
-                --depth;
-                continue;
-            }
-            if (text[i] == '*' && depth == 0) {
-                multiplyPos = i;
+    Real parseExpr() {
+        Real val = parsePower();
+        for (;;) {
+            if (match('*')) {
+                val *= parsePower();
+            } else if (match('/')) {
+                val /= parsePower();
+            } else {
                 break;
             }
         }
-
-        if (multiplyPos == std::string_view::npos) {
-            return parseUnitElement(text);
-        }
-
-        const std::string_view left = text.substr(0, multiplyPos);
-        const std::string_view right = text.substr(multiplyPos + 1);
-        return parseUnitTerms(left) * parseUnitTerms(right);
+        return val;
     }
 
-    Real parseCompoundUnit(std::string_view text) const {
-        text = stripOuterParens(text);
-        if (text.empty()) {
-            return 1.0;
+    Real parsePower() {
+        Real val = parsePrimary();
+        skipSpace();
+        if (match('^')) {
+            Real exp = parseNumber();
+            val = std::pow(val, exp);
+        }
+        return val;
+    }
+
+    Real parsePrimary() {
+        skipSpace();
+        if (match('(')) {
+            Real val = parseExpr();
+            if (!match(')')) {
+                MPFEM_THROW(ArgumentException, "Missing ')' in unit: " + std::string(text));
+            }
+            return val;
         }
 
-        size_t dividePos = std::string_view::npos;
-        int depth = 0;
-        for (size_t i = 0; i < text.size(); ++i) {
-            if (text[i] == '(') {
-                ++depth;
-                continue;
-            }
-            if (text[i] == ')') {
-                --depth;
-                continue;
-            }
-            if (text[i] == '/' && depth == 0) {
-                dividePos = i;
-                break;
-            }
+        if (pos < text.size() && (std::isdigit(text[pos]) || text[pos] == '.' || text[pos] == '+' || text[pos] == '-')) {
+            return parseNumber();
         }
 
-        if (dividePos == std::string_view::npos) {
-            return parseUnitTerms(text);
+        if (pos < text.size() && std::isalpha(text[pos])) {
+            size_t start = pos;
+            while (pos < text.size() && std::isalpha(text[pos])) pos++;
+            std::string_view id = text.substr(start, pos - start);
+            
+            const auto& units = getBaseUnits();
+            auto it = units.find(id);
+            if (it != units.end()) {
+                return it->second;
+            }
+            MPFEM_THROW(ArgumentException, "Unknown base unit: " + std::string(id));
         }
 
-        const std::string_view numerator = text.substr(0, dividePos);
-        const std::string_view denominator = text.substr(dividePos + 1);
-        return parseCompoundUnit(numerator) / parseCompoundUnit(denominator);
+        MPFEM_THROW(ArgumentException, "Invalid unit syntax near: " + std::string(text.substr(pos)));
+    }
+
+    Real parseNumber() {
+        skipSpace();
+        size_t end;
+        std::string sub = std::string(text.substr(pos));
+        Real val = std::stod(sub, &end);
+        pos += end;
+        return val;
     }
 };
 
-UnitRegistry::UnitRegistry()
-    : impl_(std::make_unique<Impl>()) {
-}
+} // namespace
 
-UnitRegistry::~UnitRegistry() = default;
+Real parseUnit(std::string_view unit) {
+    std::string trimmed = strings::trim(std::string(unit));
+    if (trimmed.empty()) return 1.0;
 
-UnitParseResult UnitRegistry::stripUnit(std::string_view input) const {
-    const size_t start = input.find('[');
-    const size_t end = input.rfind(']');
-
-    if (start == std::string_view::npos || end == std::string_view::npos || end <= start) {
-        return {input, 1.0};
-    }
-
-    const std::string_view expression = trimView(input.substr(0, start));
-    const std::string_view unit = trimView(input.substr(start + 1, end - start - 1));
-    return {expression, getMultiplier(unit)};
-}
-
-Real UnitRegistry::getMultiplier(std::string_view unit) const {
-    unit = trimView(unit);
-    if (unit.empty()) {
-        return 1.0;
-    }
-
-    const std::string unitKey(unit);
-    auto it = impl_->units.find(unitKey);
-    if (it != impl_->units.end()) {
+    const auto& units = getBaseUnits();
+    // 首先提供 O(1) 快速路径解析常见完整单位
+    auto it = units.find(trimmed);
+    if (it != units.end()) {
         return it->second;
     }
 
-    thread_local std::unordered_map<std::string, Real> cache;
-    auto cacheIt = cache.find(unitKey);
-    if (cacheIt != cache.end()) {
-        return cacheIt->second;
-    }
-
-    const Real parsed = impl_->parseCompoundUnit(unit);
-    cache.emplace(unitKey, parsed);
-    return parsed;
+    // 否则退化到复合表达式处理
+    UnitEvaluator eval(trimmed);
+    return eval.parse();
 }
 
 Real parseSI(std::string_view input) {
-    UnitRegistry registry;
-    const UnitParseResult parsed = registry.stripUnit(input);
-    return std::stod(std::string(parsed.expression)) * parsed.multiplier;
+    size_t bracket = input.find('[');
+    if (bracket == std::string_view::npos) {
+        return std::stod(std::string(input));
+    }
+    double val = std::stod(std::string(input.substr(0, bracket)));
+    size_t end = input.find(']', bracket);
+    if (end != std::string_view::npos) {
+        val *= parseUnit(input.substr(bracket + 1, end - bracket - 1));
+    }
+    return val;
 }
 
-}  // namespace mpfem
+} // namespace mpfem
