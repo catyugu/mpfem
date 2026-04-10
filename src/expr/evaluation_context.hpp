@@ -2,7 +2,7 @@
 #define MPFEM_EXPR_EVALUATION_CONTEXT_HPP
 
 #include "core/tensor_shape.hpp"
-#include "core/tensor_value.hpp"
+#include "core/tensor.hpp"
 #include "core/types.hpp"
 
 #include <span>

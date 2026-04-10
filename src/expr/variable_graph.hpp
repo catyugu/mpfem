@@ -25,7 +25,7 @@ namespace mpfem {
         /// 批量求值：计算该节点在每个物理点的值
         /// @param ctx 评估上下文
         /// @param dest 输出缓冲区，大小 = referencePoints.size()
-        virtual void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const = 0;
+        virtual void evaluateBatch(const EvaluationContext& ctx, std::span<Tensor> dest) const = 0;
 
         /// 编译期链接：子类应在此处向 Manager 查找未解析的依赖
         virtual void resolve(const VariableManager& mgr) { (void)mgr; }
@@ -62,7 +62,7 @@ namespace mpfem {
         /// 直接对指定变量求值
         void evaluate(std::string_view name,
             const EvaluationContext& ctx,
-            std::span<TensorValue> dest) const;
+            std::span<Tensor> dest) const;
 
     private:
         void checkCycles() const;

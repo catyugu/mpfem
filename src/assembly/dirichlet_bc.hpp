@@ -63,7 +63,7 @@ namespace mpfem {
                     }
 
                     trans.setIntegrationPoint(xi);
-                    std::array<TensorValue, 1> out {};
+                    std::array<Tensor, 1> out {};
                     if (coef) {
                         std::array<Vector3, 1> refPts {Vector3(xi[0], xi[1], xi[2])};
                         std::array<Vector3, 1> physPts;
@@ -76,7 +76,7 @@ namespace mpfem {
                         ctx.referencePoints = std::span<const Vector3>(refPts.data(), refPts.size());
                         ctx.physicalPoints = std::span<const Vector3>(physPts.data(), physPts.size());
                         ctx.invJacobianTransposes = std::span<const Matrix>(invJTs.data(), invJTs.size());
-                        coef->evaluateBatch(ctx, std::span<TensorValue>(out.data(), out.size()));
+                        coef->evaluateBatch(ctx, std::span<Tensor>(out.data(), out.size()));
                     }
 
                     // Handle both scalar and vector-valued BCs

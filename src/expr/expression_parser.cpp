@@ -41,13 +41,13 @@ namespace mpfem {
                 MatrixLit
             } kind;
 
-            TensorValue val; // 供 Constant 节点使用
+            Tensor val; // 供 Constant 节点使用
             int var_index = -1; // 供 VarIndex (变量引用) 节点使用
             std::vector<std::unique_ptr<AstNode>> args;
         };
 
         // 数据驱动的极速递归求值
-        TensorValue evalAst(const AstNode* node, const TensorValue* vars)
+        Tensor evalAst(const AstNode* node, const Tensor* vars)
         {
             switch (node->kind) {
             case AstNode::Kind::Constant:
@@ -66,52 +66,52 @@ namespace mpfem {
                 return evalAst(node->args[0].get(), vars) / evalAst(node->args[1].get(), vars);
             case AstNode::Kind::Pow: {
                 Real b = evalAst(node->args[1].get(), vars).scalar();
-                return TensorValue::scalar(std::pow(evalAst(node->args[0].get(), vars).scalar(), b));
+                return Tensor::scalar(std::pow(evalAst(node->args[0].get(), vars).scalar(), b));
             }
             case AstNode::Kind::Dot:
-                return TensorValue::scalar(dot(evalAst(node->args[0].get(), vars), evalAst(node->args[1].get(), vars)));
+                return Tensor::scalar(dot(evalAst(node->args[0].get(), vars), evalAst(node->args[1].get(), vars)));
             case AstNode::Kind::Min:
-                return TensorValue::scalar(std::min(evalAst(node->args[0].get(), vars).scalar(), evalAst(node->args[1].get(), vars).scalar()));
+                return Tensor::scalar(std::min(evalAst(node->args[0].get(), vars).scalar(), evalAst(node->args[1].get(), vars).scalar()));
             case AstNode::Kind::Max:
-                return TensorValue::scalar(std::max(evalAst(node->args[0].get(), vars).scalar(), evalAst(node->args[1].get(), vars).scalar()));
+                return Tensor::scalar(std::max(evalAst(node->args[0].get(), vars).scalar(), evalAst(node->args[1].get(), vars).scalar()));
 
             // 一元运算
             case AstNode::Kind::Neg:
                 return -evalAst(node->args[0].get(), vars);
             case AstNode::Kind::Sin:
-                return TensorValue::scalar(std::sin(evalAst(node->args[0].get(), vars).scalar()));
+                return Tensor::scalar(std::sin(evalAst(node->args[0].get(), vars).scalar()));
             case AstNode::Kind::Cos:
-                return TensorValue::scalar(std::cos(evalAst(node->args[0].get(), vars).scalar()));
+                return Tensor::scalar(std::cos(evalAst(node->args[0].get(), vars).scalar()));
             case AstNode::Kind::Tan:
-                return TensorValue::scalar(std::tan(evalAst(node->args[0].get(), vars).scalar()));
+                return Tensor::scalar(std::tan(evalAst(node->args[0].get(), vars).scalar()));
             case AstNode::Kind::Exp:
-                return TensorValue::scalar(std::exp(evalAst(node->args[0].get(), vars).scalar()));
+                return Tensor::scalar(std::exp(evalAst(node->args[0].get(), vars).scalar()));
             case AstNode::Kind::Log:
-                return TensorValue::scalar(std::log(evalAst(node->args[0].get(), vars).scalar()));
+                return Tensor::scalar(std::log(evalAst(node->args[0].get(), vars).scalar()));
             case AstNode::Kind::Sqrt:
-                return TensorValue::scalar(std::sqrt(evalAst(node->args[0].get(), vars).scalar()));
+                return Tensor::scalar(std::sqrt(evalAst(node->args[0].get(), vars).scalar()));
             case AstNode::Kind::Abs:
-                return TensorValue::scalar(std::abs(evalAst(node->args[0].get(), vars).scalar()));
+                return Tensor::scalar(std::abs(evalAst(node->args[0].get(), vars).scalar()));
             case AstNode::Kind::Sym:
                 return sym(evalAst(node->args[0].get(), vars));
             case AstNode::Kind::Trace:
-                return TensorValue::scalar(trace(evalAst(node->args[0].get(), vars)));
+                return Tensor::scalar(trace(evalAst(node->args[0].get(), vars)));
             case AstNode::Kind::Transpose:
                 return transpose(evalAst(node->args[0].get(), vars));
 
             // 字面量结构
             case AstNode::Kind::VectorLit:
-                return TensorValue::vector(
+                return Tensor::vector(
                     evalAst(node->args[0].get(), vars).scalar(),
                     evalAst(node->args[1].get(), vars).scalar(),
                     evalAst(node->args[2].get(), vars).scalar());
             case AstNode::Kind::MatrixLit:
-                return TensorValue::matrix3(
+                return Tensor::matrix3(
                     evalAst(node->args[0].get(), vars).scalar(), evalAst(node->args[1].get(), vars).scalar(), evalAst(node->args[2].get(), vars).scalar(),
                     evalAst(node->args[3].get(), vars).scalar(), evalAst(node->args[4].get(), vars).scalar(), evalAst(node->args[5].get(), vars).scalar(),
                     evalAst(node->args[6].get(), vars).scalar(), evalAst(node->args[7].get(), vars).scalar(), evalAst(node->args[8].get(), vars).scalar());
             }
-            return TensorValue::scalar(0.0);
+            return Tensor::scalar(0.0);
         }
 
         // 常量折叠 (Constant Folding): 编译期计算静态树，消除运行时开销
@@ -165,22 +165,22 @@ namespace mpfem {
         }
 
         // 重构：expr/expression_parser.cpp 中的 CompiledExpressionNode::evaluateBatch
-        void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
+        void evaluateBatch(const EvaluationContext& ctx, std::span<Tensor> dest) const override
         {
             const size_t n = dest.size(); // 积分点数量
             const size_t m = resolved_deps_.size(); // 依赖变量数量
 
             if (m == 0) {
                 // 无依赖的纯常量，直接填充
-                TensorValue val = evalAst(ast_.get(), nullptr);
+                Tensor val = evalAst(ast_.get(), nullptr);
                 std::fill(dest.begin(), dest.end(), val);
                 return;
             }
 
             // 栈上分配变量求值缓存（一个积分点最多不会超过32个依赖项）
-            TensorValue stack_vars[32];
-            std::vector<TensorValue> heap_vars;
-            TensorValue* pointVars = stack_vars;
+            Tensor stack_vars[32];
+            std::vector<Tensor> heap_vars;
+            Tensor* pointVars = stack_vars;
 
             if (m > 32) {
                 heap_vars.resize(m);
@@ -203,7 +203,7 @@ namespace mpfem {
 
                 // 求取该积分点所有依赖项的值
                 for (size_t d = 0; d < m; ++d) {
-                    std::span<TensorValue> singleSpan(&pointVars[d], 1);
+                    std::span<Tensor> singleSpan(&pointVars[d], 1);
                     resolved_deps_[d]->evaluateBatch(pointCtx, singleSpan);
                 }
 
@@ -372,12 +372,12 @@ namespace mpfem {
 
                     if (name == "pi") {
                         auto n = makeNode(AstNode::Kind::Constant);
-                        n->val = TensorValue::scalar(3.141592653589793);
+                        n->val = Tensor::scalar(3.141592653589793);
                         return n;
                     }
                     if (name == "e") {
                         auto n = makeNode(AstNode::Kind::Constant);
-                        n->val = TensorValue::scalar(2.718281828459045);
+                        n->val = Tensor::scalar(2.718281828459045);
                         return n;
                     }
 
@@ -396,7 +396,7 @@ namespace mpfem {
                 Real value = std::strtod(begin, &end);
                 pos_ += (end - begin);
                 auto n = makeNode(AstNode::Kind::Constant);
-                n->val = TensorValue::scalar(value);
+                n->val = Tensor::scalar(value);
                 return n;
             }
 
@@ -531,7 +531,7 @@ namespace mpfem {
                     return node;
 
                 auto c = makeNode(AstNode::Kind::Constant);
-                c->val = TensorValue::scalar(mult);
+                c->val = Tensor::scalar(mult);
                 return makeBinary(AstNode::Kind::Mul, std::move(c), std::move(node));
             }
 

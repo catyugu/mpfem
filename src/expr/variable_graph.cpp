@@ -23,10 +23,10 @@ namespace mpfem {
 
         explicit PointScalarNode(Extractor extractor) : extractor_(extractor) { }
 
-        void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
+        void evaluateBatch(const EvaluationContext& ctx, std::span<Tensor> dest) const override
         {
             for (size_t i = 0; i < dest.size(); ++i) {
-                dest[i] = TensorValue::scalar(extractor_(ctx.physicalPoints[i]));
+                dest[i] = Tensor::scalar(extractor_(ctx.physicalPoints[i]));
             }
         }
 
@@ -36,10 +36,10 @@ namespace mpfem {
 
     class TimeNode final : public VariableNode {
     public:
-        void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
+        void evaluateBatch(const EvaluationContext& ctx, std::span<Tensor> dest) const override
         {
             for (auto& v : dest)
-                v = TensorValue::scalar(ctx.time);
+                v = Tensor::scalar(ctx.time);
         }
     };
 
@@ -95,7 +95,7 @@ namespace mpfem {
 
     void VariableManager::evaluate(std::string_view name,
         const EvaluationContext& ctx,
-        std::span<TensorValue> dest) const
+        std::span<Tensor> dest) const
     {
         MPFEM_ASSERT(isCompiled_, "VariableManager must be compiled before evaluation.");
         const VariableNode* node = get(name);

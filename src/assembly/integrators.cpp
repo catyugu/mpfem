@@ -33,9 +33,9 @@ namespace mpfem {
             std::array<Vector3, 1> refPts;
             std::array<Vector3, 1> physPts;
             std::array<Matrix, 1> invJTs;
-            std::array<TensorValue, 1> value {};
+            std::array<Tensor, 1> value {};
             const EvaluationContext ctx = makeSinglePointContext(trans, refPts, physPts, invJTs);
-            node->evaluateBatch(ctx, std::span<TensorValue>(value.data(), value.size()));
+            node->evaluateBatch(ctx, std::span<Tensor>(value.data(), value.size()));
             return value[0].scalar();
         }
 
@@ -48,9 +48,9 @@ namespace mpfem {
             std::array<Vector3, 1> refPts;
             std::array<Vector3, 1> physPts;
             std::array<Matrix, 1> invJTs;
-            std::array<TensorValue, 1> value {};
+            std::array<Tensor, 1> value {};
             const EvaluationContext ctx = makeSinglePointContext(trans, refPts, physPts, invJTs);
-            node->evaluateBatch(ctx, std::span<TensorValue>(value.data(), value.size()));
+            node->evaluateBatch(ctx, std::span<Tensor>(value.data(), value.size()));
 
             return value[0].toMatrix3();
         }

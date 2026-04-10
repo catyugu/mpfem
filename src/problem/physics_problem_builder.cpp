@@ -93,7 +93,7 @@ namespace mpfem {
                 return rev;
             }
 
-            void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
+            void evaluateBatch(const EvaluationContext& ctx, std::span<Tensor> dest) const override
             {
                 auto it = children_.find(ctx.domainId);
                 if (it == children_.end()) {
@@ -114,10 +114,10 @@ namespace mpfem {
         public:
             explicit GridFunctionValueProvider(const GridFunction* field) : field_(field) { }
 
-            void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
+            void evaluateBatch(const EvaluationContext& ctx, std::span<Tensor> dest) const override
             {
                 if (!field_) {
-                    std::fill(dest.begin(), dest.end(), TensorValue::scalar(Real(0)));
+                    std::fill(dest.begin(), dest.end(), Tensor::scalar(Real(0)));
                     return;
                 }
 
@@ -129,7 +129,7 @@ namespace mpfem {
                     else {
                         MPFEM_THROW(ArgumentException, "GridFunctionValueProvider requires referencePoints in EvaluationContext.");
                     }
-                    dest[i] = TensorValue::scalar(field_->eval(ctx.elementId, xi));
+                    dest[i] = Tensor::scalar(field_->eval(ctx.elementId, xi));
                 }
             }
 
@@ -149,10 +149,10 @@ namespace mpfem {
         public:
             explicit GridFunctionGradientProvider(const GridFunction* field) : field_(field) { }
 
-            void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
+            void evaluateBatch(const EvaluationContext& ctx, std::span<Tensor> dest) const override
             {
                 if (!field_) {
-                    std::fill(dest.begin(), dest.end(), TensorValue::zero(TensorShape::vector(3)));
+                    std::fill(dest.begin(), dest.end(), Tensor::zero(TensorShape::vector(3)));
                     return;
                 }
 
@@ -164,7 +164,7 @@ namespace mpfem {
                 for (size_t i = 0; i < dest.size(); ++i) {
                     const Real* xi = &ctx.referencePoints[i].x();
                     Vector3 g = field_->gradient(ctx.elementId, xi, ctx.invJacobianTransposes[i]);
-                    dest[i] = TensorValue::vector(g.x(), g.y(), g.z());
+                    dest[i] = Tensor::vector(g.x(), g.y(), g.z());
                 }
             }
 

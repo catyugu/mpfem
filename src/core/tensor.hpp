@@ -1,5 +1,5 @@
-#ifndef MPFEM_TENSOR_VALUE_HPP
-#define MPFEM_TENSOR_VALUE_HPP
+#ifndef MPFEM_TENSOR_HPP
+#define MPFEM_TENSOR_HPP
 
 #include "core/exception.hpp"
 #include "core/tensor_shape.hpp"
@@ -29,12 +29,12 @@ namespace mpfem {
     template <class... Ts>
     overloaded(Ts...) -> overloaded<Ts...>;
 
-    class TensorValue {
+    class Tensor {
     public:
-        TensorValue() : data_(Real(0)) { }
-        explicit TensorValue(Real v) : data_(v) { }
-        explicit TensorValue(const Vector3& v) : data_(v) { }
-        explicit TensorValue(const Matrix3& m) : data_(m) { }
+        Tensor() : data_(Real(0)) { }
+        explicit Tensor(Real v) : data_(v) { }
+        explicit Tensor(const Vector3& v) : data_(v) { }
+        explicit Tensor(const Matrix3& m) : data_(m) { }
 
         // Shape query
         TensorShape shape() const
@@ -93,31 +93,31 @@ namespace mpfem {
         Real at(int row, int col) const { return asMatrix()(row, col); }
 
         // Factory methods
-        static TensorValue scalar(Real v) { return TensorValue(v); }
-        static TensorValue vector(Real x, Real y, Real z) { return TensorValue(Vector3(x, y, z)); }
-        static TensorValue vector3(const Vector3& v) { return TensorValue(v); }
-        static TensorValue matrix3(const Matrix3& m) { return TensorValue(m); }
-        static TensorValue matrix3(Real m00, Real m01, Real m02,
+        static Tensor scalar(Real v) { return Tensor(v); }
+        static Tensor vector(Real x, Real y, Real z) { return Tensor(Vector3(x, y, z)); }
+        static Tensor vector3(const Vector3& v) { return Tensor(v); }
+        static Tensor matrix3(const Matrix3& m) { return Tensor(m); }
+        static Tensor matrix3(Real m00, Real m01, Real m02,
             Real m10, Real m11, Real m12,
             Real m20, Real m21, Real m22)
         {
             Matrix3 m;
             m << m00, m01, m02, m10, m11, m12, m20, m21, m22;
-            return TensorValue(m);
+            return Tensor(m);
         }
-        static TensorValue identity3()
+        static Tensor identity3()
         {
             Matrix3 m;
             m.setIdentity();
-            return TensorValue(m);
+            return Tensor(m);
         }
-        static TensorValue zero(const TensorShape& shape)
+        static Tensor zero(const TensorShape& shape)
         {
             if (shape.isScalar())
-                return TensorValue(Real(0));
+                return Tensor(Real(0));
             if (shape.isVector())
-                return TensorValue(Vector3::Zero().eval());
-            return TensorValue(Matrix3::Zero().eval());
+                return Tensor(Vector3::Zero().eval());
+            return Tensor(Matrix3::Zero().eval());
         }
 
         // Extractors
@@ -139,56 +139,56 @@ namespace mpfem {
         // Throws on type mismatch (fail-fast, not silent Zero() return)
         // =============================================================================
 
-        TensorValue operator+(const TensorValue& rhs) const
+        Tensor operator+(const Tensor& rhs) const
         {
             return applySameShapeBinary(data_, rhs.data_, [](const auto& a, const auto& b) { return a + b; }, "Tensor shape mismatch in add");
         }
 
-        TensorValue operator-(const TensorValue& rhs) const
+        Tensor operator-(const Tensor& rhs) const
         {
             return applySameShapeBinary(data_, rhs.data_, [](const auto& a, const auto& b) { return a - b; }, "Tensor shape mismatch in subtract");
         }
 
-        TensorValue operator-() const
+        Tensor operator-() const
         {
             return std::visit(overloaded {
-                                  [](Real x) -> TensorValue { return TensorValue(-x); },
-                                  [](const Vector3& v) -> TensorValue { return TensorValue((-v).eval()); },
-                                  [](const Matrix3& m) -> TensorValue { return TensorValue((-m).eval()); }},
+                                  [](Real x) -> Tensor { return Tensor(-x); },
+                                  [](const Vector3& v) -> Tensor { return Tensor((-v).eval()); },
+                                  [](const Matrix3& m) -> Tensor { return Tensor((-m).eval()); }},
                 data_);
         }
 
-        TensorValue operator*(const TensorValue& rhs) const
+        Tensor operator*(const Tensor& rhs) const
         {
             return std::visit(overloaded {
                                   // Scalar * Scalar
-                                  [](Real a, Real b) -> TensorValue { return TensorValue(a * b); },
+                                  [](Real a, Real b) -> Tensor { return Tensor(a * b); },
                                   // Scalar * Vector
-                                  [](Real a, const Vector3& v) -> TensorValue { return TensorValue((a * v).eval()); },
+                                  [](Real a, const Vector3& v) -> Tensor { return Tensor((a * v).eval()); },
                                   // Scalar * Matrix
-                                  [](Real a, const Matrix3& m) -> TensorValue { return TensorValue((a * m).eval()); },
+                                  [](Real a, const Matrix3& m) -> Tensor { return Tensor((a * m).eval()); },
                                   // Vector * Scalar
-                                  [](const Vector3& v, Real a) -> TensorValue { return TensorValue((v * a).eval()); },
+                                  [](const Vector3& v, Real a) -> Tensor { return Tensor((v * a).eval()); },
                                   // Matrix * Scalar
-                                  [](const Matrix3& m, Real a) -> TensorValue { return TensorValue((m * a).eval()); },
+                                  [](const Matrix3& m, Real a) -> Tensor { return Tensor((m * a).eval()); },
                                   // Matrix * Vector
-                                  [](const Matrix3& A, const Vector3& v) -> TensorValue { return TensorValue((A * v).eval()); },
+                                  [](const Matrix3& A, const Vector3& v) -> Tensor { return Tensor((A * v).eval()); },
                                   // Matrix * Matrix
-                                  [](const Matrix3& A, const Matrix3& B) -> TensorValue { return TensorValue((A * B).eval()); },
+                                  [](const Matrix3& A, const Matrix3& B) -> Tensor { return Tensor((A * B).eval()); },
                                   // Invalid combinations
-                                  [](auto&&, auto&&) -> TensorValue {
+                                  [](auto&&, auto&&) -> Tensor {
                                       MPFEM_THROW(ArgumentException, "Invalid tensor multiplication shapes");
                                   }},
                 data_, rhs.data_);
         }
 
-        TensorValue operator/(const TensorValue& rhs) const
+        Tensor operator/(const Tensor& rhs) const
         {
             return std::visit(overloaded {
-                                  [](Real a, Real b) -> TensorValue { return TensorValue(a / b); },
-                                  [](const Vector3& v, Real s) -> TensorValue { return TensorValue((v / s).eval()); },
-                                  [](const Matrix3& m, Real s) -> TensorValue { return TensorValue((m / s).eval()); },
-                                  [](auto&&, auto&&) -> TensorValue {
+                                  [](Real a, Real b) -> Tensor { return Tensor(a / b); },
+                                  [](const Vector3& v, Real s) -> Tensor { return Tensor((v / s).eval()); },
+                                  [](const Matrix3& m, Real s) -> Tensor { return Tensor((m / s).eval()); },
+                                  [](auto&&, auto&&) -> Tensor {
                                       MPFEM_THROW(ArgumentException, "Invalid tensor division: only tensor/scalar supported");
                                   }},
                 data_, rhs.data_);
@@ -196,17 +196,17 @@ namespace mpfem {
 
     private:
         template <typename Op>
-        static TensorValue applySameShapeBinary(const TensorData& lhs, const TensorData& rhs, Op op, const char* error)
+        static Tensor applySameShapeBinary(const TensorData& lhs, const TensorData& rhs, Op op, const char* error)
         {
             return std::visit(overloaded {
-                                  [&op](Real a, Real b) -> TensorValue { return TensorValue(op(a, b)); },
-                                  [&op](const Vector3& a, const Vector3& b) -> TensorValue {
-                                      return TensorValue(op(a, b).eval());
+                                  [&op](Real a, Real b) -> Tensor { return Tensor(op(a, b)); },
+                                  [&op](const Vector3& a, const Vector3& b) -> Tensor {
+                                      return Tensor(op(a, b).eval());
                                   },
-                                  [&op](const Matrix3& a, const Matrix3& b) -> TensorValue {
-                                      return TensorValue(op(a, b).eval());
+                                  [&op](const Matrix3& a, const Matrix3& b) -> Tensor {
+                                      return Tensor(op(a, b).eval());
                                   },
-                                  [error](auto&&, auto&&) -> TensorValue {
+                                  [error](auto&&, auto&&) -> Tensor {
                                       MPFEM_THROW(ArgumentException, error);
                                   }},
                 lhs, rhs);
@@ -219,55 +219,55 @@ namespace mpfem {
     // Free functions - also using std::visit for consistency
     // =============================================================================
 
-    inline TensorValue scale(const TensorValue& t, Real s)
+    inline Tensor scale(const Tensor& t, Real s)
     {
         return std::visit(overloaded {
-                              [s](Real x) -> TensorValue { return TensorValue(x * s); },
-                              [s](const Vector3& v) -> TensorValue { return TensorValue((v * s).eval()); },
-                              [s](const Matrix3& m) -> TensorValue { return TensorValue((m * s).eval()); }},
+                              [s](Real x) -> Tensor { return Tensor(x * s); },
+                              [s](const Vector3& v) -> Tensor { return Tensor((v * s).eval()); },
+                              [s](const Matrix3& m) -> Tensor { return Tensor((m * s).eval()); }},
             t.variant());
     }
 
-    inline TensorValue add(const TensorValue& a, const TensorValue& b)
+    inline Tensor add(const Tensor& a, const Tensor& b)
     {
         return a + b; // Delegates to operator+
     }
 
-    inline TensorValue subtract(const TensorValue& a, const TensorValue& b)
+    inline Tensor subtract(const Tensor& a, const Tensor& b)
     {
         return a - b; // Delegates to operator-
     }
 
-    inline TensorValue negate(const TensorValue& t)
+    inline Tensor negate(const Tensor& t)
     {
         return -t; // Delegates to operator-
     }
 
-    inline TensorValue matvec(const TensorValue& A, const TensorValue& b)
+    inline Tensor matvec(const Tensor& A, const Tensor& b)
     {
         return std::visit(overloaded {
-                              [](const Matrix3& A, const Vector3& v) -> TensorValue {
-                                  return TensorValue((A * v).eval());
+                              [](const Matrix3& A, const Vector3& v) -> Tensor {
+                                  return Tensor((A * v).eval());
                               },
-                              [](auto&&, auto&&) -> TensorValue {
+                              [](auto&&, auto&&) -> Tensor {
                                   MPFEM_THROW(ArgumentException, "matvec requires Matrix3 * Vector3");
                               }},
             A.variant(), b.variant());
     }
 
-    inline TensorValue matmat(const TensorValue& A, const TensorValue& B)
+    inline Tensor matmat(const Tensor& A, const Tensor& B)
     {
         return std::visit(overloaded {
-                              [](const Matrix3& A, const Matrix3& B) -> TensorValue {
-                                  return TensorValue((A * B).eval());
+                              [](const Matrix3& A, const Matrix3& B) -> Tensor {
+                                  return Tensor((A * B).eval());
                               },
-                              [](auto&&, auto&&) -> TensorValue {
+                              [](auto&&, auto&&) -> Tensor {
                                   MPFEM_THROW(ArgumentException, "matmat requires Matrix3 * Matrix3");
                               }},
             A.variant(), B.variant());
     }
 
-    inline Real dot(const TensorValue& a, const TensorValue& b)
+    inline Real dot(const Tensor& a, const Tensor& b)
     {
         return std::visit(overloaded {
                               [](const Vector3& u, const Vector3& v) -> Real { return u.dot(v); },
@@ -278,19 +278,19 @@ namespace mpfem {
             a.variant(), b.variant());
     }
 
-    inline TensorValue cross(const TensorValue& a, const TensorValue& b)
+    inline Tensor cross(const Tensor& a, const Tensor& b)
     {
         return std::visit(overloaded {
-                              [](const Vector3& u, const Vector3& v) -> TensorValue {
-                                  return TensorValue(u.cross(v));
+                              [](const Vector3& u, const Vector3& v) -> Tensor {
+                                  return Tensor(u.cross(v));
                               },
-                              [](auto&&, auto&&) -> TensorValue {
+                              [](auto&&, auto&&) -> Tensor {
                                   MPFEM_THROW(ArgumentException, "cross requires Vector3 x Vector3");
                               }},
             a.variant(), b.variant());
     }
 
-    inline Real trace(const TensorValue& m)
+    inline Real trace(const Tensor& m)
     {
         return std::visit(overloaded {
                               [](const Matrix3& mat) -> Real { return mat.trace(); },
@@ -301,31 +301,31 @@ namespace mpfem {
             m.variant());
     }
 
-    inline TensorValue transpose(const TensorValue& m)
+    inline Tensor transpose(const Tensor& m)
     {
         return std::visit(overloaded {
-                              [](const Matrix3& mat) -> TensorValue {
-                                  return TensorValue(Matrix3(mat.transpose().eval()));
+                              [](const Matrix3& mat) -> Tensor {
+                                  return Tensor(Matrix3(mat.transpose().eval()));
                               },
-                              [](auto&&) -> TensorValue {
+                              [](auto&&) -> Tensor {
                                   MPFEM_THROW(ArgumentException, "transpose requires Matrix3");
                               }},
             m.variant());
     }
 
-    inline TensorValue sym(const TensorValue& m)
+    inline Tensor sym(const Tensor& m)
     {
         return std::visit(overloaded {
-                              [](const Matrix3& mat) -> TensorValue {
-                                  return TensorValue(Matrix3((Real(0.5) * (mat + mat.transpose())).eval()));
+                              [](const Matrix3& mat) -> Tensor {
+                                  return Tensor(Matrix3((Real(0.5) * (mat + mat.transpose())).eval()));
                               },
-                              [](auto&&) -> TensorValue {
+                              [](auto&&) -> Tensor {
                                   MPFEM_THROW(ArgumentException, "sym requires Matrix3");
                               }},
             m.variant());
     }
 
-    inline Real norm(const TensorValue& t)
+    inline Real norm(const Tensor& t)
     {
         return std::visit(overloaded {
                               [](const Real& x) -> Real { return std::abs(x); },
@@ -336,4 +336,4 @@ namespace mpfem {
 
 } // namespace mpfem
 
-#endif // MPFEM_TENSOR_VALUE_HPP
+#endif // MPFEM_TENSOR_HPP

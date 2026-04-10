@@ -22,14 +22,14 @@ namespace {
     public:
         explicit ScalarConstantNode(Real value) : value_(value) { }
 
-        void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
+        void evaluateBatch(const EvaluationContext& ctx, std::span<Tensor> dest) const override
         {
             const size_t n = ctx.physicalPoints.empty() ? dest.size() : ctx.physicalPoints.size();
             if (dest.size() != n) {
                 throw std::runtime_error("ScalarConstantNode destination size mismatch");
             }
             for (size_t i = 0; i < dest.size(); ++i) {
-                dest[i] = TensorValue::scalar(value_);
+                dest[i] = Tensor::scalar(value_);
             }
         }
 
@@ -41,14 +41,14 @@ namespace {
     public:
         explicit MatrixConstantNode(const Matrix3& value) : value_(value) { }
 
-        void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
+        void evaluateBatch(const EvaluationContext& ctx, std::span<Tensor> dest) const override
         {
             const size_t n = ctx.physicalPoints.empty() ? dest.size() : ctx.physicalPoints.size();
             if (dest.size() != n) {
                 throw std::runtime_error("MatrixConstantNode destination size mismatch");
             }
             for (size_t i = 0; i < n; ++i) {
-                dest[i] = TensorValue::matrix3(value_);
+                dest[i] = Tensor::matrix3(value_);
             }
         }
 
