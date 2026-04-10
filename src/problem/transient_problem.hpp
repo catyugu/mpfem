@@ -58,6 +58,9 @@ namespace mpfem {
             return fieldValues.history(id, stepsBack);
         }
 
+        /// @brief Solve steady-state initialization at t=0 before time stepping
+        void initializeSteadyState();
+
         /**
          * @brief Solve the transient problem with time stepping and Picard coupling
          *
@@ -68,10 +71,6 @@ namespace mpfem {
          *   - Structural: quasi-static, thermal stress
          */
         TransientResult solve();
-
-    private:
-        /// @brief Solve steady-state initialization at t=0 before time stepping
-        void initializeSteadyState();
     };
 
 } // namespace mpfem

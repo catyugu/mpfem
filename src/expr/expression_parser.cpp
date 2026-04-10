@@ -164,53 +164,55 @@ namespace mpfem {
             return resolved_deps_;
         }
 
+        // 重构：expr/expression_parser.cpp 中的 CompiledExpressionNode::evaluateBatch
         void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
         {
-            const size_t n = dest.size();
-            const size_t m = resolved_deps_.size();
+            const size_t n = dest.size(); // 积分点数量
+            const size_t m = resolved_deps_.size(); // 依赖变量数量
 
-            // 极速单点路径 (N=1), 无堆分配, 无虚函数嵌套, 彻底解决冗余评估
-            if (n == 1) {
-                TensorValue vars_stack[32]; // 分配在寄存器/栈上
-                std::vector<TensorValue> vars_heap;
-                TensorValue* vars = vars_stack;
-
-                if (m > 32) {
-                    vars_heap.resize(m);
-                    vars = vars_heap.data();
-                }
-
-                // 核心：仅对去重后的依赖项各自求值一次！(如 grad(V) 只求一次)
-                for (size_t d = 0; d < m; ++d) {
-                    std::span<TensorValue> s(&vars[d], 1);
-                    resolved_deps_[d]->evaluateBatch(ctx, s);
-                }
-
-                // 通过极速 Switch 执行 AST
-                dest[0] = evalAst(ast_.get(), vars);
+            if (m == 0) {
+                // 无依赖的纯常量，直接填充
+                TensorValue val = evalAst(ast_.get(), nullptr);
+                std::fill(dest.begin(), dest.end(), val);
                 return;
             }
 
-            // 兼容的 N>1 回退路径
-            std::vector<TensorValue> scratchpad(m * n);
-            for (size_t d = 0; d < m; ++d) {
-                std::span<TensorValue> depDest(&scratchpad[d * n], n);
-                resolved_deps_[d]->evaluateBatch(ctx, depDest);
+            // 栈上分配变量求值缓存（一个积分点最多不会超过32个依赖项）
+            TensorValue stack_vars[32];
+            std::vector<TensorValue> heap_vars;
+            TensorValue* pointVars = stack_vars;
+
+            if (m > 32) {
+                heap_vars.resize(m);
+                pointVars = heap_vars.data();
             }
 
-            std::vector<TensorValue> pointVars(m);
+            // 将外层循环从“按依赖项”改为“按积分点”，消除巨大的 scratchpad
+            // 复用 EvaluationContext 为单个积分点创建子上下文
             for (size_t i = 0; i < n; ++i) {
-                for (size_t d = 0; d < m; ++d) {
-                    pointVars[d] = scratchpad[d * n + i];
+                EvaluationContext pointCtx = ctx;
+                if (!ctx.physicalPoints.empty()) {
+                    pointCtx.physicalPoints = ctx.physicalPoints.subspan(i, 1);
                 }
-                dest[i] = evalAst(ast_.get(), pointVars.data());
+                if (!ctx.referencePoints.empty()) {
+                    pointCtx.referencePoints = ctx.referencePoints.subspan(i, 1);
+                }
+                if (!ctx.invJacobianTransposes.empty()) {
+                    pointCtx.invJacobianTransposes = ctx.invJacobianTransposes.subspan(i, 1);
+                }
+
+                // 求取该积分点所有依赖项的值
+                for (size_t d = 0; d < m; ++d) {
+                    std::span<TensorValue> singleSpan(&pointVars[d], 1);
+                    resolved_deps_[d]->evaluateBatch(pointCtx, singleSpan);
+                }
+
+                // 使用准备好的变量数组执行极速 AST
+                dest[i] = evalAst(ast_.get(), pointVars);
             }
         }
 
-        bool isConstant() const override
-        {
-            return ast_->kind == AstNode::Kind::Constant;
-        }
+        bool isConstant() const override { return ast_->kind == AstNode::Kind::Constant; }
 
         std::uint64_t revision() const override
         {
@@ -248,9 +250,8 @@ namespace mpfem {
                 if (!eof())
                     MPFEM_THROW(ArgumentException, "Unexpected token near: " + std::string(text_.substr(pos_)));
 
-                // 常量折叠：直接在编译期算掉所有类似 2*pi, E/(1+nu) 这种纯数字的分支
+                // 常量折叠
                 foldConstants(root.get());
-
                 return std::make_unique<CompiledExpressionNode>(std::move(root), std::move(dep_names_));
             }
 
@@ -352,15 +353,22 @@ namespace mpfem {
                         MPFEM_THROW(ArgumentException, "Missing closing ')'");
                     return applyUnitSuffix(std::move(inner));
                 }
-                if (peek() == '[')
+
+                // 如果恰好是一个 '['，必定是向量/矩阵的字面量开端
+                if (peek() == '[') {
                     return applyUnitSuffix(parseBracketLiteral());
-                if (peekIsNumberStart())
+                }
+
+                if (peekIsNumberStart()) {
                     return applyUnitSuffix(parseNumber());
+                }
+
                 if (peekIsIdentifierStart()) {
                     std::string name = parseIdentifier();
                     skipWhitespace();
-                    if (match('('))
+                    if (match('(')) {
                         return applyUnitSuffix(parseFunction(name));
+                    }
 
                     if (name == "pi") {
                         auto n = makeNode(AstNode::Kind::Constant);
@@ -373,7 +381,6 @@ namespace mpfem {
                         return n;
                     }
 
-                    // 变量引用 -> 提取并去重依赖项 -> 转换成极速的数组索引
                     int idx = getOrAddDep(name);
                     auto node = makeNode(AstNode::Kind::VarIndex);
                     node->var_index = idx;
@@ -403,20 +410,6 @@ namespace mpfem {
 
             std::unique_ptr<AstNode> parseFunction(const std::string& name)
             {
-                // 特殊处理 grad 语法：grad(V) 作为一个单一的整体依赖项
-                if (name == "grad") {
-                    skipWhitespace();
-                    std::string fieldName = parseIdentifier();
-                    skipWhitespace();
-                    if (!match(')'))
-                        MPFEM_THROW(ArgumentException, "Missing ')' after grad argument");
-
-                    int idx = getOrAddDep("grad(" + fieldName + ")");
-                    auto node = makeNode(AstNode::Kind::VarIndex);
-                    node->var_index = idx;
-                    return node;
-                }
-
                 std::vector<std::unique_ptr<AstNode>> args;
                 if (!match(')')) {
                     do {
@@ -462,75 +455,26 @@ namespace mpfem {
                 MPFEM_THROW(ArgumentException, "Unsupported function or wrong arity: " + name);
             }
 
+            // 直接通过嵌套调用 parseExpression 解析，彻底移除了老版丑陋的切割字符串、查单位的操作
             std::unique_ptr<AstNode> parseBracketLiteral()
             {
-                if (!match('['))
-                    MPFEM_THROW(ArgumentException, "Internal error: expected '['");
-
+                match('[');
                 std::vector<std::vector<std::unique_ptr<AstNode>>> rows;
                 rows.emplace_back();
 
-                for (;;) {
+                while (!eof()) {
                     skipWhitespace();
-                    const size_t partBegin = pos_;
-                    int parenDepth = 0, unitBracketDepth = 0;
-                    while (!eof()) {
-                        const char c = text_[pos_];
-                        if (c == '(')
-                            ++parenDepth;
-                        else if (c == ')')
-                            --parenDepth;
-                        else if (c == '[')
-                            ++unitBracketDepth;
-                        else if (c == ']') {
-                            if (unitBracketDepth > 0)
-                                --unitBracketDepth;
-                            else if (parenDepth == 0)
-                                break;
-                        }
-                        else if (parenDepth == 0 && unitBracketDepth == 0 && (c == ',' || c == ';'))
-                            break;
-                        ++pos_;
-                    }
-                    if (eof())
-                        MPFEM_THROW(ArgumentException, "Missing closing ']'");
-
-                    std::string part = strings::trim(std::string(text_.substr(partBegin, pos_ - partBegin)));
-
-                    UnitRegistry registry;
-                    auto unitPart = registry.stripUnit(part);
-
-                    // 巧妙递归：替换文本流，让本 Compiler 直接解析这个子字符串，这保证它能使用当前的依赖集合
-                    std::string inner_expr = std::string(unitPart.expression);
-                    std::string_view old_text = text_;
-                    size_t old_pos = pos_;
-
-                    text_ = inner_expr;
-                    pos_ = 0;
-                    auto comp = parseExpression();
-                    if (!eof())
-                        MPFEM_THROW(ArgumentException, "Failed to parse literal component: " + part);
-
-                    text_ = old_text;
-                    pos_ = old_pos;
-
-                    if (!isNearOne(unitPart.multiplier)) {
-                        auto c = makeNode(AstNode::Kind::Constant);
-                        c->val = TensorValue::scalar(unitPart.multiplier);
-                        comp = makeBinary(AstNode::Kind::Mul, std::move(c), std::move(comp));
-                    }
-                    rows.back().push_back(std::move(comp));
-
-                    const char delim = text_[pos_];
-                    ++pos_;
-                    if (delim == ',')
+                    rows.back().push_back(parseExpression());
+                    skipWhitespace();
+                    if (match(','))
                         continue;
-                    if (delim == ';') {
+                    if (match(';')) {
                         rows.emplace_back();
                         continue;
                     }
-                    if (delim == ']')
+                    if (match(']'))
                         break;
+                    MPFEM_THROW(ArgumentException, "Expected ',', ';', or ']' in bracket literal");
                 }
 
                 skipWhitespace();
@@ -557,8 +501,8 @@ namespace mpfem {
 
                 if (rowCount == 3 && colCount == 3) {
                     auto n = makeNode(AstNode::Kind::MatrixLit);
-                    for (int i = 0; i < 3; ++i)
-                        for (int j = 0; j < 3; ++j)
+                    for (size_t i = 0; i < 3; ++i)
+                        for (size_t j = 0; j < 3; ++j)
                             n->args.push_back(std::move(rows[i][j]));
                     return n;
                 }
@@ -566,11 +510,13 @@ namespace mpfem {
                 MPFEM_THROW(ArgumentException, "Unsupported bracket literal shape");
             }
 
+            // 无歧义的应用单位乘数
             std::unique_ptr<AstNode> applyUnitSuffix(std::unique_ptr<AstNode> node)
             {
                 skipWhitespace();
                 if (!match('['))
                     return node;
+
                 size_t begin = pos_;
                 while (!eof() && text_[pos_] != ']')
                     ++pos_;
@@ -580,7 +526,7 @@ namespace mpfem {
                 std::string unit = strings::trim(std::string(text_.substr(begin, pos_ - begin)));
                 ++pos_;
 
-                Real mult = UnitRegistry().getMultiplier(unit);
+                Real mult = parseUnit(unit);
                 if (isNearOne(mult))
                     return node;
 
@@ -593,11 +539,13 @@ namespace mpfem {
             bool peekIsIdentifierStart() const { return !eof() && (std::isalpha(text_[pos_]) || text_[pos_] == '_'); }
             bool peekIsNumberStart() const { return !eof() && (std::isdigit(text_[pos_]) || text_[pos_] == '.'); }
             bool eof() const { return pos_ >= text_.size(); }
+
             void skipWhitespace()
             {
                 while (!eof() && std::isspace(text_[pos_]))
                     ++pos_;
             }
+
             bool match(char c)
             {
                 if (peek() == c) {

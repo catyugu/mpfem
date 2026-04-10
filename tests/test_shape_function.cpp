@@ -524,9 +524,9 @@ TEST(QuadraticElementsTest, TriangleQuadraticDofs) {
     // Check edge nodes (midpoints)
     EXPECT_NEAR(coords[3][0], 0.5, 1e-12);  // Edge 0-1
     EXPECT_NEAR(coords[3][1], 0.0, 1e-12);
-    EXPECT_NEAR(coords[4][0], 0.5, 1e-12);  // Edge 1-2
+    EXPECT_NEAR(coords[4][0], 0.0, 1e-12);  // Edge 2-0
     EXPECT_NEAR(coords[4][1], 0.5, 1e-12);
-    EXPECT_NEAR(coords[5][0], 0.0, 1e-12);  // Edge 2-0
+    EXPECT_NEAR(coords[5][0], 0.5, 1e-12);  // Edge 1-2
     EXPECT_NEAR(coords[5][1], 0.5, 1e-12);
 }
 
@@ -553,8 +553,28 @@ TEST(QuadraticElementsTest, TetrahedronQuadraticDofs) {
     EXPECT_NEAR(coords[3][1], 0.0, 1e-12);
     EXPECT_NEAR(coords[3][2], 1.0, 1e-12);
     
-    // Check edge nodes (midpoints)
-    EXPECT_NEAR(coords[4][0], 0.5, 1e-12);
+    // Check edge nodes (midpoints) in COMSOL order: E01, E02, E12, E03, E13, E23
+    EXPECT_NEAR(coords[4][0], 0.5, 1e-12);  // E01
     EXPECT_NEAR(coords[4][1], 0.0, 1e-12);
     EXPECT_NEAR(coords[4][2], 0.0, 1e-12);
+
+    EXPECT_NEAR(coords[5][0], 0.0, 1e-12);  // E02
+    EXPECT_NEAR(coords[5][1], 0.5, 1e-12);
+    EXPECT_NEAR(coords[5][2], 0.0, 1e-12);
+
+    EXPECT_NEAR(coords[6][0], 0.5, 1e-12);  // E12
+    EXPECT_NEAR(coords[6][1], 0.5, 1e-12);
+    EXPECT_NEAR(coords[6][2], 0.0, 1e-12);
+
+    EXPECT_NEAR(coords[7][0], 0.0, 1e-12);  // E03
+    EXPECT_NEAR(coords[7][1], 0.0, 1e-12);
+    EXPECT_NEAR(coords[7][2], 0.5, 1e-12);
+
+    EXPECT_NEAR(coords[8][0], 0.5, 1e-12);  // E13
+    EXPECT_NEAR(coords[8][1], 0.0, 1e-12);
+    EXPECT_NEAR(coords[8][2], 0.5, 1e-12);
+
+    EXPECT_NEAR(coords[9][0], 0.0, 1e-12);  // E23
+    EXPECT_NEAR(coords[9][1], 0.5, 1e-12);
+    EXPECT_NEAR(coords[9][2], 0.5, 1e-12);
 }

@@ -122,10 +122,10 @@ void H1TriangleShape::evalValues(const Real* xi, Real* values) const
         values[0] = (1.0 - xi1 - xi2) * (1.0 - 2.0 * xi1 - 2.0 * xi2);
         values[1] = xi1 * (2.0 * xi1 - 1.0);
         values[2] = xi2 * (2.0 * xi2 - 1.0);
-        // Edge nodes
-        values[3] = 4.0 * xi1 * (1.0 - xi1 - xi2);
-        values[4] = 4.0 * xi1 * xi2;
-        values[5] = 4.0 * xi2 * (1.0 - xi1 - xi2);
+        // Edge nodes (COMSOL order): E01, E20, E12
+        values[3] = 4.0 * xi1 * (1.0 - xi1 - xi2);  // E01
+        values[4] = 4.0 * xi2 * (1.0 - xi1 - xi2);  // E20
+        values[5] = 4.0 * xi1 * xi2;                // E12
     }
 }
 
@@ -152,11 +152,11 @@ void H1TriangleShape::evalGrads(const Real* xi, Vector3* grads) const
         // ∇φ3 = ∇[4ξ(1-ξ-η)]
         grads[3] = Vector3(4.0 - 8.0 * xi1 - 4.0 * xi2,
                            -4.0 * xi1, 0.0);
-        // ∇φ4 = ∇[4ξη]
-        grads[4] = Vector3(4.0 * xi2, 4.0 * xi1, 0.0);
-        // ∇φ5 = ∇[4η(1-ξ-η)]
-        grads[5] = Vector3(-4.0 * xi2,
-                           4.0 - 4.0 * xi1 - 8.0 * xi2, 0.0);
+        // ∇φ4 = ∇[4η(1-ξ-η)]
+        grads[4] = Vector3(-4.0 * xi2,
+                   4.0 - 4.0 * xi1 - 8.0 * xi2, 0.0);
+        // ∇φ5 = ∇[4ξη]
+        grads[5] = Vector3(4.0 * xi2, 4.0 * xi1, 0.0);
     }
 }
 
@@ -170,7 +170,7 @@ std::vector<std::vector<Real>> H1TriangleShape::dofCoords() const
     {
         return {
             {0.0, 0.0}, {1.0, 0.0}, {0.0, 1.0}, // vertices
-            {0.5, 0.0}, {0.5, 0.5}, {0.0, 0.5}  // edge midpoints
+            {0.5, 0.0}, {0.0, 0.5}, {0.5, 0.5}  // edge midpoints: E01, E20, E12
         };
     }
 }
@@ -347,13 +347,13 @@ void H1TetrahedronShape::evalValues(const Real* xi, Real* values) const
         values[2] = xi2 * (2.0 * xi2 - 1.0);
         values[3] = xi3 * (2.0 * xi3 - 1.0);
 
-        // Edge nodes (midpoints)
-        values[4] = 4.0 * xi1 * (1.0 - xi1 - xi2 - xi3); // edge 0-1
-        values[5] = 4.0 * xi1 * xi2;                     // edge 1-2
-        values[6] = 4.0 * xi2 * (1.0 - xi1 - xi2 - xi3); // edge 0-2
-        values[7] = 4.0 * xi3 * (1.0 - xi1 - xi2 - xi3); // edge 0-3
-        values[8] = 4.0 * xi1 * xi3;                     // edge 1-3
-        values[9] = 4.0 * xi2 * xi3;                     // edge 2-3
+        // Edge nodes (COMSOL order): E01, E02, E12, E03, E13, E23
+        values[4] = 4.0 * xi1 * (1.0 - xi1 - xi2 - xi3);  // edge 0-1
+        values[5] = 4.0 * xi2 * (1.0 - xi1 - xi2 - xi3);  // edge 0-2
+        values[6] = 4.0 * xi1 * xi2;                      // edge 1-2
+        values[7] = 4.0 * xi3 * (1.0 - xi1 - xi2 - xi3);  // edge 0-3
+        values[8] = 4.0 * xi1 * xi3;                      // edge 1-3
+        values[9] = 4.0 * xi2 * xi3;                      // edge 2-3
     }
 }
 
@@ -385,12 +385,12 @@ void H1TetrahedronShape::evalGrads(const Real* xi, Vector3* grads) const
         // ∇φ4 = ∇[4ξ(1-ξ-η-ζ)]
         grads[4] = Vector3(4.0 - 8.0 * xi1 - 4.0 * xi2 - 4.0 * xi3,
                            -4.0 * xi1, -4.0 * xi1);
-        // ∇φ5 = ∇[4ξη]
-        grads[5] = Vector3(4.0 * xi2, 4.0 * xi1, 0.0);
-        // ∇φ6 = ∇[4η(1-ξ-η-ζ)]
-        grads[6] = Vector3(-4.0 * xi2,
-                           4.0 - 4.0 * xi1 - 8.0 * xi2 - 4.0 * xi3,
-                           -4.0 * xi2);
+        // ∇φ5 = ∇[4η(1-ξ-η-ζ)]
+        grads[5] = Vector3(-4.0 * xi2,
+                   4.0 - 4.0 * xi1 - 8.0 * xi2 - 4.0 * xi3,
+                   -4.0 * xi2);
+        // ∇φ6 = ∇[4ξη]
+        grads[6] = Vector3(4.0 * xi2, 4.0 * xi1, 0.0);
         // ∇φ7 = ∇[4ζ(1-ξ-η-ζ)]
         grads[7] = Vector3(-4.0 * xi3, -4.0 * xi3,
                            4.0 - 4.0 * xi1 - 4.0 * xi2 - 8.0 * xi3);
@@ -411,7 +411,7 @@ std::vector<std::vector<Real>> H1TetrahedronShape::dofCoords() const
     {
         return {
             {0.0, 0.0, 0.0}, {1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, 0.0, 1.0}, // vertices
-            {0.5, 0.0, 0.0}, {0.5, 0.5, 0.0}, {0.0, 0.5, 0.0},                  // edges on z=0
+            {0.5, 0.0, 0.0}, {0.0, 0.5, 0.0}, {0.5, 0.5, 0.0},                  // edges on z=0
             {0.0, 0.0, 0.5}, {0.5, 0.0, 0.5}, {0.0, 0.5, 0.5}                   // edges to z
         };
     }

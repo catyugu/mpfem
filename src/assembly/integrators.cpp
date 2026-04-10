@@ -9,7 +9,7 @@ namespace mpfem {
         EvaluationContext makeSinglePointContext(ElementTransform& trans,
             std::array<Vector3, 1>& refPts,
             std::array<Vector3, 1>& physPts,
-            std::array<Matrix3, 1>& invJTs)
+            std::array<Matrix, 1>& invJTs)
         {
             const IntegrationPoint& ip = trans.integrationPoint();
             refPts[0] = Vector3(ip.xi, ip.eta, ip.zeta);
@@ -21,7 +21,7 @@ namespace mpfem {
             ctx.elementId = trans.elementIndex();
             ctx.referencePoints = std::span<const Vector3>(refPts.data(), refPts.size());
             ctx.physicalPoints = std::span<const Vector3>(physPts.data(), physPts.size());
-            ctx.invJacobianTransposes = std::span<const Matrix3>(invJTs.data(), invJTs.size());
+            ctx.invJacobianTransposes = std::span<const Matrix>(invJTs.data(), invJTs.size());
             return ctx;
         }
 
@@ -32,7 +32,7 @@ namespace mpfem {
             }
             std::array<Vector3, 1> refPts;
             std::array<Vector3, 1> physPts;
-            std::array<Matrix3, 1> invJTs;
+            std::array<Matrix, 1> invJTs;
             std::array<TensorValue, 1> value {};
             const EvaluationContext ctx = makeSinglePointContext(trans, refPts, physPts, invJTs);
             node->evaluateBatch(ctx, std::span<TensorValue>(value.data(), value.size()));
@@ -47,7 +47,7 @@ namespace mpfem {
 
             std::array<Vector3, 1> refPts;
             std::array<Vector3, 1> physPts;
-            std::array<Matrix3, 1> invJTs;
+            std::array<Matrix, 1> invJTs;
             std::array<TensorValue, 1> value {};
             const EvaluationContext ctx = makeSinglePointContext(trans, refPts, physPts, invJTs);
             node->evaluateBatch(ctx, std::span<TensorValue>(value.data(), value.size()));

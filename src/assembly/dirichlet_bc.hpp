@@ -69,13 +69,13 @@ namespace mpfem {
                         std::array<Vector3, 1> physPts;
                         const IntegrationPoint& ip = trans.integrationPoint();
                         trans.transform(ip, physPts[0]);
-                        std::array<Matrix3, 1> invJTs {trans.invJacobianT()};
+                        std::array<Matrix, 1> invJTs {trans.invJacobianT()};
                         EvaluationContext ctx;
                         ctx.domainId = static_cast<int>(trans.attribute());
                         ctx.elementId = trans.elementIndex();
                         ctx.referencePoints = std::span<const Vector3>(refPts.data(), refPts.size());
                         ctx.physicalPoints = std::span<const Vector3>(physPts.data(), physPts.size());
-                        ctx.invJacobianTransposes = std::span<const Matrix3>(invJTs.data(), invJTs.size());
+                        ctx.invJacobianTransposes = std::span<const Matrix>(invJTs.data(), invJTs.size());
                         coef->evaluateBatch(ctx, std::span<TensorValue>(out.data(), out.size()));
                     }
 

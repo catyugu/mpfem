@@ -14,7 +14,7 @@ namespace mpfem {
     public:
         virtual ~TimeIntegrator() = default;
 
-        virtual bool step(PhysicsFieldSolver& solver, FieldValues& history, Real dt, int currentStep) = 0;
+        virtual bool step(PhysicsFieldSolver& solver, FieldValues& history, Real dt, Real prev_dt, int currentStep) = 0;
     };
 
     std::unique_ptr<TimeIntegrator> createTimeIntegrator(TimeScheme scheme);
