@@ -59,23 +59,21 @@ namespace mpfem {
     // =============================================================================
 
     inline constexpr LocalIndex MaxDofsPerElement = 81; // 预留足够的空间，高阶矢量基函数的 DOF 通常多于节点数
-    
+
     inline constexpr LocalIndex MaxDofsPerBdrElement = 27;
-
-    using ShapeMatrix = Eigen::Matrix<Real, 
-                                  Eigen::Dynamic, Eigen::Dynamic, 
-                                  Eigen::ColMajor, 
-                                  MaxDofsPerElement, MaxDim>;
-
-    // 对于导数，矢量基的导数（比如 Curl 或 Div）维度要求更宽泛
-    using DerivMatrix = Eigen::Matrix<Real, 
-                                    Eigen::Dynamic, Eigen::Dynamic, 
-                                    Eigen::RowMajor, 
-                                    MaxDofsPerElement, MaxDim * MaxDim>;
-
     /// Maximum number of nodes per volume element (for fixed-size arrays)
     /// hex27: 3x3x3 = 27 nodes for second-order hexahedron
     inline constexpr LocalIndex MaxNodesPerElement = 27;
+
+    using ShapeMatrix = Eigen::Matrix<Real,
+        Eigen::Dynamic, Eigen::Dynamic,
+        Eigen::ColMajor,
+        MaxDofsPerElement, MaxDim>;
+
+    using DerivMatrix = Eigen::Matrix<Real,
+        Eigen::Dynamic, Eigen::Dynamic,
+        Eigen::RowMajor,
+        MaxDofsPerElement, MaxDim>;
 
     /// Maximum quadrature points per element
     inline constexpr LocalIndex MaxQuadraturePoints = 27;

@@ -1,6 +1,8 @@
 #include "assembly/assembler.hpp"
+#include "assembly/element_binding.hpp"
 #include "assembly/integrators.hpp"
 #include "core/logger.hpp"
+#include "core/types.hpp"
 #include "expr/variable_graph.hpp"
 #include "fe/element_transform.hpp"
 #include "fe/fe_collection.hpp"
@@ -8,7 +10,6 @@
 #include "fe/quadrature.hpp"
 #include "mesh/geometry.hpp"
 #include "mesh/mesh.hpp"
-#include "core/types.hpp"
 #include <cmath>
 #include <gtest/gtest.h>
 

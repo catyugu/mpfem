@@ -9,7 +9,7 @@ namespace {
 
 void evalValues(const FiniteElement& shape, const Vector3& xi, std::vector<Real>& values)
 {
-    Matrix shapeValues;
+    ShapeMatrix shapeValues;
     shape.evalShape(xi, shapeValues);
     values.resize(shapeValues.rows());
     for (int i = 0; i < shapeValues.rows(); ++i) {
@@ -19,7 +19,7 @@ void evalValues(const FiniteElement& shape, const Vector3& xi, std::vector<Real>
 
 void evalGrads(const FiniteElement& shape, const Vector3& xi, std::vector<Vector3>& grads)
 {
-    Matrix derivatives;
+    DerivMatrix derivatives;
     shape.evalDerivatives(xi, derivatives);
     grads.resize(derivatives.rows());
     for (int i = 0; i < derivatives.rows(); ++i) {

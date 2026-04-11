@@ -1,11 +1,11 @@
 #ifndef MPFEM_DIRICHLET_BC_HPP
 #define MPFEM_DIRICHLET_BC_HPP
 
+#include "assembly/element_binding.hpp"
 #include "core/exception.hpp"
 #include "core/sparse_matrix.hpp"
 #include "core/types.hpp"
 #include "expr/variable_graph.hpp"
-#include "fe/element_transform.hpp"
 #include "fe/facet_element_transform.hpp"
 #include "fe/fe_space.hpp"
 #include "mesh/mesh.hpp"

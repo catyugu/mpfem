@@ -16,8 +16,8 @@ namespace mpfem {
         int vdim() const override { return 1; }
         DofLayout dofLayout() const override;
 
-        void evalShape(const Vector3& xi, Matrix& shape) const override;
-        void evalDerivatives(const Vector3& xi, Matrix& derivatives) const override;
+        void evalShape(const Vector3& xi, ShapeMatrix& shape) const override;
+        void evalDerivatives(const Vector3& xi, DerivMatrix& derivatives) const override;
         std::vector<Vector3> interpolationPoints() const override;
         std::vector<int> faceDofs(int faceIdx) const override;
 

@@ -165,13 +165,21 @@ namespace mpfem {
         return h1DofLayout(geom_, order_);
     }
 
-    void H1FiniteElement::evalShape(const Vector3& xi, Matrix& shape) const
+    void H1FiniteElement::evalShape(const Vector3& xi, ShapeMatrix& shape) const
     {
+        const int n = numDofs();
+        if (shape.rows() != n || shape.cols() != 1) {
+            shape.resize(n, 1);
+        }
         GeometryMapping::evalShape(geom_, order_, xi, shape);
     }
 
-    void H1FiniteElement::evalDerivatives(const Vector3& xi, Matrix& derivatives) const
+    void H1FiniteElement::evalDerivatives(const Vector3& xi, DerivMatrix& derivatives) const
     {
+        const int n = numDofs();
+        if (derivatives.rows() != n || derivatives.cols() != 3) {
+            derivatives.resize(n, 3);
+        }
         GeometryMapping::evalDerivatives(geom_, order_, xi, derivatives);
     }
 

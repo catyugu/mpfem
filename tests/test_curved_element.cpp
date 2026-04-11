@@ -1,9 +1,10 @@
+#include "assembly/element_binding.hpp"
+#include "core/types.hpp"
 #include "fe/element_transform.hpp"
 #include "fe/h1.hpp"
 #include "fe/quadrature.hpp"
 #include "mesh/geometry.hpp"
 #include "mesh/mesh.hpp"
-#include "core/types.hpp"
 #include <cmath>
 #include <gtest/gtest.h>
 
@@ -160,8 +161,8 @@ protected:
     }
 
     struct EvalData {
-        Matrix values;
-        Matrix derivatives;
+        ShapeMatrix values;
+        DerivMatrix derivatives;
     };
 
     EvalData evalShape(const FiniteElement* shape, const Vector3& xi) const
@@ -706,4 +707,3 @@ TEST(OrderSeparationTest, GeometricOrderIndependentOfPhysical)
     // The FE space could use different order for field interpolation
     // This is tested separately in test_fe_space_quadratic.cpp
 }
-

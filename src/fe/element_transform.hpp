@@ -9,7 +9,6 @@
 #include <array>
 #include <span>
 
-
 namespace mpfem {
 
     /**
@@ -120,7 +119,7 @@ namespace mpfem {
 
         // Buffers
         std::array<Vector3, MaxNodesPerElement> nodesBuf_;
-        Matrix geoShapeDerivatives_;
+        DerivMatrix geoShapeDerivatives_;
 
         // State
         Vector3 ipXi_;
@@ -137,12 +136,6 @@ namespace mpfem {
         std::array<Vector3, MaxQuadraturePoints> batchPhysPoints_;
         std::array<ElementTransform*, MaxQuadraturePoints> batchTransforms_;
     };
-
-    /**
-     * @brief Helper to bind an element from a mesh to a transform.
-     */
-    class Mesh; // Forward declaration
-    void bindElementToTransform(ElementTransform& trans, const Mesh& mesh, Index elemIdx, bool isBoundary = false);
 
 } // namespace mpfem
 

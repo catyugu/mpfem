@@ -34,8 +34,8 @@ namespace mpfem {
         virtual int vdim() const = 0;
         virtual DofLayout dofLayout() const = 0;
 
-        virtual void evalShape(const Vector3& xi, Matrix& shape) const = 0;
-        virtual void evalDerivatives(const Vector3& xi, Matrix& derivatives) const = 0;
+        virtual void evalShape(const Vector3& xi, ShapeMatrix& shape) const = 0;
+        virtual void evalDerivatives(const Vector3& xi, DerivMatrix& derivatives) const = 0;
 
         virtual std::vector<Vector3> interpolationPoints() const = 0;
         virtual std::vector<int> faceDofs(int faceIdx) const = 0;

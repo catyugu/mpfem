@@ -24,7 +24,7 @@ namespace mpfem {
             MPFEM_THROW(Exception, "GridFunction::eval exceeds fixed stack buffer limits");
         }
 
-        Matrix shapeBuf;
+        ShapeMatrix shapeBuf;
         std::array<Index, MaxDofsPerElement> dofsBuf {};
 
         basis.evalShape(xi, shapeBuf);
@@ -55,7 +55,7 @@ namespace mpfem {
             MPFEM_THROW(Exception, "GridFunction::gradient exceeds fixed stack buffer limits");
         }
 
-        Matrix derivBuf;
+        DerivMatrix derivBuf;
         std::array<Index, MaxDofsPerElement> dofsBuf {};
 
         basis.evalDerivatives(xi, derivBuf);

@@ -63,13 +63,13 @@ namespace mpfem {
         // -------------------------------------------------------------------------
 
         /// Get shape values matrix at quadrature point q: [numDofs x vdim]
-        const Matrix& shapeValuesAtQuad(int q) const
+        const ShapeMatrix& shapeValuesAtQuad(int q) const
         {
             return cachedShapeValues_[q];
         }
 
         /// Get derivatives matrix at quadrature point q: [numDofs x 3]
-        const Matrix& shapeDerivativesAtQuad(int q) const
+        const DerivMatrix& shapeDerivativesAtQuad(int q) const
         {
             return cachedDerivatives_[q];
         }
@@ -128,8 +128,8 @@ namespace mpfem {
         BasisType basisType_ = BasisType::H1;
         std::unique_ptr<FiniteElement> basis_;
         QuadratureRule quadrature_;
-        std::vector<Matrix> cachedShapeValues_;
-        std::vector<Matrix> cachedDerivatives_;
+        std::vector<ShapeMatrix> cachedShapeValues_;
+        std::vector<DerivMatrix> cachedDerivatives_;
     };
 
     // =============================================================================

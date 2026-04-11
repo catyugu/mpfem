@@ -1,3 +1,5 @@
+#include "assembly/element_binding.hpp"
+#include "core/types.hpp"
 #include "fe/element_transform.hpp"
 #include "fe/fe_collection.hpp"
 #include "fe/fe_space.hpp"
@@ -6,14 +8,11 @@
 #include "io/mphtxt_reader.hpp"
 #include "mesh/geometry.hpp"
 #include "mesh/mesh.hpp"
-#include "core/types.hpp"
 #include <cmath>
 #include <gtest/gtest.h>
 #include <set>
 
 using namespace mpfem;
-
-
 
 // Helper to get test data path
 static std::string dataPath(const std::string& relativePath)
@@ -29,7 +28,7 @@ static std::vector<Index> getElementDofsVec(const FESpace& fes, Index elemIdx)
 {
     std::vector<Index> dofs(static_cast<size_t>(fes.numElementDofs(elemIdx)), InvalidIndex);
     if (!dofs.empty()) {
-        fes.getElementDofs(elemIdx, std::span<Index>{dofs});
+        fes.getElementDofs(elemIdx, std::span<Index> {dofs});
     }
     return dofs;
 }
@@ -665,7 +664,7 @@ TEST_F(COMSOLMeshTest, FiniteElementKroneckerDelta)
         auto dofCoords = h1Element.interpolationPoints();
 
         // Pre-allocate storage
-        Matrix values;
+        ShapeMatrix values;
 
         // At each node position, only the corresponding H1 basis function should be 1.
         for (size_t i = 0; i < dofCoords.size(); ++i) {

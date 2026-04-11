@@ -1,9 +1,10 @@
+#include "assembly/element_binding.hpp"
+#include "core/types.hpp"
 #include "fe/element_transform.hpp"
 #include "fe/facet_element_transform.hpp"
 #include "fe/quadrature.hpp"
 #include "mesh/geometry.hpp"
 #include "mesh/mesh.hpp"
-#include "core/types.hpp"
 #include <cmath>
 #include <gtest/gtest.h>
 

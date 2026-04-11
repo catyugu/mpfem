@@ -1,4 +1,5 @@
 #include "assembler.hpp"
+#include "assembly/element_binding.hpp"
 #include "fe/element_transform.hpp"
 #include "fe/facet_element_transform.hpp"
 #include "fe/fe_space.hpp"

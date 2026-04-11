@@ -8,8 +8,8 @@ namespace mpfem {
 
 class GeometryMapping {
 public:
-    static void evalShape(Geometry geom, int order, const Vector3& xi, Matrix& shape);
-    static void evalDerivatives(Geometry geom, int order, const Vector3& xi, Matrix& derivatives);
+    static void evalShape(Geometry geom, int order, const Vector3& xi, ShapeMatrix& shape);
+    static void evalDerivatives(Geometry geom, int order, const Vector3& xi, DerivMatrix& derivatives);
 };
 
 } // namespace mpfem
