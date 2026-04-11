@@ -24,6 +24,7 @@ namespace mpfem {
     private:
         Geometry geom_ = Geometry::Invalid;
         int order_;
+        int numDofs_;
     };
 
 } // namespace mpfem
