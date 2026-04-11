@@ -1,27 +1,10 @@
 #include "grid_function.hpp"
+#include "core/exception.hpp"
 #include "finite_element.hpp"
 
+#include <array>
+
 namespace mpfem {
-
-    namespace {
-        // Thread-local buffers to avoid repeated heap allocation
-        thread_local Matrix t_shapeBuf;
-        thread_local Matrix t_derivBuf;
-        thread_local std::vector<Index> t_dofsBuf;
-
-        inline void ensureCapacity(int nShape, int nElemDofs)
-        {
-            if (t_shapeBuf.rows() != nShape || t_shapeBuf.cols() != 1) {
-                t_shapeBuf.resize(nShape, 1);
-            }
-            if (t_derivBuf.rows() != nShape || t_derivBuf.cols() != 3) {
-                t_derivBuf.resize(nShape, 3);
-            }
-            if (static_cast<int>(t_dofsBuf.size()) < nElemDofs) {
-                t_dofsBuf.resize(nElemDofs);
-            }
-        }
-    } // namespace
 
     Real GridFunction::eval(Index elem, const Vector3& xi) const
     {
@@ -36,14 +19,20 @@ namespace mpfem {
         const int nd = basis.numDofs();
         const int vdim = fes_->vdim();
         const int totalDofs = fes_->numElementDofs(elem);
-        ensureCapacity(nd, totalDofs);
 
-        basis.evalShape(xi, t_shapeBuf);
-        fes_->getElementDofs(elem, std::span<Index> {t_dofsBuf.data(), static_cast<size_t>(totalDofs)});
+        if (nd > MaxNodesPerElement || totalDofs > MaxVectorDofsPerElement) {
+            MPFEM_THROW(Exception, "GridFunction::eval exceeds fixed stack buffer limits");
+        }
+
+        Matrix shapeBuf;
+        std::array<Index, MaxVectorDofsPerElement> dofsBuf {};
+
+        basis.evalShape(xi, shapeBuf);
+        fes_->getElementDofs(elem, std::span<Index> {dofsBuf.data(), static_cast<size_t>(totalDofs)});
 
         Real val = 0.0;
         for (int i = 0; i < nd; ++i) {
-            val += t_shapeBuf(i, 0) * values_[t_dofsBuf[static_cast<size_t>(i) * vdim]];
+            val += shapeBuf(i, 0) * values_[dofsBuf[static_cast<size_t>(i) * vdim]];
         }
         return val;
     }
@@ -61,16 +50,22 @@ namespace mpfem {
         const int nd = basis.numDofs();
         const int vdim = fes_->vdim();
         const int totalDofs = fes_->numElementDofs(elem);
-        ensureCapacity(nd, totalDofs);
 
-        basis.evalDerivatives(xi, t_derivBuf);
-        fes_->getElementDofs(elem, std::span<Index> {t_dofsBuf.data(), static_cast<size_t>(totalDofs)});
+        if (nd > MaxNodesPerElement || totalDofs > MaxVectorDofsPerElement) {
+            MPFEM_THROW(Exception, "GridFunction::gradient exceeds fixed stack buffer limits");
+        }
+
+        Matrix derivBuf;
+        std::array<Index, MaxVectorDofsPerElement> dofsBuf {};
+
+        basis.evalDerivatives(xi, derivBuf);
+        fes_->getElementDofs(elem, std::span<Index> {dofsBuf.data(), static_cast<size_t>(totalDofs)});
 
         Vector3 gRef = Vector3::Zero();
         for (int i = 0; i < nd; ++i) {
-            gRef.x() += t_derivBuf(i, 0) * values_[t_dofsBuf[static_cast<size_t>(i) * vdim]];
-            gRef.y() += t_derivBuf(i, 1) * values_[t_dofsBuf[static_cast<size_t>(i) * vdim]];
-            gRef.z() += t_derivBuf(i, 2) * values_[t_dofsBuf[static_cast<size_t>(i) * vdim]];
+            gRef.x() += derivBuf(i, 0) * values_[dofsBuf[static_cast<size_t>(i) * vdim]];
+            gRef.y() += derivBuf(i, 1) * values_[dofsBuf[static_cast<size_t>(i) * vdim]];
+            gRef.z() += derivBuf(i, 2) * values_[dofsBuf[static_cast<size_t>(i) * vdim]];
         }
 
         return invJacobianTranspose * gRef;

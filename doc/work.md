@@ -21,200 +21,125 @@
 
 ## 具体工作任务
 
-针对你指出的核心痛点（**语义混淆、严重的H1偏见、自由度分配依赖几何节点而非拓扑**），这是一个经典的早期FEM框架走向通用多物理场FEM框架时必经的重构阵痛。
+针对提供的代码，FE（有限元）层的设计中确实存在一些典型的过度设计（向后兼容遗留）、冗余代码、状态耦合以及对混合网格支持不足的反模式。
 
-当前的架构强行将“定义几何形状的函数”和“定义物理场的试探/检验函数”绑定在一起，导致不仅无法支持L2（间断Galerkin）、ND（电磁边缘元）、RT（流体力学面元），甚至连协调的次参数/超参数（Sub/Super-parametric）网格处理也是通过 Hack 的方式实现的。
+为了实现**更加简洁、高效、接口统一且支持混合几何网格**，以下是 FE 层代码的步骤化重构与性能优化方案：
 
-以下是彻底消除这些反模式、走向现代化通用FEM架构的**步骤化重构方案**（完全放弃向后兼容）：
+### 第一步：打破“单一几何类型”的假设，原生支持混合网格 (FE Space)
+
+**反模式识别**：在 `fe_space.cpp` 的 `buildDofTable()` 中，直接粗暴地假定了全局网格只有一种几何类型，遇到混合网格直接抛出异常：`"FESpace mixed volume geometries are not supported"`。这不仅限制了混合网格（如四面体+六面体网格），还导致 DOF 偏移计算过于死板。
+
+**重构方案**：
+1. 取消对 `meshGeom` 的全局统一检测。
+2. 动态计算所有网格实体（Vertex, Edge, Face, Cell）需要的自由度偏移。不再假设所有单元具有相同的 `DofLayout`。
+3. 在构建 DOF 表时，根据具体每个 Element 的 `Geometry`，从 `FECollection` 中取出对应的 `ReferenceElement` 和 `DofLayout` 进行局部到全局的映射。
+
+```cpp
+// 重构后的 FE Space DOF 分配核心逻辑（概念代码）：
+Index offset = 0;
+// 1. 遍历所有顶点分配 DOF
+for(Index v=0; v < mesh_->numCornerVertices(); ++v) {
+    vertexDofOffset_[v] = offset;
+    offset += fec_->order() > 0 ? 1 : 0; // H1顶点DOF数
+}
+// 2. 遍历所有边分配 DOF
+for(Index e=0; e < mesh_->numEdges(); ++e) {
+    edgeDofOffset_[e] = offset;
+    offset += fec_->order() - 1; // H1边内部DOF数
+}
+// 同理处理 Face 和 Volume，随后在 getElementDofs 中根据单元几何类型组合这些偏移。
+```
+**优势**：彻底解除混合网格限制，使算法对单元几何完全无感，统一了 DOF 分配接口。
 
 ---
 
-### 第一步：解耦几何插值与物理场基函数 (Decouple Geometry vs Physics)
+### 第二步：消除派生类泛滥，实现 `FiniteElement` 类的泛型化数据驱动
 
-**问题代码：** `ElementTransform` 内部包含了一个 `std::unique_ptr<FiniteElement> geoBasis_;`。这导致几何映射复用了物理场的类，迫使 `FiniteElement` 不得不具备几何坐标相关的属性。
+**反模式识别**：在 `finite_element.cpp` 和 `h1.cpp` 中，为每一种几何体硬编码了具体的类（`H1SegmentShape`, `H1TriangleShape`, `H1CubeShape` 等）。这导致了大量重复的模板化代码（Boilerplate），所有的实现都只是在透传给 `GeometryMapping`。
 
-**重构行动：**
-剥离几何与物理。引入轻量级的 `GeometryEvaluator` 或 `ShapeMapping` 纯粹用于计算等参映射 $\mathbf{x}(\xi)$ 和雅可比矩阵，彻底把 `FiniteElement` 从 `ElementTransform` 中踢出去。
+**重构方案**：
+完全删除 `H1XXXShape` 系列子类。只保留一个最终类 `H1FiniteElement`，通过构造函数传入 `Geometry` 和 `Order`，用数据驱动替代多态。
 
 ```cpp
-// 新增：专门处理几何映射的静态类或轻量级计算器（完全摒弃 FiniteElement）
-class GeometryMapping {
+class H1FiniteElement final : public FiniteElement {
 public:
-    // 仅针对 Geometry (Triangle, Hexahedron 等) 和几何阶数计算形函数
-    static void evalShape(Geometry geom, int order, const Vector3& xi, VectorX& shape);
-    static void evalDerivatives(Geometry geom, int order, const Vector3& xi, MatrixX& dshape);
-};
-
-// 重构 ElementTransform
-class ElementTransform {
-    // 移除 std::unique_ptr<FiniteElement> geoBasis_;
-    // 移除 geometryOrder 与 fieldOrder 混淆的概念
-public:
-    void computeJacobianAtIP() {
-        // 直接使用专用的几何形函数，与物理场基函数彻底解绑
-        GeometryMapping::evalDerivatives(geometry_, geomOrder_, ip_.getXi(), geoShapeDerivatives_);
-        // 计算 J = X * dPhi ...
+    H1FiniteElement(Geometry geom, int order) : geom_(geom), order_(order) {}
+    
+    void evalShape(const Vector3& xi, Matrix& shape) const override {
+        GeometryMapping::evalShape(geom_, order_, xi, shape); // 直接路由
     }
+    
+    void evalDerivatives(const Vector3& xi, Matrix& derivatives) const override {
+        GeometryMapping::evalDerivatives(geom_, order_, xi, derivatives);
+    }
+    
+    std::vector<int> faceDofs(int faceIdx) const override {
+        return buildH1FaceDofs(geom_, order_, faceIdx); // 提取为通用函数
+    }
+private:
+    Geometry geom_;
+    int order_;
 };
 ```
+**优势**：去除了所有啰嗦的子类和虚函数表冗余，提升了指令缓存（I-Cache）命中率，同时添加新的单元（如 Prism/Pyramid）无需新增任何类。
 
 ---
 
-### 第二步：建立真正的网格拓扑体系 (Formalize Mesh Topology)
+### 第三步：纯化 `GridFunction`，根除 `thread_local` 依赖
 
-**问题代码：** 目前的 `Mesh` 仅管理了 Vertex 和 Element，所谓的 `buildTopology()` 只是建立了 Element 到 Face 的映射，**缺失了全局唯一 Edge 和全局唯一 Face 的实体编号体系**。
+**反模式识别**：`grid_function.cpp` 中使用了 `thread_local Matrix t_shapeBuf;` 作为求值缓存。这是一种强烈的反模式：
+1. 它引入了隐式的状态。
+2. 阻止了同线程内的并发递归（Reentrancy）。
+3. GPU移植或基于 Task 的多线程调度（如 TBB）时会导致未定义行为或内存泄漏。
 
-**重构行动：**
-有限元自由度是附着在**拓扑实体**（0D顶点、1D边、2D面、3D体）上的，而不是几何节点上。必须让网格生成完整的拓扑关联。
-
-```cpp
-class Mesh {
-public:
-    // 获取完整的拓扑数量
-    Index numVertices() const;
-    Index numEdges() const;     // 新增
-    Index numFaces() const;     // 新增
-    Index numElements() const;
-    
-    // 单元需要能返回其包含的拓扑实体在全局中的 ID
-    std::vector<Index> getElementVertices(Index elemIdx) const;
-    std::vector<Index> getElementEdges(Index elemIdx) const;    // 新增
-    std::vector<Index> getElementFaces(Index elemIdx) const;    // 新增
-};
-```
-
----
-
-### 第三步：重设计 FiniteElement 接口 (Eliminate H1 Bias in FE)
-
-**问题代码：** 当前的 `FiniteElement` 包含 `dofsPerVertex()`, `dofCoords()` 等带有严重 H1 (拉格朗日元) 偏见的接口。这导致根本无法定义例如“内部有4个自由度、面上无自由度的L2元”。
-
-**重构行动：**
-引入 `DofLayout`（自由度拓扑布局）签名，彻底消除与几何坐标的直接关联。
+**重构方案**：
+利用库中已经定义好的 `MaxNodesPerElement` 常量，直接在栈上分配固定大小的连续内存，完全抛弃 `thread_local` 和动态分配的 Eigen 矩阵。
 
 ```cpp
-// 定义自由度在不同维度拓扑实体上的分布签名
-struct DofLayout {
-    int numVertexDofs = 0; // 附着在0维顶点的自由度数
-    int numEdgeDofs = 0;   // 附着在1维边的自由度数
-    int numFaceDofs = 0;   // 附着在2维面的自由度数
-    int numVolumeDofs = 0; // 附着在3维体内部的自由度数
-};
-
-class FiniteElement {
-public:
-    virtual ~FiniteElement() = default;
-    virtual BasisType basisType() const = 0; // H1, L2, ND, RT
+Vector3 GridFunction::gradient(Index elem, const Vector3& xi, const Matrix3& invJacobianTranspose) const {
+    const ReferenceElement* ref = fes_->elementRefElement(elem);
+    const int nd = ref->numDofs();
+    const int vdim = fes_->vdim();
     
-    // 核心重构：返回该单元的拓扑自由度签名
-    virtual DofLayout getDofLayout() const = 0;
+    // 完全零堆分配，零线程锁的栈内存
+    Eigen::Matrix<Real, MaxNodesPerElement, 3> derivBuf;
+    std::array<Index, MaxNodesPerElement * MaxVectorDim> dofsBuf;
     
-    // 移除 dofCoords()！ 物理基函数不需要知道自己在物理空间中的绝对坐标！
+    ref->basis().evalDerivatives(xi, derivBuf); // 直接写到栈上
+    fes_->getElementDofs(elem, std::span{dofsBuf.data(), static_cast<size_t>(nd * vdim)});
     
-    // 计算参考单元上的基函数值与梯度
-    virtual void evalShape(const Vector3& xi, Matrix& shape) const = 0;
-    virtual void evalDerivatives(const Vector3& xi, Matrix& dshape) const = 0;
-};
-```
-
-*举例：*
-* `H1_1阶`：`DofLayout{1, 0, 0, 0}` (只在顶点有DoF)
-* `L2_1阶`：`DofLayout{0, 0, 0, 4}` (只在体内部有4个DoF)
-* `ND_1阶`(Nedelec)：`DofLayout{0, 1, 0, 0}` (只在边上有1个DoF)
-
----
-
-### 第四步：重写 FESpace 自由度分配 (Topology-based DoF Allocation)
-
-**问题代码：** `FESpace::buildDofTable` 中直接将 DoF 映射给 `elem.vertex(j)`，这是万恶之源。
-
-**重构行动：**
-依据各维度的全局拓扑数量，连续分配自由度。无论什么元，分配逻辑将高度统一、极度简洁且无漏洞。
-
-```cpp
-void FESpace::buildDofTable() {
-    const ReferenceElement* refElem = fec_->get(Geometry::Tetrahedron); // 假设统一网格
-    DofLayout layout = refElem->basis().getDofLayout();
-    
-    // 1. 计算各个拓扑维度的全局 DoF 偏移量
-    Index v_offset = 0;
-    Index e_offset = v_offset + mesh_->numVertices() * layout.numVertexDofs;
-    Index f_offset = e_offset + mesh_->numEdges()    * layout.numEdgeDofs;
-    Index c_offset = f_offset + mesh_->numFaces()    * layout.numFaceDofs;
-    
-    numDofs_ = c_offset + mesh_->numElements() * layout.numVolumeDofs;
-    
-    // 2. 为每个单元分配局部到全局的 DoF 映射
-    elemDofs_.resize(mesh_->numElements() * refElem->numDofs());
-    
-    for (Index e = 0; e < mesh_->numElements(); ++e) {
-        Index localDofIdx = 0;
-        const Index base = e * refElem->numDofs();
-        
-        // 映射顶点自由度
-        for (Index vId : mesh_->getElementVertices(e)) {
-            for (int k = 0; k < layout.numVertexDofs; ++k)
-                elemDofs_[base + localDofIdx++] = v_offset + vId * layout.numVertexDofs + k;
-        }
-        // 映射边自由度
-        for (Index eId : mesh_->getElementEdges(e)) {
-            for (int k = 0; k < layout.numEdgeDofs; ++k)
-                elemDofs_[base + localDofIdx++] = e_offset + eId * layout.numEdgeDofs + k;
-        }
-        // 映射面自由度
-        for (Index fId : mesh_->getElementFaces(e)) {
-            for (int k = 0; k < layout.numFaceDofs; ++k)
-                elemDofs_[base + localDofIdx++] = f_offset + fId * layout.numFaceDofs + k;
-        }
-        // 映射体（内部）自由度
-        for (int k = 0; k < layout.numVolumeDofs; ++k) {
-            elemDofs_[base + localDofIdx++] = c_offset + e * layout.numVolumeDofs + k;
+    Vector3 gRef = Vector3::Zero();
+    for (int i = 0; i < nd; ++i) {
+        for(int d=0; d<3; ++d) {
+            gRef[d] += derivBuf(i, d) * values_[dofsBuf[i * vdim]]; 
         }
     }
+    return invJacobianTranspose * gRef;
 }
 ```
-**收益：** 这一段不超过 30 行的代码，能够直接完美兼容 H1, L2, Nedelec, Raviart-Thomas，彻底消灭了原来的 `elem.vertex(j)` 补丁和所谓的 "Subparametric/Superparametric" 逻辑冗余。
+**优势**：`GridFunction::eval` 变为了100%纯函数（Pure Function），彻底解放了上层的并发评估限制。
 
 ---
 
-### 第五步：改造 Dirichlet 边界条件 (Refactor Dirichlet BCs)
+### 第四步：提取 `FacetElementTransform` 的拓扑映射查找表 (LUT)
 
-**问题代码：** `applyDirichletBC` 强依赖 `dofCoords`，试图找到几何节点的物理坐标去算解析解，完全把 FEM 降维成了 FDM（有限差分）。
+**反模式识别**：在 `facet_element_transform.cpp` 的 `mapToVolumeElement` 函数中，使用了一个巨大的、超过 100 行的 `switch(volGeom) + switch(localFaceIdx)` 瀑布流硬编码逻辑，既难以维护又容易出错。
 
-**重构行动：**
-对于本质边界条件，不应该依赖几何坐标，而应利用 **边界拓扑的面积分点投影 (L2 Projection on Boundary)** 或 **节点自由度泛函 (Node Functionals)**。最简洁的改法是，让 FESpace 根据拓扑直接返回边界面上激活的全局 DoF 列表，并通过边界积分点评估 `VariableNode`。
+**重构方案**：
+将面到体的参数坐标映射转化为**数据驱动的矩阵乘法**或查表法。面上的局部坐标 $(u, v)$ 可以通过线性映射转换到体坐标 $(x, y, z)$：
+$$\mathbf{X}_{vol} = \mathbf{A}_{face} \cdot \mathbf{X}_{face} + \mathbf{b}_{face}$$
 
+将所有的 `A` 矩阵和 `b` 向量预先静态存储在 `geom::` 工具中。
 ```cpp
-void applyDirichletBC(...) {
-    // 遍历所有施加了BC的边界拓扑面
-    for (Index b = 0; b < mesh.numBdrElements(); ++b) {
-        if (!isTargetBoundary(mesh.bdrElement(b).attribute())) continue;
-        
-        // 获取该拓扑面上的所有全局自由度（得益于第四步的重构，可以直接获取，包括边/面上的DoF）
-        std::vector<Index> bdrDofs = fes.getBdrElementDofs(b);
-        
-        // 针对 H1，计算边界积分点上的投影或者直接使用边界顶点做 nodal interpolation。
-        // 这里不再需要 dofCoords，而是：通过 ElementTransform 遍历边界单元上的局部求值点
-        // 将解固定。
-        for (size_t i = 0; i < bdrDofs.size(); ++i) {
-            Index gDof = bdrDofs[i];
-            if (eliminated[gDof]) continue;
-            
-            // 依据自由度的泛函定义(Node Functional)在局部计算对应的值，赋给全局
-            Real val = evaluateBoundaryValue(coef, trans, local_dof_index); 
-            dofVals[gDof] = val;
-            eliminated[gDof] = true;
-        }
-    }
+bool FacetElementTransform::mapToVolumeElement(const Vector3& bdrXi, Vector3& volXi) const {
+    if (adjElemIdx_ == InvalidIndex || localFaceIdx_ < 0) return false;
+    
+    // 获取 LUT 中面到体的仿射变换矩阵和偏移向量
+    const auto& affine = geom::getFaceToVolumeAffineMap(
+         mesh_->element(adjElemIdx_).geometry(), localFaceIdx_);
+         
+    volXi = affine.A * bdrXi + affine.b; // 单指令解决所有几何的映射
+    return true;
 }
 ```
-
-### 总结
-
-这五步重构彻底**砍断了“自由度”与“几何点”之间的孽缘**。
-1. **GeometryMapping** 负责 $\hat{x} \to x$ (仅仅关心几何与Jacobian)。
-2. **Mesh Topology** 负责点、边、面、体的连接关系。
-3. **FiniteElement/DofLayout** 负责说明方程自由度的数学分布。
-4. **FESpace** 就像一个矩阵，将 Topology 和 DofLayout 正交相乘，完成全局映射。
-
-重构后不仅代码会大幅缩减（因为去掉了为填补概念漏洞而写的海量 `if (order_ == ...)`），性能也会因为数据结构变成了紧凑的拓扑数组而提升。
+**优势**：大幅缩减代码量，根除循环复杂度，同时映射逻辑可以针对所有支持的面-体组合通用。

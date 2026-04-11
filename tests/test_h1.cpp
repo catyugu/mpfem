@@ -38,13 +38,13 @@ protected:
     void SetUp() override
     {
         order_ = GetParam();
-        shape_ = std::make_unique<H1SegmentShape>(order_);
+        shape_ = std::make_unique<H1FiniteElement>(Geometry::Segment, order_);
         values_.resize(shape_->numDofs());
         grads_.resize(shape_->numDofs());
     }
 
     int order_;
-    std::unique_ptr<H1SegmentShape> shape_;
+    std::unique_ptr<FiniteElement> shape_;
     std::vector<Real> values_;
     std::vector<Vector3> grads_;
 };
@@ -122,13 +122,13 @@ protected:
     void SetUp() override
     {
         order_ = GetParam();
-        shape_ = std::make_unique<H1TriangleShape>(order_);
+        shape_ = std::make_unique<H1FiniteElement>(Geometry::Triangle, order_);
         values_.resize(shape_->numDofs());
         grads_.resize(shape_->numDofs());
     }
 
     int order_;
-    std::unique_ptr<H1TriangleShape> shape_;
+    std::unique_ptr<FiniteElement> shape_;
     std::vector<Real> values_;
     std::vector<Vector3> grads_;
 };
@@ -223,13 +223,13 @@ protected:
     void SetUp() override
     {
         order_ = GetParam();
-        shape_ = std::make_unique<H1SquareShape>(order_);
+        shape_ = std::make_unique<H1FiniteElement>(Geometry::Square, order_);
         values_.resize(shape_->numDofs());
         grads_.resize(shape_->numDofs());
     }
 
     int order_;
-    std::unique_ptr<H1SquareShape> shape_;
+    std::unique_ptr<FiniteElement> shape_;
     std::vector<Real> values_;
     std::vector<Vector3> grads_;
 };
@@ -289,7 +289,7 @@ TEST_P(SquareShapeTest, TensorProductStructure)
 
     // For order 1, verify each node has the correct H1 basis function value
     // based on geometric ordering
-    H1SegmentShape seg(order_);
+    H1FiniteElement seg(Geometry::Segment, order_);
     std::vector<Real> seg_x(order_ + 1), seg_y(order_ + 1);
 
     Vector3 xi(0.3, -0.5, 0.0);
@@ -335,13 +335,13 @@ protected:
     void SetUp() override
     {
         order_ = GetParam();
-        shape_ = std::make_unique<H1TetrahedronShape>(order_);
+        shape_ = std::make_unique<H1FiniteElement>(Geometry::Tetrahedron, order_);
         values_.resize(shape_->numDofs());
         grads_.resize(shape_->numDofs());
     }
 
     int order_;
-    std::unique_ptr<H1TetrahedronShape> shape_;
+    std::unique_ptr<FiniteElement> shape_;
     std::vector<Real> values_;
     std::vector<Vector3> grads_;
 };
@@ -428,13 +428,13 @@ protected:
     void SetUp() override
     {
         order_ = GetParam();
-        shape_ = std::make_unique<H1CubeShape>(order_);
+        shape_ = std::make_unique<H1FiniteElement>(Geometry::Cube, order_);
         values_.resize(shape_->numDofs());
         grads_.resize(shape_->numDofs());
     }
 
     int order_;
-    std::unique_ptr<H1CubeShape> shape_;
+    std::unique_ptr<FiniteElement> shape_;
     std::vector<Real> values_;
     std::vector<Vector3> grads_;
 };
@@ -494,7 +494,7 @@ TEST_P(CubeShapeTest, TensorProductStructure)
     // For order 1, verify the geometric node ordering is correct
     // Node ordering: corners in geometric order
     // seg_x[0] = phi at x=-1, seg_x[1] = phi at x=1
-    H1SegmentShape seg(order_);
+    H1FiniteElement seg(Geometry::Segment, order_);
     std::vector<Real> seg_x(order_ + 1), seg_y(order_ + 1), seg_z(order_ + 1);
 
     Vector3 xi(0.2, -0.3, 0.4);
@@ -526,7 +526,7 @@ INSTANTIATE_TEST_SUITE_P(Orders, CubeShapeTest,
 TEST(LinearElementsTest, TriangleGradientAccuracy)
 {
     // For a linear triangle, gradients are constant and known
-    H1TriangleShape shape(1);
+    H1FiniteElement shape(Geometry::Triangle, 1);
 
     std::vector<Vector3> grads(3);
     evalGrads(shape, Vector3(0.2, 0.3, 0.0), grads);
@@ -546,7 +546,7 @@ TEST(LinearElementsTest, TriangleGradientAccuracy)
 TEST(LinearElementsTest, TetrahedronGradientAccuracy)
 {
     // For a linear tetrahedron, gradients are constant
-    H1TetrahedronShape shape(1);
+    H1FiniteElement shape(Geometry::Tetrahedron, 1);
 
     std::vector<Vector3> grads(4);
     evalGrads(shape, Vector3(0.1, 0.2, 0.3), grads);
@@ -570,7 +570,7 @@ TEST(LinearElementsTest, TetrahedronGradientAccuracy)
 
 TEST(QuadraticElementsTest, TriangleQuadraticDofs)
 {
-    H1TriangleShape shape(2);
+    H1FiniteElement shape(Geometry::Triangle, 2);
     EXPECT_EQ(shape.numDofs(), 6); // 3 vertices + 3 edges
 
     auto coords = shape.interpolationPoints();
@@ -594,7 +594,7 @@ TEST(QuadraticElementsTest, TriangleQuadraticDofs)
 
 TEST(QuadraticElementsTest, TetrahedronQuadraticDofs)
 {
-    H1TetrahedronShape shape(2);
+    H1FiniteElement shape(Geometry::Tetrahedron, 2);
     EXPECT_EQ(shape.numDofs(), 10); // 4 vertices + 6 edges
 
     auto coords = shape.interpolationPoints();

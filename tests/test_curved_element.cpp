@@ -152,10 +152,10 @@ class QuadraticH1FiniteElementTest : public ::testing::Test {
 protected:
     void SetUp() override
     {
-        tri2_ = std::make_unique<H1TriangleShape>(2);
-        tet2_ = std::make_unique<H1TetrahedronShape>(2);
-        square2_ = std::make_unique<H1SquareShape>(2);
-        cube2_ = std::make_unique<H1CubeShape>(2);
+        tri2_ = std::make_unique<H1FiniteElement>(Geometry::Triangle, 2);
+        tet2_ = std::make_unique<H1FiniteElement>(Geometry::Tetrahedron, 2);
+        square2_ = std::make_unique<H1FiniteElement>(Geometry::Square, 2);
+        cube2_ = std::make_unique<H1FiniteElement>(Geometry::Cube, 2);
     }
 
     struct EvalData {
@@ -171,10 +171,10 @@ protected:
         return sv;
     }
 
-    std::unique_ptr<H1TriangleShape> tri2_;
-    std::unique_ptr<H1TetrahedronShape> tet2_;
-    std::unique_ptr<H1SquareShape> square2_;
-    std::unique_ptr<H1CubeShape> cube2_;
+    std::unique_ptr<FiniteElement> tri2_;
+    std::unique_ptr<FiniteElement> tet2_;
+    std::unique_ptr<FiniteElement> square2_;
+    std::unique_ptr<FiniteElement> cube2_;
 };
 
 TEST_F(QuadraticH1FiniteElementTest, Triangle2PartitionOfUnity)

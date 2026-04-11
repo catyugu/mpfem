@@ -740,6 +740,148 @@ namespace mpfem
             return result;
         }
 
+        struct FaceToVolumeAffineMap {
+            Matrix3 A = Matrix3::Zero();
+            Vector3 b = Vector3::Zero();
+        };
+
+        inline bool getFaceToVolumeAffineMap(Geometry volumeGeom, int localFaceIdx, FaceToVolumeAffineMap& out)
+        {
+            out = FaceToVolumeAffineMap {};
+
+            if (volumeGeom == Geometry::Tetrahedron) {
+                switch (localFaceIdx) {
+                case 0:
+                    out.A << 1.0, 0.0, 0.0,
+                        0.0, 1.0, 0.0,
+                        -1.0, -1.0, 0.0;
+                    out.b << 0.0, 0.0, 1.0;
+                    return true;
+                case 1:
+                    out.A << 0.0, 0.0, 0.0,
+                        0.0, 1.0, 0.0,
+                        -1.0, -1.0, 0.0;
+                    out.b << 0.0, 0.0, 1.0;
+                    return true;
+                case 2:
+                    out.A << 1.0, 0.0, 0.0,
+                        0.0, 0.0, 0.0,
+                        -1.0, -1.0, 0.0;
+                    out.b << 0.0, 0.0, 1.0;
+                    return true;
+                case 3:
+                    out.A << 1.0, 0.0, 0.0,
+                        0.0, 1.0, 0.0,
+                        0.0, 0.0, 0.0;
+                    out.b << 0.0, 0.0, 0.0;
+                    return true;
+                default:
+                    return false;
+                }
+            }
+
+            if (volumeGeom == Geometry::Cube) {
+                switch (localFaceIdx) {
+                case 0:
+                    out.A << 1.0, 0.0, 0.0,
+                        0.0, 1.0, 0.0,
+                        0.0, 0.0, 0.0;
+                    out.b << 0.0, 0.0, -1.0;
+                    return true;
+                case 1:
+                    out.A << 1.0, 0.0, 0.0,
+                        0.0, 1.0, 0.0,
+                        0.0, 0.0, 0.0;
+                    out.b << 0.0, 0.0, 1.0;
+                    return true;
+                case 2:
+                    out.A << 1.0, 0.0, 0.0,
+                        0.0, 0.0, 0.0,
+                        0.0, 1.0, 0.0;
+                    out.b << 0.0, -1.0, 0.0;
+                    return true;
+                case 3:
+                    out.A << 1.0, 0.0, 0.0,
+                        0.0, 0.0, 0.0,
+                        0.0, 1.0, 0.0;
+                    out.b << 0.0, 1.0, 0.0;
+                    return true;
+                case 4:
+                    out.A << 0.0, 0.0, 0.0,
+                        1.0, 0.0, 0.0,
+                        0.0, 1.0, 0.0;
+                    out.b << -1.0, 0.0, 0.0;
+                    return true;
+                case 5:
+                    out.A << 0.0, 0.0, 0.0,
+                        1.0, 0.0, 0.0,
+                        0.0, 1.0, 0.0;
+                    out.b << 1.0, 0.0, 0.0;
+                    return true;
+                default:
+                    return false;
+                }
+            }
+
+            if (volumeGeom == Geometry::Triangle) {
+                switch (localFaceIdx) {
+                case 0:
+                    out.A << 1.0, 0.0, 0.0,
+                        -1.0, 0.0, 0.0,
+                        0.0, 0.0, 0.0;
+                    out.b << 0.0, 1.0, 0.0;
+                    return true;
+                case 1:
+                    out.A << 0.0, 0.0, 0.0,
+                        1.0, 0.0, 0.0,
+                        0.0, 0.0, 0.0;
+                    out.b << 0.0, 0.0, 0.0;
+                    return true;
+                case 2:
+                    out.A << 1.0, 0.0, 0.0,
+                        0.0, 0.0, 0.0,
+                        0.0, 0.0, 0.0;
+                    out.b << 0.0, 0.0, 0.0;
+                    return true;
+                default:
+                    return false;
+                }
+            }
+
+            if (volumeGeom == Geometry::Square) {
+                switch (localFaceIdx) {
+                case 0:
+                    out.A << 1.0, 0.0, 0.0,
+                        0.0, 0.0, 0.0,
+                        0.0, 0.0, 0.0;
+                    out.b << 0.0, -1.0, 0.0;
+                    return true;
+                case 1:
+                    out.A << 0.0, 0.0, 0.0,
+                        1.0, 0.0, 0.0,
+                        0.0, 0.0, 0.0;
+                    out.b << 1.0, 0.0, 0.0;
+                    return true;
+                case 2:
+                    out.A << 1.0, 0.0, 0.0,
+                        0.0, 0.0, 0.0,
+                        0.0, 0.0, 0.0;
+                    out.b << 0.0, 1.0, 0.0;
+                    return true;
+                case 3:
+                    out.A << 0.0, 0.0, 0.0,
+                        1.0, 0.0, 0.0,
+                        0.0, 0.0, 0.0;
+                    out.b << -1.0, 0.0, 0.0;
+                    return true;
+                default:
+                    return false;
+                }
+            }
+
+            return false;
+        }
+
     } // namespace geom
 
 } // namespace mpfem

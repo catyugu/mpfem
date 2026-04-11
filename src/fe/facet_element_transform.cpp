@@ -84,137 +84,14 @@ namespace mpfem {
         }
 
         const Element& volElem = mesh_->element(adjElemIdx_);
-        Geometry volGeom = volElem.geometry();
-
-        if (volGeom == Geometry::Tetrahedron) {
-            const Real xi = bdrXi.x();
-            const Real eta = bdrXi.y();
-            Real new_xi, new_eta, new_zeta;
-
-            switch (localFaceIdx_) {
-            case 0:
-                new_xi = xi;
-                new_eta = eta;
-                new_zeta = 1.0 - xi - eta;
-                break;
-            case 1:
-                new_xi = 0.0;
-                new_eta = eta;
-                new_zeta = 1.0 - xi - eta;
-                break;
-            case 2:
-                new_xi = xi;
-                new_eta = 0.0;
-                new_zeta = 1.0 - xi - eta;
-                break;
-            case 3:
-                new_xi = xi;
-                new_eta = eta;
-                new_zeta = 0.0;
-                break;
-            default:
-                return false;
-            }
-            volXi = Vector3(new_xi, new_eta, new_zeta);
-            return true;
+        const Geometry volGeom = volElem.geometry();
+        geom::FaceToVolumeAffineMap affine;
+        if (!geom::getFaceToVolumeAffineMap(volGeom, localFaceIdx_, affine)) {
+            return false;
         }
 
-        if (volGeom == Geometry::Cube) {
-            const Real xi = bdrXi.x();
-            const Real eta = bdrXi.y();
-            Real new_xi, new_eta, new_zeta;
-
-            switch (localFaceIdx_) {
-            case 0:
-                new_xi = xi;
-                new_eta = eta;
-                new_zeta = -1.0;
-                break;
-            case 1:
-                new_xi = xi;
-                new_eta = eta;
-                new_zeta = 1.0;
-                break;
-            case 2:
-                new_xi = xi;
-                new_eta = -1.0;
-                new_zeta = eta;
-                break;
-            case 3:
-                new_xi = xi;
-                new_eta = 1.0;
-                new_zeta = eta;
-                break;
-            case 4:
-                new_xi = -1.0;
-                new_eta = xi;
-                new_zeta = eta;
-                break;
-            case 5:
-                new_xi = 1.0;
-                new_eta = xi;
-                new_zeta = eta;
-                break;
-            default:
-                return false;
-            }
-            volXi = Vector3(new_xi, new_eta, new_zeta);
-            return true;
-        }
-
-        if (volGeom == Geometry::Triangle) {
-            const Real xi = bdrXi.x();
-            Real new_xi, new_eta;
-
-            switch (localFaceIdx_) {
-            case 0:
-                new_xi = xi;
-                new_eta = 1.0 - xi;
-                break;
-            case 1:
-                new_xi = 0.0;
-                new_eta = xi;
-                break;
-            case 2:
-                new_xi = xi;
-                new_eta = 0.0;
-                break;
-            default:
-                return false;
-            }
-            volXi = Vector3(new_xi, new_eta, 0.0);
-            return true;
-        }
-
-        if (volGeom == Geometry::Square) {
-            const Real xi = bdrXi.x();
-            Real new_xi, new_eta;
-
-            switch (localFaceIdx_) {
-            case 0:
-                new_xi = xi;
-                new_eta = -1.0;
-                break;
-            case 1:
-                new_xi = 1.0;
-                new_eta = xi;
-                break;
-            case 2:
-                new_xi = xi;
-                new_eta = 1.0;
-                break;
-            case 3:
-                new_xi = -1.0;
-                new_eta = xi;
-                break;
-            default:
-                return false;
-            }
-            volXi = Vector3(new_xi, new_eta, 0.0);
-            return true;
-        }
-
-        return false;
+        volXi = affine.A * bdrXi + affine.b;
+        return true;
     }
 
 } // namespace mpfem

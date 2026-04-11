@@ -90,6 +90,30 @@ Mesh createQuadMesh2D() {
     return mesh;
 }
 
+/// Create a mixed 2D mesh: one quad + one triangle sharing an edge
+Mesh createMixedMesh2D() {
+    Mesh mesh(2, 6, 2);
+
+    mesh.addVertex(0.0, 0.0, 0.0);  // 0
+    mesh.addVertex(1.0, 0.0, 0.0);  // 1
+    mesh.addVertex(1.0, 1.0, 0.0);  // 2
+    mesh.addVertex(0.0, 1.0, 0.0);  // 3
+    mesh.addVertex(2.0, 0.0, 0.0);  // 4
+    mesh.addVertex(2.0, 1.0, 0.0);  // 5
+
+    mesh.addElement(Geometry::Square, {0, 1, 2, 3});
+    mesh.addElement(Geometry::Triangle, {1, 4, 2});
+
+    mesh.addBdrElement(Geometry::Segment, {0, 1});
+    mesh.addBdrElement(Geometry::Segment, {1, 4});
+    mesh.addBdrElement(Geometry::Segment, {4, 2});
+    mesh.addBdrElement(Geometry::Segment, {2, 3});
+    mesh.addBdrElement(Geometry::Segment, {3, 0});
+
+    mesh.buildTopology();
+    return mesh;
+}
+
 /// Create a 3D hexahedral mesh
 Mesh createHexMesh3D() {
     Mesh mesh(3, 8, 0);
@@ -358,6 +382,49 @@ TEST_F(FESpaceQuadQuadraticTest, ElementDofs) {
     for (int i = 0; i < 9; ++i) {
         EXPECT_NE(dofs[i], InvalidIndex) << "DOF " << i << " should be valid";
     }
+}
+
+// =============================================================================
+// Mixed Geometry FE Space Tests
+// =============================================================================
+
+class FESpaceMixedGeometryTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        mesh_ = createMixedMesh2D();
+    }
+
+    Mesh mesh_;
+};
+
+TEST_F(FESpaceMixedGeometryTest, LinearMixedMeshDofs) {
+    FESpace fes(&mesh_, std::make_unique<FECollection>(1));
+
+    EXPECT_EQ(fes.numDofs(), 5);
+
+    std::vector<Index> quadDofs = getElementDofsVec(fes, 0);
+    std::vector<Index> triDofs = getElementDofsVec(fes, 1);
+    EXPECT_EQ(quadDofs.size(), 4);
+    EXPECT_EQ(triDofs.size(), 3);
+
+    // Shared edge vertices (1,2) must map to same global DOFs.
+    EXPECT_EQ(quadDofs[1], triDofs[0]);
+    EXPECT_EQ(quadDofs[2], triDofs[2]);
+}
+
+TEST_F(FESpaceMixedGeometryTest, QuadraticMixedMeshDofs) {
+    FESpace fes(&mesh_, std::make_unique<FECollection>(2));
+
+    // 5 used vertices + 6 edge + 1 quad cell interior = 12 scalar DOFs.
+    EXPECT_EQ(fes.numDofs(), 12);
+
+    std::vector<Index> quadDofs = getElementDofsVec(fes, 0);
+    std::vector<Index> triDofs = getElementDofsVec(fes, 1);
+    EXPECT_EQ(quadDofs.size(), 9);
+    EXPECT_EQ(triDofs.size(), 6);
+
+    // Shared edge midpoint should be shared across both elements.
+    EXPECT_EQ(quadDofs[5], triDofs[4]);
 }
 
 // =============================================================================

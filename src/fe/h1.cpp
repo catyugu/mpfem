@@ -2,17 +2,45 @@
 
 #include "core/exception.hpp"
 #include "fe/geometry_mapping.hpp"
+#include <algorithm>
 
 namespace mpfem {
 
     namespace {
 
-        template <typename FEType>
-        std::vector<int> buildH1FaceDofs(const FEType& fe, int faceIdx)
+        DofLayout h1DofLayout(Geometry g, int order)
+        {
+            if (g == Geometry::Square) {
+                return DofLayout {1, std::max(0, order - 1), order > 1 ? 1 : 0, 0};
+            }
+            if (g == Geometry::Cube) {
+                return DofLayout {1, std::max(0, order - 1), order > 1 ? 1 : 0, order > 1 ? 1 : 0};
+            }
+            return DofLayout {1, std::max(0, order - 1), 0, 0};
+        }
+
+        int h1NumDofs(Geometry g, int order)
+        {
+            switch (g) {
+            case Geometry::Segment:
+                return order + 1;
+            case Geometry::Triangle:
+                return (order + 1) * (order + 2) / 2;
+            case Geometry::Square:
+                return (order + 1) * (order + 1);
+            case Geometry::Tetrahedron:
+                return (order + 1) * (order + 2) * (order + 3) / 6;
+            case Geometry::Cube:
+                return (order + 1) * (order + 1) * (order + 1);
+            default:
+                MPFEM_THROW(Exception, "H1FiniteElement unsupported geometry");
+            }
+        }
+
+        std::vector<int> buildH1FaceDofs(Geometry g, int order, int faceIdx)
         {
             std::vector<int> dofs;
-            const Geometry g = fe.geometry();
-            const DofLayout layout = fe.dofLayout();
+            const DofLayout layout = h1DofLayout(g, order);
 
             if (g == Geometry::Segment) {
                 if (faceIdx == 0) {
@@ -30,7 +58,7 @@ namespace mpfem {
             }
 
             dofs = faceVerts;
-            if (fe.order() <= 1) {
+            if (order <= 1) {
                 return dofs;
             }
 
@@ -45,7 +73,7 @@ namespace mpfem {
                 }
             }
 
-            if (g == Geometry::Cube) {
+            if (g == Geometry::Cube && layout.numFaceDofs > 0) {
                 const int faceBase = edgeBase + geom::numEdges(g) * edgeDofs;
                 for (int j = 0; j < layout.numFaceDofs; ++j) {
                     dofs.push_back(faceBase + faceIdx * layout.numFaceDofs + j);
@@ -55,210 +83,106 @@ namespace mpfem {
             return dofs;
         }
 
+        std::vector<Vector3> buildInterpolationPoints(Geometry g, int order)
+        {
+            switch (g) {
+            case Geometry::Segment:
+                if (order == 1) {
+                    return {Vector3(-1.0, 0.0, 0.0), Vector3(1.0, 0.0, 0.0)};
+                }
+                return {Vector3(-1.0, 0.0, 0.0), Vector3(0.0, 0.0, 0.0), Vector3(1.0, 0.0, 0.0)};
+            case Geometry::Triangle:
+                if (order == 1) {
+                    return {Vector3(0.0, 0.0, 0.0), Vector3(1.0, 0.0, 0.0), Vector3(0.0, 1.0, 0.0)};
+                }
+                return {
+                    Vector3(0.0, 0.0, 0.0), Vector3(1.0, 0.0, 0.0), Vector3(0.0, 1.0, 0.0),
+                    Vector3(0.5, 0.0, 0.0), Vector3(0.0, 0.5, 0.0), Vector3(0.5, 0.5, 0.0)};
+            case Geometry::Square:
+                if (order == 1) {
+                    return {Vector3(-1.0, -1.0, 0.0), Vector3(1.0, -1.0, 0.0), Vector3(1.0, 1.0, 0.0), Vector3(-1.0, 1.0, 0.0)};
+                }
+                return {
+                    Vector3(-1.0, -1.0, 0.0), Vector3(1.0, -1.0, 0.0), Vector3(1.0, 1.0, 0.0), Vector3(-1.0, 1.0, 0.0),
+                    Vector3(0.0, -1.0, 0.0), Vector3(1.0, 0.0, 0.0), Vector3(0.0, 1.0, 0.0), Vector3(-1.0, 0.0, 0.0),
+                    Vector3(0.0, 0.0, 0.0)};
+            case Geometry::Tetrahedron:
+                if (order == 1) {
+                    return {Vector3(0.0, 0.0, 0.0), Vector3(1.0, 0.0, 0.0), Vector3(0.0, 1.0, 0.0), Vector3(0.0, 0.0, 1.0)};
+                }
+                return {
+                    Vector3(0.0, 0.0, 0.0), Vector3(1.0, 0.0, 0.0), Vector3(0.0, 1.0, 0.0), Vector3(0.0, 0.0, 1.0),
+                    Vector3(0.5, 0.0, 0.0), Vector3(0.0, 0.5, 0.0), Vector3(0.5, 0.5, 0.0),
+                    Vector3(0.0, 0.0, 0.5), Vector3(0.5, 0.0, 0.5), Vector3(0.0, 0.5, 0.5)};
+            case Geometry::Cube:
+                if (order == 1) {
+                    return {
+                        Vector3(-1.0, -1.0, -1.0), Vector3(1.0, -1.0, -1.0), Vector3(1.0, 1.0, -1.0), Vector3(-1.0, 1.0, -1.0),
+                        Vector3(-1.0, -1.0, 1.0), Vector3(1.0, -1.0, 1.0), Vector3(1.0, 1.0, 1.0), Vector3(-1.0, 1.0, 1.0)};
+                }
+                return {
+                    Vector3(-1.0, -1.0, -1.0), Vector3(1.0, -1.0, -1.0), Vector3(1.0, 1.0, -1.0), Vector3(-1.0, 1.0, -1.0),
+                    Vector3(-1.0, -1.0, 1.0), Vector3(1.0, -1.0, 1.0), Vector3(1.0, 1.0, 1.0), Vector3(-1.0, 1.0, 1.0),
+                    Vector3(0.0, -1.0, -1.0), Vector3(1.0, 0.0, -1.0), Vector3(0.0, 1.0, -1.0), Vector3(-1.0, 0.0, -1.0),
+                    Vector3(-1.0, -1.0, 0.0), Vector3(1.0, -1.0, 0.0), Vector3(1.0, 1.0, 0.0), Vector3(-1.0, 1.0, 0.0),
+                    Vector3(0.0, -1.0, 1.0), Vector3(1.0, 0.0, 1.0), Vector3(0.0, 1.0, 1.0), Vector3(-1.0, 0.0, 1.0),
+                    Vector3(0.0, 0.0, -1.0), Vector3(0.0, -1.0, 0.0), Vector3(1.0, 0.0, 0.0),
+                    Vector3(0.0, 1.0, 0.0), Vector3(-1.0, 0.0, 0.0), Vector3(0.0, 0.0, 1.0),
+                    Vector3(0.0, 0.0, 0.0)};
+            default:
+                MPFEM_THROW(Exception, "H1FiniteElement unsupported geometry");
+            }
+        }
+
     } // namespace
 
-    // =============================================================================
-    // H1SegmentShape
-    // =============================================================================
-
-    H1SegmentShape::H1SegmentShape(int order)
-        : order_(order)
+    H1FiniteElement::H1FiniteElement(Geometry geom, int order)
+        : geom_(geom)
+        , order_(order)
     {
         if (order < 1 || order > 2) {
-            MPFEM_THROW(Exception, "H1SegmentShape: only order 1 and 2 supported");
+            MPFEM_THROW(Exception, "H1FiniteElement: only order 1 and 2 supported");
+        }
+        switch (geom_) {
+        case Geometry::Segment:
+        case Geometry::Triangle:
+        case Geometry::Square:
+        case Geometry::Tetrahedron:
+        case Geometry::Cube:
+            return;
+        default:
+            MPFEM_THROW(Exception, "H1FiniteElement: unsupported geometry");
         }
     }
 
-    void H1SegmentShape::evalShape(const Vector3& xi, Matrix& shape) const
+    int H1FiniteElement::numDofs() const
     {
-        GeometryMapping::evalShape(geometry(), order_, xi, shape);
+        return h1NumDofs(geom_, order_);
     }
 
-    void H1SegmentShape::evalDerivatives(const Vector3& xi, Matrix& derivatives) const
+    DofLayout H1FiniteElement::dofLayout() const
     {
-        GeometryMapping::evalDerivatives(geometry(), order_, xi, derivatives);
+        return h1DofLayout(geom_, order_);
     }
 
-    std::vector<int> H1SegmentShape::faceDofs(int faceIdx) const
+    void H1FiniteElement::evalShape(const Vector3& xi, Matrix& shape) const
     {
-        return buildH1FaceDofs(*this, faceIdx);
+        GeometryMapping::evalShape(geom_, order_, xi, shape);
     }
 
-    std::vector<Vector3> H1SegmentShape::interpolationPoints() const
+    void H1FiniteElement::evalDerivatives(const Vector3& xi, Matrix& derivatives) const
     {
-        if (order_ == 1) {
-            return {Vector3(-1.0, 0.0, 0.0), Vector3(1.0, 0.0, 0.0)};
-        }
-        return {Vector3(-1.0, 0.0, 0.0), Vector3(0.0, 0.0, 0.0), Vector3(1.0, 0.0, 0.0)};
+        GeometryMapping::evalDerivatives(geom_, order_, xi, derivatives);
     }
 
-    // =============================================================================
-    // H1TriangleShape
-    // =============================================================================
-
-    H1TriangleShape::H1TriangleShape(int order)
-        : order_(order)
+    std::vector<Vector3> H1FiniteElement::interpolationPoints() const
     {
-        if (order < 1 || order > 2) {
-            MPFEM_THROW(Exception, "H1TriangleShape: only order 1 and 2 supported");
-        }
+        return buildInterpolationPoints(geom_, order_);
     }
 
-    int H1TriangleShape::numDofs() const
+    std::vector<int> H1FiniteElement::faceDofs(int faceIdx) const
     {
-        return (order_ + 1) * (order_ + 2) / 2;
-    }
-
-    void H1TriangleShape::evalShape(const Vector3& xi, Matrix& shape) const
-    {
-        GeometryMapping::evalShape(geometry(), order_, xi, shape);
-    }
-
-    void H1TriangleShape::evalDerivatives(const Vector3& xi, Matrix& derivatives) const
-    {
-        GeometryMapping::evalDerivatives(geometry(), order_, xi, derivatives);
-    }
-
-    std::vector<int> H1TriangleShape::faceDofs(int faceIdx) const
-    {
-        return buildH1FaceDofs(*this, faceIdx);
-    }
-
-    std::vector<Vector3> H1TriangleShape::interpolationPoints() const
-    {
-        if (order_ == 1) {
-            return {Vector3(0.0, 0.0, 0.0), Vector3(1.0, 0.0, 0.0), Vector3(0.0, 1.0, 0.0)};
-        }
-        return {
-            Vector3(0.0, 0.0, 0.0), Vector3(1.0, 0.0, 0.0), Vector3(0.0, 1.0, 0.0),
-            Vector3(0.5, 0.0, 0.0), Vector3(0.0, 0.5, 0.0), Vector3(0.5, 0.5, 0.0)};
-    }
-
-    // =============================================================================
-    // H1SquareShape
-    // =============================================================================
-
-    H1SquareShape::H1SquareShape(int order)
-        : order_(order)
-    {
-        if (order < 1 || order > 2) {
-            MPFEM_THROW(Exception, "H1SquareShape: only order 1 and 2 supported");
-        }
-    }
-
-    void H1SquareShape::evalShape(const Vector3& xi, Matrix& shape) const
-    {
-        GeometryMapping::evalShape(geometry(), order_, xi, shape);
-    }
-
-    void H1SquareShape::evalDerivatives(const Vector3& xi, Matrix& derivatives) const
-    {
-        GeometryMapping::evalDerivatives(geometry(), order_, xi, derivatives);
-    }
-
-    std::vector<int> H1SquareShape::faceDofs(int faceIdx) const
-    {
-        return buildH1FaceDofs(*this, faceIdx);
-    }
-
-    std::vector<Vector3> H1SquareShape::interpolationPoints() const
-    {
-        if (order_ == 1) {
-            return {Vector3(-1.0, -1.0, 0.0), Vector3(1.0, -1.0, 0.0), Vector3(1.0, 1.0, 0.0), Vector3(-1.0, 1.0, 0.0)};
-        }
-        return {
-            Vector3(-1.0, -1.0, 0.0), Vector3(1.0, -1.0, 0.0), Vector3(1.0, 1.0, 0.0), Vector3(-1.0, 1.0, 0.0),
-            Vector3(0.0, -1.0, 0.0), Vector3(1.0, 0.0, 0.0), Vector3(0.0, 1.0, 0.0), Vector3(-1.0, 0.0, 0.0),
-            Vector3(0.0, 0.0, 0.0)};
-    }
-
-    // =============================================================================
-    // H1TetrahedronShape
-    // =============================================================================
-
-    H1TetrahedronShape::H1TetrahedronShape(int order)
-        : order_(order)
-    {
-        if (order < 1 || order > 2) {
-            MPFEM_THROW(Exception, "H1TetrahedronShape: only order 1 and 2 supported");
-        }
-    }
-
-    int H1TetrahedronShape::numDofs() const
-    {
-        return (order_ + 1) * (order_ + 2) * (order_ + 3) / 6;
-    }
-
-    void H1TetrahedronShape::evalShape(const Vector3& xi, Matrix& shape) const
-    {
-        GeometryMapping::evalShape(geometry(), order_, xi, shape);
-    }
-
-    void H1TetrahedronShape::evalDerivatives(const Vector3& xi, Matrix& derivatives) const
-    {
-        GeometryMapping::evalDerivatives(geometry(), order_, xi, derivatives);
-    }
-
-    std::vector<int> H1TetrahedronShape::faceDofs(int faceIdx) const
-    {
-        return buildH1FaceDofs(*this, faceIdx);
-    }
-
-    std::vector<Vector3> H1TetrahedronShape::interpolationPoints() const
-    {
-        if (order_ == 1) {
-            return {Vector3(0.0, 0.0, 0.0), Vector3(1.0, 0.0, 0.0), Vector3(0.0, 1.0, 0.0), Vector3(0.0, 0.0, 1.0)};
-        }
-        return {
-            Vector3(0.0, 0.0, 0.0), Vector3(1.0, 0.0, 0.0), Vector3(0.0, 1.0, 0.0), Vector3(0.0, 0.0, 1.0),
-            Vector3(0.5, 0.0, 0.0), Vector3(0.0, 0.5, 0.0), Vector3(0.5, 0.5, 0.0),
-            Vector3(0.0, 0.0, 0.5), Vector3(0.5, 0.0, 0.5), Vector3(0.0, 0.5, 0.5)};
-    }
-
-    // =============================================================================
-    // H1CubeShape
-    // =============================================================================
-
-    H1CubeShape::H1CubeShape(int order)
-        : order_(order)
-    {
-        if (order < 1 || order > 2) {
-            MPFEM_THROW(Exception, "H1CubeShape: only order 1 and 2 supported");
-        }
-    }
-
-    void H1CubeShape::evalShape(const Vector3& xi, Matrix& shape) const
-    {
-        GeometryMapping::evalShape(geometry(), order_, xi, shape);
-    }
-
-    void H1CubeShape::evalDerivatives(const Vector3& xi, Matrix& derivatives) const
-    {
-        GeometryMapping::evalDerivatives(geometry(), order_, xi, derivatives);
-    }
-
-    std::vector<int> H1CubeShape::faceDofs(int faceIdx) const
-    {
-        return buildH1FaceDofs(*this, faceIdx);
-    }
-
-    std::vector<Vector3> H1CubeShape::interpolationPoints() const
-    {
-        if (order_ == 1) {
-            return {
-                Vector3(-1.0, -1.0, -1.0), Vector3(1.0, -1.0, -1.0), Vector3(1.0, 1.0, -1.0), Vector3(-1.0, 1.0, -1.0),
-                Vector3(-1.0, -1.0, 1.0), Vector3(1.0, -1.0, 1.0), Vector3(1.0, 1.0, 1.0), Vector3(-1.0, 1.0, 1.0)};
-        }
-
-        return {
-            Vector3(-1.0, -1.0, -1.0), Vector3(1.0, -1.0, -1.0), Vector3(1.0, 1.0, -1.0), Vector3(-1.0, 1.0, -1.0),
-            Vector3(-1.0, -1.0, 1.0), Vector3(1.0, -1.0, 1.0), Vector3(1.0, 1.0, 1.0), Vector3(-1.0, 1.0, 1.0),
-            Vector3(0.0, -1.0, -1.0), Vector3(1.0, 0.0, -1.0), Vector3(0.0, 1.0, -1.0), Vector3(-1.0, 0.0, -1.0),
-            Vector3(-1.0, -1.0, 0.0), Vector3(1.0, -1.0, 0.0), Vector3(1.0, 1.0, 0.0), Vector3(-1.0, 1.0, 0.0),
-            Vector3(0.0, -1.0, 1.0), Vector3(1.0, 0.0, 1.0), Vector3(0.0, 1.0, 1.0), Vector3(-1.0, 0.0, 1.0),
-            Vector3(0.0, 0.0, -1.0), Vector3(0.0, -1.0, 0.0), Vector3(1.0, 0.0, 0.0),
-            Vector3(0.0, 1.0, 0.0), Vector3(-1.0, 0.0, 0.0), Vector3(0.0, 0.0, 1.0),
-            Vector3(0.0, 0.0, 0.0)};
+        return buildH1FaceDofs(geom_, order_, faceIdx);
     }
 
 } // namespace mpfem
