@@ -43,7 +43,7 @@ namespace mpfem {
                 if (!refElem)
                     continue;
 
-                const auto& dofCoords = refElem->dofCoords();
+                const auto dofCoords = refElem->interpolationPoints();
                 const int nd = refElem->numDofs();
                 const int totalDofs = nd * fes.vdim();
                 if (totalDofs > MaxVectorDofsPerBdrElement)

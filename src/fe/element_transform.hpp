@@ -2,13 +2,12 @@
 #define MPFEM_ELEMENT_TRANSFORM_HPP
 
 #include "core/types.hpp"
-#include "fe/finite_element.hpp"
+#include "fe/geometry_mapping.hpp"
 #include "fe/quadrature.hpp"
 #include "mesh/geometry.hpp"
 #include "mesh/mesh.hpp"
 #include <Eigen/Dense>
 #include <array>
-#include <memory>
 
 namespace mpfem {
 
@@ -128,9 +127,6 @@ namespace mpfem {
         int spaceDim_ = 0;
         int geomOrder_ = 1;
         int numNodes_ = 0;
-
-        // Geometric basis used only for coordinate mapping.
-        std::unique_ptr<FiniteElement> geoBasis_;
 
         // Fixed-size buffers (no heap allocation)
         std::array<Vector3, MaxNodesPerElement> nodesBuf_;

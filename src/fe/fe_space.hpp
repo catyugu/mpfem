@@ -24,10 +24,10 @@ namespace mpfem {
      * - Subparametric: geo_order < field_order (linear mesh, quadratic field)
      * - Superparametric: geo_order > field_order (curved mesh, linear field)
      *
-     * **DOF Mapping**:
-     * - For subparametric: DOFs are created beyond mesh vertices (new nodes)
-     * - For superparametric: DOFs are a subset of mesh vertices
-     * - For isoparametric: DOFs exactly match mesh vertices
+    * **DOF Mapping**:
+    * - DOFs are attached to topology entities (vertex/edge/face/cell)
+    * - Global numbering is contiguous by entity dimension
+    * - Element local-to-global mapping is generated from mesh topology
      */
     class FESpace {
     public:
@@ -63,12 +63,14 @@ namespace mpfem {
         // -------------------------------------------------------------------------
 
         Index numDofs() const { return numDofs_; }
-        Index numDofsPerVertex() const { return numDofsPerVertex_; }
+        Index scalarNumDofs() const { return scalarNumDofs_; }
 
         void getElementDofs(Index elemIdx, std::span<Index> dofs) const;
         void getBdrElementDofs(Index bdrIdx, std::span<Index> dofs) const;
         int numElementDofs(Index elemIdx) const;
         int numBdrElementDofs(Index bdrIdx) const;
+        Index vertexScalarDof(Index vertexIdx, int localVertexDof = 0) const;
+        Index vertexDof(Index vertexIdx, int component = 0, int localVertexDof = 0) const;
 
         // -------------------------------------------------------------------------
         // Reference element access
@@ -137,11 +139,12 @@ namespace mpfem {
         int vdim_ = 1;
 
         Index numDofs_ = 0;
-        Index numDofsPerVertex_ = 0; // For subparametric: DOFs per vertex (corner)
+        Index scalarNumDofs_ = 0;
 
         // Element DOF table: [elemIdx * maxDofsPerElem + localDof]
         std::vector<Index> elemDofs_;
         std::vector<Index> bdrElemDofs_;
+        std::vector<Index> vertexDofBase_;
         int maxDofsPerElem_ = 0;
         int maxDofsPerBdrElem_ = 0;
     };
@@ -214,6 +217,33 @@ namespace mpfem {
         const Element& bdrElem = mesh_->bdrElement(bdrIdx);
         const ReferenceElement* refElem = fec_->get(bdrElem.geometry());
         return refElem ? refElem->numDofs() * vdim_ : 0;
+    }
+
+    inline Index FESpace::vertexScalarDof(Index vertexIdx, int localVertexDof) const
+    {
+        if (!mesh_ || vertexIdx >= mesh_->numVertices() || localVertexDof < 0) {
+            return InvalidIndex;
+        }
+        if (vertexIdx >= static_cast<Index>(vertexDofBase_.size())) {
+            return InvalidIndex;
+        }
+        const Index base = vertexDofBase_[vertexIdx];
+        if (base == InvalidIndex) {
+            return InvalidIndex;
+        }
+        return base + localVertexDof;
+    }
+
+    inline Index FESpace::vertexDof(Index vertexIdx, int component, int localVertexDof) const
+    {
+        if (component < 0 || component >= vdim_) {
+            return InvalidIndex;
+        }
+        const Index scalarDof = vertexScalarDof(vertexIdx, localVertexDof);
+        if (scalarDof == InvalidIndex) {
+            return InvalidIndex;
+        }
+        return scalarDof * vdim_ + component;
     }
 
 } // namespace mpfem

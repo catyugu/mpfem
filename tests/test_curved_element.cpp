@@ -193,7 +193,7 @@ TEST_F(QuadraticH1FiniteElementTest, Triangle2PartitionOfUnity)
 TEST_F(QuadraticH1FiniteElementTest, Triangle2KroneckerDelta)
 {
     // H1 basis function i should be 1 at node i and 0 at other nodes
-    auto coords = tri2_->dofCoords();
+    auto coords = tri2_->interpolationPoints();
 
     for (int i = 0; i < tri2_->numDofs(); ++i) {
         auto sv = evalShape(tri2_.get(), coords[i]);
@@ -223,7 +223,7 @@ TEST_F(QuadraticH1FiniteElementTest, Tetrahedron2PartitionOfUnity)
 
 TEST_F(QuadraticH1FiniteElementTest, Tetrahedron2KroneckerDelta)
 {
-    auto coords = tet2_->dofCoords();
+    auto coords = tet2_->interpolationPoints();
 
     for (int i = 0; i < tet2_->numDofs(); ++i) {
         auto sv = evalShape(tet2_.get(), coords[i]);
@@ -253,7 +253,7 @@ TEST_F(QuadraticH1FiniteElementTest, Square2PartitionOfUnity)
 
 TEST_F(QuadraticH1FiniteElementTest, Square2KroneckerDelta)
 {
-    auto coords = square2_->dofCoords();
+    auto coords = square2_->interpolationPoints();
 
     for (int i = 0; i < square2_->numDofs(); ++i) {
         auto sv = evalShape(square2_.get(), coords[i]);
@@ -283,7 +283,7 @@ TEST_F(QuadraticH1FiniteElementTest, Cube2PartitionOfUnity)
 
 TEST_F(QuadraticH1FiniteElementTest, Cube2KroneckerDelta)
 {
-    auto coords = cube2_->dofCoords();
+    auto coords = cube2_->interpolationPoints();
 
     for (int i = 0; i < cube2_->numDofs(); ++i) {
         auto sv = evalShape(cube2_.get(), coords[i]);

@@ -70,6 +70,7 @@ protected:
         mesh_.addVertex(0.0, 1.0, 0.0);
         mesh_.addVertex(0.0, 0.0, 1.0);
         mesh_.addElement(Geometry::Tetrahedron, {0, 1, 2, 3}, 1, 1);
+        mesh_.buildTopology();
 
         fes_ = std::make_unique<FESpace>(&mesh_, std::make_unique<FECollection>(1));
 

@@ -16,15 +16,11 @@ namespace mpfem {
         int order() const override { return order_; }
         int numDofs() const override { return order_ + 1; }
         int vdim() const override { return 1; }
-
-        int dofsPerVertex() const override { return 1; }
-        int dofsPerEdge() const override { return std::max(0, order_ - 1); }
-        int dofsPerFace() const override { return 0; }
-        int dofsPerVolume() const override { return 0; }
+        DofLayout dofLayout() const override { return DofLayout {1, std::max(0, order_ - 1), 0, 0}; }
 
         void evalShape(const Vector3& xi, Matrix& shape) const override;
         void evalDerivatives(const Vector3& xi, Matrix& derivatives) const override;
-        std::vector<Vector3> dofCoords() const override;
+        std::vector<Vector3> interpolationPoints() const override;
         std::vector<int> faceDofs(int faceIdx) const override;
 
     private:
@@ -43,15 +39,11 @@ namespace mpfem {
         int order() const override { return order_; }
         int numDofs() const override;
         int vdim() const override { return 1; }
-
-        int dofsPerVertex() const override { return 1; }
-        int dofsPerEdge() const override { return std::max(0, order_ - 1); }
-        int dofsPerFace() const override { return 0; }
-        int dofsPerVolume() const override { return 0; }
+        DofLayout dofLayout() const override { return DofLayout {1, std::max(0, order_ - 1), 0, 0}; }
 
         void evalShape(const Vector3& xi, Matrix& shape) const override;
         void evalDerivatives(const Vector3& xi, Matrix& derivatives) const override;
-        std::vector<Vector3> dofCoords() const override;
+        std::vector<Vector3> interpolationPoints() const override;
         std::vector<int> faceDofs(int faceIdx) const override;
 
     private:
@@ -70,15 +62,11 @@ namespace mpfem {
         int order() const override { return order_; }
         int numDofs() const override { return (order_ + 1) * (order_ + 1); }
         int vdim() const override { return 1; }
-
-        int dofsPerVertex() const override { return 1; }
-        int dofsPerEdge() const override { return std::max(0, order_ - 1); }
-        int dofsPerFace() const override { return 0; }
-        int dofsPerVolume() const override { return order_ > 1 ? 1 : 0; }
+        DofLayout dofLayout() const override { return DofLayout {1, std::max(0, order_ - 1), order_ > 1 ? 1 : 0, 0}; }
 
         void evalShape(const Vector3& xi, Matrix& shape) const override;
         void evalDerivatives(const Vector3& xi, Matrix& derivatives) const override;
-        std::vector<Vector3> dofCoords() const override;
+        std::vector<Vector3> interpolationPoints() const override;
         std::vector<int> faceDofs(int faceIdx) const override;
 
     private:
@@ -97,15 +85,11 @@ namespace mpfem {
         int order() const override { return order_; }
         int numDofs() const override;
         int vdim() const override { return 1; }
-
-        int dofsPerVertex() const override { return 1; }
-        int dofsPerEdge() const override { return std::max(0, order_ - 1); }
-        int dofsPerFace() const override { return 0; }
-        int dofsPerVolume() const override { return 0; }
+        DofLayout dofLayout() const override { return DofLayout {1, std::max(0, order_ - 1), 0, 0}; }
 
         void evalShape(const Vector3& xi, Matrix& shape) const override;
         void evalDerivatives(const Vector3& xi, Matrix& derivatives) const override;
-        std::vector<Vector3> dofCoords() const override;
+        std::vector<Vector3> interpolationPoints() const override;
         std::vector<int> faceDofs(int faceIdx) const override;
 
     private:
@@ -124,15 +108,11 @@ namespace mpfem {
         int order() const override { return order_; }
         int numDofs() const override { return (order_ + 1) * (order_ + 1) * (order_ + 1); }
         int vdim() const override { return 1; }
-
-        int dofsPerVertex() const override { return 1; }
-        int dofsPerEdge() const override { return std::max(0, order_ - 1); }
-        int dofsPerFace() const override { return order_ > 1 ? 1 : 0; }
-        int dofsPerVolume() const override { return order_ > 1 ? 1 : 0; }
+        DofLayout dofLayout() const override { return DofLayout {1, std::max(0, order_ - 1), order_ > 1 ? 1 : 0, order_ > 1 ? 1 : 0}; }
 
         void evalShape(const Vector3& xi, Matrix& shape) const override;
         void evalDerivatives(const Vector3& xi, Matrix& derivatives) const override;
-        std::vector<Vector3> dofCoords() const override;
+        std::vector<Vector3> interpolationPoints() const override;
         std::vector<int> faceDofs(int faceIdx) const override;
 
     private:

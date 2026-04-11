@@ -6,12 +6,18 @@ namespace mpfem {
 
     void FESpace::buildDofTable()
     {
-        if (!mesh_ || !fec_)
-            return;
+        if (!mesh_ || !fec_) {
+            MPFEM_THROW(Exception, "FESpace::buildDofTable requires both mesh and finite element collection");
+        }
 
-        const int fieldOrder = fec_->order();
+        if (!mesh_->hasTopology()) {
+            MPFEM_THROW(Exception, "FESpace::buildDofTable requires mesh topology; call Mesh::buildTopology() first");
+        }
 
-        // Find max dofs per element based on field order
+        if (mesh_->numElements() == 0) {
+            MPFEM_THROW(Exception, "FESpace::buildDofTable requires non-empty mesh");
+        }
+
         maxDofsPerElem_ = 0;
         maxDofsPerBdrElem_ = 0;
 
@@ -31,95 +37,156 @@ namespace mpfem {
             }
         }
 
-        // For H1 Lagrange elements:
-        // - Each corner vertex has exactly 1 DOF
-        // - Additional DOFs exist only if mesh has higher-order vertices
-        //
-        // DOF allocation strategy:
-        // - Isoparametric: field_order == geo_order -> DOFs from mesh vertices
-        // - Superparametric: field_order < geo_order -> subset of mesh vertices
-        // - Subparametric: field_order > geo_order -> only valid DOFs are mesh vertices,
-        //                                                  DOFs beyond mesh vertices are InvalidIndex
-        //
-        // Total DOFs = mesh vertices (one per vertex for H1)
+        const Geometry meshGeom = mesh_->element(0).geometry();
+        for (Index i = 1; i < mesh_->numElements(); ++i) {
+            if (mesh_->element(i).geometry() != meshGeom) {
+                MPFEM_THROW(NotImplementedException, "FESpace mixed volume geometries are not supported");
+            }
+        }
 
-        // Allocate element DOF table
-        elemDofs_.resize(mesh_->numElements() * maxDofsPerElem_, InvalidIndex);
-        bdrElemDofs_.resize(mesh_->numBdrElements() * maxDofsPerBdrElem_, InvalidIndex);
+        const ReferenceElement* meshRefElem = fec_->get(meshGeom);
+        if (!meshRefElem) {
+            MPFEM_THROW(Exception, "FESpace::buildDofTable missing reference element");
+        }
 
-        // Build element DOF mapping
+        const DofLayout layout = meshRefElem->basis().dofLayout();
+        const int meshDim = mesh_->dim();
+
+        const Index vertexEntities = mesh_->numCornerVertices();
+        const Index edgeEntities = mesh_->numEdges();
+        const Index faceEntities = (meshDim == 3) ? mesh_->numFaces() : mesh_->numElements();
+        const Index volumeEntities = (meshDim == 3) ? mesh_->numElements() : 0;
+
+        const Index vOffset = 0;
+        const Index eOffset = vOffset + vertexEntities * layout.numVertexDofs;
+        const Index fOffset = eOffset + edgeEntities * layout.numEdgeDofs;
+        const Index cOffset = fOffset + faceEntities * layout.numFaceDofs;
+
+        scalarNumDofs_ = cOffset + volumeEntities * layout.numVolumeDofs;
+        numDofs_ = scalarNumDofs_ * vdim_;
+
+        elemDofs_.assign(mesh_->numElements() * maxDofsPerElem_, InvalidIndex);
+        bdrElemDofs_.assign(mesh_->numBdrElements() * maxDofsPerBdrElem_, InvalidIndex);
+        vertexDofBase_.assign(mesh_->numVertices(), InvalidIndex);
+
+        if (layout.numVertexDofs > 0) {
+            const auto& cornerVertices = mesh_->cornerVertexIndices();
+            for (Index cornerId = 0; cornerId < static_cast<Index>(cornerVertices.size()); ++cornerId) {
+                const Index vId = cornerVertices[cornerId];
+                vertexDofBase_[vId] = vOffset + cornerId * layout.numVertexDofs;
+            }
+        }
+
+        const auto mapVertexDof = [&](Index vertexId, int k) -> Index {
+            const Index cornerId = mesh_->vertexToCornerIndex(vertexId);
+            if (cornerId == InvalidIndex) {
+                return InvalidIndex;
+            }
+            return vOffset + cornerId * layout.numVertexDofs + k;
+        };
+
+        const auto mapEdgeDof = [&](Index edgeId, int k) -> Index {
+            if (edgeId == InvalidIndex) {
+                return InvalidIndex;
+            }
+            return eOffset + edgeId * layout.numEdgeDofs + k;
+        };
+
+        const auto mapFaceDof = [&](Index faceId, int k) -> Index {
+            if (faceId == InvalidIndex) {
+                return InvalidIndex;
+            }
+            return fOffset + faceId * layout.numFaceDofs + k;
+        };
+
         for (Index elemIdx = 0; elemIdx < mesh_->numElements(); ++elemIdx) {
             const Element& elem = mesh_->element(elemIdx);
             const ReferenceElement* refElem = fec_->get(elem.geometry());
-            if (!refElem)
+            if (!refElem) {
                 continue;
-
-            const int fieldDofs = refElem->numDofs();
-            const int geoNodes = static_cast<int>(elem.vertices().size());
-            const int geoOrder = elem.order();
+            }
 
             const Index base = elemIdx * maxDofsPerElem_;
+            int localDof = 0;
 
-            if (fieldOrder == geoOrder) {
-                // Isoparametric: DOFs exactly match mesh vertices
-                for (int j = 0; j < fieldDofs; ++j) {
-                    elemDofs_[base + j] = elem.vertex(j);
+            const std::vector<Index> elemVertices = mesh_->getElementVertices(elemIdx);
+            for (Index vId : elemVertices) {
+                for (int k = 0; k < layout.numVertexDofs; ++k) {
+                    elemDofs_[base + localDof++] = mapVertexDof(vId, k);
                 }
             }
-            else if (fieldOrder > geoOrder) {
-                // Subparametric: field order > geo order
-                // Mesh has fewer nodes than field DOFs
-                // Only map DOFs that exist in mesh - rest remain InvalidIndex
-                for (int j = 0; j < geoNodes; ++j) {
-                    elemDofs_[base + j] = elem.vertex(j);
+
+            const std::vector<Index> elemEdges = mesh_->getElementEdges(elemIdx);
+            for (Index edgeId : elemEdges) {
+                for (int k = 0; k < layout.numEdgeDofs; ++k) {
+                    elemDofs_[base + localDof++] = mapEdgeDof(edgeId, k);
                 }
-                // DOFs beyond geoNodes remain InvalidIndex
             }
-            else {
-                // Superparametric: field order < geo order
-                // Mesh has more vertices than field DOFs
-                // DOFs are only the corner vertices (first numDofs of them)
-                for (int j = 0; j < fieldDofs; ++j) {
-                    elemDofs_[base + j] = elem.vertex(j);
+
+            if (layout.numFaceDofs > 0) {
+                if (meshDim == 3) {
+                    const std::vector<Index> elemFaces = mesh_->getElementFaces(elemIdx);
+                    for (Index faceId : elemFaces) {
+                        for (int k = 0; k < layout.numFaceDofs; ++k) {
+                            elemDofs_[base + localDof++] = mapFaceDof(faceId, k);
+                        }
+                    }
                 }
+                else {
+                    for (int k = 0; k < layout.numFaceDofs; ++k) {
+                        elemDofs_[base + localDof++] = fOffset + elemIdx * layout.numFaceDofs + k;
+                    }
+                }
+            }
+
+            if (layout.numVolumeDofs > 0 && meshDim == 3) {
+                for (int k = 0; k < layout.numVolumeDofs; ++k) {
+                    elemDofs_[base + localDof++] = cOffset + elemIdx * layout.numVolumeDofs + k;
+                }
+            }
+
+            if (localDof != refElem->numDofs()) {
+                MPFEM_THROW(Exception, "FESpace::buildDofTable local DOF count mismatch on volume element");
             }
         }
 
-        // Build boundary element DOF mapping
         for (Index bdrIdx = 0; bdrIdx < mesh_->numBdrElements(); ++bdrIdx) {
             const Element& bdrElem = mesh_->bdrElement(bdrIdx);
             const ReferenceElement* refElem = fec_->get(bdrElem.geometry());
-            if (!refElem)
+            if (!refElem) {
                 continue;
-
-            const int fieldDofs = refElem->numDofs();
-            const int geoOrder = bdrElem.order();
+            }
 
             const Index base = bdrIdx * maxDofsPerBdrElem_;
+            int localDof = 0;
 
-            if (fieldOrder == geoOrder) {
-                for (int j = 0; j < fieldDofs; ++j) {
-                    bdrElemDofs_[base + j] = bdrElem.vertex(j);
+            const int bdrCorners = bdrElem.numCorners();
+            for (int i = 0; i < bdrCorners; ++i) {
+                const Index vId = bdrElem.vertex(i);
+                for (int k = 0; k < layout.numVertexDofs; ++k) {
+                    bdrElemDofs_[base + localDof++] = mapVertexDof(vId, k);
                 }
             }
-            else if (fieldOrder > geoOrder) {
-                int geoNodes = static_cast<int>(bdrElem.vertices().size());
-                for (int j = 0; j < geoNodes; ++j) {
-                    bdrElemDofs_[base + j] = bdrElem.vertex(j);
+
+            for (int localEdge = 0; localEdge < bdrElem.numEdges(); ++localEdge) {
+                const auto [v0, v1] = bdrElem.edgeVertices(localEdge);
+                const Index edgeId = mesh_->edgeIndex(v0, v1);
+                for (int k = 0; k < layout.numEdgeDofs; ++k) {
+                    bdrElemDofs_[base + localDof++] = mapEdgeDof(edgeId, k);
                 }
             }
-            else {
-                for (int j = 0; j < fieldDofs; ++j) {
-                    bdrElemDofs_[base + j] = bdrElem.vertex(j);
+
+            if (layout.numFaceDofs > 0 && meshDim == 3 && geom::dim(bdrElem.geometry()) == 2) {
+                const Index faceId = mesh_->getBoundaryFaceIndex(bdrIdx);
+                for (int k = 0; k < layout.numFaceDofs; ++k) {
+                    bdrElemDofs_[base + localDof++] = mapFaceDof(faceId, k);
                 }
+            }
+
+            if (localDof != refElem->numDofs()) {
+                MPFEM_THROW(Exception, "FESpace::buildDofTable local DOF count mismatch on boundary element");
             }
         }
-
-        // Total DOFs = mesh vertices (one per vertex for H1)
-        numDofs_ = mesh_->numVertices();
-
-        // Multiply by vdim for vector fields
-        numDofs_ = numDofs_ * vdim_;
     }
 
 } // namespace mpfem

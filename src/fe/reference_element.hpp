@@ -53,10 +53,10 @@ namespace mpfem {
         /// Get basis evaluator
         const FiniteElement& basis() const { return *basis_; }
 
-        /// Get dof coordinates in reference element
-        std::vector<Vector3> dofCoords() const
+        /// Get interpolation points in reference element
+        std::vector<Vector3> interpolationPoints() const
         {
-            return basis_->dofCoords();
+            return basis_->interpolationPoints();
         }
 
         // -------------------------------------------------------------------------

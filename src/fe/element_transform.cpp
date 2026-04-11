@@ -86,18 +86,13 @@ namespace mpfem {
         invJacobian_.setZero(dim_, spaceDim_);
         invJacobianT_.setZero(spaceDim_, dim_);
 
-        // Create geometric basis for coordinate transformation.
-        geoBasis_ = FiniteElement::create(BasisType::H1, geometry_, geomOrder_);
         geoShapeDerivatives_.resize(numNodes_, 3);
     }
 
     void ElementTransform::computeJacobianAtIP()
     {
-        if (!geoBasis_)
-            return;
-
-        // Evaluate geometric basis derivatives at integration point.
-        geoBasis_->evalDerivatives(ip_.getXi(), geoShapeDerivatives_);
+        // Evaluate geometric shape derivatives at integration point.
+        GeometryMapping::evalDerivatives(geometry_, geomOrder_, ip_.getXi(), geoShapeDerivatives_);
 
         // Compute Jacobian: J = sum_i (x_i * grad_phi_i^T)
         jacobian_.setZero(spaceDim_, dim_);
@@ -156,14 +151,10 @@ namespace mpfem {
 
     Vector3 ElementTransform::transform(const Vector3& xi)
     {
-        if (!geoBasis_) {
-            return Vector3::Zero();
-        }
-
         // Evaluate geometric basis values for coordinate transformation.
         Matrix geoShapeValues;
         geoShapeValues.resize(numNodes_, 1);
-        geoBasis_->evalShape(xi, geoShapeValues);
+        GeometryMapping::evalShape(geometry_, geomOrder_, xi, geoShapeValues);
 
         Vector3 x = Vector3::Zero();
         for (int d = 0; d < spaceDim_; ++d) {

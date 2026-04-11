@@ -10,6 +10,44 @@
 
 namespace mpfem {
 
+    namespace {
+
+        Real scalarAtVertex(const GridFunction& gf, Index vertexIdx)
+        {
+            const FESpace* fes = gf.fes();
+            if (!fes) {
+                return 0.0;
+            }
+            const Index dof = fes->vertexScalarDof(vertexIdx);
+            if (dof == InvalidIndex || dof >= gf.numDofs()) {
+                return 0.0;
+            }
+            return gf(dof);
+        }
+
+        Real vectorMagnitudeAtVertex(const GridFunction& gf, Index vertexIdx)
+        {
+            const FESpace* fes = gf.fes();
+            if (!fes || fes->vdim() < 3) {
+                return 0.0;
+            }
+
+            const Index dxDof = fes->vertexDof(vertexIdx, 0);
+            const Index dyDof = fes->vertexDof(vertexIdx, 1);
+            const Index dzDof = fes->vertexDof(vertexIdx, 2);
+            if (dxDof == InvalidIndex || dyDof == InvalidIndex || dzDof == InvalidIndex
+                || dxDof >= gf.numDofs() || dyDof >= gf.numDofs() || dzDof >= gf.numDofs()) {
+                return 0.0;
+            }
+
+            const Real dx = gf(dxDof);
+            const Real dy = gf(dyDof);
+            const Real dz = gf(dzDof);
+            return std::sqrt(dx * dx + dy * dy + dz * dz);
+        }
+
+    } // namespace
+
     std::string ResultExporter::getCurrentTimestamp()
     {
         std::time_t now = std::time(nullptr);
@@ -90,26 +128,21 @@ namespace mpfem {
 
             for (size_t idx = 0; idx < snapshots.size(); ++idx) {
                 if (vFields[idx]) {
-                    file << "       " << (*vFields[idx])(cornerIndices[j]);
+                    file << "       " << scalarAtVertex(*vFields[idx], cornerIndices[j]);
                 }
                 else {
                     file << "       0.0";
                 }
 
                 if (tFields[idx]) {
-                    file << "       " << (*tFields[idx])(cornerIndices[j]);
+                    file << "       " << scalarAtVertex(*tFields[idx], cornerIndices[j]);
                 }
                 else {
                     file << "       0.0";
                 }
 
                 if (uFields[idx]) {
-                    const auto& u = *uFields[idx];
-                    Index base = cornerIndices[j] * 3;
-                    Real dx = u(base);
-                    Real dy = u(base + 1);
-                    Real dz = u(base + 2);
-                    Real mag = std::sqrt(dx * dx + dy * dy + dz * dz);
+                    const Real mag = vectorMagnitudeAtVertex(*uFields[idx], cornerIndices[j]);
                     file << "       " << mag;
                 }
                 else {
@@ -167,25 +200,21 @@ namespace mpfem {
             file << v.x() << "       " << v.y() << "       " << v.z();
 
             if (V) {
-                file << "       " << (*V)(cornerIndices[i]);
+                file << "       " << scalarAtVertex(*V, cornerIndices[i]);
             }
             else {
                 file << "       0.0";
             }
 
             if (T) {
-                file << "       " << (*T)(cornerIndices[i]);
+                file << "       " << scalarAtVertex(*T, cornerIndices[i]);
             }
             else {
                 file << "       0.0";
             }
 
             if (u) {
-                Index base = cornerIndices[i] * 3;
-                Real dx = (*u)(base);
-                Real dy = (*u)(base + 1);
-                Real dz = (*u)(base + 2);
-                Real mag = std::sqrt(dx * dx + dy * dy + dz * dz);
+                const Real mag = vectorMagnitudeAtVertex(*u, cornerIndices[i]);
                 file << "       " << mag;
             }
             else {
@@ -255,7 +284,7 @@ namespace mpfem {
         if (V) {
             file << "<DataArray type=\"Float64\" Name=\"V\" format=\"ascii\">\n";
             for (Index i = 0; i < numExportPoints; ++i) {
-                file << (*V)(cornerIndices[i]) << "\n";
+                file << scalarAtVertex(*V, cornerIndices[i]) << "\n";
             }
             file << "</DataArray>\n";
         }
@@ -263,7 +292,7 @@ namespace mpfem {
         if (T) {
             file << "<DataArray type=\"Float64\" Name=\"T\" format=\"ascii\">\n";
             for (Index i = 0; i < numExportPoints; ++i) {
-                file << (*T)(cornerIndices[i]) << "\n";
+                file << scalarAtVertex(*T, cornerIndices[i]) << "\n";
             }
             file << "</DataArray>\n";
         }
@@ -271,19 +300,20 @@ namespace mpfem {
         if (u) {
             file << "<DataArray type=\"Float64\" Name=\"displacement\" NumberOfComponents=\"3\" format=\"ascii\">\n";
             for (Index i = 0; i < numExportPoints; ++i) {
-                Index base = cornerIndices[i] * 3;
-                file << (*u)(base) << " " << (*u)(base + 1) << " " << (*u)(base + 2) << "\n";
+                const Index dxDof = u->fes()->vertexDof(cornerIndices[i], 0);
+                const Index dyDof = u->fes()->vertexDof(cornerIndices[i], 1);
+                const Index dzDof = u->fes()->vertexDof(cornerIndices[i], 2);
+                const Real dx = (dxDof == InvalidIndex || dxDof >= u->numDofs()) ? 0.0 : (*u)(dxDof);
+                const Real dy = (dyDof == InvalidIndex || dyDof >= u->numDofs()) ? 0.0 : (*u)(dyDof);
+                const Real dz = (dzDof == InvalidIndex || dzDof >= u->numDofs()) ? 0.0 : (*u)(dzDof);
+                file << dx << " " << dy << " " << dz << "\n";
             }
             file << "</DataArray>\n";
 
             // displacement magnitude
             file << "<DataArray type=\"Float64\" Name=\"disp_magnitude\" format=\"ascii\">\n";
             for (Index i = 0; i < numExportPoints; ++i) {
-                Index base = cornerIndices[i] * 3;
-                Real dx = (*u)(base);
-                Real dy = (*u)(base + 1);
-                Real dz = (*u)(base + 2);
-                file << std::sqrt(dx * dx + dy * dy + dz * dz) << "\n";
+                file << vectorMagnitudeAtVertex(*u, cornerIndices[i]) << "\n";
             }
             file << "</DataArray>\n";
         }

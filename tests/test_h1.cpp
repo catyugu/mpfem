@@ -80,7 +80,7 @@ TEST_P(SegmentShapeTest, PartitionOfUnity)
 TEST_P(SegmentShapeTest, KroneckerDelta)
 {
     // H1 basis function i = 1 at dof point i
-    auto coords = shape_->dofCoords();
+    auto coords = shape_->interpolationPoints();
     for (size_t i = 0; i < coords.size(); ++i) {
         Vector3 xi(coords[i][0], 0.0, 0.0);
         evalValues(*shape_, xi, values_);
@@ -271,7 +271,7 @@ TEST_P(SquareShapeTest, TensorProductStructure)
 
     if (order_ == 2) {
         // For order 2, test that H1 basis functions have correct values at nodes
-        auto coords = shape_->dofCoords();
+        auto coords = shape_->interpolationPoints();
         for (size_t i = 0; i < coords.size(); ++i) {
             Vector3 xi(coords[i][0], coords[i][1], 0.0);
             evalValues(*shape_, xi, values_);
@@ -308,7 +308,7 @@ TEST_P(SquareShapeTest, TensorProductStructure)
 
 TEST_P(SquareShapeTest, KroneckerDeltaAtNodes)
 {
-    auto coords = shape_->dofCoords();
+    auto coords = shape_->interpolationPoints();
     for (size_t i = 0; i < coords.size(); ++i) {
         Vector3 xi(coords[i][0], coords[i][1], 0.0);
         evalValues(*shape_, xi, values_);
@@ -475,7 +475,7 @@ TEST_P(CubeShapeTest, TensorProductStructure)
 
     if (order_ == 2) {
         // For order 2, test that H1 basis functions have correct values at nodes
-        auto coords = shape_->dofCoords();
+        auto coords = shape_->interpolationPoints();
         for (size_t i = 0; i < coords.size(); ++i) {
             Vector3 xi(coords[i][0], coords[i][1], coords[i][2]);
             evalValues(*shape_, xi, values_);
@@ -573,7 +573,7 @@ TEST(QuadraticElementsTest, TriangleQuadraticDofs)
     H1TriangleShape shape(2);
     EXPECT_EQ(shape.numDofs(), 6); // 3 vertices + 3 edges
 
-    auto coords = shape.dofCoords();
+    auto coords = shape.interpolationPoints();
 
     // Check vertex nodes
     EXPECT_NEAR(coords[0][0], 0.0, 1e-12);
@@ -597,7 +597,7 @@ TEST(QuadraticElementsTest, TetrahedronQuadraticDofs)
     H1TetrahedronShape shape(2);
     EXPECT_EQ(shape.numDofs(), 10); // 4 vertices + 6 edges
 
-    auto coords = shape.dofCoords();
+    auto coords = shape.interpolationPoints();
 
     // Check vertex nodes (reference tetrahedron)
     EXPECT_NEAR(coords[0][0], 0.0, 1e-12);

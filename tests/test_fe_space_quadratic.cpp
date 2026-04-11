@@ -62,6 +62,8 @@ Mesh createQuadraticTriangleMesh()
     mesh.addElement(Geometry::Triangle, {0, 1, 2, 4, 6, 5}, 1, 2);
     mesh.addElement(Geometry::Triangle, {2, 1, 3, 5, 8, 7}, 2, 2);
 
+    mesh.buildTopology();
+
     return mesh;
 }
 
@@ -97,6 +99,8 @@ Mesh createQuadraticTetrahedronMesh()
     // Tetrahedron2 COMSOL ordering: V0, V1, V2, V3, E01, E02, E12, E03, E13, E23
     mesh.addElement(Geometry::Tetrahedron, {0, 1, 2, 3, 5, 7, 6, 8, 9, 10}, 1, 2);
     mesh.addElement(Geometry::Tetrahedron, {1, 4, 2, 3, 11, 6, 12, 9, 13, 10}, 2, 2);
+
+    mesh.buildTopology();
 
     return mesh;
 }
@@ -211,16 +215,22 @@ TEST_F(QuadraticGridFunctionTest, InterpolateLinearFunction)
 {
     // Interpolate f(x,y) = x
 
-    // Set vertex values
+    // Set corner vertex DOFs from physical vertex values.
     for (Index v = 0; v < mesh_.numVertices(); ++v) {
+        Index d = fes_->vertexScalarDof(v);
+        if (d == InvalidIndex) {
+            continue;
+        }
         const Vertex& vert = mesh_.vertex(v);
-        (*gf_)(v) = vert.x();
+        (*gf_)(d) = vert.x();
     }
 
-    // Check that interpolation is correct at vertices
+    // Check corner-vertex DOFs.
     for (Index v = 0; v < 4; ++v) { // Only check corner vertices
+        Index d = fes_->vertexScalarDof(v);
+        ASSERT_NE(d, InvalidIndex);
         const Vertex& vert = mesh_.vertex(v);
-        EXPECT_NEAR((*gf_)(v), vert.x(), 1e-12);
+        EXPECT_NEAR((*gf_)(d), vert.x(), 1e-12);
     }
 }
 
@@ -241,16 +251,19 @@ TEST_F(QuadraticGridFunctionTest, EvalQuadraticFunction)
     // Set up a quadratic function f = x^2 + y^2
     // On a quadratic element, this should be represented exactly
 
-    for (Index i = 0; i < fes_->numDofs(); ++i) {
-        // For simplicity, just set up based on vertex positions
-        if (i < mesh_.numVertices()) {
-            const Vertex& v = mesh_.vertex(i);
-            (*gf_)(i) = v.x() * v.x() + v.y() * v.y();
+    for (Index v = 0; v < mesh_.numVertices(); ++v) {
+        Index d = fes_->vertexScalarDof(v);
+        if (d == InvalidIndex) {
+            continue;
         }
+        const Vertex& p = mesh_.vertex(v);
+        (*gf_)(d) = p.x() * p.x() + p.y() * p.y();
     }
 
     // Check value at vertex 1: (1,0) -> 1.0
-    EXPECT_NEAR((*gf_)(1), 1.0, 1e-12);
+    const Index d1 = fes_->vertexScalarDof(1);
+    ASSERT_NE(d1, InvalidIndex);
+    EXPECT_NEAR((*gf_)(d1), 1.0, 1e-12);
 }
 
 // =============================================================================
@@ -361,14 +374,19 @@ TEST(QuadraticIntegrationTest, IntegrateQuadraticFunctionExactly)
     mesh.addVertex(0.5, 0.5, 0.0); // 5: edge 1-2 midpoint
 
     mesh.addElement(Geometry::Triangle, {0, 1, 2, 3, 4, 5}, 1, 2);
+    mesh.buildTopology();
 
     FESpace fes(&mesh, std::make_unique<FECollection>(2));
     GridFunction gf(&fes);
 
-    // Set f(x,y) = x + y (linear, but should integrate exactly on quadratic element)
-    for (Index i = 0; i < fes.numDofs(); ++i) {
-        const Vertex& v = mesh.vertex(i);
-        gf(i) = v.x() + v.y();
+    // Set f(x,y) = x + y at nodal interpolation points of the element.
+    const auto dofs = getElementDofsVec(fes, 0);
+    const auto points = fes.elementRefElement(0)->interpolationPoints();
+    ElementTransform setupTrans(&mesh, 0);
+    for (size_t i = 0; i < points.size(); ++i) {
+        setupTrans.setIntegrationPoint(points[i]);
+        Vector3 p = setupTrans.transform(points[i]);
+        gf(dofs[i]) = p.x() + p.y();
     }
 
     // Integrate using order-4 quadrature (sufficient for quadratic)
@@ -571,11 +589,14 @@ TEST_F(COMSOLMeshTest, FESpaceConsistency)
 
         ASSERT_EQ(dofs.size(), vertices.size());
 
-        for (size_t i = 0; i < dofs.size(); ++i) {
-            // DOF index should equal vertex index (COMSOL-style)
-            EXPECT_EQ(dofs[i], vertices[i])
-                << "DOF-vertex mismatch at local index " << i
+        for (int i = 0; i < elem.numCorners(); ++i) {
+            const Index expected = fes.vertexScalarDof(vertices[static_cast<size_t>(i)]);
+            EXPECT_EQ(dofs[static_cast<size_t>(i)], expected)
+                << "Corner DOF mismatch at local index " << i
                 << " of element " << e;
+        }
+        for (Index d : dofs) {
+            EXPECT_NE(d, InvalidIndex);
         }
     }
 }
@@ -601,7 +622,7 @@ TEST_F(COMSOLMeshTest, FiniteElementKroneckerDelta)
         trans.setElement(e);
         auto refElem = fes.elementRefElement(e);
         const FiniteElement& h1Element = refElem->basis();
-        auto dofCoords = h1Element.dofCoords();
+        auto dofCoords = h1Element.interpolationPoints();
 
         // Pre-allocate storage
         Matrix values;

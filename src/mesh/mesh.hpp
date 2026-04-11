@@ -10,6 +10,7 @@
 #include <memory>
 #include <set>
 #include <span>
+#include <cstdint>
 #include <unordered_map>
 
 namespace mpfem {
@@ -50,6 +51,11 @@ public:
         std::vector<Index> vertices;    ///< Face vertices (sorted)
     };
 
+    struct EdgeInfo {
+        Index v0 = InvalidIndex;
+        Index v1 = InvalidIndex;
+    };
+
     /// Default constructor
     Mesh() = default;
 
@@ -71,6 +77,9 @@ public:
 
     /// Get number of volume elements
     Index numElements() const { return static_cast<Index>(elements_.size()); }
+
+    /// Get total number of unique topology edges
+    Index numEdges() const { return static_cast<Index>(edgeInfoList_.size()); }
 
     /// Get number of boundary elements
     Index numBdrElements() const { return static_cast<Index>(bdrElements_.size()); }
@@ -188,6 +197,18 @@ public:
     /// Get total number of unique faces
     Index numFaces() const { return static_cast<Index>(faceInfoList_.size()); }
 
+    /// Get global topology vertices used by an element (corner vertices only)
+    std::vector<Index> getElementVertices(Index elemIdx) const;
+
+    /// Get global topology edge indices used by an element (local edge order)
+    std::vector<Index> getElementEdges(Index elemIdx) const;
+
+    /// Get global topology face indices used by an element (local face order)
+    std::vector<Index> getElementFaces(Index elemIdx) const;
+
+    /// Get global topology edge index by two endpoint vertices
+    Index edgeIndex(Index a, Index b) const;
+
     /// Get number of boundary faces (external)
     Index numBoundaryFaces() const { return static_cast<Index>(boundaryFaceIndices_.size()); }
 
@@ -228,6 +249,8 @@ public:
     Index vertexToCornerIndex(Index vertexIdx) const;
 
 private:
+    static std::uint64_t edgeKey(Index a, Index b);
+    void buildEdgeToElementMap();
     void buildFaceToElementMap();
     void buildElementToFaceMap();
     void identifyBoundaryFaces();
@@ -240,6 +263,9 @@ private:
 
     // Topology data
     bool topologyBuilt_ = false;
+    std::vector<EdgeInfo> edgeInfoList_;
+    std::unordered_map<std::uint64_t, Index> edgeKeyToIndex_;
+    std::vector<std::vector<std::pair<int, Index>>> elementToEdge_;
     std::vector<FaceInfo> faceInfoList_;
     std::unordered_map<FaceKey, Index, FaceKeyHash> faceKeyToIndex_;
     std::vector<std::vector<std::pair<int, Index>>> elementToFace_;

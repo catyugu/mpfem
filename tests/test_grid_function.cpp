@@ -29,6 +29,8 @@ protected:
         // Add 1 tetrahedron
         mesh.addElement(Geometry::Tetrahedron, {0, 1, 2, 3}, 1);
 
+        mesh.buildTopology();
+
         return mesh;
     }
 };
@@ -133,11 +135,8 @@ TEST_F(GridFunctionTest, QuadraticElement)
 
     GridFunction gf(&fes);
 
-    // With the new DOF allocation logic for COMSOL-style meshes:
-    // DOFs = mesh vertices
-    // This linear mesh has 4 vertices, so 4 DOFs
-    // For a proper second-order mesh, vertices would include edge midpoints
-    EXPECT_EQ(gf.numDofs(), 4);
+    // Topology-based quadratic tetrahedron DOFs: 4 vertex + 6 edge = 10
+    EXPECT_EQ(gf.numDofs(), 10);
 }
 
 int main(int argc, char** argv)

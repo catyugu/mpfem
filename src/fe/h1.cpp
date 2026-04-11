@@ -44,6 +44,7 @@ namespace mpfem {
         {
             std::vector<int> dofs;
             const Geometry g = fe.geometry();
+            const DofLayout layout = fe.dofLayout();
 
             if (g == Geometry::Segment) {
                 if (faceIdx == 0) {
@@ -66,7 +67,7 @@ namespace mpfem {
             }
 
             const std::vector<int> faceEdges = geom::faceEdges(g, faceIdx);
-            const int edgeDofs = fe.dofsPerEdge();
+            const int edgeDofs = layout.numEdgeDofs;
             const int edgeBase = geom::numCorners(g);
 
             for (int edgeIdx : faceEdges) {
@@ -78,8 +79,8 @@ namespace mpfem {
 
             if (g == Geometry::Cube) {
                 const int faceBase = edgeBase + geom::numEdges(g) * edgeDofs;
-                for (int j = 0; j < fe.dofsPerFace(); ++j) {
-                    dofs.push_back(faceBase + faceIdx * fe.dofsPerFace() + j);
+                for (int j = 0; j < layout.numFaceDofs; ++j) {
+                    dofs.push_back(faceBase + faceIdx * layout.numFaceDofs + j);
                 }
             }
 
@@ -151,7 +152,7 @@ namespace mpfem {
         grads[2] = Vector3(x + 0.5, 0.0, 0.0);
     }
 
-    std::vector<Vector3> H1SegmentShape::dofCoords() const
+    std::vector<Vector3> H1SegmentShape::interpolationPoints() const
     {
         if (order_ == 1) {
             return {Vector3(-1.0, 0.0, 0.0), Vector3(1.0, 0.0, 0.0)};
@@ -242,7 +243,7 @@ namespace mpfem {
         grads[5] = Vector3(4.0 * xi2, 4.0 * xi1, 0.0);
     }
 
-    std::vector<Vector3> H1TriangleShape::dofCoords() const
+    std::vector<Vector3> H1TriangleShape::interpolationPoints() const
     {
         if (order_ == 1) {
             return {Vector3(0.0, 0.0, 0.0), Vector3(1.0, 0.0, 0.0), Vector3(0.0, 1.0, 0.0)};
@@ -372,7 +373,7 @@ namespace mpfem {
         grads[8] = Vector3(dpx1 * py1, px1 * dpy1, 0.0);
     }
 
-    std::vector<Vector3> H1SquareShape::dofCoords() const
+    std::vector<Vector3> H1SquareShape::interpolationPoints() const
     {
         if (order_ == 1) {
             return {Vector3(-1.0, -1.0, 0.0), Vector3(1.0, -1.0, 0.0), Vector3(1.0, 1.0, 0.0), Vector3(-1.0, 1.0, 0.0)};
@@ -482,7 +483,7 @@ namespace mpfem {
         grads[9] = Vector3(0.0, 4.0 * xi3, 4.0 * xi2);
     }
 
-    std::vector<Vector3> H1TetrahedronShape::dofCoords() const
+    std::vector<Vector3> H1TetrahedronShape::interpolationPoints() const
     {
         if (order_ == 1) {
             return {Vector3(0.0, 0.0, 0.0), Vector3(1.0, 0.0, 0.0), Vector3(0.0, 1.0, 0.0), Vector3(0.0, 0.0, 1.0)};
@@ -680,7 +681,7 @@ namespace mpfem {
         grads[26] = Vector3(dpx1 * py1 * pz1, px1 * dpy1 * pz1, px1 * py1 * dpz1);
     }
 
-    std::vector<Vector3> H1CubeShape::dofCoords() const
+    std::vector<Vector3> H1CubeShape::interpolationPoints() const
     {
         if (order_ == 1) {
             return {
