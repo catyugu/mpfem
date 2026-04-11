@@ -88,7 +88,6 @@ namespace mpfem {
 
         // Create geometric basis for coordinate transformation.
         geoBasis_ = FiniteElement::create(BasisType::H1, geometry_, geomOrder_);
-        geoShapeValues_.resize(numNodes_, 1);
         geoShapeDerivatives_.resize(numNodes_, 3);
     }
 
@@ -155,31 +154,25 @@ namespace mpfem {
         invJacobianT_ = invJacobian_.transpose();
     }
 
-    void ElementTransform::transform(const Vector3& xi, Real* x)
+    Vector3 ElementTransform::transform(const Vector3& xi)
     {
-        if (!geoBasis_)
-            return;
+        if (!geoBasis_) {
+            return Vector3::Zero();
+        }
 
         // Evaluate geometric basis values for coordinate transformation.
-        geoBasis_->evalShape(xi, geoShapeValues_);
+        Matrix geoShapeValues;
+        geoShapeValues.resize(numNodes_, 1);
+        geoBasis_->evalShape(xi, geoShapeValues);
 
+        Vector3 x = Vector3::Zero();
         for (int d = 0; d < spaceDim_; ++d) {
-            x[d] = 0.0;
             for (int i = 0; i < numNodes_; ++i) {
-                x[d] += geoShapeValues_(i, 0) * nodesBuf_[i][d];
+                x[d] += geoShapeValues(i, 0) * nodesBuf_[i][d];
             }
         }
-    }
 
-    void ElementTransform::transformGradient(const Real* refGrad, Real* physGrad) const
-    {
-        // physGrad = J^{-T} * refGrad
-        for (int d = 0; d < spaceDim_; ++d) {
-            physGrad[d] = 0.0;
-            for (int k = 0; k < dim_; ++k) {
-                physGrad[d] += invJacobianT_(d, k) * refGrad[k];
-            }
-        }
+        return x;
     }
 
 } // namespace mpfem

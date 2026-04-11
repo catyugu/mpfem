@@ -118,7 +118,7 @@ TEST_F(TetrahedronTransformTest, TransformReferenceToPhysical)
     // Transform origin
     Vector3 xi(0.0, 0.0, 0.0);
     Vector3 x;
-    transform_->transform(xi, x.data());
+    x = transform_->transform(xi);
 
     EXPECT_NEAR(x.x(), 0.0, 1e-12);
     EXPECT_NEAR(x.y(), 0.0, 1e-12);
@@ -126,7 +126,7 @@ TEST_F(TetrahedronTransformTest, TransformReferenceToPhysical)
 
     // Transform vertex 1
     xi << 1.0, 0.0, 0.0;
-    transform_->transform(xi, x.data());
+    x = transform_->transform(xi);
     EXPECT_NEAR(x.x(), 1.0, 1e-12);
     EXPECT_NEAR(x.y(), 0.0, 1e-12);
     EXPECT_NEAR(x.z(), 0.0, 1e-12);
@@ -134,7 +134,7 @@ TEST_F(TetrahedronTransformTest, TransformReferenceToPhysical)
     // Transform centroid (xi=eta=zeta=0.25, but in barycentric coords)
     // Actually centroid is (1/4, 1/4, 1/4) in ref coords
     xi << 0.25, 0.25, 0.25;
-    transform_->transform(xi, x.data());
+    x = transform_->transform(xi);
     EXPECT_NEAR(x.x(), 0.25, 1e-12);
     EXPECT_NEAR(x.y(), 0.25, 1e-12);
     EXPECT_NEAR(x.z(), 0.25, 1e-12);
@@ -178,7 +178,7 @@ TEST_F(TetrahedronTransformTest, GradientTransformation)
     // Reference gradient of first H1 basis function phi0 = 1 - xi - eta - zeta
     Vector3 refGrad(-1.0, -1.0, -1.0);
     Vector3 physGrad;
-    transform_->transformGradient(refGrad, physGrad);
+    physGrad = transform_->transformGradient(refGrad);
 
     // For unit tetrahedron, J is identity, so J^{-T} = I
     // physGrad should equal refGrad
@@ -227,21 +227,21 @@ TEST_F(HexahedronTransformTest, TransformCorners)
     // Corner (-1, -1, -1) -> (0, 0, 0)
     Vector3 xi(-1.0, -1.0, -1.0);
     Vector3 x;
-    transform_->transform(xi, x.data());
+    x = transform_->transform(xi);
     EXPECT_NEAR(x.x(), 0.0, 1e-12);
     EXPECT_NEAR(x.y(), 0.0, 1e-12);
     EXPECT_NEAR(x.z(), 0.0, 1e-12);
 
     // Corner (1, 1, 1) -> (1, 1, 1)
     xi << 1.0, 1.0, 1.0;
-    transform_->transform(xi, x.data());
+    x = transform_->transform(xi);
     EXPECT_NEAR(x.x(), 1.0, 1e-12);
     EXPECT_NEAR(x.y(), 1.0, 1e-12);
     EXPECT_NEAR(x.z(), 1.0, 1e-12);
 
     // Center (0, 0, 0) -> (0.5, 0.5, 0.5)
     xi << 0.0, 0.0, 0.0;
-    transform_->transform(xi, x.data());
+    x = transform_->transform(xi);
     EXPECT_NEAR(x.x(), 0.5, 1e-12);
     EXPECT_NEAR(x.y(), 0.5, 1e-12);
     EXPECT_NEAR(x.z(), 0.5, 1e-12);
@@ -287,17 +287,17 @@ TEST_F(TriangleFacetTransformTest, TransformVertices)
     // Test transformation of vertices
     Vector3 xi(0.0, 0.0, 0.0); // Vertex 0
     Vector3 x;
-    transform_->transform(xi, x.data());
+    x = transform_->transform(xi);
     EXPECT_NEAR(x.x(), 0.0, 1e-12);
     EXPECT_NEAR(x.y(), 0.0, 1e-12);
 
     xi << 1.0, 0.0, 0.0; // Vertex 1
-    transform_->transform(xi, x.data());
+    x = transform_->transform(xi);
     EXPECT_NEAR(x.x(), 1.0, 1e-12);
     EXPECT_NEAR(x.y(), 0.0, 1e-12);
 
     xi << 0.0, 1.0, 0.0; // Vertex 2
-    transform_->transform(xi, x.data());
+    x = transform_->transform(xi);
     EXPECT_NEAR(x.x(), 0.0, 1e-12);
     EXPECT_NEAR(x.y(), 1.0, 1e-12);
 }
@@ -353,13 +353,13 @@ TEST_F(SquareFacetTransformTest, TransformCorners)
     // Corner (-1, -1) -> (0, 0)
     Vector3 xi(-1.0, -1.0, 0.0);
     Vector3 x;
-    transform_->transform(xi, x.data());
+    x = transform_->transform(xi);
     EXPECT_NEAR(x.x(), 0.0, 1e-12);
     EXPECT_NEAR(x.y(), 0.0, 1e-12);
 
     // Corner (1, 1) -> (1, 1)
     xi << 1.0, 1.0, 0.0;
-    transform_->transform(xi, x.data());
+    x = transform_->transform(xi);
     EXPECT_NEAR(x.x(), 1.0, 1e-12);
     EXPECT_NEAR(x.y(), 1.0, 1e-12);
 }

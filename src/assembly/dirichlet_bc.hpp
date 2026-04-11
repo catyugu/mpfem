@@ -66,7 +66,7 @@ namespace mpfem {
                         std::array<Vector3, 1> refPts {Vector3(xi[0], xi[1], xi[2])};
                         std::array<Vector3, 1> physPts;
                         const IntegrationPoint& ip = trans.integrationPoint();
-                        trans.transform(ip, physPts[0]);
+                        physPts[0] = trans.transform(ip);
                         std::array<ElementTransform*, 1> transforms {&trans};
                         EvaluationContext ctx;
                         ctx.domainId = static_cast<int>(trans.attribute());

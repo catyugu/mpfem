@@ -78,8 +78,8 @@ namespace mpfem {
         // Transformation
         // -------------------------------------------------------------------------
 
-        virtual void transform(const Vector3& xi, Real* x);
-        void transform(const IntegrationPoint& ip, Vector3& x);
+        virtual Vector3 transform(const Vector3& xi);
+        Vector3 transform(const IntegrationPoint& ip);
 
         // -------------------------------------------------------------------------
         // Jacobian and related quantities (computed in setIntegrationPoint)
@@ -95,8 +95,7 @@ namespace mpfem {
         // Gradient transformation
         // -------------------------------------------------------------------------
 
-        void transformGradient(const Real* refGrad, Real* physGrad) const;
-        void transformGradient(const Vector3& refGrad, Vector3& physGrad) const;
+        Vector3 transformGradient(const Vector3& refGrad) const;
 
         // -------------------------------------------------------------------------
         // Element nodes (fixed-size for performance)
@@ -136,7 +135,6 @@ namespace mpfem {
         // Fixed-size buffers (no heap allocation)
         std::array<Vector3, MaxNodesPerElement> nodesBuf_;
         std::array<Index, MaxNodesPerElement> nodeIndicesBuf_;
-        Matrix geoShapeValues_; // [numNodes x 1]
         Matrix geoShapeDerivatives_; // [numNodes x 3]
 
         IntegrationPoint ip_;
@@ -164,17 +162,20 @@ namespace mpfem {
         setIntegrationPoint(ip.getXi());
     }
 
-    inline void ElementTransform::transform(const IntegrationPoint& ip, Vector3& x)
+    inline Vector3 ElementTransform::transform(const IntegrationPoint& ip)
     {
-        transform(ip.getXi(), x.data());
+        return transform(ip.getXi());
     }
 
-    inline void ElementTransform::transformGradient(const Vector3& refGrad, Vector3& physGrad) const
+    inline Vector3 ElementTransform::transformGradient(const Vector3& refGrad) const
     {
-        Real rg[3] = {refGrad.x(), refGrad.y(), refGrad.z()};
-        Real pg[3];
-        transformGradient(rg, pg);
-        physGrad = Vector3(pg[0], pg[1], pg[2]);
+        Vector3 physGrad = Vector3::Zero();
+        for (int d = 0; d < spaceDim_; ++d) {
+            for (int k = 0; k < dim_; ++k) {
+                physGrad[d] += invJacobianT_(d, k) * refGrad[k];
+            }
+        }
+        return physGrad;
     }
 
 } // namespace mpfem

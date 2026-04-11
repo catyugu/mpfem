@@ -330,19 +330,19 @@ TEST_F(CurvedTriangleTransformTest, TransformCorners)
 
     // Vertex 0: (0,0,0)
     Vector3 xi(0.0, 0.0, 0.0);
-    transform_->transform(xi, x.data());
+    x = transform_->transform(xi);
     EXPECT_NEAR(x.x(), 0.0, 1e-12);
     EXPECT_NEAR(x.y(), 0.0, 1e-12);
 
     // Vertex 1: (1,0,0)
     xi << 1.0, 0.0, 0.0;
-    transform_->transform(xi, x.data());
+    x = transform_->transform(xi);
     EXPECT_NEAR(x.x(), 1.0, 1e-12);
     EXPECT_NEAR(x.y(), 0.0, 1e-12);
 
     // Vertex 2: (0,1,0)
     xi << 0.0, 1.0, 0.0;
-    transform_->transform(xi, x.data());
+    x = transform_->transform(xi);
     EXPECT_NEAR(x.x(), 0.0, 1e-12);
     EXPECT_NEAR(x.y(), 1.0, 1e-12);
 }
@@ -352,7 +352,7 @@ TEST_F(CurvedTriangleTransformTest, TransformEdgeMidpoint)
     // The edge midpoint on edge 0-1 should map to (0.6, 0.2) due to curved edge
     Vector3 x;
     Vector3 xi(0.5, 0.0, 0.0); // Midpoint of edge 0-1 in reference coords
-    transform_->transform(xi, x.data());
+    x = transform_->transform(xi);
 
     EXPECT_NEAR(x.x(), 0.6, 1e-12);
     EXPECT_NEAR(x.y(), 0.2, 1e-12);
@@ -406,14 +406,14 @@ TEST_F(CurvedTetrahedronTransformTest, TransformCorners)
 
     // Vertex 0: (0,0,0)
     Vector3 xi(0.0, 0.0, 0.0);
-    transform_->transform(xi, x.data());
+    x = transform_->transform(xi);
     EXPECT_NEAR(x.x(), 0.0, 1e-12);
     EXPECT_NEAR(x.y(), 0.0, 1e-12);
     EXPECT_NEAR(x.z(), 0.0, 1e-12);
 
     // Vertex 1: (1,0,0)
     xi << 1.0, 0.0, 0.0;
-    transform_->transform(xi, x.data());
+    x = transform_->transform(xi);
     EXPECT_NEAR(x.x(), 1.0, 1e-12);
     EXPECT_NEAR(x.y(), 0.0, 1e-12);
     EXPECT_NEAR(x.z(), 0.0, 1e-12);
@@ -424,7 +424,7 @@ TEST_F(CurvedTetrahedronTransformTest, TransformEdgeMidpoint)
     // The edge midpoint on edge 0-1 should map to (0.55, 0.05, 0)
     Vector3 x;
     Vector3 xi(0.5, 0.0, 0.0); // Midpoint of edge 0-1
-    transform_->transform(xi, x.data());
+    x = transform_->transform(xi);
 
     EXPECT_NEAR(x.x(), 0.55, 1e-12);
     EXPECT_NEAR(x.y(), 0.05, 1e-12);
@@ -461,13 +461,13 @@ TEST_F(CurvedSquareTransformTest, TransformCorners)
 
     // Corner (-1,-1) -> (0,0)
     Vector3 xi(-1.0, -1.0, 0.0);
-    transform_->transform(xi, x.data());
+    x = transform_->transform(xi);
     EXPECT_NEAR(x.x(), 0.0, 1e-12);
     EXPECT_NEAR(x.y(), 0.0, 1e-12);
 
     // Corner (1,1) -> (1,1)
     xi << 1.0, 1.0, 0.0;
-    transform_->transform(xi, x.data());
+    x = transform_->transform(xi);
     EXPECT_NEAR(x.x(), 1.0, 1e-12);
     EXPECT_NEAR(x.y(), 1.0, 1e-12);
 }
@@ -477,7 +477,7 @@ TEST_F(CurvedSquareTransformTest, TransformCenter)
     // Center should map to (0.5, 0.5)
     Vector3 x;
     Vector3 xi(0.0, 0.0, 0.0); // Center in reference coords
-    transform_->transform(xi, x.data());
+    x = transform_->transform(xi);
 
     EXPECT_NEAR(x.x(), 0.5, 1e-12);
     EXPECT_NEAR(x.y(), 0.5, 1e-12);
@@ -513,14 +513,14 @@ TEST_F(CurvedHexahedronTransformTest, TransformCorners)
 
     // Corner (-1,-1,-1) -> (0,0,0)
     Vector3 xi(-1.0, -1.0, -1.0);
-    transform_->transform(xi, x.data());
+    x = transform_->transform(xi);
     EXPECT_NEAR(x.x(), 0.0, 1e-12);
     EXPECT_NEAR(x.y(), 0.0, 1e-12);
     EXPECT_NEAR(x.z(), 0.0, 1e-12);
 
     // Corner (1,1,1) -> (1,1,1)
     xi << 1.0, 1.0, 1.0;
-    transform_->transform(xi, x.data());
+    x = transform_->transform(xi);
     EXPECT_NEAR(x.x(), 1.0, 1e-12);
     EXPECT_NEAR(x.y(), 1.0, 1e-12);
     EXPECT_NEAR(x.z(), 1.0, 1e-12);
@@ -531,7 +531,7 @@ TEST_F(CurvedHexahedronTransformTest, TransformCenter)
     // Volume center should map to (0.5, 0.5, 0.5)
     Vector3 x;
     Vector3 xi(0.0, 0.0, 0.0); // Center in reference coords
-    transform_->transform(xi, x.data());
+    x = transform_->transform(xi);
 
     EXPECT_NEAR(x.x(), 0.5, 1e-12);
     EXPECT_NEAR(x.y(), 0.5, 1e-12);
@@ -543,7 +543,7 @@ TEST_F(CurvedHexahedronTransformTest, TransformEdgeMidpoint)
     // Edge 0 midpoint should map to (0.55, 0.0, 0.0)
     Vector3 x;
     Vector3 xi(0.0, -1.0, -1.0); // Midpoint of edge 0 in reference coords
-    transform_->transform(xi, x.data());
+    x = transform_->transform(xi);
 
     EXPECT_NEAR(x.x(), 0.55, 1e-12);
     EXPECT_NEAR(x.y(), 0.0, 1e-12);
@@ -555,7 +555,7 @@ TEST_F(CurvedHexahedronTransformTest, TransformFaceCenter)
     // Face center for bottom face should map to (0.5, 0.5, 0.0)
     Vector3 x;
     Vector3 xi(0.0, 0.0, -1.0); // Center of bottom face in reference coords
-    transform_->transform(xi, x.data());
+    x = transform_->transform(xi);
 
     EXPECT_NEAR(x.x(), 0.5, 1e-12);
     EXPECT_NEAR(x.y(), 0.5, 1e-12);
@@ -635,8 +635,8 @@ TEST(ElementComparisonTest, LinearVsQuadraticTriangle)
     Vector3 xi(0.5, 0.0, 0.0);
 
     Vector3 xLinear, xQuadratic;
-    linearTrans.transform(xi, xLinear.data());
-    quadraticTrans.transform(xi, xQuadratic.data());
+    xLinear = linearTrans.transform(xi);
+    xQuadratic = quadraticTrans.transform(xi);
 
     // Linear: (0.5, 0.0), Quadratic curved: (0.6, 0.2)
     EXPECT_NEAR(xLinear.x(), 0.5, 1e-12);
@@ -695,3 +695,4 @@ TEST(OrderSeparationTest, GeometricOrderIndependentOfPhysical)
     // The FE space could use different order for field interpolation
     // This is tested separately in test_fe_space_quadratic.cpp
 }
+

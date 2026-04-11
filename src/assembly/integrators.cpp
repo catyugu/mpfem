@@ -13,7 +13,7 @@ namespace mpfem {
         {
             const IntegrationPoint& ip = trans.integrationPoint();
             refPts[0] = Vector3(ip.xi, ip.eta, ip.zeta);
-            trans.transform(ip, physPts[0]);
+            physPts[0] = trans.transform(ip);
             transforms[0] = &trans;
 
             EvaluationContext ctx;
@@ -85,8 +85,7 @@ namespace mpfem {
 
             for (int i = 0; i < nd; ++i) {
                 const Vector3 refGrad(refGrads(i, 0), refGrads(i, 1), refGrads(i, 2));
-                Vector3 physGrad;
-                trans.transformGradient(refGrad, physGrad);
+                const Vector3 physGrad = trans.transformGradient(refGrad);
                 gradMat.row(i) = physGrad;
             }
 
@@ -245,8 +244,7 @@ namespace mpfem {
             const Matrix& refGrads = ref.shapeDerivativesAtQuad(q);
             for (int a = 0; a < nd; ++a) {
                 const Vector3 refGrad(refGrads(a, 0), refGrads(a, 1), refGrads(a, 2));
-                Vector3 physGrad;
-                trans.transformGradient(refGrad, physGrad);
+                const Vector3 physGrad = trans.transformGradient(refGrad);
                 int col = a * vdim;
                 B(0, col + 0) = physGrad[0];
                 B(1, col + 1) = physGrad[1];
