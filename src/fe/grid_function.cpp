@@ -1,21 +1,21 @@
 #include "grid_function.hpp"
-#include "shape_function.hpp"
+#include "finite_element.hpp"
 
 namespace mpfem {
 
     namespace {
         // Thread-local buffers to avoid repeated heap allocation
-        thread_local std::vector<Real> t_phiBuf;
-        thread_local std::vector<Vector3> t_gradBuf;
+        thread_local Matrix t_shapeBuf;
+        thread_local Matrix t_derivBuf;
         thread_local std::vector<Index> t_dofsBuf;
 
         inline void ensureCapacity(int nShape, int nElemDofs)
         {
-            if (static_cast<int>(t_phiBuf.size()) < nShape) {
-                t_phiBuf.resize(nShape);
+            if (t_shapeBuf.rows() != nShape || t_shapeBuf.cols() != 1) {
+                t_shapeBuf.resize(nShape, 1);
             }
-            if (static_cast<int>(t_gradBuf.size()) < nShape) {
-                t_gradBuf.resize(nShape);
+            if (t_derivBuf.rows() != nShape || t_derivBuf.cols() != 3) {
+                t_derivBuf.resize(nShape, 3);
             }
             if (static_cast<int>(t_dofsBuf.size()) < nElemDofs) {
                 t_dofsBuf.resize(nElemDofs);
@@ -32,18 +32,18 @@ namespace mpfem {
         if (!ref)
             return 0.0;
 
-        const ShapeFunction* sf = ref->shapeFunction();
-        const int nd = sf->numDofs();
+        const FiniteElement& basis = ref->basis();
+        const int nd = basis.numDofs();
         const int vdim = fes_->vdim();
         const int totalDofs = fes_->numElementDofs(elem);
         ensureCapacity(nd, totalDofs);
 
-        sf->evalValues(xi, std::span<Real>(t_phiBuf.data(), nd));
+        basis.evalShape(xi, t_shapeBuf);
         fes_->getElementDofs(elem, std::span<Index> {t_dofsBuf.data(), static_cast<size_t>(totalDofs)});
 
         Real val = 0.0;
         for (int i = 0; i < nd; ++i) {
-            val += t_phiBuf[i] * values_[t_dofsBuf[static_cast<size_t>(i) * vdim]];
+            val += t_shapeBuf(i, 0) * values_[t_dofsBuf[static_cast<size_t>(i) * vdim]];
         }
         return val;
     }
@@ -57,18 +57,20 @@ namespace mpfem {
         if (!ref)
             return Vector3::Zero();
 
-        const ShapeFunction* sf = ref->shapeFunction();
-        const int nd = sf->numDofs();
+        const FiniteElement& basis = ref->basis();
+        const int nd = basis.numDofs();
         const int vdim = fes_->vdim();
         const int totalDofs = fes_->numElementDofs(elem);
         ensureCapacity(nd, totalDofs);
 
-        sf->evalGrads(xi, std::span<Vector3>(t_gradBuf.data(), nd));
+        basis.evalDerivatives(xi, t_derivBuf);
         fes_->getElementDofs(elem, std::span<Index> {t_dofsBuf.data(), static_cast<size_t>(totalDofs)});
 
         Vector3 gRef = Vector3::Zero();
         for (int i = 0; i < nd; ++i) {
-            gRef += t_gradBuf[i] * values_[t_dofsBuf[static_cast<size_t>(i) * vdim]];
+            gRef.x() += t_derivBuf(i, 0) * values_[t_dofsBuf[static_cast<size_t>(i) * vdim]];
+            gRef.y() += t_derivBuf(i, 1) * values_[t_dofsBuf[static_cast<size_t>(i) * vdim]];
+            gRef.z() += t_derivBuf(i, 2) * values_[t_dofsBuf[static_cast<size_t>(i) * vdim]];
         }
 
         return invJacobianTranspose * gRef;

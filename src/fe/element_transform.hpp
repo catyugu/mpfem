@@ -2,8 +2,8 @@
 #define MPFEM_ELEMENT_TRANSFORM_HPP
 
 #include "core/types.hpp"
+#include "fe/finite_element.hpp"
 #include "fe/quadrature.hpp"
-#include "fe/shape_function.hpp"
 #include "mesh/geometry.hpp"
 #include "mesh/mesh.hpp"
 #include <Eigen/Dense>
@@ -26,7 +26,7 @@ namespace mpfem {
      *
      * **Geometric vs Field Order**:
      * - Geometric order (geomOrder_): From mesh element, used for coordinate transformation
-     * - Field order: From FECollection, used for shape functions in ReferenceElement
+     * - Field order: From FECollection, used for FiniteElement basis in ReferenceElement
      *
      * This separation enables:
      * - Subparametric: geometric order < field order (linear mesh, quadratic field)
@@ -130,14 +130,14 @@ namespace mpfem {
         int geomOrder_ = 1;
         int numNodes_ = 0;
 
-        // Geo shape function for coordinate transformation (from mesh element order)
-        std::unique_ptr<ShapeFunction> geoShapeFunc_;
+        // Geometric basis used only for coordinate mapping.
+        std::unique_ptr<FiniteElement> geoBasis_;
 
         // Fixed-size buffers (no heap allocation)
         std::array<Vector3, MaxNodesPerElement> nodesBuf_;
         std::array<Index, MaxNodesPerElement> nodeIndicesBuf_;
-        std::array<Real, MaxNodesPerElement> shapeValuesBuf_;
-        std::array<Vector3, MaxNodesPerElement> shapeGradsBuf_;
+        Matrix geoShapeValues_; // [numNodes x 1]
+        Matrix geoShapeDerivatives_; // [numNodes x 3]
 
         IntegrationPoint ip_;
 

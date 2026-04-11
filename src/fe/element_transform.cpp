@@ -86,26 +86,33 @@ namespace mpfem {
         invJacobian_.setZero(dim_, spaceDim_);
         invJacobianT_.setZero(spaceDim_, dim_);
 
-        // Create geo shape function for coordinate transformation (from mesh element order)
-        geoShapeFunc_ = ShapeFunction::create(geometry_, geomOrder_);
+        // Create geometric basis for coordinate transformation.
+        geoBasis_ = FiniteElement::create(BasisType::H1, geometry_, geomOrder_);
+        geoShapeValues_.resize(numNodes_, 1);
+        geoShapeDerivatives_.resize(numNodes_, 3);
     }
 
     void ElementTransform::computeJacobianAtIP()
     {
-        if (!geoShapeFunc_)
+        if (!geoBasis_)
             return;
 
-        // Evaluate geo shape function gradients at integration point
-        // These are used for the Jacobian of the coordinate transformation
-        geoShapeFunc_->evalGrads(ip_.getXi(), std::span<Vector3>(shapeGradsBuf_.data(), numNodes_));
+        // Evaluate geometric basis derivatives at integration point.
+        geoBasis_->evalDerivatives(ip_.getXi(), geoShapeDerivatives_);
 
         // Compute Jacobian: J = sum_i (x_i * grad_phi_i^T)
         jacobian_.setZero(spaceDim_, dim_);
         for (int i = 0; i < numNodes_; ++i) {
-            const auto& grad = shapeGradsBuf_[i];
+            const Real gx = geoShapeDerivatives_(i, 0);
+            const Real gy = geoShapeDerivatives_(i, 1);
+            const Real gz = geoShapeDerivatives_(i, 2);
             for (int d = 0; d < spaceDim_; ++d) {
-                for (int k = 0; k < dim_; ++k) {
-                    jacobian_(d, k) += nodesBuf_[i][d] * grad[k];
+                jacobian_(d, 0) += nodesBuf_[i][d] * gx;
+                if (dim_ > 1) {
+                    jacobian_(d, 1) += nodesBuf_[i][d] * gy;
+                }
+                if (dim_ > 2) {
+                    jacobian_(d, 2) += nodesBuf_[i][d] * gz;
                 }
             }
         }
@@ -150,16 +157,16 @@ namespace mpfem {
 
     void ElementTransform::transform(const Vector3& xi, Real* x)
     {
-        if (!geoShapeFunc_)
+        if (!geoBasis_)
             return;
 
-        // Evaluate geo shape function values for coordinate transformation
-        geoShapeFunc_->evalValues(xi, std::span<Real>(shapeValuesBuf_.data(), numNodes_));
+        // Evaluate geometric basis values for coordinate transformation.
+        geoBasis_->evalShape(xi, geoShapeValues_);
 
         for (int d = 0; d < spaceDim_; ++d) {
             x[d] = 0.0;
             for (int i = 0; i < numNodes_; ++i) {
-                x[d] += shapeValuesBuf_[i] * nodesBuf_[i][d];
+                x[d] += geoShapeValues_(i, 0) * nodesBuf_[i][d];
             }
         }
     }

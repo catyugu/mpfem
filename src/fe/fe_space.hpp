@@ -17,7 +17,7 @@ namespace mpfem {
      *
      * **Geometric Order vs Field Order**:
      * - Geometric order: From mesh element, used for coordinate transformation (ElementTransform)
-     * - Field order: From FECollection, used for shape functions and DOF management
+    * - Field order: From FECollection, used for FiniteElement basis and DOF management
      *
      * **Isoparametric, Subparametric, Superparametric**:
      * - Isoparametric: geo_order == field_order

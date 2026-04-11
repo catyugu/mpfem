@@ -1,12 +1,36 @@
 #include "fe/quadrature.hpp"
-#include "fe/shape_function.hpp"
+#include "fe/h1.hpp"
 #include <cmath>
 #include <gtest/gtest.h>
 
 using namespace mpfem;
 
+namespace {
+
+void evalValues(const FiniteElement& shape, const Vector3& xi, std::vector<Real>& values)
+{
+    Matrix shapeValues;
+    shape.evalShape(xi, shapeValues);
+    values.resize(shapeValues.rows());
+    for (int i = 0; i < shapeValues.rows(); ++i) {
+        values[i] = shapeValues(i, 0);
+    }
+}
+
+void evalGrads(const FiniteElement& shape, const Vector3& xi, std::vector<Vector3>& grads)
+{
+    Matrix derivatives;
+    shape.evalDerivatives(xi, derivatives);
+    grads.resize(derivatives.rows());
+    for (int i = 0; i < derivatives.rows(); ++i) {
+        grads[i] = Vector3(derivatives(i, 0), derivatives(i, 1), derivatives(i, 2));
+    }
+}
+
+} // namespace
+
 // =============================================================================
-// Segment Shape Function Tests
+// Segment H1 FiniteElement Tests
 // =============================================================================
 
 class SegmentShapeTest : public ::testing::TestWithParam<int> {
@@ -40,11 +64,11 @@ TEST_P(SegmentShapeTest, NumDofs)
 
 TEST_P(SegmentShapeTest, PartitionOfUnity)
 {
-    // Sum of shape functions = 1 at any point
+    // Sum of H1 basis functions = 1 at any point
     auto rule = quadrature::getSegment(std::max(1, order_));
 
     for (const auto& ip : rule) {
-        shape_->evalValues(ip.getXi(), values_);
+        evalValues(*shape_, ip.getXi(), values_);
         Real sum = 0.0;
         for (Real v : values_) {
             sum += v;
@@ -55,11 +79,11 @@ TEST_P(SegmentShapeTest, PartitionOfUnity)
 
 TEST_P(SegmentShapeTest, KroneckerDelta)
 {
-    // Shape function i = 1 at dof point i
+    // H1 basis function i = 1 at dof point i
     auto coords = shape_->dofCoords();
     for (size_t i = 0; i < coords.size(); ++i) {
         Vector3 xi(coords[i][0], 0.0, 0.0);
-        shape_->evalValues(xi, values_);
+        evalValues(*shape_, xi, values_);
         for (size_t j = 0; j < values_.size(); ++j) {
             if (i == j) {
                 EXPECT_NEAR(values_[j], 1.0, 1e-12);
@@ -77,7 +101,7 @@ TEST_P(SegmentShapeTest, GradientSumZero)
     auto rule = quadrature::getSegment(std::max(1, order_));
 
     for (const auto& ip : rule) {
-        shape_->evalGrads(ip.getXi(), grads_);
+        evalGrads(*shape_, ip.getXi(), grads_);
         Real sum = 0.0;
         for (const auto& grad : grads_) {
             sum += grad.x();
@@ -90,7 +114,7 @@ INSTANTIATE_TEST_SUITE_P(Orders, SegmentShapeTest,
     ::testing::Values(1, 2));
 
 // =============================================================================
-// Triangle Shape Function Tests
+// Triangle H1 FiniteElement Tests
 // =============================================================================
 
 class TriangleShapeTest : public ::testing::TestWithParam<int> {
@@ -129,7 +153,7 @@ TEST_P(TriangleShapeTest, PartitionOfUnity)
 
     for (const auto& ip : rule) {
         Vector3 xi(ip.xi, ip.eta, 0.0);
-        shape_->evalValues(xi, values_);
+        evalValues(*shape_, xi, values_);
         Real sum = 0.0;
         for (Real v : values_) {
             sum += v;
@@ -145,7 +169,7 @@ TEST_P(TriangleShapeTest, KroneckerDeltaAtVertices)
 
     for (int i = 0; i < 3; ++i) {
         Vector3 xi(vertices[i][0], vertices[i][1], 0.0);
-        shape_->evalValues(xi, values_);
+        evalValues(*shape_, xi, values_);
         EXPECT_NEAR(values_[i], 1.0, 1e-12);
         for (int j = 0; j < 3; ++j) {
             if (i != j) {
@@ -161,7 +185,7 @@ TEST_P(TriangleShapeTest, GradientSumZero)
 
     for (const auto& ip : rule) {
         Vector3 xi(ip.xi, ip.eta, 0.0);
-        shape_->evalGrads(xi, grads_);
+        evalGrads(*shape_, xi, grads_);
         Real sum_x = 0.0, sum_y = 0.0;
         for (const auto& grad : grads_) {
             sum_x += grad.x();
@@ -177,8 +201,8 @@ TEST_P(TriangleShapeTest, LinearGradientConstant)
     // For linear triangle, gradients should be constant
     if (order_ == 1) {
         std::vector<Vector3> grads1(3), grads2(3);
-        shape_->evalGrads(Vector3(0.1, 0.2, 0.0), grads1);
-        shape_->evalGrads(Vector3(0.3, 0.4, 0.0), grads2);
+        evalGrads(*shape_, Vector3(0.1, 0.2, 0.0), grads1);
+        evalGrads(*shape_, Vector3(0.3, 0.4, 0.0), grads2);
 
         for (int i = 0; i < 3; ++i) {
             EXPECT_NEAR(grads1[i].x(), grads2[i].x(), 1e-12);
@@ -191,7 +215,7 @@ INSTANTIATE_TEST_SUITE_P(Orders, TriangleShapeTest,
     ::testing::Values(1, 2));
 
 // =============================================================================
-// Square Shape Function Tests
+// Square H1 FiniteElement Tests
 // =============================================================================
 
 class SquareShapeTest : public ::testing::TestWithParam<int> {
@@ -230,7 +254,7 @@ TEST_P(SquareShapeTest, PartitionOfUnity)
 
     for (const auto& ip : rule) {
         Vector3 xi(ip.xi, ip.eta, 0.0);
-        shape_->evalValues(xi, values_);
+        evalValues(*shape_, xi, values_);
         Real sum = 0.0;
         for (Real v : values_) {
             sum += v;
@@ -241,16 +265,16 @@ TEST_P(SquareShapeTest, PartitionOfUnity)
 
 TEST_P(SquareShapeTest, TensorProductStructure)
 {
-    // Square shape functions use geometric node ordering (counter-clockwise)
+    // Square H1 basis functions use geometric node ordering (counter-clockwise)
     // not pure tensor product ordering (j*n+i)
     // For order 1: nodes are (-1,-1), (1,-1), (1,1), (-1,1)
 
     if (order_ == 2) {
-        // For order 2, test that shape functions have correct values at nodes
+        // For order 2, test that H1 basis functions have correct values at nodes
         auto coords = shape_->dofCoords();
         for (size_t i = 0; i < coords.size(); ++i) {
             Vector3 xi(coords[i][0], coords[i][1], 0.0);
-            shape_->evalValues(xi, values_);
+            evalValues(*shape_, xi, values_);
             for (size_t j = 0; j < values_.size(); ++j) {
                 if (i == j) {
                     EXPECT_NEAR(values_[j], 1.0, 1e-12);
@@ -263,15 +287,15 @@ TEST_P(SquareShapeTest, TensorProductStructure)
         return;
     }
 
-    // For order 1, verify each node has the correct shape function value
+    // For order 1, verify each node has the correct H1 basis function value
     // based on geometric ordering
     H1SegmentShape seg(order_);
     std::vector<Real> seg_x(order_ + 1), seg_y(order_ + 1);
 
     Vector3 xi(0.3, -0.5, 0.0);
-    shape_->evalValues(xi, values_);
-    seg.evalValues(Vector3(0.3, 0.0, 0.0), seg_x);
-    seg.evalValues(Vector3(-0.5, 0.0, 0.0), seg_y);
+    evalValues(*shape_, xi, values_);
+    evalValues(seg, Vector3(0.3, 0.0, 0.0), seg_x);
+    evalValues(seg, Vector3(-0.5, 0.0, 0.0), seg_y);
 
     // Geometric ordering: (-1,-1), (1,-1), (1,1), (-1,1)
     // seg_x[0] = phi at x=-1, seg_x[1] = phi at x=1
@@ -287,7 +311,7 @@ TEST_P(SquareShapeTest, KroneckerDeltaAtNodes)
     auto coords = shape_->dofCoords();
     for (size_t i = 0; i < coords.size(); ++i) {
         Vector3 xi(coords[i][0], coords[i][1], 0.0);
-        shape_->evalValues(xi, values_);
+        evalValues(*shape_, xi, values_);
         for (size_t j = 0; j < values_.size(); ++j) {
             if (i == j) {
                 EXPECT_NEAR(values_[j], 1.0, 1e-12);
@@ -303,7 +327,7 @@ INSTANTIATE_TEST_SUITE_P(Orders, SquareShapeTest,
     ::testing::Values(1, 2));
 
 // =============================================================================
-// Tetrahedron Shape Function Tests
+// Tetrahedron H1 FiniteElement Tests
 // =============================================================================
 
 class TetrahedronShapeTest : public ::testing::TestWithParam<int> {
@@ -342,7 +366,7 @@ TEST_P(TetrahedronShapeTest, PartitionOfUnity)
 
     for (const auto& ip : rule) {
         Vector3 xi(ip.xi, ip.eta, ip.zeta);
-        shape_->evalValues(xi, values_);
+        evalValues(*shape_, xi, values_);
         Real sum = 0.0;
         for (Real v : values_) {
             sum += v;
@@ -363,7 +387,7 @@ TEST_P(TetrahedronShapeTest, KroneckerDeltaAtVertices)
 
     for (int i = 0; i < 4; ++i) {
         Vector3 xi(vertices[i][0], vertices[i][1], vertices[i][2]);
-        shape_->evalValues(xi, values_);
+        evalValues(*shape_, xi, values_);
         EXPECT_NEAR(values_[i], 1.0, 1e-12);
         for (int j = 0; j < 4; ++j) {
             if (i != j) {
@@ -379,7 +403,7 @@ TEST_P(TetrahedronShapeTest, GradientSumZero)
 
     for (const auto& ip : rule) {
         Vector3 xi(ip.xi, ip.eta, ip.zeta);
-        shape_->evalGrads(xi, grads_);
+        evalGrads(*shape_, xi, grads_);
         Real sum_x = 0.0, sum_y = 0.0, sum_z = 0.0;
         for (const auto& grad : grads_) {
             sum_x += grad.x();
@@ -396,7 +420,7 @@ INSTANTIATE_TEST_SUITE_P(Orders, TetrahedronShapeTest,
     ::testing::Values(1, 2));
 
 // =============================================================================
-// Cube Shape Function Tests
+// Cube H1 FiniteElement Tests
 // =============================================================================
 
 class CubeShapeTest : public ::testing::TestWithParam<int> {
@@ -435,7 +459,7 @@ TEST_P(CubeShapeTest, PartitionOfUnity)
 
     for (const auto& ip : rule) {
         Vector3 xi(ip.xi, ip.eta, ip.zeta);
-        shape_->evalValues(xi, values_);
+        evalValues(*shape_, xi, values_);
         Real sum = 0.0;
         for (Real v : values_) {
             sum += v;
@@ -446,15 +470,15 @@ TEST_P(CubeShapeTest, PartitionOfUnity)
 
 TEST_P(CubeShapeTest, TensorProductStructure)
 {
-    // Cube shape functions use geometric node ordering, not pure tensor product ordering
+    // Cube H1 basis functions use geometric node ordering, not pure tensor product ordering
     // For order 1: 8 corners arranged geometrically
 
     if (order_ == 2) {
-        // For order 2, test that shape functions have correct values at nodes
+        // For order 2, test that H1 basis functions have correct values at nodes
         auto coords = shape_->dofCoords();
         for (size_t i = 0; i < coords.size(); ++i) {
             Vector3 xi(coords[i][0], coords[i][1], coords[i][2]);
-            shape_->evalValues(xi, values_);
+            evalValues(*shape_, xi, values_);
             for (size_t j = 0; j < values_.size(); ++j) {
                 if (i == j) {
                     EXPECT_NEAR(values_[j], 1.0, 1e-12);
@@ -474,10 +498,10 @@ TEST_P(CubeShapeTest, TensorProductStructure)
     std::vector<Real> seg_x(order_ + 1), seg_y(order_ + 1), seg_z(order_ + 1);
 
     Vector3 xi(0.2, -0.3, 0.4);
-    shape_->evalValues(xi, values_);
-    seg.evalValues(Vector3(0.2, 0.0, 0.0), seg_x);
-    seg.evalValues(Vector3(-0.3, 0.0, 0.0), seg_y);
-    seg.evalValues(Vector3(0.4, 0.0, 0.0), seg_z);
+    evalValues(*shape_, xi, values_);
+    evalValues(seg, Vector3(0.2, 0.0, 0.0), seg_x);
+    evalValues(seg, Vector3(-0.3, 0.0, 0.0), seg_y);
+    evalValues(seg, Vector3(0.4, 0.0, 0.0), seg_z);
 
     // Corner nodes (geometric ordering):
     // z=-1 level: (-1,-1,-1), (1,-1,-1), (1,1,-1), (-1,1,-1) - counter-clockwise
@@ -505,7 +529,7 @@ TEST(LinearElementsTest, TriangleGradientAccuracy)
     H1TriangleShape shape(1);
 
     std::vector<Vector3> grads(3);
-    shape.evalGrads(Vector3(0.2, 0.3, 0.0), grads);
+    evalGrads(shape, Vector3(0.2, 0.3, 0.0), grads);
 
     // φ0 = 1 - ξ - η, grad = (-1, -1)
     // φ1 = ξ, grad = (1, 0)
@@ -525,7 +549,7 @@ TEST(LinearElementsTest, TetrahedronGradientAccuracy)
     H1TetrahedronShape shape(1);
 
     std::vector<Vector3> grads(4);
-    shape.evalGrads(Vector3(0.1, 0.2, 0.3), grads);
+    evalGrads(shape, Vector3(0.1, 0.2, 0.3), grads);
 
     // φ0 = 1 - ξ - η - ζ, grad = (-1, -1, -1)
     // φ1 = ξ, grad = (1, 0, 0)
@@ -617,3 +641,4 @@ TEST(QuadraticElementsTest, TetrahedronQuadraticDofs)
     EXPECT_NEAR(coords[9][1], 0.5, 1e-12);
     EXPECT_NEAR(coords[9][2], 0.5, 1e-12);
 }
+

@@ -61,7 +61,7 @@ Mesh createSingleHexMesh()
     mesh.addVertex(1.0, 1.0, 1.0); // 6: (1,1,1)
     mesh.addVertex(0.0, 1.0, 1.0); // 7: (0,1,1)
 
-    // Hexahedron (cube) - tensor product ordering to match shape functions
+    // Hexahedron (cube) - tensor product ordering to match H1 basis functions
     // Reference cube node order: (-1,-1,-1), (1,-1,-1), (1,1,-1), (-1,1,-1), (-1,-1,1), (1,-1,1), (1,1,1), (-1,1,1)
     // Physical coords:           (0,0,0),    (1,0,0),   (1,1,0),  (0,1,0),   (0,0,1),   (1,0,1),  (1,1,1), (0,1,1)
     // Vertex indices:            0,          1,         2,        3,         4,        5,        6,       7
@@ -81,7 +81,7 @@ Mesh createSingleSquareBdrMesh()
     mesh.addVertex(1.0, 1.0, 0.0); // 2: (1,1)
     mesh.addVertex(0.0, 1.0, 0.0); // 3: (0,1)
 
-    // Square boundary - tensor product ordering to match shape functions
+    // Square boundary - tensor product ordering to match H1 basis functions
     // Reference square node order: (-1,-1), (1,-1), (1,1), (-1,1)
     // Physical coords:             (0,0),   (1,0),  (1,1), (0,1)
     // Vertex indices:              0,       1,      2,     3
@@ -175,7 +175,7 @@ TEST_F(TetrahedronTransformTest, GradientTransformation)
     Vector3 xi(0.2, 0.3, 0.1);
     transform_->setIntegrationPoint(xi);
 
-    // Reference gradient of first shape function phi0 = 1 - xi - eta - zeta
+    // Reference gradient of first H1 basis function phi0 = 1 - xi - eta - zeta
     Vector3 refGrad(-1.0, -1.0, -1.0);
     Vector3 physGrad;
     transform_->transformGradient(refGrad, physGrad);

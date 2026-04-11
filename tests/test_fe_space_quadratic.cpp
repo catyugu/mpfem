@@ -580,10 +580,10 @@ TEST_F(COMSOLMeshTest, FESpaceConsistency)
     }
 }
 
-TEST_F(COMSOLMeshTest, ShapeFunctionKroneckerDelta)
+TEST_F(COMSOLMeshTest, FiniteElementKroneckerDelta)
 {
-    // Verify that shape functions have Kronecker delta property at nodes
-    // This tests the consistency between node ordering and shape function definition
+    // Verify that H1 FiniteElement basis has Kronecker delta property at nodes.
+    // This tests the consistency between node ordering and basis definition.
     Mesh mesh = MphtxtReader::read(meshPath_);
 
     FESpace fes(&mesh, std::make_unique<FECollection>(2));
@@ -600,25 +600,24 @@ TEST_F(COMSOLMeshTest, ShapeFunctionKroneckerDelta)
 
         trans.setElement(e);
         auto refElem = fes.elementRefElement(e);
-        const ShapeFunction* shapeFunc = refElem->shapeFunction();
-        auto dofCoords = shapeFunc->dofCoords();
+        const FiniteElement& h1Element = refElem->basis();
+        auto dofCoords = h1Element.dofCoords();
 
         // Pre-allocate storage
-        const int numDofs = shapeFunc->numDofs();
-        std::vector<Real> values(numDofs);
+        Matrix values;
 
-        // At each node position, only the corresponding shape function should be 1
+        // At each node position, only the corresponding H1 basis function should be 1.
         for (size_t i = 0; i < dofCoords.size(); ++i) {
-            shapeFunc->evalValues(dofCoords[i], values);
+            h1Element.evalShape(dofCoords[i], values);
 
-            for (size_t j = 0; j < values.size(); ++j) {
+            for (int j = 0; j < values.rows(); ++j) {
                 if (i == j) {
-                    EXPECT_NEAR(values[j], 1.0, tol)
-                        << "Shape function " << j << " should be 1 at its own node in element " << e;
+                    EXPECT_NEAR(values(j, 0), 1.0, tol)
+                        << "H1 basis function " << j << " should be 1 at its own node in element " << e;
                 }
                 else {
-                    EXPECT_NEAR(values[j], 0.0, tol)
-                        << "Shape function " << j << " should be 0 at node " << i << " in element " << e;
+                    EXPECT_NEAR(values(j, 0), 0.0, tol)
+                        << "H1 basis function " << j << " should be 0 at node " << i << " in element " << e;
                 }
             }
         }

@@ -1,6 +1,6 @@
 #include "fe/element_transform.hpp"
+#include "fe/h1.hpp"
 #include "fe/quadrature.hpp"
-#include "fe/shape_function.hpp"
 #include "mesh/geometry.hpp"
 #include "mesh/mesh.hpp"
 #include <cmath>
@@ -145,10 +145,10 @@ Mesh createCurvedHexahedronMesh()
 }
 
 // =============================================================================
-// Shape Function Tests for Quadratic Elements
+// H1 FiniteElement Tests for Quadratic Elements
 // =============================================================================
 
-class QuadraticShapeFunctionTest : public ::testing::Test {
+class QuadraticH1FiniteElementTest : public ::testing::Test {
 protected:
     void SetUp() override
     {
@@ -158,13 +158,16 @@ protected:
         cube2_ = std::make_unique<H1CubeShape>(2);
     }
 
-    // Helper to get ShapeValues (for testing convenience)
-    ShapeValues evalShape(const ShapeFunction* shape, const Vector3& xi) const
+    struct EvalData {
+        Matrix values;
+        Matrix derivatives;
+    };
+
+    EvalData evalShape(const FiniteElement* shape, const Vector3& xi) const
     {
-        ShapeValues sv;
-        sv.resize(shape->numDofs());
-        shape->evalValues(xi, sv.values);
-        shape->evalGrads(xi, sv.gradients);
+        EvalData sv;
+        shape->evalShape(xi, sv.values);
+        shape->evalDerivatives(xi, sv.derivatives);
         return sv;
     }
 
@@ -174,22 +177,22 @@ protected:
     std::unique_ptr<H1CubeShape> cube2_;
 };
 
-TEST_F(QuadraticShapeFunctionTest, Triangle2PartitionOfUnity)
+TEST_F(QuadraticH1FiniteElementTest, Triangle2PartitionOfUnity)
 {
-    // Sum of shape functions should be 1 at any point
+    // Sum of H1 basis functions should be 1 at any point
     Vector3 xi(0.3, 0.2, 0.0);
     auto sv = evalShape(tri2_.get(), xi);
 
     Real sum = 0.0;
     for (int i = 0; i < tri2_->numDofs(); ++i) {
-        sum += sv.values[i];
+        sum += sv.values(i, 0);
     }
     EXPECT_NEAR(sum, 1.0, 1e-12);
 }
 
-TEST_F(QuadraticShapeFunctionTest, Triangle2KroneckerDelta)
+TEST_F(QuadraticH1FiniteElementTest, Triangle2KroneckerDelta)
 {
-    // Shape function i should be 1 at node i and 0 at other nodes
+    // H1 basis function i should be 1 at node i and 0 at other nodes
     auto coords = tri2_->dofCoords();
 
     for (int i = 0; i < tri2_->numDofs(); ++i) {
@@ -197,28 +200,28 @@ TEST_F(QuadraticShapeFunctionTest, Triangle2KroneckerDelta)
 
         for (int j = 0; j < tri2_->numDofs(); ++j) {
             if (i == j) {
-                EXPECT_NEAR(sv.values[j], 1.0, 1e-12);
+                EXPECT_NEAR(sv.values(j, 0), 1.0, 1e-12);
             }
             else {
-                EXPECT_NEAR(sv.values[j], 0.0, 1e-12);
+                EXPECT_NEAR(sv.values(j, 0), 0.0, 1e-12);
             }
         }
     }
 }
 
-TEST_F(QuadraticShapeFunctionTest, Tetrahedron2PartitionOfUnity)
+TEST_F(QuadraticH1FiniteElementTest, Tetrahedron2PartitionOfUnity)
 {
     Vector3 xi(0.2, 0.3, 0.1);
     auto sv = evalShape(tet2_.get(), xi);
 
     Real sum = 0.0;
     for (int i = 0; i < tet2_->numDofs(); ++i) {
-        sum += sv.values[i];
+        sum += sv.values(i, 0);
     }
     EXPECT_NEAR(sum, 1.0, 1e-12);
 }
 
-TEST_F(QuadraticShapeFunctionTest, Tetrahedron2KroneckerDelta)
+TEST_F(QuadraticH1FiniteElementTest, Tetrahedron2KroneckerDelta)
 {
     auto coords = tet2_->dofCoords();
 
@@ -227,28 +230,28 @@ TEST_F(QuadraticShapeFunctionTest, Tetrahedron2KroneckerDelta)
 
         for (int j = 0; j < tet2_->numDofs(); ++j) {
             if (i == j) {
-                EXPECT_NEAR(sv.values[j], 1.0, 1e-12);
+                EXPECT_NEAR(sv.values(j, 0), 1.0, 1e-12);
             }
             else {
-                EXPECT_NEAR(sv.values[j], 0.0, 1e-12);
+                EXPECT_NEAR(sv.values(j, 0), 0.0, 1e-12);
             }
         }
     }
 }
 
-TEST_F(QuadraticShapeFunctionTest, Square2PartitionOfUnity)
+TEST_F(QuadraticH1FiniteElementTest, Square2PartitionOfUnity)
 {
     Vector3 xi(0.3, -0.2, 0.0);
     auto sv = evalShape(square2_.get(), xi);
 
     Real sum = 0.0;
     for (int i = 0; i < square2_->numDofs(); ++i) {
-        sum += sv.values[i];
+        sum += sv.values(i, 0);
     }
     EXPECT_NEAR(sum, 1.0, 1e-12);
 }
 
-TEST_F(QuadraticShapeFunctionTest, Square2KroneckerDelta)
+TEST_F(QuadraticH1FiniteElementTest, Square2KroneckerDelta)
 {
     auto coords = square2_->dofCoords();
 
@@ -257,28 +260,28 @@ TEST_F(QuadraticShapeFunctionTest, Square2KroneckerDelta)
 
         for (int j = 0; j < square2_->numDofs(); ++j) {
             if (i == j) {
-                EXPECT_NEAR(sv.values[j], 1.0, 1e-12);
+                EXPECT_NEAR(sv.values(j, 0), 1.0, 1e-12);
             }
             else {
-                EXPECT_NEAR(sv.values[j], 0.0, 1e-12);
+                EXPECT_NEAR(sv.values(j, 0), 0.0, 1e-12);
             }
         }
     }
 }
 
-TEST_F(QuadraticShapeFunctionTest, Cube2PartitionOfUnity)
+TEST_F(QuadraticH1FiniteElementTest, Cube2PartitionOfUnity)
 {
     Vector3 xi(0.3, -0.2, 0.1);
     auto sv = evalShape(cube2_.get(), xi);
 
     Real sum = 0.0;
     for (int i = 0; i < cube2_->numDofs(); ++i) {
-        sum += sv.values[i];
+        sum += sv.values(i, 0);
     }
     EXPECT_NEAR(sum, 1.0, 1e-12);
 }
 
-TEST_F(QuadraticShapeFunctionTest, Cube2KroneckerDelta)
+TEST_F(QuadraticH1FiniteElementTest, Cube2KroneckerDelta)
 {
     auto coords = cube2_->dofCoords();
 
@@ -287,10 +290,10 @@ TEST_F(QuadraticShapeFunctionTest, Cube2KroneckerDelta)
 
         for (int j = 0; j < cube2_->numDofs(); ++j) {
             if (i == j) {
-                EXPECT_NEAR(sv.values[j], 1.0, 1e-12);
+                EXPECT_NEAR(sv.values(j, 0), 1.0, 1e-12);
             }
             else {
-                EXPECT_NEAR(sv.values[j], 0.0, 1e-12);
+                EXPECT_NEAR(sv.values(j, 0), 0.0, 1e-12);
             }
         }
     }

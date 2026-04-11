@@ -81,11 +81,12 @@ namespace mpfem {
             const Real w = ip.weight * trans.weight();
             const Matrix3 D = evalMatrixNode(coef_, trans);
 
-            const std::span<const Vector3> refGrads = ref.shapeGradientsAtQuad(q);
+            const Matrix& refGrads = ref.shapeDerivativesAtQuad(q);
 
             for (int i = 0; i < nd; ++i) {
+                const Vector3 refGrad(refGrads(i, 0), refGrads(i, 1), refGrads(i, 2));
                 Vector3 physGrad;
-                trans.transformGradient(refGrads[i].data(), physGrad.data());
+                trans.transformGradient(refGrad, physGrad);
                 gradMat.row(i) = physGrad;
             }
 
@@ -114,10 +115,10 @@ namespace mpfem {
             const Real w = ip.weight * trans.weight();
             const Real coef = evalScalarNode(coef_, trans);
 
-            const std::span<const Real> phi = ref.shapeValuesAtQuad(q);
-            Eigen::Map<const Eigen::VectorXd> phiMap(phi.data(), nd);
+            const Matrix& phi = ref.shapeValuesAtQuad(q);
+            const auto phiVec = phi.col(0);
 
-            elmat.noalias() += w * coef * (phiMap * phiMap.transpose());
+            elmat.noalias() += w * coef * (phiVec * phiVec.transpose());
         }
     }
 
@@ -141,10 +142,10 @@ namespace mpfem {
             const Real w = ip.weight * trans.weight();
             const Real f = evalScalarNode(coef_, trans);
 
-            const std::span<const Real> phi = ref.shapeValuesAtQuad(q);
-            Eigen::Map<const Eigen::VectorXd> phiMap(phi.data(), nd);
+            const Matrix& phi = ref.shapeValuesAtQuad(q);
+            const auto phiVec = phi.col(0);
 
-            elvec.noalias() += w * f * phiMap;
+            elvec.noalias() += w * f * phiVec;
         }
     }
 
@@ -168,10 +169,10 @@ namespace mpfem {
             const Real w = ip.weight * trans.weight();
             const Real g = evalScalarNode(coef_, trans);
 
-            const std::span<const Real> phi = ref.shapeValuesAtQuad(q);
-            Eigen::Map<const Eigen::VectorXd> phiMap(phi.data(), nd);
+            const Matrix& phi = ref.shapeValuesAtQuad(q);
+            const auto phiVec = phi.col(0);
 
-            elvec.noalias() += w * g * phiMap;
+            elvec.noalias() += w * g * phiVec;
         }
     }
 
@@ -195,10 +196,10 @@ namespace mpfem {
             const Real w = ip.weight * trans.weight();
             const Real h = evalScalarNode(coef_, trans);
 
-            const std::span<const Real> phi = ref.shapeValuesAtQuad(q);
-            Eigen::Map<const Eigen::VectorXd> phiMap(phi.data(), nd);
+            const Matrix& phi = ref.shapeValuesAtQuad(q);
+            const auto phiVec = phi.col(0);
 
-            elmat.noalias() += w * h * (phiMap * phiMap.transpose());
+            elmat.noalias() += w * h * (phiVec * phiVec.transpose());
         }
     }
 
@@ -219,10 +220,10 @@ namespace mpfem {
             const Real h = evalScalarNode(coef_, trans);
             const Real Tinf = evalScalarNode(Tinf_, trans);
 
-            const std::span<const Real> phi = ref.shapeValuesAtQuad(q);
-            Eigen::Map<const Eigen::VectorXd> phiMap(phi.data(), nd);
+            const Matrix& phi = ref.shapeValuesAtQuad(q);
+            const auto phiVec = phi.col(0);
 
-            elvec.noalias() += w * h * Tinf * phiMap;
+            elvec.noalias() += w * h * Tinf * phiVec;
         }
     }
 
@@ -231,7 +232,7 @@ namespace mpfem {
     // =============================================================================
 
     namespace {
-        // Helper function to compute strain-displacement B matrix from shape function gradients
+        // Helper function to compute strain-displacement B matrix from H1 basis derivatives
         template <typename BMatrix>
         inline void computeStrainDispMatrix(
             BMatrix& B,
@@ -241,10 +242,11 @@ namespace mpfem {
             int vdim,
             int q)
         {
-            const std::span<const Vector3> refGrads = ref.shapeGradientsAtQuad(q);
+            const Matrix& refGrads = ref.shapeDerivativesAtQuad(q);
             for (int a = 0; a < nd; ++a) {
+                const Vector3 refGrad(refGrads(a, 0), refGrads(a, 1), refGrads(a, 2));
                 Vector3 physGrad;
-                trans.transformGradient(refGrads[a].data(), physGrad.data());
+                trans.transformGradient(refGrad, physGrad);
                 int col = a * vdim;
                 B(0, col + 0) = physGrad[0];
                 B(1, col + 1) = physGrad[1];
