@@ -67,15 +67,6 @@ namespace mpfem {
 
         elemDofs_.assign(mesh_->numElements() * maxDofsPerElem_, InvalidIndex);
         bdrElemDofs_.assign(mesh_->numBdrElements() * maxDofsPerBdrElem_, InvalidIndex);
-        vertexDofBase_.assign(mesh_->numVertices(), InvalidIndex);
-
-        if (layout.numVertexDofs > 0) {
-            const auto& cornerVertices = mesh_->cornerVertexIndices();
-            for (Index cornerId = 0; cornerId < static_cast<Index>(cornerVertices.size()); ++cornerId) {
-                const Index vId = cornerVertices[cornerId];
-                vertexDofBase_[vId] = vOffset + cornerId * layout.numVertexDofs;
-            }
-        }
 
         const auto mapVertexDof = [&](Index vertexId, int k) -> Index {
             const Index cornerId = mesh_->vertexToCornerIndex(vertexId);

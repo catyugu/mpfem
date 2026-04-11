@@ -24,9 +24,6 @@ namespace mpfem {
         std::vector<int> faceDofs(int faceIdx) const override;
 
     private:
-        void evalValuesImpl(const Vector3& xi, std::span<Real> values) const;
-        void evalGradsImpl(const Vector3& xi, std::span<Vector3> grads) const;
-
         int order_;
     };
 
@@ -47,9 +44,6 @@ namespace mpfem {
         std::vector<int> faceDofs(int faceIdx) const override;
 
     private:
-        void evalValuesImpl(const Vector3& xi, std::span<Real> values) const;
-        void evalGradsImpl(const Vector3& xi, std::span<Vector3> grads) const;
-
         int order_;
     };
 
@@ -70,9 +64,6 @@ namespace mpfem {
         std::vector<int> faceDofs(int faceIdx) const override;
 
     private:
-        void evalValuesImpl(const Vector3& xi, std::span<Real> values) const;
-        void evalGradsImpl(const Vector3& xi, std::span<Vector3> grads) const;
-
         int order_;
     };
 
@@ -93,9 +84,6 @@ namespace mpfem {
         std::vector<int> faceDofs(int faceIdx) const override;
 
     private:
-        void evalValuesImpl(const Vector3& xi, std::span<Real> values) const;
-        void evalGradsImpl(const Vector3& xi, std::span<Vector3> grads) const;
-
         int order_;
     };
 
@@ -116,9 +104,6 @@ namespace mpfem {
         std::vector<int> faceDofs(int faceIdx) const override;
 
     private:
-        void evalValuesImpl(const Vector3& xi, std::span<Real> values) const;
-        void evalGradsImpl(const Vector3& xi, std::span<Vector3> grads) const;
-
         int order_;
     };
 

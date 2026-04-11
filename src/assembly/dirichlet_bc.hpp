@@ -10,6 +10,7 @@
 #include "fe/fe_space.hpp"
 #include "mesh/mesh.hpp"
 #include <array>
+#include <cmath>
 #include <map>
 #include <vector>
 
@@ -25,8 +26,8 @@ namespace mpfem {
             return;
 
         std::vector<Real> dofVals(numDofs, 0.0);
-        std::vector<char> hasVal(numDofs, 0);
-        std::vector<Index> eliminated;
+        std::vector<Real> dofAccum(numDofs, 0.0);
+        std::vector<Real> dofWeight(numDofs, 0.0);
 
         FacetElementTransform trans;
         trans.setMesh(&mesh);
@@ -43,7 +44,6 @@ namespace mpfem {
                 if (!refElem)
                     continue;
 
-                const auto dofCoords = refElem->interpolationPoints();
                 const int nd = refElem->numDofs();
                 const int totalDofs = nd * fes.vdim();
                 if (totalDofs > MaxVectorDofsPerBdrElement)
@@ -54,54 +54,82 @@ namespace mpfem {
 
                 trans.setBoundaryElement(b);
 
-                for (int i = 0; i < nd; ++i) {
-                    const int vdim = fes.vdim();
+                Matrix localMass = Matrix::Zero(nd, nd);
+                Matrix localRhs = Matrix::Zero(nd, fes.vdim());
 
-                    const Vector3& coord = dofCoords[i];
-                    Real xi[3] = {coord.x(), coord.y(), coord.z()};
+                const QuadratureRule& rule = refElem->quadrature();
+                for (int q = 0; q < rule.size(); ++q) {
+                    const IntegrationPoint& ip = rule[q];
+                    trans.setIntegrationPoint(ip.getXi());
 
-                    trans.setIntegrationPoint(coord);
+                    const Real w = ip.weight * trans.weight();
+                    const auto phi = refElem->shapeValuesAtQuad(q).col(0);
+                    localMass.noalias() += w * (phi * phi.transpose());
+
                     std::array<Tensor, 1> out {};
                     if (coef) {
-                        std::array<Vector3, 1> refPts {Vector3(xi[0], xi[1], xi[2])};
-                        std::array<Vector3, 1> physPts;
-                        const IntegrationPoint& ip = trans.integrationPoint();
-                        physPts[0] = trans.transform(ip);
+                        std::array<Vector3, 1> refPts {ip.getXi()};
+                        std::array<Vector3, 1> physPts {trans.transform(ip)};
                         std::array<ElementTransform*, 1> transforms {&trans};
                         EvaluationContext ctx;
                         ctx.domainId = static_cast<int>(trans.attribute());
                         ctx.elementId = trans.elementIndex();
-                        ctx.referencePoints = std::span<const Vector3>(refPts);
-                        ctx.physicalPoints = std::span<const Vector3>(physPts);
-                        ctx.transforms = std::span<ElementTransform* const>(transforms);
-                        coef->evaluateBatch(ctx, std::span<Tensor>(out));
+                        ctx.referencePoints = std::span<const Vector3>(refPts.data(), refPts.size());
+                        ctx.physicalPoints = std::span<const Vector3>(physPts.data(), physPts.size());
+                        ctx.transforms = std::span<ElementTransform* const>(transforms.data(), transforms.size());
+                        coef->evaluateBatch(ctx, std::span<Tensor>(out.data(), out.size()));
                     }
 
-                    // Handle both scalar and vector-valued BCs
-                    for (int c = 0; c < vdim; ++c) {
-                        Index d = dofs[i * vdim + c]; // Global DOF index for component c
-                        if (d == InvalidIndex || hasVal[d])
-                            continue;
-
+                    for (int c = 0; c < fes.vdim(); ++c) {
                         Real value = 0.0;
                         if (coef) {
                             if (out[0].isScalar()) {
                                 value = out[0].asScalar();
                             }
                             else if (out[0].isVector()) {
-                                value = out[0].asVector()(c);
+                                value = (c < 3) ? out[0].asVector()(c) : 0.0;
                             }
                             else {
                                 MPFEM_THROW(ArgumentException, "Dirichlet BC expects scalar or vector, got matrix");
                             }
                         }
 
-                        dofVals[d] = value;
-                        hasVal[d] = 1;
-                        eliminated.push_back(d);
+                        localRhs.col(c).noalias() += w * value * phi;
+                    }
+                }
+
+                Eigen::LDLT<Matrix> ldlt(localMass);
+                if (ldlt.info() != Eigen::Success) {
+                    continue;
+                }
+
+                for (int c = 0; c < fes.vdim(); ++c) {
+                    const Vector coeffVec = ldlt.solve(localRhs.col(c));
+                    for (int i = 0; i < nd; ++i) {
+                        const Index d = dofs[i * fes.vdim() + c];
+                        if (d == InvalidIndex) {
+                            continue;
+                        }
+
+                        Real wi = std::abs(localMass(i, i));
+                        if (wi <= 0.0) {
+                            wi = 1.0;
+                        }
+                        dofAccum[d] += wi * coeffVec(i);
+                        dofWeight[d] += wi;
                     }
                 }
             }
+        }
+
+        std::vector<Index> eliminated;
+        eliminated.reserve(numDofs);
+        for (Index d = 0; d < numDofs; ++d) {
+            if (dofWeight[d] <= 0.0) {
+                continue;
+            }
+            dofVals[d] = dofAccum[d] / dofWeight[d];
+            eliminated.push_back(d);
         }
 
         if (updateMatrix) {

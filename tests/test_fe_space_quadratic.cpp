@@ -31,6 +31,41 @@ static std::vector<Index> getElementDofsVec(const FESpace& fes, Index elemIdx)
     return dofs;
 }
 
+static Index getCornerVertexDof(const FESpace& fes, Index vertexIdx)
+{
+    const Mesh* mesh = fes.mesh();
+    if (!mesh || mesh->vertexToCornerIndex(vertexIdx) == InvalidIndex) {
+        return InvalidIndex;
+    }
+
+    for (Index elemIdx = 0; elemIdx < mesh->numElements(); ++elemIdx) {
+        const auto elemVertices = mesh->getElementVertices(elemIdx);
+        const auto it = std::find(elemVertices.begin(), elemVertices.end(), vertexIdx);
+        if (it == elemVertices.end()) {
+            continue;
+        }
+
+        const ReferenceElement* refElem = fes.elementRefElement(elemIdx);
+        if (!refElem) {
+            continue;
+        }
+        const int vertexDofsPerCorner = refElem->basis().dofLayout().numVertexDofs;
+        if (vertexDofsPerCorner <= 0) {
+            continue;
+        }
+
+        const int localVertex = static_cast<int>(std::distance(elemVertices.begin(), it));
+        const int localScalarDof = localVertex * vertexDofsPerCorner;
+        const std::vector<Index> elemDofs = getElementDofsVec(fes, elemIdx);
+        if (localScalarDof < 0 || localScalarDof >= static_cast<int>(elemDofs.size())) {
+            return InvalidIndex;
+        }
+        return elemDofs[static_cast<size_t>(localScalarDof)];
+    }
+
+    return InvalidIndex;
+}
+
 // =============================================================================
 // Helper Functions
 // =============================================================================
@@ -217,7 +252,7 @@ TEST_F(QuadraticGridFunctionTest, InterpolateLinearFunction)
 
     // Set corner vertex DOFs from physical vertex values.
     for (Index v = 0; v < mesh_.numVertices(); ++v) {
-        Index d = fes_->vertexScalarDof(v);
+        Index d = getCornerVertexDof(*fes_, v);
         if (d == InvalidIndex) {
             continue;
         }
@@ -227,7 +262,7 @@ TEST_F(QuadraticGridFunctionTest, InterpolateLinearFunction)
 
     // Check corner-vertex DOFs.
     for (Index v = 0; v < 4; ++v) { // Only check corner vertices
-        Index d = fes_->vertexScalarDof(v);
+        Index d = getCornerVertexDof(*fes_, v);
         ASSERT_NE(d, InvalidIndex);
         const Vertex& vert = mesh_.vertex(v);
         EXPECT_NEAR((*gf_)(d), vert.x(), 1e-12);
@@ -252,7 +287,7 @@ TEST_F(QuadraticGridFunctionTest, EvalQuadraticFunction)
     // On a quadratic element, this should be represented exactly
 
     for (Index v = 0; v < mesh_.numVertices(); ++v) {
-        Index d = fes_->vertexScalarDof(v);
+        Index d = getCornerVertexDof(*fes_, v);
         if (d == InvalidIndex) {
             continue;
         }
@@ -261,7 +296,7 @@ TEST_F(QuadraticGridFunctionTest, EvalQuadraticFunction)
     }
 
     // Check value at vertex 1: (1,0) -> 1.0
-    const Index d1 = fes_->vertexScalarDof(1);
+    const Index d1 = getCornerVertexDof(*fes_, 1);
     ASSERT_NE(d1, InvalidIndex);
     EXPECT_NEAR((*gf_)(d1), 1.0, 1e-12);
 }
@@ -590,7 +625,7 @@ TEST_F(COMSOLMeshTest, FESpaceConsistency)
         ASSERT_EQ(dofs.size(), vertices.size());
 
         for (int i = 0; i < elem.numCorners(); ++i) {
-            const Index expected = fes.vertexScalarDof(vertices[static_cast<size_t>(i)]);
+            const Index expected = getCornerVertexDof(fes, vertices[static_cast<size_t>(i)]);
             EXPECT_EQ(dofs[static_cast<size_t>(i)], expected)
                 << "Corner DOF mismatch at local index " << i
                 << " of element " << e;
