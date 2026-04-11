@@ -18,6 +18,16 @@ namespace mpfem {
         computeGeometryInfo();
     }
 
+    void ElementTransform::setIntegrationPoint(const Vector3& xi)
+    {
+        ip_.xi = xi[0];
+        if (dim_ > 1)
+            ip_.eta = xi[1];
+        if (dim_ > 2)
+            ip_.zeta = xi[2];
+        computeJacobianAtIP();
+    }
+
     Index ElementTransform::attribute() const
     {
         if (!mesh_) {
@@ -87,7 +97,7 @@ namespace mpfem {
 
         // Evaluate geo shape function gradients at integration point
         // These are used for the Jacobian of the coordinate transformation
-        geoShapeFunc_->evalGrads(&ip_.xi, shapeGradsBuf_.data());
+        geoShapeFunc_->evalGrads(ip_.getXi(), std::span<Vector3>(shapeGradsBuf_.data(), numNodes_));
 
         // Compute Jacobian: J = sum_i (x_i * grad_phi_i^T)
         jacobian_.setZero(spaceDim_, dim_);
@@ -138,13 +148,13 @@ namespace mpfem {
         invJacobianT_ = invJacobian_.transpose();
     }
 
-    void ElementTransform::transform(const Real* xi, Real* x)
+    void ElementTransform::transform(const Vector3& xi, Real* x)
     {
         if (!geoShapeFunc_)
             return;
 
         // Evaluate geo shape function values for coordinate transformation
-        geoShapeFunc_->evalValues(xi, shapeValuesBuf_.data());
+        geoShapeFunc_->evalValues(xi, std::span<Real>(shapeValuesBuf_.data(), numNodes_));
 
         for (int d = 0; d < spaceDim_; ++d) {
             x[d] = 0.0;

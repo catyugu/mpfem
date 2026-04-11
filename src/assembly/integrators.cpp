@@ -76,13 +76,12 @@ namespace mpfem {
 
         for (int q = 0; q < nq; ++q) {
             const IntegrationPoint& ip = ref.integrationPoint(q);
-            Real xi[3] = {ip.xi, ip.eta, ip.zeta};
-            trans.setIntegrationPoint(xi);
+            trans.setIntegrationPoint(ip.getXi());
 
             const Real w = ip.weight * trans.weight();
             const Matrix3 D = evalMatrixNode(coef_, trans);
 
-            const Vector3* refGrads = ref.shapeGradientsAtQuad(q);
+            const std::span<const Vector3> refGrads = ref.shapeGradientsAtQuad(q);
 
             for (int i = 0; i < nd; ++i) {
                 Vector3 physGrad;
@@ -110,14 +109,13 @@ namespace mpfem {
 
         for (int q = 0; q < nq; ++q) {
             const IntegrationPoint& ip = ref.integrationPoint(q);
-            Real xi[3] = {ip.xi, ip.eta, ip.zeta};
-            trans.setIntegrationPoint(xi);
+            trans.setIntegrationPoint(ip.getXi());
 
             const Real w = ip.weight * trans.weight();
             const Real coef = evalScalarNode(coef_, trans);
 
-            const Real* phi = ref.shapeValuesAtQuad(q);
-            Eigen::Map<const Eigen::VectorXd> phiMap(phi, nd);
+            const std::span<const Real> phi = ref.shapeValuesAtQuad(q);
+            Eigen::Map<const Eigen::VectorXd> phiMap(phi.data(), nd);
 
             elmat.noalias() += w * coef * (phiMap * phiMap.transpose());
         }
@@ -138,14 +136,13 @@ namespace mpfem {
 
         for (int q = 0; q < nq; ++q) {
             const IntegrationPoint& ip = ref.integrationPoint(q);
-            Real xi[3] = {ip.xi, ip.eta, ip.zeta};
-            trans.setIntegrationPoint(xi);
+            trans.setIntegrationPoint(ip.getXi());
 
             const Real w = ip.weight * trans.weight();
             const Real f = evalScalarNode(coef_, trans);
 
-            const Real* phi = ref.shapeValuesAtQuad(q);
-            Eigen::Map<const Eigen::VectorXd> phiMap(phi, nd);
+            const std::span<const Real> phi = ref.shapeValuesAtQuad(q);
+            Eigen::Map<const Eigen::VectorXd> phiMap(phi.data(), nd);
 
             elvec.noalias() += w * f * phiMap;
         }
@@ -166,14 +163,13 @@ namespace mpfem {
 
         for (int q = 0; q < nq; ++q) {
             const IntegrationPoint& ip = ref.integrationPoint(q);
-            Real xi[3] = {ip.xi, ip.eta, ip.zeta};
-            trans.setIntegrationPoint(xi);
+            trans.setIntegrationPoint(ip.getXi());
 
             const Real w = ip.weight * trans.weight();
             const Real g = evalScalarNode(coef_, trans);
 
-            const Real* phi = ref.shapeValuesAtQuad(q);
-            Eigen::Map<const Eigen::VectorXd> phiMap(phi, nd);
+            const std::span<const Real> phi = ref.shapeValuesAtQuad(q);
+            Eigen::Map<const Eigen::VectorXd> phiMap(phi.data(), nd);
 
             elvec.noalias() += w * g * phiMap;
         }
@@ -194,14 +190,13 @@ namespace mpfem {
 
         for (int q = 0; q < nq; ++q) {
             const IntegrationPoint& ip = ref.integrationPoint(q);
-            Real xi[3] = {ip.xi, ip.eta, ip.zeta};
-            trans.setIntegrationPoint(xi);
+            trans.setIntegrationPoint(ip.getXi());
 
             const Real w = ip.weight * trans.weight();
             const Real h = evalScalarNode(coef_, trans);
 
-            const Real* phi = ref.shapeValuesAtQuad(q);
-            Eigen::Map<const Eigen::VectorXd> phiMap(phi, nd);
+            const std::span<const Real> phi = ref.shapeValuesAtQuad(q);
+            Eigen::Map<const Eigen::VectorXd> phiMap(phi.data(), nd);
 
             elmat.noalias() += w * h * (phiMap * phiMap.transpose());
         }
@@ -218,15 +213,14 @@ namespace mpfem {
 
         for (int q = 0; q < nq; ++q) {
             const IntegrationPoint& ip = ref.integrationPoint(q);
-            Real xi[3] = {ip.xi, ip.eta, ip.zeta};
-            trans.setIntegrationPoint(xi);
+            trans.setIntegrationPoint(ip.getXi());
 
             const Real w = ip.weight * trans.weight();
             const Real h = evalScalarNode(coef_, trans);
             const Real Tinf = evalScalarNode(Tinf_, trans);
 
-            const Real* phi = ref.shapeValuesAtQuad(q);
-            Eigen::Map<const Eigen::VectorXd> phiMap(phi, nd);
+            const std::span<const Real> phi = ref.shapeValuesAtQuad(q);
+            Eigen::Map<const Eigen::VectorXd> phiMap(phi.data(), nd);
 
             elvec.noalias() += w * h * Tinf * phiMap;
         }
@@ -247,7 +241,7 @@ namespace mpfem {
             int vdim,
             int q)
         {
-            const Vector3* refGrads = ref.shapeGradientsAtQuad(q);
+            const std::span<const Vector3> refGrads = ref.shapeGradientsAtQuad(q);
             for (int a = 0; a < nd; ++a) {
                 Vector3 physGrad;
                 trans.transformGradient(refGrads[a].data(), physGrad.data());
@@ -302,8 +296,7 @@ namespace mpfem {
 
         for (int q = 0; q < nq; ++q) {
             const IntegrationPoint& ip = ref.integrationPoint(q);
-            Real xi[3] = {ip.xi, ip.eta, ip.zeta};
-            trans.setIntegrationPoint(xi);
+            trans.setIntegrationPoint(ip.getXi());
 
             const Real w = ip.weight * trans.weight();
 
@@ -333,8 +326,7 @@ namespace mpfem {
 
         for (int q = 0; q < nq; ++q) {
             const IntegrationPoint& ip = ref.integrationPoint(q);
-            Real xi[3] = {ip.xi, ip.eta, ip.zeta};
-            trans.setIntegrationPoint(xi);
+            trans.setIntegrationPoint(ip.getXi());
 
             const Real w = ip.weight * trans.weight();
 

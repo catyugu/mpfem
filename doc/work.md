@@ -21,127 +21,211 @@
 
 ## 具体工作任务
 
-针对当前代码库中存在的深度耦合、接口设计僵化和向后兼容包袱，我们需要进行一次彻底的、破坏性的（无须向后兼容）重构。当前的核心痛点在于：**标量H1单元（Lagrange）的假设被硬编码到了系统的各个角落**（如 `ShapeFunction` 返回 `Real` 和 `Vector3`，`EvaluationContext` 硬编码逆雅可比转置等）。
+这是一个非常典型的有限元（FE）代码库重构场景。代码中反映出了早期 C++（指针、裸数组）向现代 C++（span、Eigen、自定义 Tensor）过渡过程中的“历史包袱”，导致接口碎片化；同时，“标量基函数”与“几何映射”的强绑定也是一个经典的有限元设计反模式，严重阻碍了后续扩展（比如引入 Nedelec 边单元或 RT 面单元）。
 
-为了支持 Nedelec（$H(curl)$）和 Raviart-Thomas（$H(div)$）单元，必须引入 **Piola 变换**，并严格分离**几何映射（Geometry Mapping）**与**物理场基函数（FE Basis）**。
-
-以下是分步骤的重构指南，每一步均保持可编译和可验证：
-
-### 第一步：解耦 `EvaluationContext` 中的几何硬编码
-
-**目标**：移除 `EvaluationContext` 中针对 H1 单元硬编码的 `invJacobianTransposes`，改为传递统一的 `ElementTransform` 集合，使表达式系统可以根据需要获取雅可比矩阵、行列式或 Piola 变换因子。
-
-**重构操作**：
-修改 `expr/evaluation_context.hpp`：
-```cpp
-#ifndef MPFEM_EXPR_EVALUATION_CONTEXT_HPP
-#define MPFEM_EXPR_EVALUATION_CONTEXT_HPP
-
-#include "core/tensor_shape.hpp"
-#include "core/tensor.hpp"
-#include "core/types.hpp"
-#include <span>
-
-namespace mpfem {
-
-    class ElementTransform; // 前置声明
-
-    struct EvaluationContext {
-        Real time = Real(0);
-        int domainId = -1;
-        Index elementId = InvalidIndex;
-        std::span<const Vector3> physicalPoints;
-        std::span<const Vector3> referencePoints;
-        
-        // 重构：移除 std::span<const Matrix> invJacobianTransposes;
-        // 替换为统一的变换接口引用，使得算子可以随时获取 J, detJ, invJ 等
-        std::span<ElementTransform* const> transforms;
-    };
-
-} // namespace mpfem
-#endif
-```
-
-**验证**：修改 `assembly/integrators.cpp` 中的 `makeSinglePointContext` 和 `dirichlet_bc.hpp`，将传入 `invJTs` 改为传入 `&trans` 的 span。编译通过即可。
+为了达到**简洁、高效、接口统一（抛弃向后兼容）**的目标，我们需要进行分步重构。每一步都保证是自包含且可编译的。
 
 ---
 
-### 第二步：分离几何形函数与有限元基函数，引入 `MapType`
+### 第一步：统一坐标与数学类型（消除裸指针与类型碎片）
 
-**目标**：现在的 `ShapeFunction` 既被用作几何坐标变换，又被用作物理场求解。我们需要将物理场基函数抽象为 `FiniteElement`，并引入 `MapType`（映射类型）来处理 Nedelec 和 RT 单元的 Piola 变换。
-
-**重构操作**：
-新建 `fe/finite_element.hpp`：
-```cpp
-#ifndef MPFEM_FINITE_ELEMENT_HPP
-#define MPFEM_FINITE_ELEMENT_HPP
-
-#include "core/types.hpp"
-#include "fe/element_transform.hpp"
-
-namespace mpfem {
-
-    // 物理量从参考单元到物理单元的映射类型 (Piola transforms)
-    enum class MapType {
-        VALUE,     // H1 (Lagrange): u = u_ref
-        H_CURL,    // Nedelec (Edge): u = J^{-T} * u_ref
-        H_DIV,     // Raviart-Thomas (Face): u = (J / detJ) * u_ref
-        L2_INTEGRAL// L2: u = u_ref / detJ
-    };
-
-    class FiniteElement {
-    public:
-        virtual ~FiniteElement() = default;
-
-        virtual int numDofs() const = 0;
-        virtual int dim() const = 0;
-        virtual MapType mapType() const = 0;
-
-        // 获取参考单元上的基函数值（具体子类实现对应维度的张量）
-        virtual void calcShape(const Real* xi, Real* shape) const { MPFEM_THROW(NotImplementedException, ""); }
-        virtual void calcVShape(const Real* xi, MatrixX& shape) const { MPFEM_THROW(NotImplementedException, ""); }
-        
-        // 获取物理单元上的基函数值（内置 Piola 变换）
-        virtual void calcPhysShape(ElementTransform& trans, Real* shape) const;
-        virtual void calcPhysVShape(ElementTransform& trans, MatrixX& shape) const;
-    };
-
-} // namespace mpfem
-#endif
-```
-**说明**：将现有的 `H1TriangleShape` 等重构为继承自 `FiniteElement`（针对场变量）和 `GeometryShape`（纯几何坐标变换，仅保留 VALUE 映射）。
-
----
-
-### 第三步：重构 `ReferenceElement` 抹除标量场假设
-
-**目标**：当前的 `ReferenceElement` 深度耦合了 H1 单元的假设，其内部预先分配了 `std::vector<Real> shapeValues_` 和 `std::vector<Vector3> shapeGradients_`。对于 RT/Nedelec 单元，基函数本身就是向量，不支持标量梯度。
+**问题识别**：
+在 `fe` 层中，积分点参考坐标 `xi` 混用了 `const Real*` 和 `IntegrationPoint`；自由度坐标返回了低效的 `std::vector<std::vector<Real>>`；`ElementTransform` 中存在大量互相调用的重载接口。
 
 **重构操作**：
-修改 `fe/reference_element.hpp`，使用多态的缓存或者让 `FiniteElement` 来决定缓存类型：
+1. 统一所有空间坐标点为 Eigen 的 `Vector3`（对于 1D/2D，未使用的分量默认为 0）。
+2. 删除所有 `const Real* xi` 的冗余接口。
+3. `dofCoords` 统一返回 `std::vector<Vector3>`。
+
+**代码修改**：
+修改 `fe/shape_function.hpp` 和 `fe/element_transform.hpp`：
 ```cpp
-class ReferenceElement {
+// 1. 修改 ShapeFunction 接口
+class ShapeFunction {
 public:
-    ReferenceElement(Geometry geom, std::unique_ptr<FiniteElement> fe);
+    virtual ~ShapeFunction() = default;
+    virtual Geometry geometry() const = 0;
+    virtual int order() const = 0;
+    virtual int numDofs() const = 0;
+    virtual int dim() const = 0;
 
-    const FiniteElement* fe() const { return fe_.get(); }
-    const QuadratureRule& quadrature() const { return quadrature_; }
+    // 彻底废弃 const Real* xi 和 Real* values，全部改为 Vector3 和 span
+    virtual void evalValues(const Vector3& xi, std::span<Real> values) const = 0;
+    virtual void evalGrads(const Vector3& xi, std::span<Vector3> grads) const = 0;
 
-    // 移除硬编码的 shapeValue 和 shapeGradient，改为由 Assembler 动态向 FE 索取
-    // 或者提供统一的基于 Tensor 的预计算接口
-    
-private:
-    Geometry geometry_;
-    std::unique_ptr<FiniteElement> fe_;
-    QuadratureRule quadrature_;
-    // 缓存数据应当被重构为一个通用的 Tensor 数组，或者推迟到 Assembler 中基于 ThreadBuffer 运算
+    // 返回值统一为 Vector3 数组
+    virtual std::vector<Vector3> dofCoords() const = 0; 
+
+    static std::unique_ptr<ShapeFunction> create(Geometry geom, int order);
+};
+
+// 2. 修改 ElementTransform 接口，移除所有冗余重载
+class ElementTransform {
+public:
+    // ...
+    void setIntegrationPoint(const IntegrationPoint& ip);
+    void setIntegrationPoint(const Vector3& xi); // 替代 const Real*
+
+    Vector3 transform(const Vector3& xi) const;  // 直接返回，消除输出参数
+    Vector3 transformGradient(const Vector3& refGrad) const; 
+
+    // 内部缓存改为使用 Vector3
+    std::array<Real, MaxNodesPerElement> shapeValuesBuf_;
+    std::array<Vector3, MaxNodesPerElement> shapeGradsBuf_;
 };
 ```
-在这一步，你将 `DiffusionIntegrator` 中直接调用 `ref.shapeGradientsAtQuad(q)` 的逻辑，修改为通过 `FiniteElement::calcPhysDShape(trans, dshape)` 实时或在积分点循环前统一获取物理域梯度。这彻底解除了积分器对 ReferenceElement 缓存结构的依赖。
+*实现细节更新*：在 `shape_function.cpp` 中，提取 `xi` 的值统一改为 `const Real x = xi.x(); const Real y = xi.y();`。
+
+**验证方式**：编译整个 `fe` 文件夹，确保所有基于下标的指针访问 `xi[0], xi[1]` 均被替换为 Eigen 向量的访问。
+
+---
+
+### 第二步：解耦几何插值与物理场有限元（Finite Element vs Geometry Mapping）
+
+**问题识别**：
+目前 `ElementTransform`（几何映射）和 `ReferenceElement`（物理场）都直接调用 `ShapeFunction::create`。这隐含了一个致命假设：**所有的物理场基函数都可以用于几何变换，且都是标量的（H1）**。如果未来引入矢量场（如 Nedelec 单元），一个基函数在某点求值将是一个 `Vector3`，当前的 `ShapeFunction` 接口（`evalValues` 返回 `Real`）将彻底崩溃。
+
+**重构操作**：
+1. 将物理场的概念抽象为 `FiniteElement`。
+2. 将纯几何标量插值独立为 `GeoBasisFunction`。
+3. `ElementTransform` **仅**依赖 `GeoBasisFunction`，而 `ReferenceElement` 依赖 `FiniteElement`。
+
+**代码修改**：
+```cpp
+// fe/finite_element.hpp (新文件)
+namespace mpfem {
+
+// 抽象的物理场有限元基类
+class FiniteElement {
+public:
+    virtual ~FiniteElement() = default;
+    virtual int numDofs() const = 0;
+    virtual int dim() const = 0;
+    
+    // 返回类型：H1为标量，ND/RT为矢量
+    enum class RangeType { Scalar, Vector };
+    virtual RangeType rangeType() const = 0;
+
+    // 统一的接口：无论是标量还是矢量场，都写入预分配的 Eigen::Matrix / Vector 中
+    // 对于标量单元：shapeMatrix 是 numDofs x 1
+    // 对于矢量单元：shapeMatrix 是 numDofs x dim
+    virtual void calcShape(const Vector3& xi, MatrixX& shapeMatrix) const = 0;
+    
+    // 计算参考坐标下的旋度或散度或梯度，取决于单元类型
+    virtual void calcDShape(const Vector3& xi, MatrixX& dShapeMatrix) const = 0;
+};
+
+// 保留原有的 ShapeFunction，但更名为 GeoBasisFunction，专门服务于 ElementTransform
+class GeoBasisFunction {
+    // ... 保持原来的 evalValues 和 evalGrads，专门用于坐标变换
+};
+}
+```
+**验证方式**：修改 `ElementTransform` 使其内部只实例化 `GeoBasisFunction`，修改 `ReferenceElement` 使其持有 `FiniteElement`。编译通过即可验证几何与物理已成功切断耦合。
+
+---
+
+### 第三步：重构 GridFunction 和 Assembler 消除反模式和冗长（Remove Thread-Local Anti-Pattern）
+
+**问题识别**：
+`GridFunction::eval` 中使用了 `thread_local std::vector`（为了避免堆分配），这是一个严重的设计反模式：当出现嵌套求值或重入时会导致数据竞争和覆写。同时它强行假设标量场并手动乘以 `vdim`。Assembler 中的 `ThreadBuffer` 定义了极大的栈数组，冗长且浪费内存。
+
+**重构操作**：
+废弃 `GridFunction` 中的线程局部缓存。直接利用 Eigen 的栈分配特性或将其分配责任转移给 `EvaluationContext`。
+
+**代码修改**：
+修改 `fe/grid_function.cpp`：
+```cpp
+// 彻底移除 thread_local 缓存！
+// 利用 Eigen 的栈上动态大小特性（如最多支持64个DOF），避免堆分配
+using MaxDofVector = Eigen::Matrix<Real, Eigen::Dynamic, 1, 0, 64, 1>;
+
+VectorX GridFunction::eval(Index elem, const Vector3& xi) const {
+    if (!fes_) return VectorX::Zero(vdim());
+
+    const ReferenceElement* ref = fes_->elementRefElement(elem);
+    const FiniteElement* fe = ref->finiteElement();
+    
+    int nd = fe->numDofs();
+    int vdim = fes_->vdim();
+    
+    // 栈上分配（如果超过 64 则会自动退化为堆分配，但多数单元不会超过）
+    MaxDofVector shapeVals(nd); 
+    fe->calcShape(xi, shapeVals); // 重构后的接口
+
+    std::vector<Index> dofs(nd * vdim);
+    fes_->getElementDofs(elem, dofs);
+
+    VectorX result = VectorX::Zero(vdim);
+    for (int i = 0; i < nd; ++i) {
+        for(int c = 0; c < vdim; ++c) {
+            result(c) += shapeVals(i) * values_[dofs[i * vdim + c]];
+        }
+    }
+    return result; // 现代 C++ 中 RVO 会优化掉拷贝
+}
+```
+**验证方式**：使用多线程组装矩阵或并行计算误差时，结果不再发生偶发性错误（消除了隐蔽的 thread_local 污染）。代码也从几十行缩减为十几行。
+
+---
+
+### 第四步：打破循环依赖（Header Cleanup）
+
+**问题识别**：
+`assembler.hpp` 包含了 `integrator.hpp`, `sparse_matrix.hpp` 等。`fe_space.hpp` 包含了 `mesh.hpp` 和 `fe_collection.hpp`。这导致了更改任何一个底层类都会触发几乎整个工程的重编译。
+
+**重构操作**：
+使用严格的前向声明，在头文件中只包含绝对必要的类型。
+
+**代码修改**：
+重构 `fe/fe_space.hpp`：
+```cpp
+#ifndef MPFEM_FE_SPACE_HPP
+#define MPFEM_FE_SPACE_HPP
+
+#include "core/types.hpp"
+#include <span>
+#include <memory>
+#include <vector>
+
+// 1. 全部改为前向声明
+namespace mpfem {
+class Mesh;
+class FECollection;
+class ReferenceElement;
+enum class Geometry : std::uint8_t;
+
+class FESpace {
+public:
+    FESpace();
+    FESpace(const Mesh* mesh, std::unique_ptr<FECollection> fec, int vdim = 1);
+    ~FESpace(); // 2. 析构函数必须在 cpp 中实现，因为 unique_ptr 需要知晓 FECollection 的完整大小
+
+    // 移除内联实现中对 mesh->xxx 的调用，全部移到 .cpp 文件
+    const Mesh* mesh() const;
+    void getElementDofs(Index elemIdx, std::span<Index> dofs) const;
+    
+    // ...
+private:
+    const Mesh* mesh_ = nullptr;
+    std::unique_ptr<FECollection> fec_;
+    int vdim_ = 1;
+    // ...
+};
+}
+#endif
+```
+
+将原本写在 `fe_space.hpp` 底部的 `inline void FESpace::getElementDofs` 等所有包含具体逻辑的代码，全部迁移到 `fe_space.cpp` 中。
+
+**验证方式**：
+触碰 `mesh.hpp` 后，执行构建。你会发现由于打破了宏观的包含链，只有少数几个 `.cpp` 文件被重新编译，构建速度会有数量级的提升。
+
+---
 
 ### 总结
-
-通过上述四步重构：
-1. **表达式系统** (`EvaluationContext`) 不再被 H1 绑架，支持了各种复杂映射。
-2. **基函数** (`FiniteElement`) 与 **几何** (`ShapeFunction`) 彻底分离，引入 Piola 变换机制。
-3. **缓存机制** (`ReferenceElement`) 退回本职工作，不再强加标量场和梯度的假设，为 Nedelec (Curl) 和 RT (Div) 提供空间。
+通过以上四步：
+1. **接口统一**：消除了 `Real*`, `array`, `Tensor` 之间混乱的传参，统一收敛到 `Eigen::Vector3`。
+2. **架构高效解耦**：将几何变换与物理插值剥离，为支持后续高阶电磁场单元（ND/RT）扫清了障碍。
+3. **消除反模式**：杀掉了极度危险且冗长的 `thread_local` 缓存和过度设计的 `ThreadBuffer`。
+4. **编译加速**：清理了纠缠不清的头文件。

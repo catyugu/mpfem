@@ -122,13 +122,10 @@ namespace mpfem {
                 }
 
                 for (size_t i = 0; i < dest.size(); ++i) {
-                    const Real* xi = nullptr;
-                    if (i < ctx.referencePoints.size()) {
-                        xi = &ctx.referencePoints[i].x();
-                    }
-                    else {
+                    if (i >= ctx.referencePoints.size()) {
                         MPFEM_THROW(ArgumentException, "GridFunctionValueProvider requires referencePoints in EvaluationContext.");
                     }
+                    const Vector3& xi = ctx.referencePoints[i];
                     dest[i] = Tensor::scalar(field_->eval(ctx.elementId, xi));
                 }
             }
@@ -167,7 +164,7 @@ namespace mpfem {
                         MPFEM_THROW(ArgumentException,
                             "GridFunctionGradientProvider received null transform in EvaluationContext.");
                     }
-                    const Real* xi = &ctx.referencePoints[i].x();
+                    const Vector3& xi = ctx.referencePoints[i];
                     Matrix3 invJT = trans->invJacobianT();
                     Vector3 g = field_->gradient(ctx.elementId, xi, invJT);
                     dest[i] = Tensor::vector(g.x(), g.y(), g.z());
@@ -381,7 +378,7 @@ namespace mpfem {
             (void)requireDomainScalarNode(problem, kPropHeatCapacity);
 
             problem.globalVariables_.define("thermal_mass", "density * heatcapacity");
-            
+
             const VariableNode* rhoCpNode = problem.globalVariables_.get("thermal_mass");
 
             for (int domainId : problem.materials.domainIds()) {
@@ -419,7 +416,7 @@ namespace mpfem {
 
             for (const auto& bc : physics.boundaries) {
                 if (bc.type == "Fixed") {
-                    problem.structural->addFixedDisplacementBC(bc.ids, problem.globalVariables_.get("[0, 0, 0]") );
+                    problem.structural->addFixedDisplacementBC(bc.ids, problem.globalVariables_.get("[0, 0, 0]"));
                 }
             }
         }

@@ -57,8 +57,8 @@ namespace mpfem {
         virtual void setElement(Index elemIdx);
 
         /// Set integration point (recomputes Jacobian and weight)
+        void setIntegrationPoint(const Vector3& xi);
         void setIntegrationPoint(const IntegrationPoint& ip);
-        void setIntegrationPoint(const Real* xi);
 
         // -------------------------------------------------------------------------
         // Geometry info
@@ -78,8 +78,7 @@ namespace mpfem {
         // Transformation
         // -------------------------------------------------------------------------
 
-        virtual void transform(const Real* xi, Real* x);
-        void transform(const Real* xi, Vector3& x);
+        virtual void transform(const Vector3& xi, Real* x);
         void transform(const IntegrationPoint& ip, Vector3& x);
 
         // -------------------------------------------------------------------------
@@ -162,30 +161,12 @@ namespace mpfem {
 
     inline void ElementTransform::setIntegrationPoint(const IntegrationPoint& ip)
     {
-        ip_ = ip;
-        computeJacobianAtIP();
-    }
-
-    inline void ElementTransform::setIntegrationPoint(const Real* xi)
-    {
-        ip_.xi = xi[0];
-        if (dim_ > 1)
-            ip_.eta = xi[1];
-        if (dim_ > 2)
-            ip_.zeta = xi[2];
-        computeJacobianAtIP();
-    }
-
-    inline void ElementTransform::transform(const Real* xi, Vector3& x)
-    {
-        Real coords[3];
-        transform(xi, coords);
-        x = Vector3(coords[0], coords[1], coords[2]);
+        setIntegrationPoint(ip.getXi());
     }
 
     inline void ElementTransform::transform(const IntegrationPoint& ip, Vector3& x)
     {
-        transform(&ip.xi, x);
+        transform(ip.getXi(), x.data());
     }
 
     inline void ElementTransform::transformGradient(const Vector3& refGrad, Vector3& physGrad) const

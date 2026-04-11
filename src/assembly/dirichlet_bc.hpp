@@ -57,12 +57,10 @@ namespace mpfem {
                 for (int i = 0; i < nd; ++i) {
                     const int vdim = fes.vdim();
 
-                    Real xi[3] = {0.0, 0.0, 0.0};
-                    for (size_t c = 0; c < dofCoords[i].size() && c < 3; ++c) {
-                        xi[c] = dofCoords[i][c];
-                    }
+                    const Vector3& coord = dofCoords[i];
+                    Real xi[3] = {coord.x(), coord.y(), coord.z()};
 
-                    trans.setIntegrationPoint(xi);
+                    trans.setIntegrationPoint(coord);
                     std::array<Tensor, 1> out {};
                     if (coef) {
                         std::array<Vector3, 1> refPts {Vector3(xi[0], xi[1], xi[2])};
@@ -73,10 +71,10 @@ namespace mpfem {
                         EvaluationContext ctx;
                         ctx.domainId = static_cast<int>(trans.attribute());
                         ctx.elementId = trans.elementIndex();
-                        ctx.referencePoints = std::span<const Vector3>(refPts.data(), refPts.size());
-                        ctx.physicalPoints = std::span<const Vector3>(physPts.data(), physPts.size());
-                        ctx.transforms = std::span<ElementTransform* const>(transforms.data(), transforms.size());
-                        coef->evaluateBatch(ctx, std::span<Tensor>(out.data(), out.size()));
+                        ctx.referencePoints = std::span<const Vector3>(refPts);
+                        ctx.physicalPoints = std::span<const Vector3>(physPts);
+                        ctx.transforms = std::span<ElementTransform* const>(transforms);
+                        coef->evaluateBatch(ctx, std::span<Tensor>(out));
                     }
 
                     // Handle both scalar and vector-valued BCs

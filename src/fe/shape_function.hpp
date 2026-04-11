@@ -1,16 +1,16 @@
 #ifndef MPFEM_SHAPE_FUNCTION_HPP
 #define MPFEM_SHAPE_FUNCTION_HPP
 
-#include "mesh/geometry.hpp"
-#include "core/types.hpp"
 #include "core/exception.hpp"
-#include <vector>
+#include "core/types.hpp"
+#include "mesh/geometry.hpp"
 #include <array>
 #include <cmath>
 #include <memory>
+#include <span>
+#include <vector>
 
-namespace mpfem
-{
+namespace mpfem {
 
     /**
      * @brief Shape function values and derivatives at an integration point.
@@ -19,9 +19,8 @@ namespace mpfem
      * - values[i] = φ_i(xi)
      * - gradients[i] = ∇φ_i(xi)  (in reference coordinates)
      */
-    struct ShapeValues
-    {
-        std::vector<Real> values;       ///< Shape function values
+    struct ShapeValues {
+        std::vector<Real> values; ///< Shape function values
         std::vector<Vector3> gradients; ///< Shape function gradients (reference coordinates)
 
         /// Get number of shape functions
@@ -29,17 +28,18 @@ namespace mpfem
 
         /// Check if empty
         bool empty() const { return values.empty(); }
-        
+
         /// Resize vectors (avoids reallocation if size matches)
-        void resize(int n) {
+        void resize(int n)
+        {
             values.resize(n);
             gradients.resize(n);
         }
-        
+
         /// Check if has capacity for n values
-        bool hasCapacity(int n) const {
-            return static_cast<int>(values.size()) == n && 
-                   static_cast<int>(gradients.size()) == n;
+        bool hasCapacity(int n) const
+        {
+            return static_cast<int>(values.size()) == n && static_cast<int>(gradients.size()) == n;
         }
     };
 
@@ -47,16 +47,15 @@ namespace mpfem
      * @brief Abstract base class for finite element shape functions.
      *
      * Provides shape function evaluation on reference elements.
-     * 
+     *
      * Performance-oriented interface:
      * - evalValues(xi, values): Compute only shape function values
      * - evalGrads(xi, grads): Compute only gradients
      * - eval(xi, sv): Compute both (convenience method)
-     * 
+     *
      * All methods accept pre-allocated arrays to avoid runtime memory allocation.
      */
-    class ShapeFunction
-    {
+    class ShapeFunction {
     public:
         virtual ~ShapeFunction() = default;
 
@@ -74,40 +73,42 @@ namespace mpfem
 
         /**
          * @brief Evaluate shape function values only (no gradients).
-         * @param xi Reference coordinates (size = dim())
-         * @param values Pre-allocated array of size numDofs()
+         * @param xi Reference coordinates
+         * @param values Pre-allocated span of size numDofs()
          */
-        virtual void evalValues(const Real* xi, Real* values) const = 0;
+        virtual void evalValues(const Vector3& xi, std::span<Real> values) const = 0;
 
         /**
          * @brief Evaluate shape function gradients only.
-         * @param xi Reference coordinates (size = dim())
-         * @param grads Pre-allocated array of size numDofs()
+         * @param xi Reference coordinates
+         * @param grads Pre-allocated span of size numDofs()
          */
-        virtual void evalGrads(const Real* xi, Vector3* grads) const = 0;
+        virtual void evalGrads(const Vector3& xi, std::span<Vector3> grads) const = 0;
 
         /**
          * @brief Evaluate both values and gradients into pre-allocated storage.
-         * @param xi Reference coordinates (size = dim())
+         * @param xi Reference coordinates
          * @param sv Pre-allocated ShapeValues
          */
-        virtual void eval(const Real* xi, ShapeValues& sv) const {
-            evalValues(xi, sv.values.data());
-            evalGrads(xi, sv.gradients.data());
+        virtual void eval(const Vector3& xi, ShapeValues& sv) const
+        {
+            evalValues(xi, std::span<Real>(sv.values));
+            evalGrads(xi, std::span<Vector3>(sv.gradients));
         }
 
         /**
          * @brief Evaluate at integration point.
          */
-        void eval(const IntegrationPoint& ip, ShapeValues& sv) const {
-            eval(&ip.xi, sv);
+        void eval(const IntegrationPoint& ip, ShapeValues& sv) const
+        {
+            eval(ip.getXi(), sv);
         }
 
         /**
          * @brief Get the reference coordinates of the dof points.
          * For Lagrange elements, these are the node positions.
          */
-        virtual std::vector<std::vector<Real>> dofCoords() const = 0;
+        virtual std::vector<Vector3> dofCoords() const = 0;
 
         /**
          * @brief Factory method to create shape function for given geometry and order.
@@ -122,8 +123,7 @@ namespace mpfem
     /**
      * @brief H1 Lagrange shape functions on segment.
      */
-    class H1SegmentShape : public ShapeFunction
-    {
+    class H1SegmentShape : public ShapeFunction {
     public:
         explicit H1SegmentShape(int order);
 
@@ -132,9 +132,9 @@ namespace mpfem
         int numDofs() const override { return order_ + 1; }
         int dim() const override { return 1; }
 
-        void evalValues(const Real* xi, Real* values) const override;
-        void evalGrads(const Real* xi, Vector3* grads) const override;
-        std::vector<std::vector<Real>> dofCoords() const override;
+        void evalValues(const Vector3& xi, std::span<Real> values) const override;
+        void evalGrads(const Vector3& xi, std::span<Vector3> grads) const override;
+        std::vector<Vector3> dofCoords() const override;
 
     private:
         int order_;
@@ -143,8 +143,7 @@ namespace mpfem
     /**
      * @brief H1 Lagrange shape functions on triangle.
      */
-    class H1TriangleShape : public ShapeFunction
-    {
+    class H1TriangleShape : public ShapeFunction {
     public:
         explicit H1TriangleShape(int order);
 
@@ -153,9 +152,9 @@ namespace mpfem
         int numDofs() const override;
         int dim() const override { return 2; }
 
-        void evalValues(const Real* xi, Real* values) const override;
-        void evalGrads(const Real* xi, Vector3* grads) const override;
-        std::vector<std::vector<Real>> dofCoords() const override;
+        void evalValues(const Vector3& xi, std::span<Real> values) const override;
+        void evalGrads(const Vector3& xi, std::span<Vector3> grads) const override;
+        std::vector<Vector3> dofCoords() const override;
 
     private:
         int order_;
@@ -164,8 +163,7 @@ namespace mpfem
     /**
      * @brief H1 Lagrange shape functions on square (quadrilateral).
      */
-    class H1SquareShape : public ShapeFunction
-    {
+    class H1SquareShape : public ShapeFunction {
     public:
         explicit H1SquareShape(int order);
 
@@ -174,9 +172,9 @@ namespace mpfem
         int numDofs() const override { return (order_ + 1) * (order_ + 1); }
         int dim() const override { return 2; }
 
-        void evalValues(const Real* xi, Real* values) const override;
-        void evalGrads(const Real* xi, Vector3* grads) const override;
-        std::vector<std::vector<Real>> dofCoords() const override;
+        void evalValues(const Vector3& xi, std::span<Real> values) const override;
+        void evalGrads(const Vector3& xi, std::span<Vector3> grads) const override;
+        std::vector<Vector3> dofCoords() const override;
 
     private:
         int order_;
@@ -185,8 +183,7 @@ namespace mpfem
     /**
      * @brief H1 Lagrange shape functions on tetrahedron.
      */
-    class H1TetrahedronShape : public ShapeFunction
-    {
+    class H1TetrahedronShape : public ShapeFunction {
     public:
         explicit H1TetrahedronShape(int order);
 
@@ -195,9 +192,9 @@ namespace mpfem
         int numDofs() const override;
         int dim() const override { return 3; }
 
-        void evalValues(const Real* xi, Real* values) const override;
-        void evalGrads(const Real* xi, Vector3* grads) const override;
-        std::vector<std::vector<Real>> dofCoords() const override;
+        void evalValues(const Vector3& xi, std::span<Real> values) const override;
+        void evalGrads(const Vector3& xi, std::span<Vector3> grads) const override;
+        std::vector<Vector3> dofCoords() const override;
 
     private:
         int order_;
@@ -206,8 +203,7 @@ namespace mpfem
     /**
      * @brief H1 Lagrange shape functions on cube (hexahedron).
      */
-    class H1CubeShape : public ShapeFunction
-    {
+    class H1CubeShape : public ShapeFunction {
     public:
         explicit H1CubeShape(int order);
 
@@ -216,9 +212,9 @@ namespace mpfem
         int numDofs() const override { return (order_ + 1) * (order_ + 1) * (order_ + 1); }
         int dim() const override { return 3; }
 
-        void evalValues(const Real* xi, Real* values) const override;
-        void evalGrads(const Real* xi, Vector3* grads) const override;
-        std::vector<std::vector<Real>> dofCoords() const override;
+        void evalValues(const Vector3& xi, std::span<Real> values) const override;
+        void evalGrads(const Vector3& xi, std::span<Vector3> grads) const override;
+        std::vector<Vector3> dofCoords() const override;
 
     private:
         int order_;
