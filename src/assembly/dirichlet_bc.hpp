@@ -6,7 +6,7 @@
 #include "core/sparse_matrix.hpp"
 #include "core/types.hpp"
 #include "expr/variable_graph.hpp"
-#include "fe/facet_element_transform.hpp"
+#include "fe/element_transform.hpp"
 #include "fe/fe_space.hpp"
 #include "mesh/mesh.hpp"
 #include <array>
@@ -29,7 +29,7 @@ namespace mpfem {
         std::vector<Real> dofAccum(numDofs, 0.0);
         std::vector<Real> dofWeight(numDofs, 0.0);
 
-        FacetElementTransform trans;
+        ElementTransform trans;
 
         for (const auto& [bid, coef] : bcValues) {
             if (!fes.isExternalBoundaryId(bid))

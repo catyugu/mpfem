@@ -1,7 +1,6 @@
 #include "assembly/element_binding.hpp"
 #include "core/types.hpp"
 #include "fe/element_transform.hpp"
-#include "fe/facet_element_transform.hpp"
 #include "fe/quadrature.hpp"
 #include "mesh/geometry.hpp"
 #include "mesh/mesh.hpp"
@@ -263,7 +262,7 @@ TEST_F(HexahedronTransformTest, JacobianUnitCube)
 }
 
 // =============================================================================
-// Triangle Boundary Transform Tests (using FacetElementTransform)
+// Triangle Boundary Transform Tests (using ElementTransform)
 // =============================================================================
 
 class TriangleFacetTransformTest : public ::testing::Test {
@@ -271,12 +270,12 @@ protected:
     void SetUp() override
     {
         mesh_ = createSingleTriBdrMesh();
-        transform_ = std::make_unique<FacetElementTransform>();
+        transform_ = std::make_unique<ElementTransform>();
         bindElementToTransform(*transform_, mesh_, 0, true);
     }
 
     Mesh mesh_;
-    std::unique_ptr<FacetElementTransform> transform_;
+    std::unique_ptr<ElementTransform> transform_;
 };
 
 TEST_F(TriangleFacetTransformTest, GeometryInfo)
@@ -328,7 +327,7 @@ TEST_F(TriangleFacetTransformTest, NormalVector)
 }
 
 // =============================================================================
-// Square Boundary Transform Tests (using FacetElementTransform)
+// Square Boundary Transform Tests (using ElementTransform)
 // =============================================================================
 
 class SquareFacetTransformTest : public ::testing::Test {
@@ -336,12 +335,12 @@ protected:
     void SetUp() override
     {
         mesh_ = createSingleSquareBdrMesh();
-        transform_ = std::make_unique<FacetElementTransform>();
+        transform_ = std::make_unique<ElementTransform>();
         bindElementToTransform(*transform_, mesh_, 0, true);
     }
 
     Mesh mesh_;
-    std::unique_ptr<FacetElementTransform> transform_;
+    std::unique_ptr<ElementTransform> transform_;
 };
 
 TEST_F(SquareFacetTransformTest, GeometryInfo)
@@ -409,7 +408,7 @@ TEST(IntegrationTransformTest, IntegrateOverTriangleBoundary)
     // Result should be area = 0.5
 
     Mesh mesh = createSingleTriBdrMesh();
-    FacetElementTransform trans;
+    ElementTransform trans;
     bindElementToTransform(trans, mesh, 0, true);
 
     auto rule = quadrature::getTriangle(2);
@@ -461,7 +460,7 @@ TEST(ScaledElementTest, ScaledTriangleBoundary)
     mesh.addVertex(0.0, 2.0, 0.0);
     mesh.addBdrElement(Geometry::Triangle, {0, 1, 2});
 
-    FacetElementTransform trans;
+    ElementTransform trans;
     bindElementToTransform(trans, mesh, 0, true);
 
     Vector3 xi(0.0, 0.0, 0.0);

@@ -3,7 +3,6 @@
 
 #include "core/types.hpp"
 #include "fe/element_transform.hpp"
-#include "fe/facet_element_transform.hpp"
 #include "fe/reference_element.hpp"
 #include <memory>
 
@@ -32,7 +31,7 @@ class FaceBilinearIntegratorBase {
 public:
     virtual ~FaceBilinearIntegratorBase() = default;
     virtual void assembleFaceMatrix(const ReferenceElement& ref,
-                                     FacetElementTransform& trans,
+                                     ElementTransform& trans,
                                      Matrix& elmat) const = 0;
 };
 
@@ -59,7 +58,7 @@ class FaceLinearIntegratorBase {
 public:
     virtual ~FaceLinearIntegratorBase() = default;
     virtual void assembleFaceVector(const ReferenceElement& ref,
-                                     FacetElementTransform& trans,
+                                     ElementTransform& trans,
                                      Vector& elvec) const = 0;
 };
 

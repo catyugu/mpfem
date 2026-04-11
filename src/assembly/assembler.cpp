@@ -1,7 +1,6 @@
 #include "assembler.hpp"
 #include "assembly/element_binding.hpp"
 #include "fe/element_transform.hpp"
-#include "fe/facet_element_transform.hpp"
 #include "fe/fe_space.hpp"
 #include <algorithm>
 #include <cmath>
@@ -88,9 +87,10 @@ namespace mpfem {
         const DomainIntegratorMap activeDomains = buildDomainIntegratorMap(domainSets_, *mesh);
 
         triplets_.clear();
-        // 预估 triplet 数量：单元数 × 每单元DOF数² × 向量维度² / 2
-        // 对于二阶六面体：27 × 27 × 9 ≈ 6561，除以 2 是因为对称性近似
-        const size_t estimatedTriplets = static_cast<size_t>(numElements) * MaxDofsPerElement * MaxDofsPerElement * vdim * vdim / 2;
+
+        // 预估 triplet 数量：
+        const int totalDofs = fes_->numDofs();
+        const size_t estimatedTriplets = totalDofs * MaxDofsPerElement;
         triplets_.reserve(estimatedTriplets);
 
 #ifdef _OPENMP
@@ -201,7 +201,7 @@ namespace mpfem {
 
         // Boundary integrals (not parallelized - usually small)
         if (!bdrIntegs_.empty()) {
-            FacetElementTransform btrans;
+            ElementTransform btrans;
             ThreadBuffer bbuf;
             const int maxPossibleIvdims = maxIvdim_ > 0 ? maxIvdim_ : 1;
             const int maxDynSize = MaxDofsPerElement * maxPossibleIvdims;
@@ -414,7 +414,7 @@ namespace mpfem {
 
         // Boundary integrals (not parallelized - usually small)
         if (!bdrIntegs_.empty()) {
-            FacetElementTransform btrans;
+            ElementTransform btrans;
             ThreadBuffer bbuf;
 
             for (Index b = 0; b < mesh->numBdrElements(); ++b) {

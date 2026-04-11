@@ -89,7 +89,7 @@ public:
     }
     
     void assembleFaceVector(const ReferenceElement& ref,
-                            FacetElementTransform& trans,
+                            ElementTransform& trans,
                             Vector& elvec) const override;
 private:
     const VariableNode* coef_ = nullptr;
@@ -109,7 +109,7 @@ public:
     }
     
     void assembleFaceMatrix(const ReferenceElement& ref,
-                            FacetElementTransform& trans,
+                            ElementTransform& trans,
                             Matrix& elmat) const override;
 private:
     const VariableNode* coef_ = nullptr;
@@ -127,7 +127,7 @@ public:
     }
     
     void assembleFaceVector(const ReferenceElement& ref,
-                            FacetElementTransform& trans,
+                            ElementTransform& trans,
                             Vector& elvec) const override;
     
 private:

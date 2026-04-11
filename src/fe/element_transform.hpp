@@ -22,7 +22,6 @@ namespace mpfem {
     class ElementTransform {
     public:
         ElementTransform() = default;
-        virtual ~ElementTransform() = default;
 
         // -------------------------------------------------------------------------
         // Setup (Decoupled from Mesh)
@@ -64,11 +63,31 @@ namespace mpfem {
         // Eager Accessors (No branching)
         // -------------------------------------------------------------------------
 
-        inline const Matrix& jacobian() const { return jacobian_; }
+        inline const Matrix3& jacobian() const { return jacobian_; }
         inline Real weight() const { return weight_; }
-        inline const Matrix& invJacobianT() const { return invJacobianT_; }
-        inline const Matrix& invJacobian() const { return invJacobian_; }
+        inline const Matrix3& invJacobianT() const { return invJacobianT_; }
+        inline const Matrix3& invJacobian() const { return invJacobian_; }
         inline Real detJ() const { return detJ_; }
+
+        Vector3 normal() const
+        {
+            Vector3 n = Vector3::Zero();
+            if (dim_ == 2) {
+                const Vector3 t1(jacobian_(0, 0), jacobian_(1, 0), jacobian_(2, 0));
+                const Vector3 t2(jacobian_(0, 1), jacobian_(1, 1), jacobian_(2, 1));
+                n = t1.cross(t2).normalized();
+            }
+            return n;
+        }
+
+        void setFaceInfo(Index adjElemIdx, int localFaceIdx)
+        {
+            adjElemIdx_ = adjElemIdx;
+            localFaceIdx_ = localFaceIdx;
+        }
+
+        Index adjacentElementIndex() const { return adjElemIdx_; }
+        int localFaceIndex() const { return localFaceIdx_; }
 
         // -------------------------------------------------------------------------
         // Transformation
@@ -116,6 +135,8 @@ namespace mpfem {
         Index elementId_ = InvalidIndex;
         int dim_ = 0;
         int numNodes_ = 0;
+        Index adjElemIdx_ = InvalidIndex;
+        int localFaceIdx_ = -1;
 
         // Buffers
         std::array<Vector3, MaxNodesPerElement> nodesBuf_;
@@ -125,9 +146,9 @@ namespace mpfem {
         Vector3 ipXi_;
 
         // Computed values
-        Matrix jacobian_;
-        Matrix invJacobian_;
-        Matrix invJacobianT_;
+        Matrix3 jacobian_ = Matrix3::Zero();
+        Matrix3 invJacobian_ = Matrix3::Zero();
+        Matrix3 invJacobianT_ = Matrix3::Zero();
         Real detJ_ = 0.0;
         Real weight_ = 0.0;
 

@@ -356,11 +356,11 @@ void Mesh::buildFaceToElementMap() {
             
             // Create a sorted key for the face
             FaceKey key;
-            key.reserve(faceVerts.size());
+            key.count = 0;
             for (Index v : faceVerts) {
-                key.push_back(v);
+                key.nodes[key.count++] = v;
             }
-            std::sort(key.begin(), key.end());
+            std::sort(key.nodes, key.nodes + key.count);
             
             // Check if face already exists
             auto it = faceMap.find(key);
@@ -442,11 +442,11 @@ void Mesh::buildBoundaryElementMapping() {
         // Get sorted vertex key for boundary element - ONLY CORNER NODES
         FaceKey key;
         int numCorners = bdrElem.numCorners();
-        key.reserve(numCorners);
+        key.count = numCorners;
         for (int i = 0; i < numCorners; ++i) {
-            key.push_back(bdrElem.vertex(i));
+            key.nodes[i] = bdrElem.vertex(i);
         }
-        std::sort(key.begin(), key.end());
+        std::sort(key.nodes, key.nodes + key.count);
         
         // Find matching face
         auto it = faceKeyToIndex_.find(key);

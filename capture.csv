@@ -1,132 +1,132 @@
-main	0.00s	2.46s	0.00%	100.00%	busbar_example	[unknown]	0	0x7ff7ca211533
-mpfem::SteadyProblem::solve	0.00s	2.20s	0.00%	89.28%	busbar_example	[unknown]	0	0x7ff7ca212829
-mpfem::BilinearFormAssembler::assemble	0.01s	1.00s	0.24%	40.52%	busbar_example	[unknown]	0	0x7ff7ca2acc5f
-mpfem::HeatTransferSolver::assemble	0.00s	0.85s	0.00%	34.67%	busbar_example	[unknown]	0	0x7ff7ca239b7f
-Eigen::internal::set_from_triplets<std::__1::__wrap_iter<Eigen::Triplet<double, int>*>, Eigen::SparseMatrix<double, 0, int>, Eigen::internal::scalar_sum_op<double, double> >	0.44s	0.77s	17.89%	31.22%	busbar_example	[unknown]	0	0x7ff7ca2b2153
-mpfem::PhysicsFieldSolver::solve	0.00s	0.76s	0.00%	30.68%	busbar_example	[unknown]	0	0x7ff7ca213f47
-Eigen::internal::conjugate_gradient<Eigen::Transpose<Eigen::Ref<Eigen::SparseMatrix<double, 0, int> const, 0, Eigen::OuterStride<-1> > const>, Eigen::Matrix<double, -1, 1, 0, -1, 1>, Eigen::Matrix<double, -1, 1, 0, -1, 1>, Eigen::DiagonalPreconditioner<double> >	0.67s	0.75s	27.20%	30.47%	busbar_example	[unknown]	0	0x7ff7ca257295
-Eigen::internal::Assignment<Eigen::Matrix<double, -1, 1, 0, -1, 1>, Eigen::SolveWithGuess<Eigen::ConjugateGradient<Eigen::SparseMatrix<double, 0, int>, 3, Eigen::DiagonalPreconditioner<double> >, Eigen::Matrix<double, -1, 1, 0, -1, 1>, Eigen::Matrix<double, -1, 1, 0, -1, 1> >, Eigen::internal::assign_op<double, double>, Eigen::internal::Dense2Dense, void>::run	0.00s	0.75s	0.00%	30.47%	busbar_example	[unknown]	0	0x7ff7ca257104
-mpfem::CgOperator::apply	0.00s	0.75s	0.00%	30.47%	busbar_example	[unknown]	0	0x7ff7ca256650
-mpfem::ElementTransform::computeJacobianAtIP	0.05s	0.49s	2.22%	20.09%	busbar_example	[unknown]	0	0x7ff7ca28bd24
-mpfem::StructuralSolver::assemble	0.00s	0.44s	0.00%	17.92%	busbar_example	[unknown]	0	0x7ff7ca286f97
-mpfem::(anonymous namespace)::evalScalarNode	0.01s	0.38s	0.37%	15.61%	busbar_example	[unknown]	0	0x7ff7ca2bbfb5
-mpfem::(anonymous namespace)::RuntimeExpressionNode::evaluateBatch	0.01s	0.37s	0.39%	14.90%	busbar_example	[unknown]	0	0x7ff7ca22cdf0
-mpfem::LinearFormAssembler::assemble	0.01s	0.35s	0.42%	14.20%	busbar_example	[unknown]	0	0x7ff7ca2af459
-mpfem::ConvectionLFIntegrator::assembleFaceVector	0.00s	0.33s	0.00%	13.38%	busbar_example	[unknown]	0	0x7ff7ca2baec6
-mpfem::ConvectionMassIntegrator::assembleFaceMatrix	0.00s	0.22s	0.00%	8.86%	busbar_example	[unknown]	0	0x7ff7ca2bace8
-Eigen::SparseMatrix<double, 0, int>::operator=<Eigen::SparseMatrix<double, 1, int> >	0.18s	0.18s	7.41%	7.49%	busbar_example	[unknown]	0	0x7ff7ca2786c4
-mpfem::HeatTransferSolver::assembleMassMatrix	0.00s	0.16s	0.00%	6.32%	busbar_example	[unknown]	0	0x7ff7ca23ad63
-Eigen::LDLT<Eigen::Matrix<double, -1, -1, 0, -1, -1>, 1>::_solve_impl_transposed<true, Eigen::Transpose<Eigen::Matrix<double, -1, -1, 0, -1, -1> >, Eigen::Matrix<double, -1, -1, 0, -1, -1> >	0.02s	0.15s	0.83%	6.02%	busbar_example	[unknown]	0	0x7ff7ca2909d1
-Eigen::internal::DenseStorage_impl<double, -1, -1, -1, 0>::resize	0.00s	0.15s	0.00%	5.99%	busbar_example	[unknown]	0	0x7ff7ca25b98d
-mpfem::ElectrostaticsSolver::assemble	0.00s	0.15s	0.00%	5.92%	busbar_example	[unknown]	0	0x7ff7ca2835b3
-Eigen::LDLT<Eigen::Matrix<double, -1, -1, 0, -1, -1>, 1>::LDLT<Eigen::Matrix<double, -1, -1, 0, -1, -1> >	0.00s	0.14s	0.08%	5.84%	busbar_example	[unknown]	0	0x7ff7ca28f016
-mpfem::Problem::~Problem	0.00s	0.13s	0.00%	5.16%	busbar_example	[unknown]	0	0x7ff7ca22add9
-mpfem::SteadyProblem::~SteadyProblem	0.00s	0.13s	0.00%	5.16%	busbar_example	[unknown]	0	0x7ff7ca21af2b
-mpfem::PhysicsProblemBuilder::build	0.00s	0.12s	0.00%	5.07%	busbar_example	[unknown]	0	0x7ff7ca216b79
-mpfem::PhysicsFieldSolver::~PhysicsFieldSolver	0.00s	0.12s	0.00%	4.81%	busbar_example	[unknown]	0	0x7ff7ca21b72a
-mpfem::StructuralSolver::~StructuralSolver	0.00s	0.12s	0.00%	4.76%	busbar_example	[unknown]	0	0x7ff7ca28a528
-mpfem::MphtxtReader::readFile	0.00s	0.12s	0.08%	4.75%	busbar_example	[unknown]	0	0x7ff7ca232582
-mpfem::(anonymous namespace)::XmlProblemInputLoader::load	0.00s	0.12s	0.00%	4.75%	busbar_example	[unknown]	0	0x7ff7ca231cab
-Eigen::SparseMatrix<double, 1, int>::collapseDuplicates<Eigen::Map<Eigen::Matrix<int, -1, 1, 0, -1, 1>, 16, Eigen::Stride<0, 0> >, Eigen::internal::scalar_sum_op<double, double> >	0.11s	0.11s	4.37%	4.37%	busbar_example	[unknown]	0	0x7ff7ca2b26e4
-Eigen::PartialPivLU<Eigen::Matrix<double, -1, -1, 0, -1, -1>, int>::PartialPivLU<Eigen::Matrix<double, -1, -1, 0, -1, -1> >	0.00s	0.10s	0.12%	4.24%	busbar_example	[unknown]	0	0x7ff7ca28d1e5
-mpfem::Mesh::buildTopology	0.01s	0.09s	0.41%	3.48%	busbar_example	[unknown]	0	0x7ff7ca29326c
-mpfem::LinearFormAssembler::~LinearFormAssembler	0.00s	0.08s	0.00%	3.24%	busbar_example	[unknown]	0	0x7ff7ca21b7f7
-mpfem::Mesh::buildFaceToElementMap	0.02s	0.06s	0.94%	2.43%	busbar_example	[unknown]	0	0x7ff7ca293ab0
-Eigen::internal::triangular_solver_selector<Eigen::Matrix<double, -1, -1, 0, -1, -1> const, Eigen::Matrix<double, -1, -1, 0, -1, -1>, 1, 5, 0, -1>::run	0.01s	0.06s	0.33%	2.31%	busbar_example	[unknown]	0	0x7ff7ca28db44
-Eigen::SparseMatrix<double, 0, int>::operator=	0.00s	0.05s	0.00%	2.06%	busbar_example	[unknown]	0	0x7ff7ca2440ef
-Eigen::LDLT<Eigen::Matrix<double, -1, -1, 0, -1, -1>, 1>::compute<Eigen::Matrix<double, -1, -1, 0, -1, -1> >	0.01s	0.05s	0.45%	2.01%	busbar_example	[unknown]	0	0x7ff7ca28f0e0
-mpfem::BilinearFormAssembler::~BilinearFormAssembler	0.00s	0.05s	0.00%	1.86%	busbar_example	[unknown]	0	0x7ff7ca21b942
-Eigen::internal::triangular_solve_matrix<double, long long, 1, 5, false, 0, 0, 1>::run	0.03s	0.05s	1.39%	1.86%	busbar_example	[unknown]	0	0x7ff7ca24a6d0
-Eigen::PartialPivLU<Eigen::Matrix<double, -1, -1, 0, -1, -1>, int>::compute	0.01s	0.04s	0.36%	1.69%	busbar_example	[unknown]	0	0x7ff7ca26f471
-Eigen::internal::triangular_solver_selector<Eigen::Transpose<Eigen::Matrix<double, -1, -1, 0, -1, -1> const> const, Eigen::Matrix<double, -1, -1, 0, -1, -1>, 1, 6, 0, -1>::run	0.00s	0.04s	0.00%	1.56%	busbar_example	[unknown]	0	0x7ff7ca291294
-Eigen::internal::triangular_solve_matrix<double, long long, 1, 6, false, 1, 0, 1>::run	0.02s	0.04s	0.95%	1.49%	busbar_example	[unknown]	0	0x7ff7ca2913e2
-Eigen::internal::ldlt_inplace<1>::unblocked<Eigen::Matrix<double, -1, -1, 0, -1, -1>, Eigen::Transpositions<-1, -1, int>, Eigen::Matrix<double, -1, 1, 0, -1, 1> >	0.04s	0.04s	1.44%	1.44%	busbar_example	[unknown]	0	0x7ff7ca28f743
-Eigen::internal::Assignment<Eigen::Matrix<double, -1, -1, 0, -1, -1>, Eigen::Product<Eigen::Transpositions<-1, -1, int>, Eigen::Transpose<Eigen::Matrix<double, -1, -1, 0, -1, -1> >, 2>, Eigen::internal::assign_op<double, double>, Eigen::internal::Dense2Dense, void>::run	0.03s	0.03s	1.20%	1.20%	busbar_example	[unknown]	0	0x7ff7ca290e1b
-mpfem::applyDirichletBC	0.00s	0.03s	0.00%	1.18%	busbar_example	[unknown]	0	0x7ff7ca281e4c
-Eigen::internal::partial_lu_impl<double, 0, int, -1>::unblocked_lu	0.03s	0.03s	1.05%	1.05%	busbar_example	[unknown]	0	0x7ff7ca270670
-Eigen::internal::partial_lu_impl<double, 0, int, -1>::blocked_lu	0.00s	0.03s	0.00%	1.05%	busbar_example	[unknown]	0	0x7ff7ca26fd2d
-[00007FFACBD57E38]	0.00s	0.03s	0.00%	1.02%	busbar_example		0	0x7ffacbd57e38
-mpfem::MphtxtReader::parseFile	0.00s	0.02s	0.08%	0.99%	busbar_example	[unknown]	0	0x7ff7ca233624
-mpfem::SparseMatrix::eliminateRows	0.02s	0.02s	0.93%	0.93%	busbar_example	[unknown]	0	0x7ff7ca282ee3
-mpfem::ExpressionParser::ExpressionProgram::evaluate	0.01s	0.02s	0.36%	0.88%	busbar_example	[unknown]	0	0x7ff7ca298863
-std::__1::__hash_table<std::__1::__hash_value_type<std::__1::vector<int, std::__1::allocator<int> >, int>, std::__1::__unordered_map_hasher<std::__1::vector<int, std::__1::allocator<int> >, std::__1::pair<std::__1::vector<int, std::__1::allocator<int> > const, int>, mpfem::Mesh::FaceKeyHash, std::__1::equal_to<std::__1::vector<int, std::__1::allocator<int> > >, true>, std::__1::__unordered_map_equal<std::__1::vector<int, std::__1::allocator<int> >, std::__1::pair	0.02s	0.02s	0.69%	0.80%	busbar_example	[unknown]	0	0x7ff7ca296c43
-mpfem::MphtxtReader::parseElementBlock	0.00s	0.01s	0.08%	0.58%	busbar_example	[unknown]	0	0x7ff7ca23627b
-Eigen::internal::gemm_pack_rhs<double, long long, Eigen::internal::blas_data_mapper<double, long long, 0, 0, 1>, 4, 0, false, true>::operator()	0.01s	0.01s	0.54%	0.54%	busbar_example	[unknown]	0	0x7ff7ca24c150
-___chkstk_ms	0.01s	0.01s	0.54%	0.54%	busbar_example	[unknown]	0	0x7ff7ca298580
-mpfem::ResultExporter::exportVtuImpl	0.00s	0.01s	0.00%	0.49%	busbar_example	[unknown]	0	0x7ff7ca21eabb
-mpfem::Element::faceVertices	0.00s	0.01s	0.00%	0.41%	busbar_example	[unknown]	0	0x7ff7ca295dea
-Eigen::internal::dense_assignment_loop<Eigen::internal::restricted_packet_dense_assignment_kernel<Eigen::internal::evaluator<Eigen::Matrix<double, -1, -1, 0, -1, -1> >, Eigen::internal::evaluator<Eigen::Product<Eigen::Transpose<Eigen::Matrix<double, -1, -1, 0, -1, -1> const>, Eigen::Matrix<double, -1, -1, 0, -1, -1>, 1> >, Eigen::internal::assign_op<double, double> >, 0, 0>::run	0.01s	0.01s	0.37%	0.37%	busbar_example	[unknown]	0	0x7ff7ca268e0f
-Eigen::internal::generic_product_impl<Eigen::Transpose<Eigen::Matrix<double, -1, -1, 0, -1, -1> >, Eigen::Matrix<double, -1, -1, 0, -1, -1>, Eigen::DenseShape, Eigen::DenseShape, 8>::evalTo<Eigen::Matrix<double, -1, -1, 0, -1, -1> >	0.00s	0.01s	0.00%	0.37%	busbar_example	[unknown]	0	0x7ff7ca26831f
-mpfem::ElementTransform::transform	0.01s	0.01s	0.25%	0.34%	busbar_example	[unknown]	0	0x7ff7ca28b7ec
-mpfem::FacetElementTransform::computeAdjacentElementInfo	0.01s	0.01s	0.33%	0.33%	busbar_example	[unknown]	0	0x7ff7ca2b9b75
-mpfem::Mesh::buildBoundaryElementMapping	0.00s	0.01s	0.00%	0.33%	busbar_example	[unknown]	0	0x7ff7ca29471d
-std::__1::__hash_table<std::__1::__hash_value_type<std::__1::vector<int, std::__1::allocator<int> >, mpfem::Mesh::FaceInfo>, std::__1::__unordered_map_hasher<std::__1::vector<int, std::__1::allocator<int> >, std::__1::pair<std::__1::vector<int, std::__1::allocator<int> > const, mpfem::Mesh::FaceInfo>, mpfem::Mesh::FaceKeyHash, std::__1::equal_to<std::__1::vector<int, std::__1::allocator<int> > >, true>, std::__1::__unordered_map_equal<std::__1::vector<int, std::_	0.00s	0.01s	0.20%	0.32%	busbar_example	[unknown]	0	0x7ff7ca296590
-mpfem::Mesh::buildElementToFaceMap	0.00s	0.01s	0.00%	0.32%	busbar_example	[unknown]	0	0x7ff7ca2942ff
-mpfem::PhysicsProblemBuilder::buildSolvers	0.00s	0.01s	0.00%	0.32%	busbar_example	[unknown]	0	0x7ff7ca21708d
-Eigen::internal::redux_impl<Eigen::internal::scalar_max_op<double, double, 0>, Eigen::internal::redux_evaluator<Eigen::PartialReduxExpr<Eigen::CwiseUnaryOp<Eigen::internal::scalar_abs_op<double>, Eigen::Matrix<double, -1, -1, 0, -1, -1> const> const, Eigen::internal::member_sum<double, double>, 0> >, 1, 0>::run<Eigen::PartialReduxExpr<Eigen::CwiseUnaryOp<Eigen::internal::scalar_abs_op<double>, Eigen::Matrix<double, -1, -1, 0, -1, -1> const> const, Eigen::internal	0.01s	0.01s	0.28%	0.28%	busbar_example	[unknown]	0	0x7ff7ca26f650
-[00007FFACBE774A0]	0.00s	0.01s	0.00%	0.25%	busbar_example		0	0x7ffacbe774a0
-std::__1::__hash_table<std::__1::__hash_value_type<int, int>, std::__1::__unordered_map_hasher<int, std::__1::pair<int const, int>, std::__1::hash<int>, std::__1::equal_to<int>, true>, std::__1::__unordered_map_equal<int, std::__1::pair<int const, int>, std::__1::equal_to<int>, std::__1::hash<int>, true>, std::__1::allocator<std::__1::pair<int const, int> > >::__emplace_unique_key_args<int, std::__1::piecewise_construct_t const&, std::__1::tuple<int const&>, std:	0.00s	0.01s	0.00%	0.24%	busbar_example	[unknown]	0	0x7ff7ca220820
-mpfem::HeatTransferSolver::~HeatTransferSolver	0.00s	0.01s	0.00%	0.24%	busbar_example	[unknown]	0	0x7ff7ca23e3ed
-Eigen::internal::DenseStorage_impl<int, -1, -1, 1, 0>::resize	0.00s	0.01s	0.12%	0.23%	busbar_example	[unknown]	0	0x7ff7ca245d41
-std::__1::vector<std::__1::pair<int, int>, std::__1::allocator<std::__1::pair<int, int> > >::push_back[abi:ne210108]	0.00s	0.01s	0.12%	0.20%	busbar_example	[unknown]	0	0x7ff7ca297315
-Eigen::DiagonalPreconditioner<double>::factorize<Eigen::Ref<Eigen::SparseMatrix<double, 0, int> const, 0, Eigen::OuterStride<-1> > >	0.01s	0.01s	0.20%	0.20%	busbar_example	[unknown]	0	0x7ff7ca256f06
-Eigen::IterativeSolverBase<Eigen::ConjugateGradient<Eigen::SparseMatrix<double, 0, int>, 3, Eigen::DiagonalPreconditioner<double> > >::compute<Eigen::SparseMatrix<double, 0, int> >	0.00s	0.01s	0.00%	0.20%	busbar_example	[unknown]	0	0x7ff7ca256dad
-mpfem::CgOperator::setup	0.00s	0.01s	0.00%	0.20%	busbar_example	[unknown]	0	0x7ff7ca2565c2
-mpfem::H1TriangleShape::evalGrads	0.01s	0.01s	0.20%	0.20%	busbar_example	[unknown]	0	0x7ff7ca2b3dd0
-Eigen::internal::evaluateProductBlockingSizesHeuristic<double, double, 4, long long>	0.00s	0.00s	0.19%	0.19%	busbar_example	[unknown]	0	0x7ff7ca24b7b0
-[00007FFACBD8C557]	0.00s	0.00s	0.00%	0.17%	busbar_example		0	0x7ffacbd8c557
-[00007FFACBE78A70]	0.00s	0.00s	0.00%	0.17%	busbar_example		0	0x7ffacbe78a70
-Eigen::internal::outer_product_selector_run<Eigen::Matrix<double, -1, -1, 0, -1, -1>, Eigen::CwiseBinaryOp<Eigen::internal::scalar_product_op<double, double>, Eigen::CwiseNullaryOp<Eigen::internal::scalar_constant_op<double>, Eigen::Matrix<double, -1, 1, 0, -1, 1> const> const, Eigen::Map<Eigen::Matrix<double, -1, 1, 0, -1, 1> const, 0, Eigen::Stride<0, 0> > const>, Eigen::Transpose<Eigen::Map<Eigen::Matrix<double, -1, 1, 0, -1, 1> const, 0, Eigen::Stride<0, 0> >	0.00s	0.00s	0.08%	0.16%	busbar_example	[unknown]	0	0x7ff7ca2beff5
-std::__1::__hash_table<std::__1::__hash_value_type<int, int>, std::__1::__unordered_map_hasher<int, std::__1::pair<int const, int>, std::__1::hash<int>, std::__1::equal_to<int>, true>, std::__1::__unordered_map_equal<int, std::__1::pair<int const, int>, std::__1::equal_to<int>, std::__1::hash<int>, true>, std::__1::allocator<std::__1::pair<int const, int> > >::__emplace_unique_key_args<int, std::__1::piecewise_construct_t const&, std::__1::tuple<int&&>, std::__1:	0.00s	0.00s	0.16%	0.16%	busbar_example	[unknown]	0	0x7ff7ca220e06
-mpfem::ElectrostaticsSolver::~ElectrostaticsSolver	0.00s	0.00s	0.00%	0.16%	busbar_example	[unknown]	0	0x7ff7ca28670a
-mpfem::UmfpackSolver::~UmfpackSolver	0.00s	0.00s	0.00%	0.16%	busbar_example	[unknown]	0	0x7ff7ca27f61b
-Eigen::internal::DenseStorage_impl<double, -1, -1, 1, 0>::resize	0.00s	0.00s	0.08%	0.16%	busbar_example	[unknown]	0	0x7ff7ca2154b0
-std::__1::getline[abi:ne210108]<char, std::__1::char_traits<char>, std::__1::allocator<char> >	0.00s	0.00s	0.00%	0.16%	busbar_example	[unknown]	0	0x7ff7ca23884e
-std::__1::__uninitialized_allocator_copy_impl[abi:ne210108]<std::__1::allocator<std::__1::vector<double, std::__1::allocator<double> > >, std::__1::vector<double, std::__1::allocator<double> > const*, std::__1::vector<double, std::__1::allocator<double> > const*, std::__1::vector<double, std::__1::allocator<double> >*>	0.00s	0.00s	0.00%	0.12%	busbar_example	[unknown]	0	0x7ff7ca2b8a13
-mpfem::H1TriangleShape::dofCoords	0.00s	0.00s	0.00%	0.12%	busbar_example	[unknown]	0	0x7ff7ca2b4228
-mpfem::FESpace::buildDofTable	0.00s	0.00s	0.12%	0.12%	busbar_example	[unknown]	0	0x7ff7ca2b2f5d
-mpfem::StructuralSolver::initialize	0.00s	0.00s	0.00%	0.12%	busbar_example	[unknown]	0	0x7ff7ca2877ed
-mpfem::PhysicsProblemBuilder::buildStructural	0.00s	0.00s	0.00%	0.12%	busbar_example	[unknown]	0	0x7ff7ca217ff0
-Eigen::internal::Assignment<Eigen::Matrix<double, -1, -1, 0, -1, -1>, Eigen::Product<Eigen::Transpose<Eigen::TranspositionsBase<Eigen::Transpositions<-1, -1, int> > >, Eigen::Matrix<double, -1, -1, 0, -1, -1>, 2>, Eigen::internal::assign_op<double, double>, Eigen::internal::Dense2Dense, void>::run	0.00s	0.00s	0.12%	0.12%	busbar_example	[unknown]	0	0x7ff7ca291fc9
-free	0.00s	0.00s	0.12%	0.12%	busbar_example	[unknown]	0	0x7ff7ca2d0910
-memset	0.00s	0.00s	0.12%	0.12%	busbar_example	[unknown]	0	0x7ff7ca2d0960
-mpfem::(anonymous namespace)::ConstantNode::evaluateBatch	0.00s	0.00s	0.12%	0.12%	busbar_example	[unknown]	0	0x7ff7ca22bc8f
-mpfem::FacetElementTransform::setElement	0.00s	0.00s	0.00%	0.12%	busbar_example	[unknown]	0	0x7ff7ca2b9ab7
-mpfem::ElementTransform::computeGeometryInfo	0.00s	0.00s	0.12%	0.12%	busbar_example	[unknown]	0	0x7ff7ca28b9d8
-mpfem::ElectrostaticsSolver::initialize	0.00s	0.00s	0.00%	0.12%	busbar_example	[unknown]	0	0x7ff7ca283b72
-mpfem::PhysicsProblemBuilder::buildElectrostatics	0.00s	0.00s	0.00%	0.12%	busbar_example	[unknown]	0	0x7ff7ca217b60
-std::__1::vector<std::__1::vector<std::__1::pair<int, int>, std::__1::allocator<std::__1::pair<int, int> > >, std::__1::allocator<std::__1::vector<std::__1::pair<int, int>, std::__1::allocator<std::__1::pair<int, int> > > > >::__append	0.00s	0.00s	0.00%	0.12%	busbar_example	[unknown]	0	0x7ff7ca297534
-std::__1::vector<int, std::__1::allocator<int> >::__assign_with_size[abi:ne210108]<int*, int*>	0.00s	0.00s	0.11%	0.11%	busbar_example	[unknown]	0	0x7ff7ca215ba2
-malloc	0.00s	0.00s	0.10%	0.10%	busbar_example	[unknown]	0	0x7ff7ca2d0920
-mpfem::FieldValues::FieldState::FieldState	0.00s	0.00s	0.00%	0.10%	busbar_example	[unknown]	0	0x7ff7ca21648b
-mpfem::GridFunction::GridFunction	0.00s	0.00s	0.00%	0.10%	busbar_example	[unknown]	0	0x7ff7ca215b65
-std::__1::__hash_table<std::__1::__hash_value_type<std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> >, mpfem::FieldValues::FieldState>, std::__1::__unordered_map_hasher<std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> >, std::__1::pair<std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> > const, mpfem::FieldValues::FieldState>, std::__1::hash<std::__1::basic_stri	0.00s	0.00s	0.00%	0.10%	busbar_example	[unknown]	0	0x7ff7ca214ebf
-[00007FFACBD8BBE1]	0.00s	0.00s	0.09%	0.09%	busbar_example		0	0x7ffacbd8bbe1
-operator new	0.00s	0.00s	0.08%	0.08%	busbar_example	[unknown]	0	0x7ff7ca2d07c0
-[00007FFACBDC4260]	0.00s	0.00s	0.08%	0.08%	busbar_example		0	0x7ffacbdc4260
-[00007FFACBD8F05D]	0.00s	0.00s	0.00%	0.08%	busbar_example		0	0x7ffacbd8f05d
-std::__1::__put_character_sequence[abi:ne210108]<char, std::__1::char_traits<char> >	0.00s	0.00s	0.08%	0.08%	busbar_example	[unknown]	0	0x7ff7ca2138f6
-[00007FFACBD726F0]	0.00s	0.00s	0.08%	0.08%	busbar_example		0	0x7ffacbd726f0
-mpfem::ScopedTimer::stop	0.00s	0.00s	0.00%	0.08%	busbar_example	[unknown]	0	0x7ff7ca223391
-mpfem::ScopedTimer::~ScopedTimer	0.00s	0.00s	0.00%	0.08%	busbar_example	[unknown]	0	0x7ff7ca223346
-(anonymous namespace)::buildDomainIntegratorMap	0.00s	0.00s	0.08%	0.08%	busbar_example	[unknown]	0	0x7ff7ca2ada93
-[00007FFB00000000]	0.00s	0.00s	0.00%	0.08%	busbar_example		0	0x7ffb00000000
-[00007FFACBDFCDA0]	0.00s	0.00s	0.08%	0.08%	busbar_example		0	0x7ffacbdfcda0
-[00007FFACBD8A9C6]	0.00s	0.00s	0.00%	0.08%	busbar_example		0	0x7ffacbd8a9c6
-mpfem::H1TriangleShape::evalValues	0.00s	0.00s	0.08%	0.08%	busbar_example	[unknown]	0	0x7ff7ca2b3d7c
-[00007FFACBD8F07A]	0.00s	0.00s	0.08%	0.08%	busbar_example		0	0x7ffacbd8f07a
-std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> >::__assign_no_alias<true>	0.00s	0.00s	0.08%	0.08%	busbar_example	[unknown]	0	0x7ff7ca215421
-_ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE6appendB8ne210108IPKcTnNS_9enable_ifIXsr31__has_forward_iterator_categoryIT_EE5valueEiE4typeELi0EEERS5_SA_SA_	0.00s	0.00s	0.08%	0.08%	busbar_example	[unknown]	0	0x7ff7ca238b99
-[00007FFACBF115F4]	0.00s	0.00s	0.08%	0.08%	busbar_example		0	0x7ffacbf115f4
-[00007FFACBEAFE70]	0.00s	0.00s	0.00%	0.08%	busbar_example		0	0x7ffacbeafe70
-operator delete	0.00s	0.00s	0.08%	0.08%	busbar_example	[unknown]	0	0x7ff7ca2d07b0
-[00007FFACBD8BC52]	0.00s	0.00s	0.00%	0.08%	busbar_example		0	0x7ffacbd8bc52
-[00007FFACBD8A630]	0.00s	0.00s	0.08%	0.08%	busbar_example		0	0x7ffacbd8a630
-[00007FFACBE7CF30]	0.00s	0.00s	0.00%	0.08%	busbar_example		0	0x7ffacbe7cf30
-[00007FFACBDA8B6F]	0.00s	0.00s	0.00%	0.08%	busbar_example		0	0x7ffacbda8b6f
-[00007FFACBD9A0F6]	0.00s	0.00s	0.08%	0.08%	busbar_example		0	0x7ffacbd9a0f6
-[00007FFACBD8F0E3]	0.00s	0.00s	0.00%	0.08%	busbar_example		0	0x7ffacbd8f0e3
-[00007FFACBD8B8AF]	0.00s	0.00s	0.00%	0.08%	busbar_example		0	0x7ffacbd8b8af
-__stdio_common_vsscanf	0.00s	0.00s	0.00%	0.08%	busbar_example	[unknown]	0	0x7ff7ca2d3a30
-mpfem::HeatTransferSolver::initialize	0.00s	0.00s	0.00%	0.08%	busbar_example	[unknown]	0	0x7ff7ca23aa52
-mpfem::PhysicsProblemBuilder::buildHeatTransfer	0.00s	0.00s	0.00%	0.08%	busbar_example	[unknown]	0	0x7ff7ca217450
+main	0.00s	1.85s	0.00%	100.00%	busbar_example	[unknown]	0	0x7ff630641533
+mpfem::PhysicsFieldSolver::solveSteady	0.00s	1.53s	0.00%	82.78%	busbar_example	[unknown]	0	0x7ff630643f3f
+mpfem::SteadyProblem::solve	0.00s	1.53s	0.00%	82.78%	busbar_example	[unknown]	0	0x7ff630642815
+Eigen::internal::conjugate_gradient<Eigen::Transpose<Eigen::Ref<Eigen::SparseMatrix<double, 0, int> const, 0, Eigen::OuterStride<-1> > const>, Eigen::Matrix<double, -1, 1, 0, -1, 1>, Eigen::Matrix<double, -1, 1, 0, -1, 1>, Eigen::DiagonalPreconditioner<double> >	0.77s	0.83s	41.79%	44.83%	busbar_example	[unknown]	0	0x7ff630668bff
+Eigen::internal::Assignment<Eigen::Matrix<double, -1, 1, 0, -1, 1>, Eigen::SolveWithGuess<Eigen::ConjugateGradient<Eigen::SparseMatrix<double, 0, int>, 3, Eigen::DiagonalPreconditioner<double> >, Eigen::Matrix<double, -1, 1, 0, -1, 1>, Eigen::Matrix<double, -1, 1, 0, -1, 1> >, Eigen::internal::assign_op<double, double>, Eigen::internal::Dense2Dense, void>::run	0.00s	0.83s	0.00%	44.83%	busbar_example	[unknown]	0	0x7ff630668424
+mpfem::CgOperator::apply	0.00s	0.83s	0.00%	44.83%	busbar_example	[unknown]	0	0x7ff630667880
+mpfem::BilinearFormAssembler::assemble	0.01s	0.53s	0.42%	28.71%	busbar_example	[unknown]	0	0x7ff6306ba284
+Eigen::internal::set_from_triplets<std::__1::__wrap_iter<Eigen::Triplet<double, int>*>, Eigen::SparseMatrix<double, 0, int>, Eigen::internal::scalar_sum_op<double, double> >	0.29s	0.51s	15.45%	27.69%	busbar_example	[unknown]	0	0x7ff6306c0003
+mpfem::StructuralSolver::buildStiffnessMatrix	0.00s	0.38s	0.00%	20.30%	busbar_example	[unknown]	0	0x7ff6306b36d7
+[00007FFB1BD6E0FB]	0.00s	0.18s	0.00%	9.57%	busbar_example		0	0x7ffb1bd6e0fb
+mpfem::PhysicsProblemBuilder::build	0.00s	0.18s	0.00%	9.55%	busbar_example	[unknown]	0	0x7ff630647809
+mpfem::ElectrostaticsSolver::buildStiffnessMatrix	0.00s	0.13s	0.00%	7.07%	busbar_example	[unknown]	0	0x7ff6306b0053
+Eigen::SparseMatrix<double, 0, int>::operator=<Eigen::SparseMatrix<double, 1, int> >	0.13s	0.13s	6.80%	6.80%	busbar_example	[unknown]	0	0x7ff630689974
+mpfem::MphtxtReader::readFile	0.00s	0.12s	0.00%	6.43%	busbar_example	[unknown]	0	0x7ff6306dc0b1
+mpfem::MphtxtReader::read	0.00s	0.12s	0.00%	6.43%	busbar_example	[unknown]	0	0x7ff6306dc025
+mpfem::(anonymous namespace)::XmlProblemInputLoader::load	0.00s	0.12s	0.00%	6.43%	busbar_example	[unknown]	0	0x7ff6306a56b6
+mpfem::Problem::~Problem	0.00s	0.10s	0.00%	5.39%	busbar_example	[unknown]	0	0x7ff6306a3159
+mpfem::SteadyProblem::~SteadyProblem	0.00s	0.10s	0.00%	5.39%	busbar_example	[unknown]	0	0x7ff63064e8bb
+mpfem::PhysicsFieldSolver::~PhysicsFieldSolver	0.00s	0.10s	0.00%	5.28%	busbar_example	[unknown]	0	0x7ff63064f4b3
+mpfem::StructuralSolver::~StructuralSolver	0.00s	0.09s	0.00%	4.59%	busbar_example	[unknown]	0	0x7ff6306b69fd
+Eigen::SparseMatrix<double, 0, int>::operator=	0.00s	0.08s	0.00%	4.38%	busbar_example	[unknown]	0	0x7ff63064485f
+mpfem::BilinearFormAssembler::~BilinearFormAssembler	0.00s	0.08s	0.00%	4.16%	busbar_example	[unknown]	0	0x7ff63064fdb2
+Eigen::SparseMatrix<double, 1, int>::collapseDuplicates<Eigen::Map<Eigen::Matrix<int, -1, 1, 0, -1, 1>, 16, Eigen::Stride<0, 0> >, Eigen::internal::scalar_sum_op<double, double> >	0.08s	0.08s	4.08%	4.08%	busbar_example	[unknown]	0	0x7ff6306c0584
+mpfem::Mesh::buildTopology	0.00s	0.07s	0.27%	3.76%	busbar_example	[unknown]	0	0x7ff6306c554c
+[00007FFB1BE3D5A9]	0.07s	0.07s	3.60%	3.60%	busbar_example		0	0x7ffb1be3d5a9
+mpfem::HeatTransferSolver::buildStiffnessMatrix	0.00s	0.06s	0.00%	3.40%	busbar_example	[unknown]	0	0x7ff6306a643f
+[00007FFB1BD60139]	0.00s	0.06s	0.00%	3.27%	busbar_example		0	0x7ffb1bd60139
+mpfem::LinearFormAssembler::assemble	0.01s	0.06s	0.54%	3.17%	busbar_example	[unknown]	0	0x7ff6306bcf0c
+mpfem::FESpace::buildDofTable	0.00s	0.06s	0.00%	3.11%	busbar_example	[unknown]	0	0x7ff6306b77ed
+mpfem::PhysicsFieldSolver::initialize	0.00s	0.06s	0.00%	3.11%	busbar_example	[unknown]	0	0x7ff63064f679
+mpfem::PhysicsProblemBuilder::buildSolvers	0.00s	0.06s	0.00%	3.11%	busbar_example	[unknown]	0	0x7ff630647d7d
+mpfem::HeatTransferSolver::buildRHS	0.00s	0.05s	0.00%	2.94%	busbar_example	[unknown]	0	0x7ff6306a6d01
+[00007FFAD0017E38]	0.00s	0.05s	0.00%	2.72%	busbar_example		0	0x7ffad0017e38
+mpfem::ConvectionLFIntegrator::assembleFaceVector	0.00s	0.05s	0.00%	2.52%	busbar_example	[unknown]	0	0x7ff6306e63b2
+mpfem::MphtxtReader::parseFile	0.00s	0.05s	0.00%	2.44%	busbar_example	[unknown]	0	0x7ff6306dca90
+mpfem::Mesh::buildFaceToElementMap	0.01s	0.04s	0.52%	2.42%	busbar_example	[unknown]	0	0x7ff6306c639f
+[00007FFB1BE3DE56]	0.04s	0.04s	2.02%	2.02%	busbar_example		0	0x7ffb1be3de56
+mpfem::MphtxtReader::parseElementBlock	0.00s	0.03s	0.11%	1.84%	busbar_example	[unknown]	0	0x7ff6306deaf0
+mpfem::ElementTransform::computeInverse	0.01s	0.03s	0.60%	1.46%	busbar_example	[unknown]	0	0x7ff6306e2fa8
+[00007FFB1BE3DE4E]	0.03s	0.03s	1.45%	1.45%	busbar_example		0	0x7ffb1be3de4e
+mpfem::applyDirichletBC	0.00s	0.03s	0.00%	1.42%	busbar_example	[unknown]	0	0x7ff6306ab75b
+mpfem::(anonymous namespace)::buildCornerVertexComponentDofs	0.00s	0.02s	0.22%	1.30%	busbar_example	[unknown]	0	0x7ff6306953e1
+mpfem::ResultExporter::exportVtuImpl	0.00s	0.02s	0.00%	1.19%	busbar_example	[unknown]	0	0x7ff630695f6d
+mpfem::PhysicsProblemBuilder::buildElectrostatics	0.00s	0.02s	0.00%	1.10%	busbar_example	[unknown]	0	0x7ff6306489ab
+mpfem::ResultExporter::exportComsolTextImpl	0.00s	0.02s	0.00%	1.08%	busbar_example	[unknown]	0	0x7ff630693157
+mpfem::PhysicsProblemBuilder::buildHeatTransfer	0.00s	0.02s	0.00%	1.04%	busbar_example	[unknown]	0	0x7ff63064817b
+mpfem::PhysicsProblemBuilder::buildStructural	0.00s	0.02s	0.00%	0.97%	busbar_example	[unknown]	0	0x7ff630648f50
+[00007FFAD0138A70]	0.00s	0.02s	0.00%	0.92%	busbar_example		0	0x7ffad0138a70
+Eigen::LDLT<Eigen::Matrix<double, 2, 2, 0, 2, 2>, 1>::_solve_impl_transposed<true, Eigen::Transpose<Eigen::Matrix<double, 3, 2, 0, 3, 2> const>, Eigen::Matrix<double, 2, 3, 0, 2, 3> >	0.00s	0.02s	0.00%	0.86%	busbar_example	[unknown]	0	0x7ff6306e3b7f
+mpfem::(anonymous namespace)::evalScalarNode	0.00s	0.02s	0.27%	0.86%	busbar_example	[unknown]	0	0x7ff6306e73d5
+mpfem::SparseMatrix::eliminateRows	0.01s	0.02s	0.71%	0.82%	busbar_example	[unknown]	0	0x7ff6306ad67f
+[00007FFB1BE3DE36]	0.01s	0.01s	0.80%	0.80%	busbar_example		0	0x7ffb1be3de36
+mpfem::Mesh::getElementEdges	0.00s	0.01s	0.22%	0.78%	busbar_example	[unknown]	0	0x7ff6306c3132
+mpfem::StructuralSolver::applyEssentialBCs	0.00s	0.01s	0.00%	0.76%	busbar_example	[unknown]	0	0x7ff6306b3b85
+Eigen::internal::triangular_solve_matrix<double, long long, 1, 5, false, 0, 0, 1>::run	0.01s	0.01s	0.54%	0.70%	busbar_example	[unknown]	0	0x7ff63065c252
+mpfem::Mesh::edgeIndex	0.01s	0.01s	0.65%	0.65%	busbar_example	[unknown]	0	0x7ff6306c515a
+mpfem::ConvectionMassIntegrator::assembleFaceMatrix	0.00s	0.01s	0.00%	0.59%	busbar_example	[unknown]	0	0x7ff6306e5f67
+std::__1::__hash_table<std::__1::__hash_value_type<mpfem::Mesh::FaceKey, int>, std::__1::__unordered_map_hasher<mpfem::Mesh::FaceKey, std::__1::pair<mpfem::Mesh::FaceKey const, int>, mpfem::Mesh::FaceKeyHash, std::__1::equal_to<mpfem::Mesh::FaceKey>, true>, std::__1::__unordered_map_equal<mpfem::Mesh::FaceKey, std::__1::pair<mpfem::Mesh::FaceKey const, int>, std::__1::equal_to<mpfem::Mesh::FaceKey>, mpfem::Mesh::FaceKeyHash, true>, std::__1::allocator<std::__1::p	0.01s	0.01s	0.35%	0.57%	busbar_example	[unknown]	0	0x7ff6306c9e36
+mpfem::Element::faceVertices	0.00s	0.01s	0.11%	0.57%	busbar_example	[unknown]	0	0x7ff6306c8dd3
+[00007FFAD01374A0]	0.00s	0.01s	0.00%	0.54%	busbar_example		0	0x7ffad01374a0
+std::__1::__put_character_sequence[abi:ne210108]<char, std::__1::char_traits<char> >	0.01s	0.01s	0.32%	0.54%	busbar_example	[unknown]	0	0x7ff6306437be
+mpfem::Mesh::getElementVertices	0.00s	0.01s	0.18%	0.53%	busbar_example	[unknown]	0	0x7ff6306c3063
+mpfem::ElectrostaticsSolver::applyEssentialBCs	0.00s	0.01s	0.00%	0.49%	busbar_example	[unknown]	0	0x7ff6306b02d5
+mpfem::Mesh::getElementFaces	0.00s	0.01s	0.00%	0.46%	busbar_example	[unknown]	0	0x7ff6306c4142
+[00007FFAD004C557]	0.00s	0.01s	0.00%	0.44%	busbar_example		0	0x7ffad004c557
+std::__1::__hash_table<std::__1::__hash_value_type<mpfem::Mesh::FaceKey, mpfem::Mesh::FaceInfo>, std::__1::__unordered_map_hasher<mpfem::Mesh::FaceKey, std::__1::pair<mpfem::Mesh::FaceKey const, mpfem::Mesh::FaceInfo>, mpfem::Mesh::FaceKeyHash, std::__1::equal_to<mpfem::Mesh::FaceKey>, true>, std::__1::__unordered_map_equal<mpfem::Mesh::FaceKey, std::__1::pair<mpfem::Mesh::FaceKey const, mpfem::Mesh::FaceInfo>, std::__1::equal_to<mpfem::Mesh::FaceKey>, mpfem::Mes	0.00s	0.01s	0.11%	0.43%	busbar_example	[unknown]	0	0x7ff6306c954a
+mpfem::ElementTransform::transform	0.00s	0.01s	0.11%	0.43%	busbar_example	[unknown]	0	0x7ff6306e3317
+mpfem::Mesh::buildEdgeToElementMap	0.00s	0.01s	0.22%	0.43%	busbar_example	[unknown]	0	0x7ff6306c5f81
+mpfem::Mesh::buildElementToFaceMap	0.00s	0.01s	0.00%	0.43%	busbar_example	[unknown]	0	0x7ff6306c6ab5
+mpfem::HeatTransferSolver::~HeatTransferSolver	0.00s	0.01s	0.00%	0.43%	busbar_example	[unknown]	0	0x7ff6306aa22d
+std::__1::getline[abi:ne210108]<char, std::__1::char_traits<char>, std::__1::allocator<char> >	0.01s	0.01s	0.37%	0.37%	busbar_example	[unknown]	0	0x7ff6306d8d03
+std::__1::vector<int, std::__1::allocator<int> >::__assign_with_size[abi:ne210108]<int const*, int const*>	0.00s	0.01s	0.25%	0.35%	busbar_example	[unknown]	0	0x7ff6306c91ae
+mpfem::GeometryMapping::evalShape	0.00s	0.01s	0.16%	0.32%	busbar_example	[unknown]	0	0x7ff6306fc557
+Eigen::internal::gemm_pack_rhs<double, long long, Eigen::internal::blas_data_mapper<double, long long, 0, 0, 1>, 4, 0, false, true>::operator()	0.01s	0.01s	0.32%	0.32%	busbar_example	[unknown]	0	0x7ff63065d38c
+std::__1::vector<std::__1::vector<std::__1::pair<int, int>, std::__1::allocator<std::__1::pair<int, int> > >, std::__1::allocator<std::__1::vector<std::__1::pair<int, int>, std::__1::allocator<std::__1::pair<int, int> > > > >::__append	0.00s	0.01s	0.00%	0.32%	busbar_example	[unknown]	0	0x7ff6306c8734
+mpfem::ElementTransform::computeJacobian	0.01s	0.01s	0.30%	0.30%	busbar_example	[unknown]	0	0x7ff6306e2974
+mpfem::ElectrostaticsSolver::~ElectrostaticsSolver	0.00s	0.01s	0.00%	0.27%	busbar_example	[unknown]	0	0x7ff6306b30b0
+Eigen::DiagonalPreconditioner<double>::factorize<Eigen::Ref<Eigen::SparseMatrix<double, 0, int> const, 0, Eigen::OuterStride<-1> > >	0.00s	0.00s	0.27%	0.27%	busbar_example	[unknown]	0	0x7ff630668226
+Eigen::IterativeSolverBase<Eigen::ConjugateGradient<Eigen::SparseMatrix<double, 0, int>, 3, Eigen::DiagonalPreconditioner<double> > >::compute<Eigen::SparseMatrix<double, 0, int> >	0.00s	0.00s	0.00%	0.27%	busbar_example	[unknown]	0	0x7ff6306680cd
+mpfem::CgOperator::setup	0.00s	0.00s	0.00%	0.27%	busbar_example	[unknown]	0	0x7ff6306677f2
+mpfem::StructuralSolver::buildRHS	0.00s	0.00s	0.00%	0.23%	busbar_example	[unknown]	0	0x7ff6306b3947
+[00007FFAD004BC7A]	0.00s	0.00s	0.22%	0.22%	busbar_example		0	0x7ffad004bc7a
+__stdio_common_vsscanf	0.00s	0.00s	0.00%	0.22%	busbar_example	[unknown]	0	0x7ff63070195c
+mpfem::Mesh::buildBoundaryElementMapping	0.00s	0.00s	0.00%	0.22%	busbar_example	[unknown]	0	0x7ff6306c6e23
+mpfem::FESpace::getElementDofs	0.00s	0.00s	0.22%	0.22%	busbar_example	[unknown]	0	0x7ff630698d40
+std::__1::__hash_table<std::__1::__hash_value_type<int, int>, std::__1::__unordered_map_hasher<int, std::__1::pair<int const, int>, std::__1::hash<int>, std::__1::equal_to<int>, true>, std::__1::__unordered_map_equal<int, std::__1::pair<int const, int>, std::__1::equal_to<int>, std::__1::hash<int>, true>, std::__1::allocator<std::__1::pair<int const, int> > >::__emplace_unique_key_args<int, std::__1::piecewise_construct_t const&, std::__1::tuple<int&&>, std::__1:	0.00s	0.00s	0.22%	0.22%	busbar_example	[unknown]	0	0x7ff63069a6fd
+std::__1::vector<int, std::__1::allocator<int> >::assign	0.00s	0.00s	0.21%	0.21%	busbar_example	[unknown]	0	0x7ff6306b9e00
+mpfem::HeatTransferSolver::applyEssentialBCs	0.00s	0.00s	0.00%	0.18%	busbar_example	[unknown]	0	0x7ff6306a7025
+Eigen::internal::outer_product_selector_run<Eigen::Matrix<double, -1, -1, 0, -1, -1>, Eigen::CwiseBinaryOp<Eigen::internal::scalar_product_op<double, double>, Eigen::CwiseNullaryOp<Eigen::internal::scalar_constant_op<double>, Eigen::Matrix<double, -1, 1, 0, -1, 1> const> const, Eigen::Block<Eigen::Matrix<double, -1, -1, 0, -1, -1> const, -1, 1, true> const>, Eigen::Transpose<Eigen::Block<Eigen::Matrix<double, -1, -1, 0, -1, -1> const, -1, 1, true> const>, Eigen::	0.00s	0.00s	0.17%	0.17%	busbar_example	[unknown]	0	0x7ff6306eac0a
+[00007FFB1BE3D69A]	0.00s	0.00s	0.16%	0.16%	busbar_example		0	0x7ffb1be3d69a
+Eigen::internal::triangular_solve_matrix<double, long long, 1, 6, false, 1, 0, 1>::run	0.00s	0.00s	0.00%	0.16%	busbar_example	[unknown]	0	0x7ff6306e453e
+[00007FFB1BE3D68D]	0.00s	0.00s	0.16%	0.16%	busbar_example		0	0x7ffb1be3d68d
+mpfem::CompiledExpressionNode::evaluateBatch	0.00s	0.00s	0.00%	0.16%	busbar_example	[unknown]	0	0x7ff6306d33b6
+mpfem::(anonymous namespace)::evalAst	0.00s	0.00s	0.16%	0.16%	busbar_example	[unknown]	0	0x7ff6306cfaf1
+[00007FFAD005D72B]	0.00s	0.00s	0.16%	0.16%	busbar_example		0	0x7ffad005d72b
+[00007FFAD004C5BB]	0.00s	0.00s	0.00%	0.16%	busbar_example		0	0x7ffad004c5bb
+[00007FFB1BE3DC2A]	0.00s	0.00s	0.13%	0.13%	busbar_example		0	0x7ffb1be3dc2a
+[00007FFAD0017E33]	0.00s	0.00s	0.13%	0.13%	busbar_example		0	0x7ffad0017e33
+[00007FFAD004C5DA]	0.00s	0.00s	0.11%	0.11%	busbar_example		0	0x7ffad004c5da
+[00007FFAD004F109]	0.00s	0.00s	0.00%	0.11%	busbar_example		0	0x7ffad004f109
+[00007FFAD004E970]	0.00s	0.00s	0.11%	0.11%	busbar_example		0	0x7ffad004e970
+std::__1::__hash_table<std::__1::__hash_value_type<int, int>, std::__1::__unordered_map_hasher<int, std::__1::pair<int const, int>, std::__1::hash<int>, std::__1::equal_to<int>, true>, std::__1::__unordered_map_equal<int, std::__1::pair<int const, int>, std::__1::equal_to<int>, std::__1::hash<int>, true>, std::__1::allocator<std::__1::pair<int const, int> > >::__emplace_unique_key_args<int, std::__1::piecewise_construct_t const&, std::__1::tuple<int const&>, std:	0.00s	0.00s	0.00%	0.11%	busbar_example	[unknown]	0	0x7ff63069a120
+std::__1::vector<mpfem::Element, std::__1::allocator<mpfem::Element> >::__emplace_back_assume_capacity[abi:ne210108]<mpfem::Geometry&, std::__1::vector<int, std::__1::allocator<int> > const&, int&, int&>	0.00s	0.00s	0.11%	0.11%	busbar_example	[unknown]	0	0x7ff6306c7f09
+mpfem::Mesh::addElement	0.00s	0.00s	0.00%	0.11%	busbar_example	[unknown]	0	0x7ff6306c2749
+[00007FFB1BD6E0E0]	0.00s	0.00s	0.11%	0.11%	busbar_example		0	0x7ffb1bd6e0e0
+std::__1::vector<std::__1::pair<int, int>, std::__1::allocator<std::__1::pair<int, int> > >::push_back[abi:ne210108]	0.00s	0.00s	0.00%	0.11%	busbar_example	[unknown]	0	0x7ff6306c85ce
+[00007FFB00000000]	0.00s	0.00s	0.00%	0.11%	busbar_example		0	0x7ffb00000000
+[00007FFB1BE888B0]	0.00s	0.00s	0.00%	0.11%	busbar_example		0	0x7ffb1be888b0
+[00007FFAD0084277]	0.00s	0.00s	0.11%	0.11%	busbar_example		0	0x7ffad0084277
+[00007FFAD004CEC3]	0.00s	0.00s	0.00%	0.11%	busbar_example		0	0x7ffad004cec3
+[00007FFAD004A641]	0.00s	0.00s	0.00%	0.11%	busbar_example		0	0x7ffad004a641
+std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> >::__assign_no_alias<true>	0.00s	0.00s	0.00%	0.11%	busbar_example	[unknown]	0	0x7ff6306460cb
+std::__1::basic_ostream<char, std::__1::char_traits<char> >::sentry::~sentry	0.00s	0.00s	0.11%	0.11%	busbar_example	[unknown]	0	0x7ff630643a90
+[00007FFB1BE3DE46]	0.00s	0.00s	0.11%	0.11%	busbar_example		0	0x7ffb1be3de46
+mpfem::Mesh::~Mesh	0.00s	0.00s	0.11%	0.11%	busbar_example	[unknown]	0	0x7ff63064e403
+[00007FFAD004BCF8]	0.00s	0.00s	0.11%	0.11%	busbar_example		0	0x7ffad004bcf8
+std::__1::__hash_table<int, std::__1::hash<int>, std::__1::equal_to<int>, std::__1::allocator<int> >::__emplace_unique_key_args<int, int const&>	0.00s	0.00s	0.00%	0.11%	busbar_example	[unknown]	0	0x7ff630698faf
+std::__1::__hash_table<std::__1::__hash_value_type<unsigned long long, int>, std::__1::__unordered_map_hasher<unsigned long long, std::__1::pair<unsigned long long const, int>, std::__1::hash<unsigned long long>, std::__1::equal_to<unsigned long long>, true>, std::__1::__unordered_map_equal<unsigned long long, std::__1::pair<unsigned long long const, int>, std::__1::equal_to<unsigned long long>, std::__1::hash<unsigned long long>, true>, std::__1::allocator<std::	0.00s	0.00s	0.00%	0.11%	busbar_example	[unknown]	0	0x7ff6306c88e7
+[00007FFAD00BCE10]	0.00s	0.00s	0.11%	0.11%	busbar_example		0	0x7ffad00bce10
+std::__1::vector<std::__1::array<double, 3ull>, std::__1::allocator<std::__1::array<double, 3ull> > >::push_back[abi:ne210108]	0.00s	0.00s	0.11%	0.11%	busbar_example	[unknown]	0	0x7ff6306e1220
+mpfem::UmfpackSolver::~UmfpackSolver	0.00s	0.00s	0.00%	0.11%	busbar_example	[unknown]	0	0x7ff6306907eb
+[00007FFAD0084260]	0.00s	0.00s	0.11%	0.11%	busbar_example		0	0x7ffad0084260
+[00007FFAD004BC61]	0.00s	0.00s	0.00%	0.11%	busbar_example		0	0x7ffad004bc61
+[00007FFAD0059CBE]	0.00s	0.00s	0.00%	0.11%	busbar_example		0	0x7ffad0059cbe
+[00007FFAD004A649]	0.00s	0.00s	0.11%	0.11%	busbar_example		0	0x7ffad004a649
+[00007FFADE071698]	0.00s	0.00s	0.00%	0.11%	busbar_example		0	0x7ffade071698
+[00007FFADE00FE70]	0.00s	0.00s	0.00%	0.11%	busbar_example		0	0x7ffade00fe70
+Eigen::internal::DenseStorage_impl<double, -1, -1, 1, 0>::resize	0.00s	0.00s	0.00%	0.11%	busbar_example	[unknown]	0	0x7ff630646140
+[00007FFB1BD65E00]	0.00s	0.00s	0.11%	0.11%	busbar_example		0	0x7ffb1bd65e00
+[00007FFAD004FB9E]	0.00s	0.00s	0.00%	0.11%	busbar_example		0	0x7ffad004fb9e
+[00007FFAD004E960]	0.00s	0.00s	0.11%	0.11%	busbar_example		0	0x7ffad004e960
+std::__1::vector<int, std::__1::allocator<int> >::push_back[abi:ne210108]	0.00s	0.00s	0.10%	0.10%	busbar_example	[unknown]	0	0x7ff6306c8200

@@ -17,7 +17,7 @@ namespace mpfem {
 
         // Compute Jacobian: J = sum_i (x_i * grad_phi_i^T)
         // Note: Jacobian is spaceDim x dim. In MPFEM, spaceDim is always 3.
-        jacobian_.setZero(3, dim_);
+        jacobian_.setZero();
         for (int i = 0; i < numNodes_; ++i) {
             const Real gx = geoShapeDerivatives_(i, 0);
             const Real gy = geoShapeDerivatives_(i, 1);
@@ -37,35 +37,41 @@ namespace mpfem {
             weight_ = std::abs(detJ_);
         }
         else if (dim_ == 2) {
-            // Boundary element in 3D: surface area weight
-            Matrix JtJ = jacobian_.transpose() * jacobian_;
-            detJ_ = std::sqrt(std::abs(JtJ.determinant()));
+            const Vector3 t1 = jacobian_.col(0);
+            const Vector3 t2 = jacobian_.col(1);
+            detJ_ = t1.cross(t2).norm();
             weight_ = detJ_;
         }
         else if (dim_ == 1) {
-            // Line element in 3D
-            Matrix JtJ = jacobian_.transpose() * jacobian_;
-            detJ_ = std::sqrt(std::abs(JtJ.determinant()));
+            detJ_ = jacobian_.col(0).norm();
             weight_ = detJ_;
         }
     }
 
     void ElementTransform::computeInverse()
     {
-        invJacobian_.resize(dim_, 3);
+        invJacobian_.setZero();
+        invJacobianT_.setZero();
 
         if (dim_ == 3) {
             if (std::abs(detJ_) > 1e-15) {
                 kernels::inverse3(jacobian_.data(), invJacobian_.data());
             }
-            else {
-                invJacobian_.setZero();
+        }
+        else if (dim_ == 2) {
+            const Matrix32 J = jacobian_.leftCols<2>();
+            const Matrix2 JtJ = J.transpose() * J;
+            if (JtJ.determinant() != 0.0) {
+                const Matrix23 pseudo = JtJ.ldlt().solve(J.transpose());
+                invJacobian_.topRows<2>() = pseudo;
             }
         }
-        else {
-            // Non-square case: Pseudo-inverse (J^T * J)^-1 * J^T
-            Matrix JtJ = jacobian_.transpose() * jacobian_;
-            invJacobian_ = JtJ.ldlt().solve(jacobian_.transpose());
+        else if (dim_ == 1) {
+            const Vector3 t = jacobian_.col(0);
+            const Real denom = t.squaredNorm();
+            if (denom > 1e-15) {
+                invJacobian_.row(0) = t.transpose() / denom;
+            }
         }
 
         invJacobianT_ = invJacobian_.transpose();

@@ -152,7 +152,7 @@ namespace mpfem {
     // =============================================================================
 
     void BoundaryLFIntegrator::assembleFaceVector(const ReferenceElement& ref,
-        FacetElementTransform& trans,
+        ElementTransform& trans,
         Vector& elvec) const
     {
         const int nd = ref.numDofs();
@@ -179,7 +179,7 @@ namespace mpfem {
     // =============================================================================
 
     void ConvectionMassIntegrator::assembleFaceMatrix(const ReferenceElement& ref,
-        FacetElementTransform& trans,
+        ElementTransform& trans,
         Matrix& elmat) const
     {
         const int nd = ref.numDofs();
@@ -202,7 +202,7 @@ namespace mpfem {
     }
 
     void ConvectionLFIntegrator::assembleFaceVector(const ReferenceElement& ref,
-        FacetElementTransform& trans,
+        ElementTransform& trans,
         Vector& elvec) const
     {
         const int nd = ref.numDofs();
