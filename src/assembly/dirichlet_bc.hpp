@@ -46,10 +46,10 @@ namespace mpfem {
 
                 const int nd = refElem->numDofs();
                 const int totalDofs = nd * fes.vdim();
-                if (totalDofs > MaxVectorDofsPerBdrElement)
+                if (totalDofs > MaxDofsPerBdrElement)
                     continue;
 
-                std::array<Index, MaxVectorDofsPerBdrElement> dofs {};
+                std::array<Index, MaxDofsPerBdrElement> dofs {};
                 fes.getBdrElementDofs(b, std::span<Index> {dofs.data(), static_cast<size_t>(totalDofs)});
 
                 bindElementToTransform(trans, mesh, b, true);

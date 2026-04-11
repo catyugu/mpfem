@@ -287,8 +287,8 @@ namespace mpfem {
         Eigen::Matrix<Real, 6, 6> C;
         fillElasticityTensorC(C, lambda, mu);
 
-        Eigen::Matrix<Real, MaxStrainComponents, MaxVectorDofsPerElement> B_full;
-        Eigen::Matrix<Real, MaxStrainComponents, MaxVectorDofsPerElement> CB_full;
+        Eigen::Matrix<Real, MaxStrainComponents, MaxDofsPerElement> B_full;
+        Eigen::Matrix<Real, MaxStrainComponents, MaxDofsPerElement> CB_full;
 
         auto B = B_full.leftCols(totalDofs);
         auto CB = CB_full.leftCols(totalDofs);
@@ -318,7 +318,7 @@ namespace mpfem {
 
         elvec.setZero(totalDofs);
 
-        Eigen::Matrix<Real, MaxStrainComponents, MaxVectorDofsPerElement> B_full;
+        Eigen::Matrix<Real, MaxStrainComponents, MaxDofsPerElement> B_full;
         Eigen::Matrix<Real, 6, 1> sigmaVoigt;
         Matrix3 stress;
         auto B = B_full.leftCols(totalDofs);

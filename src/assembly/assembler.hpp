@@ -23,15 +23,15 @@ namespace mpfem {
     // =============================================================================
 
     struct alignas(64) ThreadBuffer {
-        Eigen::Matrix<Real, MaxVectorDofsPerElement, MaxVectorDofsPerElement, Eigen::RowMajor> elmatVector;
-        Eigen::Matrix<Real, MaxVectorDofsPerElement, 1> elvecVector;
-        std::array<Index, MaxVectorDofsPerElement> dofs; // Fixed-size DOF buffer, no heap allocation
+        Eigen::Matrix<Real, MaxDofsPerElement, MaxDofsPerElement, Eigen::RowMajor> elmatVector;
+        Eigen::Matrix<Real, MaxDofsPerElement, 1> elvecVector;
+        std::array<Index, MaxDofsPerElement> dofs; // Fixed-size DOF buffer, no heap allocation
         Index numDofs = 0; // Track actual number of DOFs
         // Reusable dynamic buffers for integrator APIs that take Matrix/Vector.
         Matrix dynMatrix;
         Vector dynVector;
         // Pre-sized valid DOF index buffer for branch-free triplet writing
-        std::array<int, MaxVectorDofsPerElement> validDofs;
+        std::array<int, MaxDofsPerElement> validDofs;
         int numValidDofs = 0;
 
         ThreadBuffer() = default;

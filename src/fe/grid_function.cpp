@@ -20,12 +20,12 @@ namespace mpfem {
         const int vdim = fes_->vdim();
         const int totalDofs = fes_->numElementDofs(elem);
 
-        if (nd > MaxNodesPerElement || totalDofs > MaxVectorDofsPerElement) {
+        if (nd > MaxDofsPerElement || totalDofs > MaxDofsPerElement) {
             MPFEM_THROW(Exception, "GridFunction::eval exceeds fixed stack buffer limits");
         }
 
         Matrix shapeBuf;
-        std::array<Index, MaxVectorDofsPerElement> dofsBuf {};
+        std::array<Index, MaxDofsPerElement> dofsBuf {};
 
         basis.evalShape(xi, shapeBuf);
         fes_->getElementDofs(elem, std::span<Index> {dofsBuf.data(), static_cast<size_t>(totalDofs)});
@@ -51,12 +51,12 @@ namespace mpfem {
         const int vdim = fes_->vdim();
         const int totalDofs = fes_->numElementDofs(elem);
 
-        if (nd > MaxNodesPerElement || totalDofs > MaxVectorDofsPerElement) {
+        if (nd > MaxDofsPerElement || totalDofs > MaxDofsPerElement) {
             MPFEM_THROW(Exception, "GridFunction::gradient exceeds fixed stack buffer limits");
         }
 
         Matrix derivBuf;
-        std::array<Index, MaxVectorDofsPerElement> dofsBuf {};
+        std::array<Index, MaxDofsPerElement> dofsBuf {};
 
         basis.evalDerivatives(xi, derivBuf);
         fes_->getElementDofs(elem, std::span<Index> {dofsBuf.data(), static_cast<size_t>(totalDofs)});
