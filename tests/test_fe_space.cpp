@@ -138,7 +138,7 @@ Mesh createHexMesh3D() {
 std::vector<Index> getElementDofsVec(const FESpace& fes, Index elemIdx) {
     std::vector<Index> dofs(static_cast<size_t>(fes.numElementDofs(elemIdx)), InvalidIndex);
     if (!dofs.empty()) {
-        fes.getElementDofs(elemIdx, std::span<Index>{dofs.data(), dofs.size()});
+        fes.getElementDofs(elemIdx, std::span<Index>{dofs});
     }
     return dofs;
 }
@@ -146,7 +146,7 @@ std::vector<Index> getElementDofsVec(const FESpace& fes, Index elemIdx) {
 std::vector<Index> getBdrElementDofsVec(const FESpace& fes, Index bdrIdx) {
     std::vector<Index> dofs(static_cast<size_t>(fes.numBdrElementDofs(bdrIdx)), InvalidIndex);
     if (!dofs.empty()) {
-        fes.getBdrElementDofs(bdrIdx, std::span<Index>{dofs.data(), dofs.size()});
+        fes.getBdrElementDofs(bdrIdx, std::span<Index>{dofs});
     }
     return dofs;
 }

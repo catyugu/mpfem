@@ -8,6 +8,7 @@
 #include "fe/quadrature.hpp"
 #include "mesh/geometry.hpp"
 #include "mesh/mesh.hpp"
+#include "core/types.hpp"
 #include <cmath>
 #include <gtest/gtest.h>
 
@@ -94,7 +95,8 @@ protected:
 
 TEST_F(IntegratorTest, DiffusionElementMatrix)
 {
-    ElementTransform trans(&mesh_, 0);
+    ElementTransform trans;
+    bindElementToTransform(trans, mesh_, 0);
     const ReferenceElement* refElem = fes_->elementRefElement(0);
 
     DiffusionIntegrator integ(mat1_.get());
@@ -120,7 +122,8 @@ TEST_F(IntegratorTest, DiffusionElementMatrix)
 
 TEST_F(IntegratorTest, DiffusionMatrixScaling)
 {
-    ElementTransform trans(&mesh_, 0);
+    ElementTransform trans;
+    bindElementToTransform(trans, mesh_, 0);
     const ReferenceElement* refElem = fes_->elementRefElement(0);
 
     DiffusionIntegrator integ1(mat1_.get());
@@ -139,7 +142,8 @@ TEST_F(IntegratorTest, DiffusionMatrixScaling)
 
 TEST_F(IntegratorTest, AnisotropicDiffusion)
 {
-    ElementTransform trans(&mesh_, 0);
+    ElementTransform trans;
+    bindElementToTransform(trans, mesh_, 0);
     const ReferenceElement* refElem = fes_->elementRefElement(0);
 
     // Create anisotropic matrix coefficient
@@ -170,7 +174,8 @@ TEST_F(IntegratorTest, AnisotropicDiffusion)
 
 TEST_F(IntegratorTest, MassElementMatrix)
 {
-    ElementTransform trans(&mesh_, 0);
+    ElementTransform trans;
+    bindElementToTransform(trans, mesh_, 0);
     const ReferenceElement* refElem = fes_->elementRefElement(0);
 
     MassIntegrator integ(k1_.get());
@@ -194,7 +199,8 @@ TEST_F(IntegratorTest, MassElementMatrix)
 
 TEST_F(IntegratorTest, DomainLoadVector)
 {
-    ElementTransform trans(&mesh_, 0);
+    ElementTransform trans;
+    bindElementToTransform(trans, mesh_, 0);
     const ReferenceElement* refElem = fes_->elementRefElement(0);
 
     DomainLFIntegrator integ(k1_.get());
@@ -208,7 +214,8 @@ TEST_F(IntegratorTest, DomainLoadVector)
 
 TEST_F(IntegratorTest, StrainLoadVectorScaling)
 {
-    ElementTransform trans(&mesh_, 0);
+    ElementTransform trans;
+    bindElementToTransform(trans, mesh_, 0);
     const ReferenceElement* refElem = fes_->elementRefElement(0);
 
     Matrix3 sigma1 = Matrix3::Zero();

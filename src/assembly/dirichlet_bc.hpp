@@ -30,14 +30,14 @@ namespace mpfem {
         std::vector<Real> dofWeight(numDofs, 0.0);
 
         FacetElementTransform trans;
-        trans.setMesh(&mesh);
 
         for (const auto& [bid, coef] : bcValues) {
             if (!fes.isExternalBoundaryId(bid))
                 continue;
 
             for (Index b = 0; b < mesh.numBdrElements(); ++b) {
-                if (mesh.bdrElement(b).attribute() != bid)
+                const Element& belem = mesh.bdrElement(b);
+                if (belem.attribute() != bid)
                     continue;
 
                 const ReferenceElement* refElem = fes.bdrElementRefElement(b);
@@ -52,7 +52,14 @@ namespace mpfem {
                 std::array<Index, MaxVectorDofsPerBdrElement> dofs {};
                 fes.getBdrElementDofs(b, std::span<Index> {dofs.data(), static_cast<size_t>(totalDofs)});
 
-                trans.setBoundaryElement(b);
+                bindElementToTransform(trans, mesh, b, true);
+                if (mesh.hasTopology()) {
+                    Index faceIdx = mesh.getBoundaryFaceIndex(b);
+                    if (faceIdx != InvalidIndex) {
+                        const auto& faceInfo = mesh.getFaceInfo(faceIdx);
+                        trans.setFaceInfo(faceInfo.elem1, faceInfo.localFace1);
+                    }
+                }
 
                 Matrix localMass = Matrix::Zero(nd, nd);
                 Matrix localRhs = Matrix::Zero(nd, fes.vdim());
@@ -73,11 +80,11 @@ namespace mpfem {
                         std::array<ElementTransform*, 1> transforms {&trans};
                         EvaluationContext ctx;
                         ctx.domainId = static_cast<int>(trans.attribute());
-                        ctx.elementId = trans.elementIndex();
-                        ctx.referencePoints = std::span<const Vector3>(refPts.data(), refPts.size());
-                        ctx.physicalPoints = std::span<const Vector3>(physPts.data(), physPts.size());
-                        ctx.transforms = std::span<ElementTransform* const>(transforms.data(), transforms.size());
-                        coef->evaluateBatch(ctx, std::span<Tensor>(out.data(), out.size()));
+                        ctx.elementId = trans.elementId();
+                        ctx.referencePoints = std::span<const Vector3>(refPts);
+                        ctx.physicalPoints = std::span<const Vector3>(physPts);
+                        ctx.transforms = std::span<ElementTransform* const>(transforms);
+                        coef->evaluateBatch(ctx, std::span<Tensor>(out));
                     }
 
                     for (int c = 0; c < fes.vdim(); ++c) {

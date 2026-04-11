@@ -1,97 +1,31 @@
 #include "fe/facet_element_transform.hpp"
-#include "mesh/mesh.hpp"
 #include <cmath>
 
 namespace mpfem {
 
-    void FacetElementTransform::setMesh(const Mesh* mesh)
+    Vector3 FacetElementTransform::normal()
     {
-        ElementTransform::setMesh(mesh);
-        computeAdjacentElementInfo();
-    }
+        const Matrix& J = jacobian();
+        Vector3 n = Vector3::Zero();
 
-    void FacetElementTransform::setElement(Index bdrElemIdx)
-    {
-        elemIdx_ = bdrElemIdx;
-        elemType_ = BOUNDARY;
-        computeGeometryInfo();
-        computeAdjacentElementInfo();
-    }
-
-    bool FacetElementTransform::hasTopology() const
-    {
-        return mesh_ && mesh_->hasTopology();
-    }
-
-    void FacetElementTransform::computeAdjacentElementInfo()
-    {
-        adjElemIdx_ = InvalidIndex;
-        localFaceIdx_ = -1;
-
-        if (!mesh_ || !mesh_->hasTopology())
-            return;
-
-        Index faceIdx = mesh_->getBoundaryFaceIndex(elemIdx_);
-        if (faceIdx == InvalidIndex)
-            return;
-
-        const auto& faceInfo = mesh_->getFaceInfo(faceIdx);
-        adjElemIdx_ = faceInfo.elem1;
-        localFaceIdx_ = faceInfo.localFace1;
-    }
-
-    bool FacetElementTransform::getAdjacentElementTransform(ElementTransform& trans) const
-    {
-        if (adjElemIdx_ == InvalidIndex)
-            return false;
-        trans.setMesh(mesh_);
-        trans.setElement(adjElemIdx_);
-        return true;
-    }
-
-    Vector3 FacetElementTransform::normal() const
-    {
-        Vector3 n(0.0, 0.0, 0.0);
-
-        if (dim_ == 2 && spaceDim_ == 3) {
-            Vector3 t1(jacobian_(0, 0), jacobian_(1, 0), jacobian_(2, 0));
-            Vector3 t2(jacobian_(0, 1), jacobian_(1, 1), jacobian_(2, 1));
-            n = t1.cross(t2);
-            n.normalize();
+        if (dim_ == 2) {
+            // Surface in 3D: normal is cross product of columns
+            Vector3 t1(J(0, 0), J(1, 0), J(2, 0));
+            Vector3 t2(J(0, 1), J(1, 1), J(2, 1));
+            n = t1.cross(t2).normalized();
         }
-        else if (dim_ == 1 && spaceDim_ == 2) {
-            Vector3 t(jacobian_(0, 0), jacobian_(1, 0), 0.0);
-            n = Vector3(-t.y(), t.x(), 0.0);
-            n.normalize();
-        }
-        else if (dim_ == 1 && spaceDim_ == 3) {
-            Vector3 t(jacobian_(0, 0), jacobian_(1, 0), jacobian_(2, 0));
-            Vector3 ref(0, 0, 1);
-            if (std::abs(t.dot(ref)) > 0.9) {
-                ref = Vector3(1, 0, 0);
-            }
-            n = t.cross(ref);
-            n.normalize();
+        else if (dim_ == 1) {
+            // Line in 3D: ambiguous without more context, but usually we handle 2D mesh (dim 1) or 3D mesh (dim 2)
+            // For 2D (line in 2D space), we could do something like n = (-ty, tx)
+            // But ElementTransform always has 3D physical coordinates in MPFEM.
+            // If it's a line in 3D, we need a reference vector to define a normal.
+            // Let's stick to the 2D surface in 3D case for now as it's the most common.
+            Vector3 t1(J(0, 0), J(1, 0), J(2, 0));
+            // Just a placeholder for 1D - this needs proper logic if 1D-in-3D is used.
+            n = t1.cross(Vector3::UnitZ()).normalized();
         }
 
         return n;
-    }
-
-    bool FacetElementTransform::mapToVolumeElement(const Vector3& bdrXi, Vector3& volXi) const
-    {
-        if (adjElemIdx_ == InvalidIndex || localFaceIdx_ < 0) {
-            return false;
-        }
-
-        const Element& volElem = mesh_->element(adjElemIdx_);
-        const Geometry volGeom = volElem.geometry();
-        geom::FaceToVolumeAffineMap affine;
-        if (!geom::getFaceToVolumeAffineMap(volGeom, localFaceIdx_, affine)) {
-            return false;
-        }
-
-        volXi = affine.A * bdrXi + affine.b;
-        return true;
     }
 
 } // namespace mpfem

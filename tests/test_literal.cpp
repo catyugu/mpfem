@@ -22,9 +22,9 @@ TEST_F(BracketLiteralTest, ScalarBracketLiteral)
 
     std::array<Vector3, 1> pts {Vector3(0, 0, 0)};
     EvaluationContext ctx;
-    ctx.physicalPoints = std::span<const Vector3>(pts.data(), pts.size());
+    ctx.physicalPoints = std::span<const Vector3>(pts);
     std::array<Tensor, 1> out {};
-    node->evaluateBatch(ctx, std::span<Tensor>(out.data(), out.size()));
+    node->evaluateBatch(ctx, std::span<Tensor>(out));
     EXPECT_TRUE(out[0].isScalar());
     EXPECT_NEAR(out[0].scalar(), 5.0, 1e-12);
 }
@@ -40,9 +40,9 @@ TEST_F(BracketLiteralTest, VectorBracketLiteral)
 
     std::array<Vector3, 1> pts {Vector3(0, 0, 0)};
     EvaluationContext ctx;
-    ctx.physicalPoints = std::span<const Vector3>(pts.data(), pts.size());
+    ctx.physicalPoints = std::span<const Vector3>(pts);
     std::array<Tensor, 1> out {};
-    node->evaluateBatch(ctx, std::span<Tensor>(out.data(), out.size()));
+    node->evaluateBatch(ctx, std::span<Tensor>(out));
     EXPECT_TRUE(out[0].isVector());
     EXPECT_EQ(out[0].asVector().size(), 3);
     Vector3 v = out[0].toVector3();
@@ -62,9 +62,9 @@ TEST_F(BracketLiteralTest, MatrixBracketLiteral)
 
     std::array<Vector3, 1> pts {Vector3(0, 0, 0)};
     EvaluationContext ctx;
-    ctx.physicalPoints = std::span<const Vector3>(pts.data(), pts.size());
+    ctx.physicalPoints = std::span<const Vector3>(pts);
     std::array<Tensor, 1> out {};
-    node->evaluateBatch(ctx, std::span<Tensor>(out.data(), out.size()));
+    node->evaluateBatch(ctx, std::span<Tensor>(out));
     EXPECT_TRUE(out[0].isMatrix());
     EXPECT_EQ(out[0].asMatrix().rows(), 3);
     EXPECT_EQ(out[0].asMatrix().cols(), 3);
@@ -95,9 +95,9 @@ TEST_F(BracketLiteralTest, MatrixVectorExpression)
 
     std::array<Vector3, 1> pts {Vector3(1.0, 2.0, 3.0)};
     EvaluationContext ctx;
-    ctx.physicalPoints = std::span<const Vector3>(pts.data(), pts.size());
+    ctx.physicalPoints = std::span<const Vector3>(pts);
     std::array<Tensor, 1> out {};
-    node->evaluateBatch(ctx, std::span<Tensor>(out.data(), out.size()));
+    node->evaluateBatch(ctx, std::span<Tensor>(out));
     EXPECT_TRUE(out[0].isVector());
     EXPECT_EQ(out[0].asVector().size(), 3);
     Vector3 v = out[0].toVector3();

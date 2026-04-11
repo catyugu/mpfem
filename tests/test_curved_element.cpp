@@ -3,6 +3,7 @@
 #include "fe/quadrature.hpp"
 #include "mesh/geometry.hpp"
 #include "mesh/mesh.hpp"
+#include "core/types.hpp"
 #include <cmath>
 #include <gtest/gtest.h>
 
@@ -308,7 +309,8 @@ protected:
     void SetUp() override
     {
         mesh_ = createCurvedTriangleMesh();
-        transform_ = std::make_unique<ElementTransform>(&mesh_, 0);
+        transform_ = std::make_unique<ElementTransform>();
+        bindElementToTransform(*transform_, mesh_, 0);
     }
 
     Mesh mesh_;
@@ -317,7 +319,7 @@ protected:
 
 TEST_F(CurvedTriangleTransformTest, GeometryOrder)
 {
-    EXPECT_EQ(transform_->geometricOrder(), 2);
+    EXPECT_EQ(transform_->geomOrder(), 2);
     EXPECT_EQ(transform_->geometry(), Geometry::Triangle);
     EXPECT_EQ(transform_->dim(), 2);
     EXPECT_EQ(transform_->numNodes(), 6); // 3 corners + 3 midpoints
@@ -385,7 +387,8 @@ protected:
     void SetUp() override
     {
         mesh_ = createCurvedTetrahedronMesh();
-        transform_ = std::make_unique<ElementTransform>(&mesh_, 0);
+        transform_ = std::make_unique<ElementTransform>();
+        bindElementToTransform(*transform_, mesh_, 0);
     }
 
     Mesh mesh_;
@@ -394,7 +397,7 @@ protected:
 
 TEST_F(CurvedTetrahedronTransformTest, GeometryOrder)
 {
-    EXPECT_EQ(transform_->geometricOrder(), 2);
+    EXPECT_EQ(transform_->geomOrder(), 2);
     EXPECT_EQ(transform_->geometry(), Geometry::Tetrahedron);
     EXPECT_EQ(transform_->dim(), 3);
     EXPECT_EQ(transform_->numNodes(), 10); // 4 corners + 6 midpoints
@@ -440,7 +443,8 @@ protected:
     void SetUp() override
     {
         mesh_ = createCurvedSquareMesh();
-        transform_ = std::make_unique<ElementTransform>(&mesh_, 0);
+        transform_ = std::make_unique<ElementTransform>();
+        bindElementToTransform(*transform_, mesh_, 0);
     }
 
     Mesh mesh_;
@@ -449,7 +453,7 @@ protected:
 
 TEST_F(CurvedSquareTransformTest, GeometryOrder)
 {
-    EXPECT_EQ(transform_->geometricOrder(), 2);
+    EXPECT_EQ(transform_->geomOrder(), 2);
     EXPECT_EQ(transform_->geometry(), Geometry::Square);
     EXPECT_EQ(transform_->dim(), 2);
     EXPECT_EQ(transform_->numNodes(), 9); // 4 corners + 4 edges + 1 center
@@ -492,7 +496,8 @@ protected:
     void SetUp() override
     {
         mesh_ = createCurvedHexahedronMesh();
-        transform_ = std::make_unique<ElementTransform>(&mesh_, 0);
+        transform_ = std::make_unique<ElementTransform>();
+        bindElementToTransform(*transform_, mesh_, 0);
     }
 
     Mesh mesh_;
@@ -501,7 +506,7 @@ protected:
 
 TEST_F(CurvedHexahedronTransformTest, GeometryOrder)
 {
-    EXPECT_EQ(transform_->geometricOrder(), 2);
+    EXPECT_EQ(transform_->geomOrder(), 2);
     EXPECT_EQ(transform_->geometry(), Geometry::Cube);
     EXPECT_EQ(transform_->dim(), 3);
     EXPECT_EQ(transform_->numNodes(), 27); // 8 + 12 + 6 + 1
@@ -572,7 +577,8 @@ TEST(CurvedIntegrationTest, IntegrateOverCurvedTriangle)
     // For a triangle with curved edge, the area should be computed correctly
 
     Mesh mesh = createCurvedTriangleMesh();
-    ElementTransform trans(&mesh, 0);
+    ElementTransform trans;
+    bindElementToTransform(trans, mesh, 0);
 
     auto rule = quadrature::getTriangle(4); // Higher order quadrature for curved element
     Real area = 0.0;
@@ -593,7 +599,8 @@ TEST(CurvedIntegrationTest, IntegrateOverCurvedTetrahedron)
     // Integrate f(x,y,z) = 1 over curved tetrahedron
 
     Mesh mesh = createCurvedTetrahedronMesh();
-    ElementTransform trans(&mesh, 0);
+    ElementTransform trans;
+    bindElementToTransform(trans, mesh, 0);
 
     auto rule = quadrature::getTetrahedron(4);
     Real volume = 0.0;
@@ -628,8 +635,10 @@ TEST(ElementComparisonTest, LinearVsQuadraticTriangle)
     // Quadratic triangle with curved edge
     Mesh quadraticMesh = createCurvedTriangleMesh();
 
-    ElementTransform linearTrans(&linearMesh, 0);
-    ElementTransform quadraticTrans(&quadraticMesh, 0);
+    ElementTransform linearTrans;
+    bindElementToTransform(linearTrans, linearMesh, 0);
+    ElementTransform quadraticTrans;
+    bindElementToTransform(quadraticTrans, quadraticMesh, 0);
 
     // At the edge midpoint, the mapping should differ
     Vector3 xi(0.5, 0.0, 0.0);
@@ -658,7 +667,8 @@ TEST(CurvedGradientTest, GradientTransformConsistency)
     // Test that J^{-T} * J^T = I for curved elements
 
     Mesh mesh = createCurvedTetrahedronMesh();
-    ElementTransform trans(&mesh, 0);
+    ElementTransform trans;
+    bindElementToTransform(trans, mesh, 0);
 
     Vector3 xi(0.2, 0.3, 0.1);
     trans.setIntegrationPoint(xi);
@@ -689,8 +699,9 @@ TEST(OrderSeparationTest, GeometricOrderIndependentOfPhysical)
     Mesh mesh = createCurvedTetrahedronMesh();
 
     // ElementTransform should use geometric order (2)
-    ElementTransform trans(&mesh, 0);
-    EXPECT_EQ(trans.geometricOrder(), 2);
+    ElementTransform trans;
+    bindElementToTransform(trans, mesh, 0);
+    EXPECT_EQ(trans.geomOrder(), 2);
 
     // The FE space could use different order for field interpolation
     // This is tested separately in test_fe_space_quadratic.cpp

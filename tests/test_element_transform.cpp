@@ -3,6 +3,7 @@
 #include "fe/quadrature.hpp"
 #include "mesh/geometry.hpp"
 #include "mesh/mesh.hpp"
+#include "core/types.hpp"
 #include <cmath>
 #include <gtest/gtest.h>
 
@@ -89,7 +90,6 @@ Mesh createSingleSquareBdrMesh()
 
     return mesh;
 }
-
 // =============================================================================
 // Tetrahedron Transform Tests (Volume Element)
 // =============================================================================
@@ -99,7 +99,8 @@ protected:
     void SetUp() override
     {
         mesh_ = createSingleTetMesh();
-        transform_ = std::make_unique<ElementTransform>(&mesh_, 0);
+        transform_ = std::make_unique<ElementTransform>();
+        bindElementToTransform(*transform_, mesh_, 0);
     }
 
     Mesh mesh_;
@@ -205,7 +206,8 @@ protected:
     void SetUp() override
     {
         mesh_ = createSingleHexMesh();
-        transform_ = std::make_unique<ElementTransform>(&mesh_, 0);
+        transform_ = std::make_unique<ElementTransform>();
+        bindElementToTransform(*transform_, mesh_, 0);
     }
 
     Mesh mesh_;
@@ -268,7 +270,8 @@ protected:
     void SetUp() override
     {
         mesh_ = createSingleTriBdrMesh();
-        transform_ = std::make_unique<FacetElementTransform>(&mesh_, 0);
+        transform_ = std::make_unique<FacetElementTransform>();
+        bindElementToTransform(*transform_, mesh_, 0, true);
     }
 
     Mesh mesh_;
@@ -332,7 +335,8 @@ protected:
     void SetUp() override
     {
         mesh_ = createSingleSquareBdrMesh();
-        transform_ = std::make_unique<FacetElementTransform>(&mesh_, 0);
+        transform_ = std::make_unique<FacetElementTransform>();
+        bindElementToTransform(*transform_, mesh_, 0, true);
     }
 
     Mesh mesh_;
@@ -384,7 +388,8 @@ TEST(IntegrationTransformTest, IntegrateOverTetrahedron)
     // Result should be volume = 1/6
 
     Mesh mesh = createSingleTetMesh();
-    ElementTransform trans(&mesh, 0);
+    ElementTransform trans;
+    bindElementToTransform(trans, mesh, 0);
 
     auto rule = quadrature::getTetrahedron(2);
     Real integral = 0.0;
@@ -403,7 +408,8 @@ TEST(IntegrationTransformTest, IntegrateOverTriangleBoundary)
     // Result should be area = 0.5
 
     Mesh mesh = createSingleTriBdrMesh();
-    FacetElementTransform trans(&mesh, 0);
+    FacetElementTransform trans;
+    bindElementToTransform(trans, mesh, 0, true);
 
     auto rule = quadrature::getTriangle(2);
     Real integral = 0.0;
@@ -431,7 +437,8 @@ TEST(ScaledElementTest, ScaledTetrahedron)
     mesh.addVertex(0.0, 0.0, 2.0);
     mesh.addElement(Geometry::Tetrahedron, {0, 1, 2, 3});
 
-    ElementTransform trans(&mesh, 0);
+    ElementTransform trans;
+    bindElementToTransform(trans, mesh, 0);
 
     Vector3 xi(0.0, 0.0, 0.0);
     trans.setIntegrationPoint(xi);
@@ -453,7 +460,8 @@ TEST(ScaledElementTest, ScaledTriangleBoundary)
     mesh.addVertex(0.0, 2.0, 0.0);
     mesh.addBdrElement(Geometry::Triangle, {0, 1, 2});
 
-    FacetElementTransform trans(&mesh, 0);
+    FacetElementTransform trans;
+    bindElementToTransform(trans, mesh, 0, true);
 
     Vector3 xi(0.0, 0.0, 0.0);
     trans.setIntegrationPoint(xi);
@@ -482,7 +490,8 @@ TEST(GradientTransformTest, NumericalVerification)
     mesh.addVertex(0.2, 0.1, 0.9);
     mesh.addElement(Geometry::Tetrahedron, {0, 1, 2, 3});
 
-    ElementTransform trans(&mesh, 0);
+    ElementTransform trans;
+    bindElementToTransform(trans, mesh, 0);
 
     // Set integration point
     Vector3 xi(0.2, 0.3, 0.1);

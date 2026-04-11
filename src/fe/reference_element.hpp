@@ -3,7 +3,6 @@
 
 #include "core/exception.hpp"
 #include "finite_element.hpp"
-#include "mesh/element.hpp"
 #include "mesh/geometry.hpp"
 #include "quadrature.hpp"
 #include <memory>

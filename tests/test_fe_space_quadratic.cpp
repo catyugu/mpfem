@@ -6,11 +6,14 @@
 #include "io/mphtxt_reader.hpp"
 #include "mesh/geometry.hpp"
 #include "mesh/mesh.hpp"
+#include "core/types.hpp"
 #include <cmath>
 #include <gtest/gtest.h>
 #include <set>
 
 using namespace mpfem;
+
+
 
 // Helper to get test data path
 static std::string dataPath(const std::string& relativePath)
@@ -26,7 +29,7 @@ static std::vector<Index> getElementDofsVec(const FESpace& fes, Index elemIdx)
 {
     std::vector<Index> dofs(static_cast<size_t>(fes.numElementDofs(elemIdx)), InvalidIndex);
     if (!dofs.empty()) {
-        fes.getElementDofs(elemIdx, std::span<Index> {dofs.data(), dofs.size()});
+        fes.getElementDofs(elemIdx, std::span<Index>{dofs});
     }
     return dofs;
 }
@@ -417,7 +420,8 @@ TEST(QuadraticIntegrationTest, IntegrateQuadraticFunctionExactly)
     // Set f(x,y) = x + y at nodal interpolation points of the element.
     const auto dofs = getElementDofsVec(fes, 0);
     const auto points = fes.elementRefElement(0)->interpolationPoints();
-    ElementTransform setupTrans(&mesh, 0);
+    ElementTransform setupTrans;
+    bindElementToTransform(setupTrans, mesh, 0);
     for (size_t i = 0; i < points.size(); ++i) {
         setupTrans.setIntegrationPoint(points[i]);
         Vector3 p = setupTrans.transform(points[i]);
@@ -428,7 +432,8 @@ TEST(QuadraticIntegrationTest, IntegrateQuadraticFunctionExactly)
     auto refElem = fes.elementRefElement(0);
     const QuadratureRule& rule = refElem->quadrature();
 
-    ElementTransform trans(&mesh, 0);
+    ElementTransform trans;
+    bindElementToTransform(trans, mesh, 0);
     Real integral = 0.0;
 
     for (const auto& ip : rule) {
@@ -576,7 +581,7 @@ TEST_F(COMSOLMeshTest, JacobianPositiveDefinite)
     Mesh mesh = MphtxtReader::read(meshPath_);
 
     FESpace fes(&mesh, std::make_unique<FECollection>(2));
-    ElementTransform trans(&mesh, 0);
+    ElementTransform trans;
 
     int checkedElems = 0;
 
@@ -585,7 +590,7 @@ TEST_F(COMSOLMeshTest, JacobianPositiveDefinite)
         if (elem.order() != 2)
             continue;
 
-        trans.setElement(e);
+        bindElementToTransform(trans, mesh, e);
         auto refElem = fes.elementRefElement(e);
         const QuadratureRule& rule = refElem->quadrature();
 
@@ -643,7 +648,7 @@ TEST_F(COMSOLMeshTest, FiniteElementKroneckerDelta)
     Mesh mesh = MphtxtReader::read(meshPath_);
 
     FESpace fes(&mesh, std::make_unique<FECollection>(2));
-    ElementTransform trans(&mesh, 0);
+    ElementTransform trans;
 
     const Real tol = 1e-10;
     int testedElems = 0;
@@ -654,7 +659,7 @@ TEST_F(COMSOLMeshTest, FiniteElementKroneckerDelta)
             continue;
         }
 
-        trans.setElement(e);
+        bindElementToTransform(trans, mesh, e);
         auto refElem = fes.elementRefElement(e);
         const FiniteElement& h1Element = refElem->basis();
         auto dofCoords = h1Element.interpolationPoints();

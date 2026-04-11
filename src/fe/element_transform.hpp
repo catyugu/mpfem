@@ -2,12 +2,13 @@
 #define MPFEM_ELEMENT_TRANSFORM_HPP
 
 #include "core/types.hpp"
+#include "expr/evaluation_context.hpp"
 #include "fe/geometry_mapping.hpp"
 #include "fe/quadrature.hpp"
 #include "mesh/geometry.hpp"
-#include "mesh/mesh.hpp"
-#include <Eigen/Dense>
 #include <array>
+#include <span>
+
 
 namespace mpfem {
 
@@ -15,164 +16,133 @@ namespace mpfem {
      * @file element_transform.hpp
      * @brief Element transformation from reference to physical coordinates.
      *
-     * Design: NO mutable members. All geometric quantities are computed
-     * eagerly when setElement() or setIntegrationPoint() is called.
+     * Design: Decoupled from Mesh, Lazy Evaluation for performance.
      *
      * Thread safety: Each thread should have its own transform instance.
-     *
-     * Memory optimization: Uses fixed-size stack arrays (MAX_NODES=27) to avoid
-     * heap allocation during element iteration. Supports up to order-2 elements.
-     *
-     * **Geometric vs Field Order**:
-     * - Geometric order (geomOrder_): From mesh element, used for coordinate transformation
-     * - Field order: From FECollection, used for FiniteElement basis in ReferenceElement
-     *
-     * This separation enables:
-     * - Subparametric: geometric order < field order (linear mesh, quadratic field)
-     * - Superparametric: geometric order > field order (quadratic mesh, linear field)
      */
-
     class ElementTransform {
     public:
-        enum ElementType { VOLUME = 1,
-            BOUNDARY = 2 };
-
-        // -------------------------------------------------------------------------
-        // Construction
-        // -------------------------------------------------------------------------
-
         ElementTransform() = default;
-
-        explicit ElementTransform(const Mesh* mesh, Index elemIdx,
-            ElementType type = VOLUME);
-
         virtual ~ElementTransform() = default;
 
         // -------------------------------------------------------------------------
-        // Setup (computes geometry info eagerly)
+        // Setup (Decoupled from Mesh)
         // -------------------------------------------------------------------------
 
-        virtual void setMesh(const Mesh* mesh);
-        virtual void setElement(Index elemIdx);
+        /**
+         * @brief Bind element data to the transform.
+         */
+        void bindElement(Geometry geom, int geomOrder, Index attribute, Index elementId, std::span<const Vector3> nodes)
+        {
+            geometry_ = geom;
+            geomOrder_ = geomOrder;
+            attribute_ = attribute;
+            elementId_ = elementId;
+            dim_ = geom::dim(geometry_);
 
-        /// Set integration point (recomputes Jacobian and weight)
-        void setIntegrationPoint(const Vector3& xi);
-        void setIntegrationPoint(const IntegrationPoint& ip);
+            numNodes_ = static_cast<int>(nodes.size());
+            for (int i = 0; i < numNodes_; ++i) {
+                nodesBuf_[i] = nodes[i];
+            }
+        }
+
+        /**
+         * @brief Set integration point (Eager Evaluation: computes all mapping quantities)
+         */
+        void setIntegrationPoint(const Vector3& xi)
+        {
+            ipXi_ = xi;
+            computeJacobian();
+            computeInverse();
+        }
+
+        void setIntegrationPoint(const IntegrationPoint& ip)
+        {
+            setIntegrationPoint(ip.getXi());
+        }
 
         // -------------------------------------------------------------------------
-        // Geometry info
+        // Eager Accessors (No branching)
         // -------------------------------------------------------------------------
 
-        Geometry geometry() const { return geometry_; }
-        int dim() const { return dim_; }
-        int spaceDim() const { return spaceDim_; }
-        Index elementIndex() const { return elemIdx_; }
-        ElementType elementType() const { return elemType_; }
-        const Mesh* mesh() const { return mesh_; }
-        Index attribute() const;
-        int geometricOrder() const { return geomOrder_; }
-        bool isCurved() const { return geomOrder_ >= 2; }
+        inline const Matrix& jacobian() const { return jacobian_; }
+        inline Real weight() const { return weight_; }
+        inline const Matrix& invJacobianT() const { return invJacobianT_; }
+        inline const Matrix& invJacobian() const { return invJacobian_; }
+        inline Real detJ() const { return detJ_; }
 
         // -------------------------------------------------------------------------
         // Transformation
         // -------------------------------------------------------------------------
 
-        virtual Vector3 transform(const Vector3& xi);
-        Vector3 transform(const IntegrationPoint& ip);
+        Vector3 transform(const Vector3& xi) const;
+        Vector3 transform(const IntegrationPoint& ip) const { return transform(ip.getXi()); }
 
-        // -------------------------------------------------------------------------
-        // Jacobian and related quantities (computed in setIntegrationPoint)
-        // -------------------------------------------------------------------------
-
-        const Matrix& jacobian() const { return jacobian_; }
-        const Matrix& invJacobian() const { return invJacobian_; }
-        const Matrix& invJacobianT() const { return invJacobianT_; }
-        Real detJ() const { return detJ_; }
-        virtual Real weight() const { return weight_; }
-
-        // -------------------------------------------------------------------------
-        // Gradient transformation
-        // -------------------------------------------------------------------------
-
-        Vector3 transformGradient(const Vector3& refGrad) const;
-
-        // -------------------------------------------------------------------------
-        // Element nodes (fixed-size for performance)
-        // -------------------------------------------------------------------------
-
-        /// Get node coordinates (span view)
-        std::span<const Vector3> nodes() const
+        /**
+         * @brief Transform gradient from reference to physical space.
+         * physGrad = invJacobianT * refGrad
+         */
+        inline Vector3 transformGradient(const Vector3& refGrad) const
         {
-            return std::span<const Vector3>(nodesBuf_.data(), numNodes_);
+            Vector3 physGrad = Vector3::Zero();
+            for (int d = 0; d < 3; ++d) {
+                for (int k = 0; k < dim_; ++k) {
+                    physGrad[d] += invJacobianT_(d, k) * refGrad[k];
+                }
+            }
+            return physGrad;
         }
 
-        /// Get number of nodes
-        int numNodes() const { return numNodes_; }
+        // -------------------------------------------------------------------------
+        // Properties
+        // -------------------------------------------------------------------------
 
-        const IntegrationPoint& integrationPoint() const { return ip_; }
+        Geometry geometry() const { return geometry_; }
+        int dim() const { return dim_; }
+        Index attribute() const { return attribute_; }
+        Index elementId() const { return elementId_; }
+        int geomOrder() const { return geomOrder_; }
+        int numNodes() const { return numNodes_; }
+        std::span<const Vector3> nodes() const { return {nodesBuf_.data(), static_cast<size_t>(numNodes_)}; }
+        const Vector3& ipXi() const { return ipXi_; }
 
     protected:
-        void computeGeometryInfo();
-        void computeJacobianAtIP();
+        void computeJacobian();
+        void computeInverse();
 
-        // -------------------------------------------------------------------------
-        // Member variables
-        // -------------------------------------------------------------------------
-        const Mesh* mesh_ = nullptr;
-        Index elemIdx_ = InvalidIndex;
-        ElementType elemType_ = VOLUME;
-
+        // Element data
         Geometry geometry_ = Geometry::Invalid;
-        int dim_ = 0;
-        int spaceDim_ = 0;
         int geomOrder_ = 1;
+        Index attribute_ = InvalidIndex;
+        Index elementId_ = InvalidIndex;
+        int dim_ = 0;
         int numNodes_ = 0;
 
-        // Fixed-size buffers (no heap allocation)
+        // Buffers
         std::array<Vector3, MaxNodesPerElement> nodesBuf_;
-        std::array<Index, MaxNodesPerElement> nodeIndicesBuf_;
-        Matrix geoShapeDerivatives_; // [numNodes x 3]
+        Matrix geoShapeDerivatives_;
 
-        IntegrationPoint ip_;
+        // State
+        Vector3 ipXi_;
 
-        // All computed eagerly (no lazy evaluation)
-        Matrix jacobian_; // spaceDim x dim
-        Matrix invJacobian_; // dim x spaceDim
-        Matrix invJacobianT_; // spaceDim x dim
+        // Computed values
+        Matrix jacobian_;
+        Matrix invJacobian_;
+        Matrix invJacobianT_;
         Real detJ_ = 0.0;
         Real weight_ = 0.0;
+
+        // Batch buffers
+        std::array<Vector3, MaxQuadraturePoints> batchRefPoints_;
+        std::array<Vector3, MaxQuadraturePoints> batchPhysPoints_;
+        std::array<ElementTransform*, MaxQuadraturePoints> batchTransforms_;
     };
 
-    // =============================================================================
-    // Inline implementations
-    // =============================================================================
-
-    inline ElementTransform::ElementTransform(const Mesh* mesh, Index elemIdx, ElementType type)
-        : mesh_(mesh), elemIdx_(elemIdx), elemType_(type)
-    {
-        computeGeometryInfo();
-    }
-
-    inline void ElementTransform::setIntegrationPoint(const IntegrationPoint& ip)
-    {
-        setIntegrationPoint(ip.getXi());
-    }
-
-    inline Vector3 ElementTransform::transform(const IntegrationPoint& ip)
-    {
-        return transform(ip.getXi());
-    }
-
-    inline Vector3 ElementTransform::transformGradient(const Vector3& refGrad) const
-    {
-        Vector3 physGrad = Vector3::Zero();
-        for (int d = 0; d < spaceDim_; ++d) {
-            for (int k = 0; k < dim_; ++k) {
-                physGrad[d] += invJacobianT_(d, k) * refGrad[k];
-            }
-        }
-        return physGrad;
-    }
+    /**
+     * @brief Helper to bind an element from a mesh to a transform.
+     */
+    class Mesh; // Forward declaration
+    void bindElementToTransform(ElementTransform& trans, const Mesh& mesh, Index elemIdx, bool isBoundary = false);
 
 } // namespace mpfem
 
