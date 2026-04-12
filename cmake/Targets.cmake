@@ -2,7 +2,6 @@
 # Targets.cmake - Library target definitions
 # =============================================================================
 
-include(CompilerOptions)
 
 # =============================================================================
 # Helper function for creating mpfem library targets
@@ -36,7 +35,6 @@ function(mpfem_add_library name)
                 $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
                 $<INSTALL_INTERFACE:include>
         )
-        mpfem_set_default_compiler_options(${name})
         # For regular libraries, use PUBLIC/PRIVATE keywords
         if(ARG_PUBLIC_LINK)
             target_link_libraries(${name} PUBLIC ${ARG_PUBLIC_LINK})
