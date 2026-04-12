@@ -137,10 +137,12 @@ void Mesh::clear() {
     topologyBuilt_ = false;
     edgeInfoList_.clear();
     edgeKeyToIndex_.clear();
-    elementToEdge_.clear();
+    elemEdgeOffsets_.clear();
+    elemEdgeData_.clear();
     faceInfoList_.clear();
     faceKeyToIndex_.clear();
-    elementToFace_.clear();
+    elemFaceOffsets_.clear();
+    elemFaceData_.clear();
     boundaryFaceIndices_.clear();
     interiorFaceIndices_.clear();
     bdrElementToFace_.clear();
@@ -165,42 +167,22 @@ std::vector<Index> Mesh::getElementVertices(Index elemIdx) const
     return out;
 }
 
-std::vector<Index> Mesh::getElementEdges(Index elemIdx) const
+std::span<const Index> Mesh::getElementEdges(Index elemIdx) const
 {
-    if (elemIdx >= static_cast<Index>(elementToEdge_.size())) {
+    if (!topologyBuilt_ || elemIdx >= numElements()) {
         return {};
     }
-
-    std::vector<std::pair<int, Index>> localToGlobal = elementToEdge_[elemIdx];
-    std::sort(localToGlobal.begin(), localToGlobal.end(),
-        [](const auto& a, const auto& b) { return a.first < b.first; });
-
-    std::vector<Index> out;
-    out.reserve(localToGlobal.size());
-    for (const auto& [localEdge, globalEdge] : localToGlobal) {
-        (void)localEdge;
-        out.push_back(globalEdge);
-    }
-    return out;
+    return {&elemEdgeData_[elemEdgeOffsets_[elemIdx]], 
+            &elemEdgeData_[elemEdgeOffsets_[elemIdx + 1]]};
 }
 
-std::vector<Index> Mesh::getElementFaces(Index elemIdx) const
+std::span<const Index> Mesh::getElementFaces(Index elemIdx) const
 {
-    if (elemIdx >= static_cast<Index>(elementToFace_.size())) {
+    if (!topologyBuilt_ || elemIdx >= numElements()) {
         return {};
     }
-
-    std::vector<std::pair<int, Index>> localToGlobal = elementToFace_[elemIdx];
-    std::sort(localToGlobal.begin(), localToGlobal.end(),
-        [](const auto& a, const auto& b) { return a.first < b.first; });
-
-    std::vector<Index> out;
-    out.reserve(localToGlobal.size());
-    for (const auto& [localFace, globalFace] : localToGlobal) {
-        (void)localFace;
-        out.push_back(globalFace);
-    }
-    return out;
+    return {&elemFaceData_[elemFaceOffsets_[elemIdx]], 
+            &elemFaceData_[elemFaceOffsets_[elemIdx + 1]]};
 }
 
 Index Mesh::edgeIndex(Index a, Index b) const
@@ -257,10 +239,12 @@ void Mesh::buildTopology() {
     // Clear previous data
     edgeInfoList_.clear();
     edgeKeyToIndex_.clear();
-    elementToEdge_.clear();
+    elemEdgeOffsets_.clear();
+    elemEdgeData_.clear();
     faceInfoList_.clear();
     faceKeyToIndex_.clear();
-    elementToFace_.clear();
+    elemFaceOffsets_.clear();
+    elemFaceData_.clear();
     boundaryFaceIndices_.clear();
     interiorFaceIndices_.clear();
     bdrElementToFace_.clear();
@@ -315,12 +299,18 @@ void Mesh::buildTopology() {
 }
 
 void Mesh::buildEdgeToElementMap() {
-    elementToEdge_.clear();
-    elementToEdge_.resize(numElements());
+    elemEdgeOffsets_.clear();
+    elemEdgeOffsets_.resize(numElements() + 1, 0);
+
+    for (Index i = 0; i < numElements(); ++i) {
+        elemEdgeOffsets_[i + 1] = elemEdgeOffsets_[i] + elements_[i].numEdges();
+    }
+    elemEdgeData_.resize(elemEdgeOffsets_.back());
 
     for (Index elemIdx = 0; elemIdx < numElements(); ++elemIdx) {
-        const Element& elem = element(elemIdx);
+        const Element& elem = elements_[elemIdx];
         const int nEdges = elem.numEdges();
+        const Index base = elemEdgeOffsets_[elemIdx];
 
         for (int localEdge = 0; localEdge < nEdges; ++localEdge) {
             const auto [v0, v1] = elem.edgeVertices(localEdge);
@@ -337,7 +327,7 @@ void Mesh::buildEdgeToElementMap() {
                 edgeIdx = it->second;
             }
 
-            elementToEdge_[elemIdx].push_back({localEdge, edgeIdx});
+            elemEdgeData_[base + localEdge] = edgeIdx;
         }
     }
 }
@@ -394,21 +384,23 @@ void Mesh::buildFaceToElementMap() {
 }
 
 void Mesh::buildElementToFaceMap() {
-    elementToFace_.clear();
-    elementToFace_.resize(numElements());
-    
-    // Build element to face mapping using the face index
+    elemFaceOffsets_.clear();
+    elemFaceOffsets_.resize(numElements() + 1, 0);
+
+    for (Index i = 0; i < numElements(); ++i) {
+        elemFaceOffsets_[i + 1] = elemFaceOffsets_[i] + elements_[i].numFaces();
+    }
+    elemFaceData_.assign(elemFaceOffsets_.back(), InvalidIndex);
+
     for (Index faceIdx = 0; faceIdx < static_cast<Index>(faceInfoList_.size()); ++faceIdx) {
         const auto& info = faceInfoList_[faceIdx];
-        
-        // Add face to element 1
-        if (info.elem1 != InvalidIndex && info.elem1 < static_cast<Index>(elementToFace_.size())) {
-            elementToFace_[info.elem1].push_back({info.localFace1, faceIdx});
+
+        if (info.elem1 != InvalidIndex) {
+            elemFaceData_[elemFaceOffsets_[info.elem1] + info.localFace1] = faceIdx;
         }
-        
-        // Add face to element 2 (if exists)
-        if (info.elem2 != InvalidIndex && info.elem2 < static_cast<Index>(elementToFace_.size())) {
-            elementToFace_[info.elem2].push_back({info.localFace2, faceIdx});
+
+        if (info.elem2 != InvalidIndex) {
+            elemFaceData_[elemFaceOffsets_[info.elem2] + info.localFace2] = faceIdx;
         }
     }
 }

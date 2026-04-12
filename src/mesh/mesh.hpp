@@ -222,10 +222,10 @@ namespace mpfem {
         std::vector<Index> getElementVertices(Index elemIdx) const;
 
         /// Get global topology edge indices used by an element (local edge order)
-        std::vector<Index> getElementEdges(Index elemIdx) const;
+        std::span<const Index> getElementEdges(Index elemIdx) const;
 
         /// Get global topology face indices used by an element (local face order)
-        std::vector<Index> getElementFaces(Index elemIdx) const;
+        std::span<const Index> getElementFaces(Index elemIdx) const;
 
         /// Get global topology edge index by two endpoint vertices
         Index edgeIndex(Index a, Index b) const;
@@ -287,10 +287,17 @@ namespace mpfem {
         bool topologyBuilt_ = false;
         std::vector<EdgeInfo> edgeInfoList_;
         std::unordered_map<std::uint64_t, Index> edgeKeyToIndex_;
-        std::vector<std::vector<std::pair<int, Index>>> elementToEdge_;
+        
+        // CSR storage for element-to-edge
+        std::vector<Index> elemEdgeOffsets_;
+        std::vector<Index> elemEdgeData_;
+        
         std::vector<FaceInfo> faceInfoList_;
         std::unordered_map<FaceKey, Index, FaceKeyHash> faceKeyToIndex_;
-        std::vector<std::vector<std::pair<int, Index>>> elementToFace_;
+        
+        // CSR storage for element-to-face
+        std::vector<Index> elemFaceOffsets_;
+        std::vector<Index> elemFaceData_;
         std::vector<Index> boundaryFaceIndices_;
         std::vector<Index> interiorFaceIndices_;
         std::unordered_map<Index, Index> bdrElementToFace_;
