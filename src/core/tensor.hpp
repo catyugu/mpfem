@@ -60,7 +60,7 @@ namespace mpfem {
         {
             static_assert(std::is_same_v<typename Derived::Scalar, Real>, "Matrix scalar type mismatch");
             MPFEM_ASSERT(m.rows() == r && m.cols() == c, "Matrix dimension mismatch");
-            return matrix(r, c, Eigen::Map<const TensorData>(m.derived().data(), m.size()));
+            return Tensor(TensorShape::matrix(r, c), Eigen::Map<const TensorData>(m.derived().data(), m.size()));
         }
 
         /**
