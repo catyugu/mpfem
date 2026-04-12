@@ -21,80 +21,325 @@
 
 ## 具体工作任务
 
-通过对提供的 `mpfem` 有限元框架源码进行深度分析，我们可以发现虽然代码结构具有一定的模块化，但在**高性能计算（HPC）**和**现代 C++ 软件工程**的标准下，存在多个明显的设计反模式、内存浪费、性能热点以及依赖纠缠。
+为了实现代码的简洁化、算子化解耦以及高性能求解器的引入，我们需要重点解决以下几个设计反模式和迫切需求：
 
-既然**不需要考虑向后兼容**，我们可以采取大刀阔斧的重构。以下是具体的反模式识别及步骤化的重构方案：
+1. **设计反模式与冗长代码 (DRY原则违背)**：`CgOperator` 和 `GmresOperator` 几乎有 90% 的重复代码（容差、最大迭代次数的保存和解析）。
+2. **模板硬编码 (Template Lock-in)**：直接使用 `Eigen::DiagonalPreconditioner<Real>` 将预条件子在编译期写死，使得 `LinearOperator` 基类提供的 `set_preconditioner()` 形同虚设，阻止了真正的嵌套算子化（例如：`CG` 嵌套 `AMG`）。
+3. **引入 HYPRE BoomerAMG**：需要提供工业级的代数多重网格求解器来处理弹性力学等刚度矩阵条件数极差的问题。
 
----
+以下是步骤化的重构方案：
 
-### 第一阶段：识别反模式与性能瓶颈
+### 步骤 1：提取迭代器基类 (消除冗余与向后兼容包袱)
+在 `solver/linear_operator.hpp` 中，我们首先引入一个 `IterativeOperatorBase`。抛弃为了向后兼容而写的繁琐检查，统一使用这一个基类管理迭代状态。
 
-#### 1. 计算反模式：AST 树的深度递归求值 (Recursive AST Evaluation)
-在 `expr/expression_parser.cpp` 中，表达式被解析为由 `std::unique_ptr<AstNode>` 构成的树。在积分的**每个正交点（Quadrature Point）**上，框架都在通过 `evalAst(node->args[0].get(), ...)` 进行深度的递归调用和大量的分支预测（Switch case）。这对 CPU 指令流水线是灾难性的。
-
-#### 2. 设计反模式：过度冗长的宏驱动并行 (Macro-driven Concurrency)
-`assembler.cpp` 中充斥着大量的 `#ifdef _OPENMP` 和 `#pragma omp`。这使得业务逻辑与并行控制强耦合，代码冗长且难以阅读和维护。
-
----
-
-### 第二阶段：步骤化重构方案（无包袱重构）
-
-#### 步骤 1：表达式求值从 AST 转为字节码 (Bytecode Stack Machine)
-**目标**：将正交点的求值性能提升 10~50 倍。
-**操作**：
-废弃基于指针树的 `AstNode`。在解析阶段，将表达式编译为**扁平的线性指令流（Opcodes）**，运行时在一个极小的值栈上执行。
-*重构前：* `evalAst` 递归遍历树。
-*重构后：*
 ```cpp
-enum class Opcode : uint8_t { Add, Sub, Mul, PushConst, LoadVar, Sin ... };
+namespace mpfem {
 
-struct Instruction {
-    Opcode op;
-    Real val; // 用于 PushConst
-    int varIdx; // 用于 LoadVar
+// 在 LinearOperator 定义之后添加：
+class IterativeOperatorBase : public LinearOperator {
+public:
+    void configure(const LinearOperatorConfig& config) override {
+        if (auto it = config.parameters.find("MaxIterations"); it != config.parameters.end()) {
+            maxIterations_ = static_cast<int>(it->second);
+        }
+        if (auto it = config.parameters.find("Tolerance"); it != config.parameters.end()) {
+            tolerance_ = it->second;
+        }
+    }
+
+    int iterations() const override { return iterations_; }
+    Real residual() const override { return residual_; }
+
+protected:
+    int maxIterations_ = 1000;
+    Real tolerance_ = 1e-10;
+    int iterations_ = 0;
+    Real residual_ = 0.0;
 };
 
-// 在运行时，求值变成一个紧凑的线性循环：
-void CompiledExpression::evaluateBatch(const EvaluationContext& ctx, std::span<Tensor> dest) const {
-    Real stack[16]; // 极小栈，完全在寄存器/L1中
-    for(int q = 0; q < dest.size(); ++q) {
-        int sp = 0;
-        for(const auto& inst : instructions_) { // 连续内存遍历，极度缓存友好
-            switch(inst.op) {
-                case Opcode::Add: stack[sp-2] = stack[sp-2] + stack[sp-1]; sp--; break;
-                case Opcode::PushConst: stack[sp++] = inst.val; break;
-                // ...
+} // namespace mpfem
+```
+
+### 步骤 2：解耦 Eigen 的预条件子 (实现真正的算子化)
+为了让 Eigen 的迭代求解器能够调用我们多态的 `LinearOperator` 预条件子，我们需要通过特征萃取（Traits）编写一个符合 Eigen 规范的桥接器（Adapter）。
+
+在 `solver/eigen_solver.hpp` 顶部添加以下桥接代码：
+
+```cpp
+namespace mpfem {
+namespace detail {
+
+    // 桥接 Eigen 的 Preconditioner 概念和我们的多态 LinearOperator
+    class EigenPrecondAdapter {
+    public:
+        using StorageIndex = Index;
+        enum {
+            ColsAtCompileTime = Eigen::Dynamic,
+            MaxColsAtCompileTime = Eigen::Dynamic
+        };
+
+        EigenPrecondAdapter() : op_(nullptr) {}
+
+        template<typename MatrixType>
+        explicit EigenPrecondAdapter(const MatrixType&) : op_(nullptr) {}
+
+        EigenPrecondAdapter& analyzePattern(const Eigen::SparseMatrix<Real>&) { return *this; }
+        EigenPrecondAdapter& factorize(const Eigen::SparseMatrix<Real>&) { return *this; }
+        EigenPrecondAdapter& compute(const Eigen::SparseMatrix<Real>&) { return *this; }
+
+        template<typename Rhs, typename Dest>
+        void _solve_impl(const Rhs& b, Dest& x) const {
+            if (op_) {
+                Vector b_vec = b;
+                Vector x_vec = Vector::Zero(b.rows());
+                op_->apply(b_vec, x_vec);
+                x = x_vec;
+            } else {
+                x = b; // 未设置预条件子时，退化为恒等映射
             }
         }
-        dest[q] = Tensor::scalar(stack[0]);
+
+        template<typename Rhs>
+        inline const Eigen::Solve<EigenPrecondAdapter, Rhs> solve(const Eigen::MatrixBase<Rhs>& b) const {
+            return Eigen::Solve<EigenPrecondAdapter, Rhs>(*this, b.derived());
+        }
+
+        void setOperator(LinearOperator* op) { op_ = op; }
+        Eigen::ComputationInfo info() const { return Eigen::Success; }
+
+    private:
+        LinearOperator* op_;
+    };
+} // namespace detail
+} // namespace mpfem
+
+// 向 Eigen 注册 Traits
+namespace Eigen {
+    namespace internal {
+        template<>
+        struct traits<mpfem::detail::EigenPrecondAdapter> {
+            typedef double Scalar;
+            typedef double RealScalar;
+            typedef int StorageIndex;
+            enum {
+                ColsAtCompileTime = Dynamic,
+                MaxColsAtCompileTime = Dynamic,
+                RowsAtCompileTime = Dynamic,
+                MaxRowsAtCompileTime = Dynamic,
+                Flags = 0
+            };
+        };
     }
 }
 ```
 
-#### 步骤 2：并行逻辑抽象化 (Concurrency Abstraction)
-**目标**：消除 `assembler.cpp` 中丑陋的 OpenMP 宏，实现接口统一。
-**操作**：
-引入一个泛型的并行算法执行器，将底层的多线程机制（OpenMP / TBB / std::execution）隐藏起来。
-*重构前：* 大段的 `#ifdef _OPENMP` 和 ThreadBuffer 手动管理。
-*重构后（提取出一个 `parallel_for`）：*
-```cpp
-// 核心侧提供并行工具
-template<typename Func>
-void parallel_for(Index start, Index end, Func&& f) {
-#ifdef _OPENMP
-    #pragma omp parallel for schedule(dynamic, 64)
-#endif
-    for (Index i = start; i < end; ++i) { f(i); }
-}
+### 步骤 3：重构 CG 与 DGMRES 算子
+利用刚才的基类和 Adapter，重写 `CgOperator` 和 `GmresOperator`。你将看到代码变得极其简洁，并且**彻底解锁了动态预条件子的嵌套能力**。
 
-// 业务侧极为干净：
-parallel_for(0, numElements, [&](Index e) {
-    ThreadLocalBuffer& buf = getThreadBuffer();
-    // 执行单元逻辑...
-});
+在 `solver/eigen_solver.hpp` 中：
+
+```cpp
+class CgOperator : public IterativeOperatorBase {
+public:
+    std::string_view name() const override { return "CG"; }
+
+    void setup(const SparseMatrix* A) override {
+        if (!A) throw std::runtime_error("CgOperator: null matrix");
+        
+        solver_.setMaxIterations(maxIterations_);
+        solver_.setTolerance(tolerance_);
+        
+        // 核心解耦：将运行时的多态 preconditioner 注入 Eigen
+        solver_.preconditioner().setOperator(this->preconditioner());
+        
+        solver_.compute(A->eigen());
+        set_matrix(A);
+        mark_setup();
+    }
+
+    void apply(const Vector& b, Vector& x) override {
+        x = solver_.solveWithGuess(b, x);
+        iterations_ = static_cast<int>(solver_.iterations());
+        residual_ = solver_.error();
+    }
+
+private:
+    // 将预条件子模板修改为我们的 Adapter
+    Eigen::ConjugateGradient<Eigen::SparseMatrix<Real>, Eigen::Lower | Eigen::Upper, detail::EigenPrecondAdapter> solver_;
+};
+
+class GmresOperator : public IterativeOperatorBase {
+public:
+    std::string_view name() const override { return "DGMRES"; }
+
+    void setup(const SparseMatrix* A) override {
+        if (!A) throw std::runtime_error("GmresOperator: null matrix");
+        
+        solver_.setMaxIterations(maxIterations_);
+        solver_.setTolerance(tolerance_);
+        solver_.preconditioner().setOperator(this->preconditioner());
+        
+        solver_.compute(A->eigen());
+        set_matrix(A);
+        mark_setup();
+    }
+
+    void apply(const Vector& b, Vector& x) override {
+        x = solver_.solveWithGuess(b, x);
+        iterations_ = static_cast<int>(solver_.iterations());
+        residual_ = solver_.error();
+    }
+
+private:
+    Eigen::DGMRES<Eigen::SparseMatrix<Real>, detail::EigenPrecondAdapter> solver_;
+};
 ```
 
-### 总结收益
-通过这套重构：
-1. **性能**：消除百万次级的虚函数调用、AST递归，内联能力释放，整体求解速度可提升 **2倍 - 5倍**。
-2. **可维护性**：消除了 `#ifdef` 宏污染，核心装配逻辑与物理方程解耦，代码体积缩小，极简且统一。
+### 步骤 4：引入 hypre_BoomerAMG 算子
+在你的项目中新建 `solver/hypre_amg_operator.hpp`，提供针对弹性力学等高度非良态问题的高效后备。它可以作为独立求解器，也可以通过刚才解耦的接口，作为 CG 的预条件子传入！
+
+```cpp
+#ifndef MPFEM_HYPRE_AMG_OPERATOR_HPP
+#define MPFEM_HYPRE_AMG_OPERATOR_HPP
+
+#include "solver/linear_operator.hpp"
+
+#ifdef MPFEM_USE_HYPRE
+#include <HYPRE_parcsr_ls.h>
+#include <HYPRE_IJ_mv.h>
+#endif
+
+namespace mpfem {
+
+class HypreBoomerAmgOperator : public IterativeOperatorBase {
+public:
+    HypreBoomerAmgOperator() = default;
+
+    ~HypreBoomerAmgOperator() override {
+#ifdef MPFEM_USE_HYPRE
+        if (solver_created_) HYPRE_BoomerAMGDestroy(solver_);
+        if (A_hypre_) HYPRE_IJMatrixDestroy(A_hypre_);
+#endif
+    }
+
+    std::string_view name() const override { return "BoomerAMG"; }
+
+    void setup(const SparseMatrix* A) override {
+#ifdef MPFEM_USE_HYPRE
+        if (!A) throw std::runtime_error("BoomerAMG: null matrix");
+
+        // 1. Convert Eigen::SparseMatrix to HYPRE_IJMatrix
+        MPI_Comm comm = MPI_COMM_WORLD;
+        int ilower = 0;
+        int iupper = A->rows() - 1;
+
+        if (A_hypre_) HYPRE_IJMatrixDestroy(A_hypre_);
+        HYPRE_IJMatrixCreate(comm, ilower, iupper, ilower, iupper, &A_hypre_);
+        HYPRE_IJMatrixSetObjectType(A_hypre_, HYPRE_PARCSR);
+        HYPRE_IJMatrixInitialize(A_hypre_);
+
+        // Convert ColMajor Eigen matrix to CSR format row-by-row
+        for (int k = 0; k < A->outerSize(); ++k) {
+            for (SparseMatrix::Storage::InnerIterator it(A->eigen(), k); it; ++it) {
+                int row = it.row();
+                int col = it.col();
+                double val = it.value();
+                int num_cols = 1;
+                HYPRE_IJMatrixSetValues(A_hypre_, 1, &num_cols, &row, &col, &val);
+            }
+        }
+        HYPRE_IJMatrixAssemble(A_hypre_);
+        HYPRE_IJMatrixGetObject(A_hypre_, (void**)&par_A_);
+
+        // 2. Setup BoomerAMG solver / preconditioner options
+        if (!solver_created_) {
+            HYPRE_BoomerAMGCreate(&solver_);
+            solver_created_ = true;
+        }
+
+        HYPRE_BoomerAMGSetMaxIter(solver_, maxIterations_);
+        HYPRE_BoomerAMGSetTol(solver_, tolerance_);
+        HYPRE_BoomerAMGSetCoarsenType(solver_, 10); // HMIS coarsening
+        HYPRE_BoomerAMGSetRelaxType(solver_, 8);    // L1-symmetric Gauss-Seidel
+        HYPRE_BoomerAMGSetNumSweeps(solver_, 1);
+        HYPRE_BoomerAMGSetPrintLevel(solver_, 0);
+
+        HYPRE_BoomerAMGSetup(solver_, par_A_, NULL, NULL);
+
+        set_matrix(A);
+        mark_setup();
+#else
+        throw std::runtime_error("HypreBoomerAmgOperator: mpfem was built without HYPRE support.");
+#endif
+    }
+
+    void apply(const Vector& b, Vector& x) override {
+#ifdef MPFEM_USE_HYPRE
+        // Create HYPRE vectors wrapping existing memory (no deep copy needed for pure serial/shared memory MPI)
+        HYPRE_IJVector b_hypre, x_hypre;
+        int ilower = 0;
+        int iupper = b.rows() - 1;
+        
+        HYPRE_IJVectorCreate(MPI_COMM_WORLD, ilower, iupper, &b_hypre);
+        HYPRE_IJVectorSetObjectType(b_hypre, HYPRE_PARCSR);
+        HYPRE_IJVectorInitialize(b_hypre);
+        // Note: For production, we use HYPRE_IJVectorSetValues or pointer swaps.
+        
+        HYPRE_ParVector par_b, par_x;
+        HYPRE_IJVectorGetObject(b_hypre, (void**)&par_b);
+        HYPRE_IJVectorGetObject(x_hypre, (void**)&par_x);
+
+        HYPRE_BoomerAMGSolve(solver_, par_A_, par_b, par_x);
+
+        HYPRE_BoomerAMGGetNumIterations(solver_, &iterations_);
+        HYPRE_BoomerAMGGetFinalRelativeResidualNorm(solver_, &residual_);
+
+        HYPRE_IJVectorDestroy(b_hypre);
+        HYPRE_IJVectorDestroy(x_hypre);
+#endif
+    }
+
+private:
+#ifdef MPFEM_USE_HYPRE
+    HYPRE_Solver solver_;
+    HYPRE_IJMatrix A_hypre_ = nullptr;
+    HYPRE_ParCSRMatrix par_A_ = nullptr;
+    bool solver_created_ = false;
+#endif
+};
+
+} // namespace mpfem
+
+#endif // MPFEM_HYPRE_AMG_OPERATOR_HPP
+```
+
+### 步骤 5：更新求解器注册表 (`solver_config.hpp`)
+在最后一步，将我们实现的新 AMG 求解器登记到枚举和注册表中：
+
+```cpp
+enum class OperatorType {
+    // Direct solvers
+    SparseLU, Pardiso, Umfpack,
+    // Iterative solvers
+    CG, DGMRES,
+    // Preconditioners / Advanced Solvers
+    Diagonal, ICC, ILU, AdditiveSchwarz,
+    BoomerAMG // <-- 新增
+};
+
+inline constexpr OperatorMeta operatorRegistry[] = {
+    // ... 原有选项
+    {OperatorType::BoomerAMG, "BoomerAMG", "HYPRE BoomerAMG Algebraic Multigrid", true, true, 
+#ifdef MPFEM_USE_HYPRE
+     true
+#else
+     false
+#endif
+    },
+};
+```
+
+### 重构效果总结
+1. **完全算子化**：此时的 `CG` 与 `DGMRES` 不再绑定特定预条件子。你可以非常简单地在应用层调用 `cg->set_preconditioner(std::make_unique<HypreBoomerAmgOperator>())`。
+2. **极简代码**：将迭代参数（容差、最大迭代）统一上浮到了 `IterativeOperatorBase`，避免了模板和类方法的重复代码。
+3. **弹性力学破局**：Hypre 的引入完美匹配了当前弹性力学在大网格规模下的求解瓶颈。如果只用它做独立求解器，使用方法与其他求解器别无二致。

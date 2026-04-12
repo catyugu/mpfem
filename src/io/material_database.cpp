@@ -1,4 +1,4 @@
-#include "model/material_database.hpp"
+#include "io/material_database.hpp"
 
 #include "core/exception.hpp"
 
