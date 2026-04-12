@@ -36,7 +36,7 @@ if(MSVC)
 
 # 全局加给所有目标
     add_compile_options(${MSVC_IGNORE_WARNINGS})
-    add_compile_options(/W4 /permissive- /utf-8 /wd4819 /bigobj)
+    add_compile_options(/W4 /permissive- /utf-8 /wd4819 /bigobj /MP /INCREMENTAL)
 else()
     add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
