@@ -91,14 +91,8 @@ namespace mpfem {
         /// Get number of vertices
         Index numVertices() const { return static_cast<Index>(vertices_.size()); }
 
-        /// Get number of volume elements
-        Index numElements() const { return static_cast<Index>(elements_.size()); }
-
         /// Get total number of unique topology edges
         Index numEdges() const { return static_cast<Index>(edgeInfoList_.size()); }
-
-        /// Get number of boundary elements
-        Index numBdrElements() const { return static_cast<Index>(bdrElements_.size()); }
 
         // -------------------------------------------------------------------------
         // Vertex access
@@ -126,17 +120,13 @@ namespace mpfem {
         // Volume element access
         // -------------------------------------------------------------------------
 
-        /// Get element by index
-        const Element& element(Index i) const { return elements_[i]; }
-        Element& element(Index i) { return elements_[i]; }
+        /// Get element by index (returns by value as a view)
+        Element element(Index i) const;
 
-        /// Get all elements
-        const std::vector<Element>& elements() const { return elements_; }
-        std::vector<Element>& elements() { return elements_; }
+        /// Get number of volume elements
+        Index numElements() const { return static_cast<Index>(elementGeoms_.size()); }
 
         /// Add an element
-        void addElement(const Element& e);
-        void addElement(Element&& e);
         Index addElement(Geometry geom, std::span<const Index> vertices, Index attr = 0, int order = 1);
         Index addElement(Geometry geom, const std::vector<Index>& vertices, Index attr = 0, int order = 1);
 
@@ -147,17 +137,13 @@ namespace mpfem {
         // Boundary element access
         // -------------------------------------------------------------------------
 
-        /// Get boundary element by index
-        const Element& bdrElement(Index i) const { return bdrElements_[i]; }
-        Element& bdrElement(Index i) { return bdrElements_[i]; }
+        /// Get boundary element by index (returns by value as a view)
+        Element bdrElement(Index i) const;
 
-        /// Get all boundary elements
-        const std::vector<Element>& bdrElements() const { return bdrElements_; }
-        std::vector<Element>& bdrElements() { return bdrElements_; }
+        /// Get number of boundary elements
+        Index numBdrElements() const { return static_cast<Index>(bdrElementGeoms_.size()); }
 
         /// Add a boundary element
-        void addBdrElement(const Element& e);
-        void addBdrElement(Element&& e);
         Index addBdrElement(Geometry geom, std::span<const Index> vertices, Index attr = 0, int order = 1);
         Index addBdrElement(Geometry geom, const std::vector<Index>& vertices, Index attr = 0, int order = 1);
 
@@ -280,8 +266,20 @@ namespace mpfem {
 
         int dim_ = 3;
         std::vector<Vertex> vertices_;
-        std::vector<Element> elements_;
-        std::vector<Element> bdrElements_;
+        
+        // Flattened volume element storage
+        std::vector<Geometry> elementGeoms_;
+        std::vector<Index> elementAttributes_;
+        std::vector<int> elementOrders_;
+        std::vector<Index> elementOffsets_;
+        std::vector<Index> elementVertices_;
+
+        // Flattened boundary element storage
+        std::vector<Geometry> bdrElementGeoms_;
+        std::vector<Index> bdrElementAttributes_;
+        std::vector<int> bdrElementOrders_;
+        std::vector<Index> bdrElementOffsets_;
+        std::vector<Index> bdrElementVertices_;
 
         // Topology data
         bool topologyBuilt_ = false;

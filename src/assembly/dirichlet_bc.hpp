@@ -36,8 +36,8 @@ namespace mpfem {
                 continue;
 
             for (Index b = 0; b < mesh.numBdrElements(); ++b) {
-                const Element& belem = mesh.bdrElement(b);
-                if (belem.attribute() != bid)
+                const Element belem = mesh.bdrElement(b);
+                if (belem.attribute != bid)
                     continue;
 
                 const ReferenceElement* refElem = fes.bdrElementRefElement(b);

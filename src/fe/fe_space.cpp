@@ -24,7 +24,7 @@ namespace mpfem {
         maxDofsPerBdrElem_ = 0;
 
         for (Index i = 0; i < mesh_->numElements(); ++i) {
-            const ReferenceElement* refElem = fec_->get(mesh_->element(i).geometry());
+            const ReferenceElement* refElem = fec_->get(mesh_->element(i).geometry);
             if (!refElem) {
                 MPFEM_THROW(Exception, "FESpace::buildDofTable missing volume reference element");
             }
@@ -32,7 +32,7 @@ namespace mpfem {
         }
 
         for (Index i = 0; i < mesh_->numBdrElements(); ++i) {
-            const ReferenceElement* refElem = fec_->get(mesh_->bdrElement(i).geometry());
+            const ReferenceElement* refElem = fec_->get(mesh_->bdrElement(i).geometry);
             if (!refElem) {
                 MPFEM_THROW(Exception, "FESpace::buildDofTable missing boundary reference element");
             }
@@ -49,12 +49,12 @@ namespace mpfem {
         std::vector<int> cellDofs(static_cast<size_t>(mesh_->numElements()), 0);
 
         for (Index elemIdx = 0; elemIdx < mesh_->numElements(); ++elemIdx) {
-            const Element& elem = mesh_->element(elemIdx);
-            const ReferenceElement* refElem = fec_->get(elem.geometry());
+            const Element elem = mesh_->element(elemIdx);
+            const ReferenceElement* refElem = fec_->get(elem.geometry);
             const DofLayout layout = refElem->basis().dofLayout();
 
-            const std::vector<Index> elemVertices = mesh_->getElementVertices(elemIdx);
-            for (Index vId : elemVertices) {
+            for (int i = 0; i < elem.numCorners(); ++i) {
+                const Index vId = elem.vertex(i);
                 const Index cornerId = mesh_->vertexToCornerIndex(vId);
                 if (cornerId == InvalidIndex) {
                     MPFEM_THROW(Exception, "FESpace::buildDofTable non-corner vertex encountered");
@@ -83,8 +83,8 @@ namespace mpfem {
         }
 
         for (Index bdrIdx = 0; bdrIdx < mesh_->numBdrElements(); ++bdrIdx) {
-            const Element& bdrElem = mesh_->bdrElement(bdrIdx);
-            const ReferenceElement* refElem = fec_->get(bdrElem.geometry());
+            const Element bdrElem = mesh_->bdrElement(bdrIdx);
+            const ReferenceElement* refElem = fec_->get(bdrElem.geometry);
             const DofLayout layout = refElem->basis().dofLayout();
 
             for (int i = 0; i < bdrElem.numCorners(); ++i) {
@@ -106,7 +106,7 @@ namespace mpfem {
                 edgeDofs[idx] = std::max(edgeDofs[idx], layout.numEdgeDofs);
             }
 
-            if (meshDim == 3 && geom::dim(bdrElem.geometry()) == 2) {
+            if (meshDim == 3 && geom::dim(bdrElem.geometry) == 2) {
                 const Index faceId = mesh_->getBoundaryFaceIndex(bdrIdx);
                 if (faceId != InvalidIndex) {
                     const size_t idx = static_cast<size_t>(faceId);
@@ -187,15 +187,15 @@ namespace mpfem {
         };
 
         for (Index elemIdx = 0; elemIdx < mesh_->numElements(); ++elemIdx) {
-            const Element& elem = mesh_->element(elemIdx);
-            const ReferenceElement* refElem = fec_->get(elem.geometry());
+            const Element elem = mesh_->element(elemIdx);
+            const ReferenceElement* refElem = fec_->get(elem.geometry);
             const DofLayout layout = refElem->basis().dofLayout();
 
             const Index base = elemIdx * maxDofsPerElem_;
             int localDof = 0;
 
-            const std::vector<Index> elemVertices = mesh_->getElementVertices(elemIdx);
-            for (Index vId : elemVertices) {
+            for (int i = 0; i < elem.numCorners(); ++i) {
+                const Index vId = elem.vertex(i);
                 for (int k = 0; k < layout.numVertexDofs; ++k) {
                     const Index gdof = mapVertexDof(vId, k);
                     if (gdof == InvalidIndex) {
@@ -255,8 +255,8 @@ namespace mpfem {
         }
 
         for (Index bdrIdx = 0; bdrIdx < mesh_->numBdrElements(); ++bdrIdx) {
-            const Element& bdrElem = mesh_->bdrElement(bdrIdx);
-            const ReferenceElement* refElem = fec_->get(bdrElem.geometry());
+            const Element bdrElem = mesh_->bdrElement(bdrIdx);
+            const ReferenceElement* refElem = fec_->get(bdrElem.geometry);
             const DofLayout layout = refElem->basis().dofLayout();
 
             const Index base = bdrIdx * maxDofsPerBdrElem_;
@@ -285,7 +285,7 @@ namespace mpfem {
                 }
             }
 
-            if (meshDim == 3 && geom::dim(bdrElem.geometry()) == 2 && layout.numFaceDofs > 0) {
+            if (meshDim == 3 && geom::dim(bdrElem.geometry) == 2 && layout.numFaceDofs > 0) {
                 const Index faceId = mesh_->getBoundaryFaceIndex(bdrIdx);
                 for (int k = 0; k < layout.numFaceDofs; ++k) {
                     const Index gdof = mapFaceDof(faceId, k);

@@ -413,7 +413,7 @@ namespace mpfem {
             vertexToCorner[cornerIndices[i]] = i;
         }
         for (Index i = 0; i < mesh.numElements(); ++i) {
-            const Element& elem = mesh.element(i);
+            const Element elem = mesh.element(i);
             for (int j = 0; j < elem.numCorners(); ++j) {
                 if (j > 0)
                     file << " ";
@@ -435,7 +435,7 @@ namespace mpfem {
         // Types
         file << "<DataArray type=\"UInt8\" Name=\"types\" format=\"ascii\">\n";
         for (Index i = 0; i < mesh.numElements(); ++i) {
-            Geometry geom = mesh.element(i).geometry();
+            Geometry geom = mesh.element(i).geometry;
             int vtkType = 0;
             switch (geom) {
             case Geometry::Segment:

@@ -29,74 +29,17 @@
 
 ### 第一阶段：识别反模式与性能瓶颈
 
-#### 1. 性能反模式：热点循环中的虚函数调用 (Virtual Dispatch in Hot Loops)
-在 `assembly/assembler.cpp` 中，组装器在遍历数百万个单元的极内层循环（Tight Loop）里，调用了 `integ->assembleElementMatrix(...)`。由于 `DomainBilinearIntegratorBase` 是多态基类，这会导致每次单元计算都发生一次虚函数调用，**彻底破坏了编译器的内联（Inlining）和向量化（SIMD）优化**。
-
-#### 2. 内存反模式：碎片化的拓扑存储 (Memory Fragmentation)
-在 `mesh/mesh.hpp` 中，网格连通性使用了极其昂贵的嵌套容器：
-`std::vector<std::vector<std::pair<int, Index>>> elementToEdge_;`
-在网格规模达到百万级时，这种“数组套数组”的结构会引发海量的堆分配（Heap Allocation），导致极高的内存碎片和缓存未命中（Cache Miss）。
-
-#### 3. 计算反模式：AST 树的深度递归求值 (Recursive AST Evaluation)
+#### 1. 计算反模式：AST 树的深度递归求值 (Recursive AST Evaluation)
 在 `expr/expression_parser.cpp` 中，表达式被解析为由 `std::unique_ptr<AstNode>` 构成的树。在积分的**每个正交点（Quadrature Point）**上，框架都在通过 `evalAst(node->args[0].get(), ...)` 进行深度的递归调用和大量的分支预测（Switch case）。这对 CPU 指令流水线是灾难性的。
 
-#### 4. 设计反模式：过度冗长的宏驱动并行 (Macro-driven Concurrency)
+#### 2. 设计反模式：过度冗长的宏驱动并行 (Macro-driven Concurrency)
 `assembler.cpp` 中充斥着大量的 `#ifdef _OPENMP` 和 `#pragma omp`。这使得业务逻辑与并行控制强耦合，代码冗长且难以阅读和维护。
 
 ---
 
 ### 第二阶段：步骤化重构方案（无包袱重构）
 
-#### 步骤 1：网格拓扑结构的扁平化（CSR 格式改造）
-**目标**：消除堆内存碎片，将内存占用降低 70% 以上，提高缓存局部性。
-**操作**：
-废弃 `std::vector<std::vector<...>>`，改用**压缩稀疏行（CSR）**格式存储拓扑关系。
-*重构前：*
-```cpp
-std::vector<std::vector<std::pair<int, Index>>> elementToEdge_;
-```
-*重构后：*
-```cpp
-// 连续内存存储，零碎片
-std::vector<Index> elemEdgeOffsets_; // 大小: numElements + 1
-std::vector<Index> elemEdgeData_;    // 大小: numElements * edgesPerElem
-
-// 获取单元 edge 的接口：
-std::span<const Index> getElementEdges(Index elem) const {
-    return {&elemEdgeData_[elemEdgeOffsets_[elem]], 
-            static_cast<size_t>(elemEdgeOffsets_[elem+1] - elemEdgeOffsets_[elem])};
-}
-```
-
-#### 步骤 2：反转装配循环，消除虚函数开销 (Devirtualization)
-**目标**：允许编译器对单元积分进行极致内联和 SIMD 优化。
-**操作**：
-不要让 `Assembler` 循环调用 `Integrator`，而是**把单元列表传给 `Integrator`**，让循环发生在 Integrator 内部（那里类型是已知的）。
-*重构前：*
-```cpp
-// 在 Assembler 中
-for (Index e = 0; e < numElements; ++e) {
-    for (auto& integ : domainIntegs_) {
-        integ->assembleElementMatrix(*ref, trans, buf); // 致命：千万次虚函数调用
-    }
-}
-```
-*重构后：*
-```cpp
-// 在 Assembler 中，把同一 Domain 的单元打包，一次性传给积分器
-for (auto& integ : domainIntegs_) {
-    integ->assembleDomain(activeDomains[domainId], trans, mat_); // 仅发生 1 次虚函数调用
-}
-
-// 在具体的 DiffusionIntegrator 内部：
-void DiffusionIntegrator::assembleDomain(std::span<const Index> elements, ...) const override {
-    for (Index e : elements) { 
-        // 这里的循环没有虚函数，纯数学计算，编译器会自动展开和 SIMD 优化
-    }
-}
-```
-
-#### 步骤 3：表达式求值从 AST 转为字节码 (Bytecode Stack Machine)
+#### 步骤 1：表达式求值从 AST 转为字节码 (Bytecode Stack Machine)
 **目标**：将正交点的求值性能提升 10~50 倍。
 **操作**：
 废弃基于指针树的 `AstNode`。在解析阶段，将表达式编译为**扁平的线性指令流（Opcodes）**，运行时在一个极小的值栈上执行。
@@ -128,7 +71,7 @@ void CompiledExpression::evaluateBatch(const EvaluationContext& ctx, std::span<T
 }
 ```
 
-#### 步骤 4：并行逻辑抽象化 (Concurrency Abstraction)
+#### 步骤 2：并行逻辑抽象化 (Concurrency Abstraction)
 **目标**：消除 `assembler.cpp` 中丑陋的 OpenMP 宏，实现接口统一。
 **操作**：
 引入一个泛型的并行算法执行器，将底层的多线程机制（OpenMP / TBB / std::execution）隐藏起来。
@@ -154,5 +97,4 @@ parallel_for(0, numElements, [&](Index e) {
 ### 总结收益
 通过这套重构：
 1. **性能**：消除百万次级的虚函数调用、AST递归，内联能力释放，整体求解速度可提升 **2倍 - 5倍**。
-2. **内存**：CSR 网格拓扑存储可减少 **70% 以上** 的内存开销和极高的碎片消除。
-3. **可维护性**：消除了 `#ifdef` 宏污染，核心装配逻辑与物理方程解耦，代码体积缩小，极简且统一。
+2. **可维护性**：消除了 `#ifdef` 宏污染，核心装配逻辑与物理方程解耦，代码体积缩小，极简且统一。

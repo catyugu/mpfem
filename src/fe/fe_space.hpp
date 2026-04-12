@@ -85,7 +85,7 @@ namespace mpfem {
                 MPFEM_THROW(Exception, "mesh not set");
             if (elemIdx >= mesh_->numElements())
                 MPFEM_THROW(RangeException, "invalid element index");
-            return refElement(mesh_->element(elemIdx).geometry());
+            return refElement(mesh_->element(elemIdx).geometry);
         }
 
         const ReferenceElement* bdrElementRefElement(Index bdrIdx) const
@@ -94,7 +94,7 @@ namespace mpfem {
                 MPFEM_THROW(Exception, "mesh not set");
             if (bdrIdx >= mesh_->numBdrElements())
                 MPFEM_THROW(RangeException, "invalid boundary element index");
-            return refElement(mesh_->bdrElement(bdrIdx).geometry());
+            return refElement(mesh_->bdrElement(bdrIdx).geometry);
         }
 
         // -------------------------------------------------------------------------
@@ -104,13 +104,13 @@ namespace mpfem {
         /// Get geometric order of an element
         int elementGeoOrder(Index elemIdx) const
         {
-            return mesh_ ? mesh_->element(elemIdx).order() : 1;
+            return mesh_ ? mesh_->element(elemIdx).order : 1;
         }
 
         /// Get geometric order of a boundary element
         int bdrElementGeoOrder(Index bdrIdx) const
         {
-            return mesh_ ? mesh_->bdrElement(bdrIdx).order() : 1;
+            return mesh_ ? mesh_->bdrElement(bdrIdx).order : 1;
         }
 
         // -------------------------------------------------------------------------
@@ -155,8 +155,8 @@ namespace mpfem {
         if (!mesh_ || !fec_ || elemIdx >= mesh_->numElements())
             return;
 
-        const Element& elem = mesh_->element(elemIdx);
-        const ReferenceElement* refElem = fec_->get(elem.geometry());
+        const Element elem = mesh_->element(elemIdx);
+        const ReferenceElement* refElem = fec_->get(elem.geometry);
         if (!refElem)
             return;
 
@@ -179,8 +179,8 @@ namespace mpfem {
         if (!mesh_ || !fec_ || bdrIdx >= mesh_->numBdrElements())
             return;
 
-        const Element& bdrElem = mesh_->bdrElement(bdrIdx);
-        const ReferenceElement* refElem = fec_->get(bdrElem.geometry());
+        const Element bdrElem = mesh_->bdrElement(bdrIdx);
+        const ReferenceElement* refElem = fec_->get(bdrElem.geometry);
         if (!refElem)
             return;
 
@@ -202,8 +202,8 @@ namespace mpfem {
     {
         if (!mesh_ || !fec_ || elemIdx >= mesh_->numElements())
             return 0;
-        const Element& elem = mesh_->element(elemIdx);
-        const ReferenceElement* refElem = fec_->get(elem.geometry());
+        const Element elem = mesh_->element(elemIdx);
+        const ReferenceElement* refElem = fec_->get(elem.geometry);
         return refElem ? refElem->numDofs() * vdim_ : 0;
     }
 
@@ -211,8 +211,8 @@ namespace mpfem {
     {
         if (!mesh_ || !fec_ || bdrIdx >= mesh_->numBdrElements())
             return 0;
-        const Element& bdrElem = mesh_->bdrElement(bdrIdx);
-        const ReferenceElement* refElem = fec_->get(bdrElem.geometry());
+        const Element bdrElem = mesh_->bdrElement(bdrIdx);
+        const ReferenceElement* refElem = fec_->get(bdrElem.geometry);
         return refElem ? refElem->numDofs() * vdim_ : 0;
     }
 

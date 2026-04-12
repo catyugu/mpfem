@@ -13,10 +13,9 @@ std::uint64_t Mesh::edgeKey(Index a, Index b)
 
 Mesh::Mesh(int dim, Index numVertices, Index numElements, Index numBdrElements)
     : dim_(dim) {
-    // Use reserve instead of resize to allow automatic expansion
     if (numVertices > 0) vertices_.reserve(numVertices);
-    if (numElements > 0) elements_.reserve(numElements);
-    if (numBdrElements > 0) bdrElements_.reserve(numBdrElements);
+    if (numElements > 0) reserveElements(numElements);
+    if (numBdrElements > 0) reserveBdrElements(numBdrElements);
 }
 
 void Mesh::setDim(int dim) {
@@ -41,57 +40,78 @@ void Mesh::reserveVertices(Index n) {
     vertices_.reserve(n);
 }
 
-void Mesh::addElement(const Element& e) {
-    elements_.push_back(e);
-}
-
-void Mesh::addElement(Element&& e) {
-    elements_.push_back(std::move(e));
+Element Mesh::element(Index i) const {
+    const Index start = elementOffsets_[i];
+    const Index end = elementOffsets_[i + 1];
+    return Element {
+        elementGeoms_[i],
+        { &elementVertices_[start], static_cast<size_t>(end - start) },
+        elementAttributes_[i],
+        elementOrders_[i]
+    };
 }
 
 Index Mesh::addElement(Geometry geom, std::span<const Index> vertices, Index attr, int order) {
-    elements_.emplace_back(geom, vertices, attr, order);
-    return static_cast<Index>(elements_.size() - 1);
+    if (elementOffsets_.empty()) elementOffsets_.push_back(0);
+    elementGeoms_.push_back(geom);
+    elementAttributes_.push_back(attr);
+    elementOrders_.push_back(order);
+    elementVertices_.insert(elementVertices_.end(), vertices.begin(), vertices.end());
+    elementOffsets_.push_back(static_cast<Index>(elementVertices_.size()));
+    return static_cast<Index>(elementGeoms_.size() - 1);
 }
 
 Index Mesh::addElement(Geometry geom, const std::vector<Index>& vertices, Index attr, int order) {
-    elements_.emplace_back(geom, vertices, attr, order);
-    return static_cast<Index>(elements_.size() - 1);
+    return addElement(geom, std::span<const Index>(vertices), attr, order);
 }
 
 void Mesh::reserveElements(Index n) {
-    elements_.reserve(n);
+    elementGeoms_.reserve(n);
+    elementAttributes_.reserve(n);
+    elementOrders_.reserve(n);
+    elementOffsets_.reserve(n + 1);
+    elementVertices_.reserve(n * 8); // Estimate
 }
 
-void Mesh::addBdrElement(const Element& e) {
-    bdrElements_.push_back(e);
-}
-
-void Mesh::addBdrElement(Element&& e) {
-    bdrElements_.push_back(std::move(e));
+Element Mesh::bdrElement(Index i) const {
+    const Index start = bdrElementOffsets_[i];
+    const Index end = bdrElementOffsets_[i + 1];
+    return Element {
+        bdrElementGeoms_[i],
+        { &bdrElementVertices_[start], static_cast<size_t>(end - start) },
+        bdrElementAttributes_[i],
+        bdrElementOrders_[i]
+    };
 }
 
 Index Mesh::addBdrElement(Geometry geom, std::span<const Index> vertices, Index attr, int order) {
-    bdrElements_.emplace_back(geom, vertices, attr, order);
-    return static_cast<Index>(bdrElements_.size() - 1);
+    if (bdrElementOffsets_.empty()) bdrElementOffsets_.push_back(0);
+    bdrElementGeoms_.push_back(geom);
+    bdrElementAttributes_.push_back(attr);
+    bdrElementOrders_.push_back(order);
+    bdrElementVertices_.insert(bdrElementVertices_.end(), vertices.begin(), vertices.end());
+    bdrElementOffsets_.push_back(static_cast<Index>(bdrElementVertices_.size()));
+    return static_cast<Index>(bdrElementGeoms_.size() - 1);
 }
 
 Index Mesh::addBdrElement(Geometry geom, const std::vector<Index>& vertices, Index attr, int order) {
-    bdrElements_.emplace_back(geom, vertices, attr, order);
-    return static_cast<Index>(bdrElements_.size() - 1);
+    return addBdrElement(geom, std::span<const Index>(vertices), attr, order);
 }
 
 void Mesh::reserveBdrElements(Index n) {
-    bdrElements_.reserve(n);
+    bdrElementGeoms_.reserve(n);
+    bdrElementAttributes_.reserve(n);
+    bdrElementOrders_.reserve(n);
+    bdrElementOffsets_.reserve(n + 1);
+    bdrElementVertices_.reserve(n * 4); // Estimate
 }
 
 std::set<Index> Mesh::domainIds() const {
     std::set<Index> ids;
-    for (const auto& e : elements_) {
-        // Only count volume elements (tetrahedra, hexahedra) as domains
-        if (e.geometry() == Geometry::Tetrahedron || 
-            e.geometry() == Geometry::Cube) {
-            ids.insert(e.attribute());
+    for (Index i = 0; i < numElements(); ++i) {
+        if (elementGeoms_[i] == Geometry::Tetrahedron || 
+            elementGeoms_[i] == Geometry::Cube) {
+            ids.insert(elementAttributes_[i]);
         }
     }
     return ids;
@@ -99,20 +119,18 @@ std::set<Index> Mesh::domainIds() const {
 
 std::set<Index> Mesh::boundaryIds() const {
     std::set<Index> ids;
-    for (const auto& e : bdrElements_) {
-        ids.insert(e.attribute());
+    for (Index i = 0; i < numBdrElements(); ++i) {
+        ids.insert(bdrElementAttributes_[i]);
     }
     return ids;
 }
 
 std::vector<Index> Mesh::elementsForDomain(Index domainId) const {
     std::vector<Index> result;
-    for (Index i = 0; i < static_cast<Index>(elements_.size()); ++i) {
-        const auto& e = elements_[i];
-        // Only count volume elements
-        if ((e.geometry() == Geometry::Tetrahedron || 
-             e.geometry() == Geometry::Cube) &&
-            e.attribute() == domainId) {
+    for (Index i = 0; i < numElements(); ++i) {
+        if ((elementGeoms_[i] == Geometry::Tetrahedron || 
+             elementGeoms_[i] == Geometry::Cube) &&
+            elementAttributes_[i] == domainId) {
             result.push_back(i);
         }
     }
@@ -121,8 +139,8 @@ std::vector<Index> Mesh::elementsForDomain(Index domainId) const {
 
 std::vector<Index> Mesh::bdrElementsForBoundary(Index boundaryId) const {
     std::vector<Index> result;
-    for (Index i = 0; i < static_cast<Index>(bdrElements_.size()); ++i) {
-        if (bdrElements_[i].attribute() == boundaryId) {
+    for (Index i = 0; i < numBdrElements(); ++i) {
+        if (bdrElementAttributes_[i] == boundaryId) {
             result.push_back(i);
         }
     }
@@ -131,8 +149,16 @@ std::vector<Index> Mesh::bdrElementsForBoundary(Index boundaryId) const {
 
 void Mesh::clear() {
     vertices_.clear();
-    elements_.clear();
-    bdrElements_.clear();
+    elementGeoms_.clear();
+    elementAttributes_.clear();
+    elementOrders_.clear();
+    elementOffsets_.clear();
+    elementVertices_.clear();
+    bdrElementGeoms_.clear();
+    bdrElementAttributes_.clear();
+    bdrElementOrders_.clear();
+    bdrElementOffsets_.clear();
+    bdrElementVertices_.clear();
     dim_ = 3;
     topologyBuilt_ = false;
     edgeInfoList_.clear();
@@ -157,7 +183,7 @@ std::vector<Index> Mesh::getElementVertices(Index elemIdx) const
         return {};
     }
 
-    const Element& elem = element(elemIdx);
+    const Element elem = element(elemIdx);
     const int corners = elem.numCorners();
     std::vector<Index> out;
     out.reserve(static_cast<size_t>(corners));
@@ -267,10 +293,11 @@ void Mesh::buildTopology() {
     // Build corner vertex map (eagerly, for high-order meshes)
     // Collect all corner vertices from all volume elements
     std::set<Index> cornerSet;
-    for (const auto& e : elements_) {
+    for (Index i = 0; i < numElements(); ++i) {
+        const Element e = element(i);
         int nc = e.numCorners();
-        for (int i = 0; i < nc; ++i) {
-            cornerSet.insert(e.vertex(i));
+        for (int j = 0; j < nc; ++j) {
+            cornerSet.insert(e.vertex(j));
         }
     }
     
@@ -303,12 +330,12 @@ void Mesh::buildEdgeToElementMap() {
     elemEdgeOffsets_.resize(numElements() + 1, 0);
 
     for (Index i = 0; i < numElements(); ++i) {
-        elemEdgeOffsets_[i + 1] = elemEdgeOffsets_[i] + elements_[i].numEdges();
+        elemEdgeOffsets_[i + 1] = elemEdgeOffsets_[i] + element(i).numEdges();
     }
     elemEdgeData_.resize(elemEdgeOffsets_.back());
 
     for (Index elemIdx = 0; elemIdx < numElements(); ++elemIdx) {
-        const Element& elem = elements_[elemIdx];
+        const Element elem = element(elemIdx);
         const int nEdges = elem.numEdges();
         const Index base = elemEdgeOffsets_[elemIdx];
 
@@ -338,7 +365,7 @@ void Mesh::buildFaceToElementMap() {
     
     // Process each element
     for (Index elemIdx = 0; elemIdx < numElements(); ++elemIdx) {
-        const Element& elem = element(elemIdx);
+        const Element elem = element(elemIdx);
         
         // Get all faces of this element
         for (int f = 0; f < elem.numFaces(); ++f) {
@@ -388,7 +415,7 @@ void Mesh::buildElementToFaceMap() {
     elemFaceOffsets_.resize(numElements() + 1, 0);
 
     for (Index i = 0; i < numElements(); ++i) {
-        elemFaceOffsets_[i + 1] = elemFaceOffsets_[i] + elements_[i].numFaces();
+        elemFaceOffsets_[i + 1] = elemFaceOffsets_[i] + element(i).numFaces();
     }
     elemFaceData_.assign(elemFaceOffsets_.back(), InvalidIndex);
 
@@ -428,8 +455,8 @@ void Mesh::buildBoundaryElementMapping() {
     bdrIdExternalCache_.clear();
     
     for (Index bdrIdx = 0; bdrIdx < numBdrElements(); ++bdrIdx) {
-        const Element& bdrElem = bdrElement(bdrIdx);
-        Index bdrId = bdrElem.attribute();
+        const Element bdrElem = bdrElement(bdrIdx);
+        Index bdrId = bdrElem.attribute;
         
         // Get sorted vertex key for boundary element - ONLY CORNER NODES
         FaceKey key;
