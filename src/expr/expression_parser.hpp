@@ -1,11 +1,11 @@
 #ifndef MPFEM_EXPR_EXPRESSION_PARSER_HPP
 #define MPFEM_EXPR_EXPRESSION_PARSER_HPP
 
-#include "expr/variable_graph.hpp"
 #include <memory>
 #include <string>
 
 namespace mpfem {
+    class VariableNode;
 
     class ExpressionParser {
     public:

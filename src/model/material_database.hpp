@@ -36,7 +36,7 @@ namespace mpfem {
         const std::string& matrixExpression(const std::string& name) const;
 
         bool hasScalar(const std::string& name) const;
-        bool hasMatrix(const std::string& name) const;
+        bool hasMatrix3(const std::string& name) const;
 
         void setScalar(const std::string& name, const std::string& expr);
         void setMatrix(const std::string& name, const std::string& expr);

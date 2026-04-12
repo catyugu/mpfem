@@ -27,6 +27,8 @@ Mesh createTriMesh2D() {
     // Boundary edges
     mesh.addBdrElement(Geometry::Segment, {0, 1});  // Bottom
     mesh.addBdrElement(Geometry::Segment, {1, 3});  // Right
+
+    mesh.buildTopology();
     
     return mesh;
 }
@@ -50,6 +52,8 @@ Mesh createTetMesh3D() {
     mesh.addBdrElement(Geometry::Triangle, {0, 1, 3});
     mesh.addBdrElement(Geometry::Triangle, {0, 2, 3});
     mesh.addBdrElement(Geometry::Triangle, {1, 2, 4});
+
+    mesh.buildTopology();
     
     return mesh;
 }
@@ -80,7 +84,33 @@ Mesh createQuadMesh2D() {
     mesh.addBdrElement(Geometry::Segment, {1, 2});
     mesh.addBdrElement(Geometry::Segment, {2, 5});
     mesh.addBdrElement(Geometry::Segment, {5, 8});
+
+    mesh.buildTopology();
     
+    return mesh;
+}
+
+/// Create a mixed 2D mesh: one quad + one triangle sharing an edge
+Mesh createMixedMesh2D() {
+    Mesh mesh(2, 6, 2);
+
+    mesh.addVertex(0.0, 0.0, 0.0);  // 0
+    mesh.addVertex(1.0, 0.0, 0.0);  // 1
+    mesh.addVertex(1.0, 1.0, 0.0);  // 2
+    mesh.addVertex(0.0, 1.0, 0.0);  // 3
+    mesh.addVertex(2.0, 0.0, 0.0);  // 4
+    mesh.addVertex(2.0, 1.0, 0.0);  // 5
+
+    mesh.addElement(Geometry::Square, {0, 1, 2, 3});
+    mesh.addElement(Geometry::Triangle, {1, 4, 2});
+
+    mesh.addBdrElement(Geometry::Segment, {0, 1});
+    mesh.addBdrElement(Geometry::Segment, {1, 4});
+    mesh.addBdrElement(Geometry::Segment, {4, 2});
+    mesh.addBdrElement(Geometry::Segment, {2, 3});
+    mesh.addBdrElement(Geometry::Segment, {3, 0});
+
+    mesh.buildTopology();
     return mesh;
 }
 
@@ -99,6 +129,8 @@ Mesh createHexMesh3D() {
     mesh.addVertex(0.0, 1.0, 1.0);  // 7
     
     mesh.addElement(Geometry::Cube, {0, 1, 2, 3, 4, 5, 6, 7});
+
+    mesh.buildTopology();
     
     return mesh;
 }
@@ -106,7 +138,7 @@ Mesh createHexMesh3D() {
 std::vector<Index> getElementDofsVec(const FESpace& fes, Index elemIdx) {
     std::vector<Index> dofs(static_cast<size_t>(fes.numElementDofs(elemIdx)), InvalidIndex);
     if (!dofs.empty()) {
-        fes.getElementDofs(elemIdx, std::span<Index>{dofs.data(), dofs.size()});
+        fes.getElementDofs(elemIdx, std::span<Index>{dofs});
     }
     return dofs;
 }
@@ -114,7 +146,7 @@ std::vector<Index> getElementDofsVec(const FESpace& fes, Index elemIdx) {
 std::vector<Index> getBdrElementDofsVec(const FESpace& fes, Index bdrIdx) {
     std::vector<Index> dofs(static_cast<size_t>(fes.numBdrElementDofs(bdrIdx)), InvalidIndex);
     if (!dofs.empty()) {
-        fes.getBdrElementDofs(bdrIdx, std::span<Index>{dofs.data(), dofs.size()});
+        fes.getBdrElementDofs(bdrIdx, std::span<Index>{dofs});
     }
     return dofs;
 }
@@ -206,56 +238,32 @@ TEST_F(FESpaceQuadraticTest, BasicProperties) {
 }
 
 TEST_F(FESpaceQuadraticTest, NumDofs) {
-    // With the new DOF allocation logic for COMSOL-style meshes:
-    // DOFs = mesh vertices (each vertex corresponds to one DOF)
-    // This mesh has 4 vertices, so 4 DOFs
-    // 
-    // For a proper second-order mesh, vertices would include edge midpoints,
-    // and DOFs would be equal to total number of geometric nodes.
-    // This test uses a linear mesh with quadratic FE, creating a subparametric element.
-    EXPECT_EQ(feSpace_->numDofs(), 4);
+    // 2D quadratic triangle on this mesh: 4 corner vertex DOFs + 5 edge DOFs.
+    EXPECT_EQ(feSpace_->numDofs(), 9);
 }
 
 TEST_F(FESpaceQuadraticTest, ElementDofs) {
-    // Reference element has 6 DOFs for quadratic triangle
-    // But with linear mesh (3 vertices per element), only 3 DOFs are valid
-    // The remaining DOFs are InvalidIndex
+    // Quadratic triangle has 6 local DOFs: 3 vertex + 3 edge.
     std::vector<Index> dofs0 = getElementDofsVec(*feSpace_, 0);
     EXPECT_EQ(dofs0.size(), 6);  // Reference element has 6 DOFs
-    
-    // Check that first 3 DOFs are valid vertex DOFs
-    EXPECT_NE(dofs0[0], InvalidIndex);
-    EXPECT_NE(dofs0[1], InvalidIndex);
-    EXPECT_NE(dofs0[2], InvalidIndex);
-    
-    // The remaining DOFs are InvalidIndex (no edge nodes in linear mesh)
-    EXPECT_EQ(dofs0[3], InvalidIndex);
-    EXPECT_EQ(dofs0[4], InvalidIndex);
-    EXPECT_EQ(dofs0[5], InvalidIndex);
+    for (Index d : dofs0) {
+        EXPECT_NE(d, InvalidIndex);
+    }
     
     std::vector<Index> dofs1 = getElementDofsVec(*feSpace_, 1);
     EXPECT_EQ(dofs1.size(), 6);
 }
 
 TEST_F(FESpaceQuadraticTest, EdgeDofSharing) {
-    // With linear mesh, there are no edge DOFs - only vertex DOFs
-    // Edge DOF sharing is handled differently for COMSOL-style meshes
-    // where edge midpoints are mesh vertices
-    
-    // Element 0: vertices (0, 1, 2)
-    // Element 1: vertices (1, 3, 2)
-    // Shared vertex is 1 and 2
-    
     std::vector<Index> dofs0 = getElementDofsVec(*feSpace_, 0);
     std::vector<Index> dofs1 = getElementDofsVec(*feSpace_, 1);
-    
-    // Check that shared vertices have same DOF indices
-    // Element 0 vertices: 0, 1, 2 -> DOFs at indices 0, 1, 2
-    // Element 1 vertices: 1, 3, 2 -> DOFs at indices 0, 1, 2
-    // So dofs0[1] = dofs1[0] (vertex 1)
-    // And dofs0[2] = dofs1[2] (vertex 2)
+
+    // Shared vertices.
     EXPECT_EQ(dofs0[1], dofs1[0]) << "Vertex 1 should have same DOF in both elements";
     EXPECT_EQ(dofs0[2], dofs1[2]) << "Vertex 2 should have same DOF in both elements";
+
+    // Shared edge (1,2): element0 local edge2, element1 local edge1.
+    EXPECT_EQ(dofs0[5], dofs1[4]) << "Shared edge should have same global DOF";
 }
 
 // =============================================================================
@@ -363,32 +371,60 @@ protected:
 };
 
 TEST_F(FESpaceQuadQuadraticTest, NumDofs) {
-    // With the new DOF allocation logic for COMSOL-style meshes:
-    // DOFs = mesh vertices (each vertex corresponds to one DOF)
-    // This mesh has 9 vertices, so 9 DOFs
-    // 
-    // For a proper second-order mesh, vertices would include edge midpoints,
-    // and DOFs would be equal to total number of geometric nodes.
-    // This test uses a linear mesh with quadratic FE, creating a subparametric element.
-    EXPECT_EQ(feSpace_->numDofs(), 9);
+    // 2D quadratic quad: 9 vertex DOFs + 12 edge DOFs + 4 cell-interior DOFs.
+    EXPECT_EQ(feSpace_->numDofs(), 25);
 }
 
 TEST_F(FESpaceQuadQuadraticTest, ElementDofs) {
-    // Reference element has 9 DOFs for quadratic quad
-    // But with linear mesh (4 vertices per element), only 4 DOFs are valid
-    // The remaining DOFs are InvalidIndex
+    // Quadratic quad has 9 local DOFs and all should map to valid globals.
     std::vector<Index> dofs = getElementDofsVec(*feSpace_, 0);
     EXPECT_EQ(dofs.size(), 9);  // Reference element has 9 DOFs
-    
-    // Check that first 4 DOFs are valid vertex DOFs
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < 9; ++i) {
         EXPECT_NE(dofs[i], InvalidIndex) << "DOF " << i << " should be valid";
     }
-    
-    // The remaining DOFs are InvalidIndex (no edge/face nodes in linear mesh)
-    for (int i = 4; i < 9; ++i) {
-        EXPECT_EQ(dofs[i], InvalidIndex) << "DOF " << i << " should be InvalidIndex";
+}
+
+// =============================================================================
+// Mixed Geometry FE Space Tests
+// =============================================================================
+
+class FESpaceMixedGeometryTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        mesh_ = createMixedMesh2D();
     }
+
+    Mesh mesh_;
+};
+
+TEST_F(FESpaceMixedGeometryTest, LinearMixedMeshDofs) {
+    FESpace fes(&mesh_, std::make_unique<FECollection>(1));
+
+    EXPECT_EQ(fes.numDofs(), 5);
+
+    std::vector<Index> quadDofs = getElementDofsVec(fes, 0);
+    std::vector<Index> triDofs = getElementDofsVec(fes, 1);
+    EXPECT_EQ(quadDofs.size(), 4);
+    EXPECT_EQ(triDofs.size(), 3);
+
+    // Shared edge vertices (1,2) must map to same global DOFs.
+    EXPECT_EQ(quadDofs[1], triDofs[0]);
+    EXPECT_EQ(quadDofs[2], triDofs[2]);
+}
+
+TEST_F(FESpaceMixedGeometryTest, QuadraticMixedMeshDofs) {
+    FESpace fes(&mesh_, std::make_unique<FECollection>(2));
+
+    // 5 used vertices + 6 edge + 1 quad cell interior = 12 scalar DOFs.
+    EXPECT_EQ(fes.numDofs(), 12);
+
+    std::vector<Index> quadDofs = getElementDofsVec(fes, 0);
+    std::vector<Index> triDofs = getElementDofsVec(fes, 1);
+    EXPECT_EQ(quadDofs.size(), 9);
+    EXPECT_EQ(triDofs.size(), 6);
+
+    // Shared edge midpoint should be shared across both elements.
+    EXPECT_EQ(quadDofs[5], triDofs[4]);
 }
 
 // =============================================================================

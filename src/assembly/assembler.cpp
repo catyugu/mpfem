@@ -1,6 +1,7 @@
 #include "assembler.hpp"
+#include "assembly/element_binding.hpp"
 #include "fe/element_transform.hpp"
-#include "fe/facet_element_transform.hpp"
+#include "fe/fe_space.hpp"
 #include <algorithm>
 #include <cmath>
 #include <unordered_map>
@@ -86,9 +87,10 @@ namespace mpfem {
         const DomainIntegratorMap activeDomains = buildDomainIntegratorMap(domainSets_, *mesh);
 
         triplets_.clear();
-        // 预估 triplet 数量：单元数 × 每单元DOF数² × 向量维度² / 2
-        // 对于二阶六面体：27 × 27 × 9 ≈ 6561，除以 2 是因为对称性近似
-        const size_t estimatedTriplets = static_cast<size_t>(numElements) * MaxDofsPerElement * MaxDofsPerElement * vdim * vdim / 2;
+
+        // 预估 triplet 数量：
+        const int totalDofs = fes_->numDofs();
+        const size_t estimatedTriplets = totalDofs * MaxDofsPerElement;
         triplets_.reserve(estimatedTriplets);
 
 #ifdef _OPENMP
@@ -100,7 +102,6 @@ namespace mpfem {
             localTriplets.reserve(estimatedTriplets / omp_get_num_threads());
 
             ElementTransform trans;
-            trans.setMesh(mesh);
 
             // Pre-size dynMatrix to maximum possible iTotalDofs once per thread
             const int maxPossibleIvdims = maxIvdim_ > 0 ? maxIvdim_ : 1;
@@ -109,7 +110,6 @@ namespace mpfem {
 #else
         ThreadBuffer buf;
         ElementTransform trans;
-        trans.setMesh(mesh);
 
         // Pre-size dynMatrix to maximum possible iTotalDofs
         const int maxPossibleIvdims = maxIvdim_ > 0 ? maxIvdim_ : 1;
@@ -127,8 +127,10 @@ namespace mpfem {
                     continue;
                 int nd = ref->numDofs();
 
-                trans.setElement(e);
-                const int elemAttr = mesh->element(e).attribute();
+                const Element& elem = mesh->element(e);
+                bindElementToTransform(trans, *mesh, e, false);
+
+                const int elemAttr = elem.attribute();
                 const auto domainIt = activeDomains.find(elemAttr);
                 if (domainIt == activeDomains.end() || domainIt->second.empty())
                     continue;
@@ -199,15 +201,15 @@ namespace mpfem {
 
         // Boundary integrals (not parallelized - usually small)
         if (!bdrIntegs_.empty()) {
-            FacetElementTransform btrans;
-            btrans.setMesh(mesh);
+            ElementTransform btrans;
             ThreadBuffer bbuf;
             const int maxPossibleIvdims = maxIvdim_ > 0 ? maxIvdim_ : 1;
             const int maxDynSize = MaxDofsPerElement * maxPossibleIvdims;
             bbuf.ensureDynMatrixSize(maxDynSize);
 
             for (Index b = 0; b < mesh->numBdrElements(); ++b) {
-                int attr = mesh->bdrElement(b).attribute();
+                const Element& belem = mesh->bdrElement(b);
+                int attr = belem.attribute();
 
                 if (!fes_->isExternalBoundaryId(attr))
                     continue;
@@ -217,7 +219,15 @@ namespace mpfem {
                     continue;
                 int nd = ref->numDofs();
 
-                btrans.setBoundaryElement(b);
+                bindElementToTransform(btrans, *mesh, b, true);
+
+                if (mesh->hasTopology()) {
+                    Index faceIdx = mesh->getBoundaryFaceIndex(b);
+                    if (faceIdx != InvalidIndex) {
+                        const auto& faceInfo = mesh->getFaceInfo(faceIdx);
+                        btrans.setFaceInfo(faceInfo.elem1, faceInfo.localFace1);
+                    }
+                }
 
                 // Use pre-allocated DOF buffer
                 bbuf.numDofs = nd * vdim;
@@ -321,11 +331,9 @@ namespace mpfem {
                 Vector& localVec = threadVectors_[tid];
 
                 ElementTransform trans;
-                trans.setMesh(mesh);
 #else
             ThreadBuffer buf;
             ElementTransform trans;
-            trans.setMesh(mesh);
 #endif
 
 #ifdef _OPENMP
@@ -337,8 +345,10 @@ namespace mpfem {
                         continue;
                     int nd = ref->numDofs();
 
-                    trans.setElement(e);
-                    const int elemAttr = mesh->element(e).attribute();
+                    const Element& elem = mesh->element(e);
+                    bindElementToTransform(trans, *mesh, e, false);
+
+                    const int elemAttr = elem.attribute();
                     const auto domainIt = activeDomains.find(elemAttr);
                     if (domainIt == activeDomains.end() || domainIt->second.empty())
                         continue;
@@ -404,12 +414,12 @@ namespace mpfem {
 
         // Boundary integrals (not parallelized - usually small)
         if (!bdrIntegs_.empty()) {
-            FacetElementTransform btrans;
-            btrans.setMesh(mesh);
+            ElementTransform btrans;
             ThreadBuffer bbuf;
 
             for (Index b = 0; b < mesh->numBdrElements(); ++b) {
-                int attr = mesh->bdrElement(b).attribute();
+                const Element& belem = mesh->bdrElement(b);
+                int attr = belem.attribute();
 
                 if (!fes_->isExternalBoundaryId(attr))
                     continue;
@@ -419,7 +429,14 @@ namespace mpfem {
                     continue;
                 int nd = ref->numDofs();
 
-                btrans.setBoundaryElement(b);
+                bindElementToTransform(btrans, *mesh, b, true);
+                if (mesh->hasTopology()) {
+                    Index faceIdx = mesh->getBoundaryFaceIndex(b);
+                    if (faceIdx != InvalidIndex) {
+                        const auto& faceInfo = mesh->getFaceInfo(faceIdx);
+                        btrans.setFaceInfo(faceInfo.elem1, faceInfo.localFace1);
+                    }
+                }
 
                 // Use pre-allocated DOF buffer
                 bbuf.numDofs = nd * vdim;

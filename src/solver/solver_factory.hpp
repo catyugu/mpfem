@@ -92,9 +92,6 @@ namespace mpfem {
         }
     };
 
-    // Backward compatibility alias
-    using SolverFactory = OperatorFactory;
-
 } // namespace mpfem
 
 #endif // MPFEM_SOLVER_FACTORY_HPP

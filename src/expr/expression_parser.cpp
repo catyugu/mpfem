@@ -2,18 +2,19 @@
 #include "core/exception.hpp"
 #include "core/string_utils.hpp"
 #include "expr/unit_parser.hpp"
+#include "expr/variable_graph.hpp"
 
+#include <charconv>
 #include <cmath>
 #include <vector>
 
 namespace mpfem {
 
     // =========================================================================
-    // 数据驱动的 AST 定义：使用 Enum + Switch 代替虚函数，极限压榨缓存与分支预测
+    // 数据驱动的 AST 定义：使用 Enum + Switch，保持极速求值
     // =========================================================================
 
     namespace {
-
         struct AstNode {
             enum class Kind {
                 Constant,
@@ -41,21 +42,27 @@ namespace mpfem {
                 MatrixLit
             } kind;
 
-            TensorValue val; // 供 Constant 节点使用
-            int var_index = -1; // 供 VarIndex (变量引用) 节点使用
+            Tensor val;
+            int var_index = -1;
+            int rows = 1;
+            int cols = 1;
             std::vector<std::unique_ptr<AstNode>> args;
+
+            static std::unique_ptr<AstNode> make(Kind k)
+            {
+                auto n = std::make_unique<AstNode>();
+                n->kind = k;
+                return n;
+            }
         };
 
-        // 数据驱动的极速递归求值
-        TensorValue evalAst(const AstNode* node, const TensorValue* vars)
+        Tensor evalAst(const AstNode* node, const Tensor* vars)
         {
             switch (node->kind) {
             case AstNode::Kind::Constant:
                 return node->val;
             case AstNode::Kind::VarIndex:
                 return vars[node->var_index];
-
-            // 二元运算
             case AstNode::Kind::Add:
                 return evalAst(node->args[0].get(), vars) + evalAst(node->args[1].get(), vars);
             case AstNode::Kind::Sub:
@@ -64,70 +71,66 @@ namespace mpfem {
                 return evalAst(node->args[0].get(), vars) * evalAst(node->args[1].get(), vars);
             case AstNode::Kind::Div:
                 return evalAst(node->args[0].get(), vars) / evalAst(node->args[1].get(), vars);
-            case AstNode::Kind::Pow: {
-                Real b = evalAst(node->args[1].get(), vars).scalar();
-                return TensorValue::scalar(std::pow(evalAst(node->args[0].get(), vars).scalar(), b));
-            }
+            case AstNode::Kind::Pow:
+                return Tensor::scalar(std::pow(evalAst(node->args[0].get(), vars).scalar(), evalAst(node->args[1].get(), vars).scalar()));
             case AstNode::Kind::Dot:
-                return TensorValue::scalar(dot(evalAst(node->args[0].get(), vars), evalAst(node->args[1].get(), vars)));
+                return Tensor::scalar(dot(evalAst(node->args[0].get(), vars), evalAst(node->args[1].get(), vars)));
             case AstNode::Kind::Min:
-                return TensorValue::scalar(std::min(evalAst(node->args[0].get(), vars).scalar(), evalAst(node->args[1].get(), vars).scalar()));
+                return Tensor::scalar(std::min(evalAst(node->args[0].get(), vars).scalar(), evalAst(node->args[1].get(), vars).scalar()));
             case AstNode::Kind::Max:
-                return TensorValue::scalar(std::max(evalAst(node->args[0].get(), vars).scalar(), evalAst(node->args[1].get(), vars).scalar()));
-
-            // 一元运算
+                return Tensor::scalar(std::max(evalAst(node->args[0].get(), vars).scalar(), evalAst(node->args[1].get(), vars).scalar()));
             case AstNode::Kind::Neg:
                 return -evalAst(node->args[0].get(), vars);
             case AstNode::Kind::Sin:
-                return TensorValue::scalar(std::sin(evalAst(node->args[0].get(), vars).scalar()));
+                return Tensor::scalar(std::sin(evalAst(node->args[0].get(), vars).scalar()));
             case AstNode::Kind::Cos:
-                return TensorValue::scalar(std::cos(evalAst(node->args[0].get(), vars).scalar()));
+                return Tensor::scalar(std::cos(evalAst(node->args[0].get(), vars).scalar()));
             case AstNode::Kind::Tan:
-                return TensorValue::scalar(std::tan(evalAst(node->args[0].get(), vars).scalar()));
+                return Tensor::scalar(std::tan(evalAst(node->args[0].get(), vars).scalar()));
             case AstNode::Kind::Exp:
-                return TensorValue::scalar(std::exp(evalAst(node->args[0].get(), vars).scalar()));
+                return Tensor::scalar(std::exp(evalAst(node->args[0].get(), vars).scalar()));
             case AstNode::Kind::Log:
-                return TensorValue::scalar(std::log(evalAst(node->args[0].get(), vars).scalar()));
+                return Tensor::scalar(std::log(evalAst(node->args[0].get(), vars).scalar()));
             case AstNode::Kind::Sqrt:
-                return TensorValue::scalar(std::sqrt(evalAst(node->args[0].get(), vars).scalar()));
+                return Tensor::scalar(std::sqrt(evalAst(node->args[0].get(), vars).scalar()));
             case AstNode::Kind::Abs:
-                return TensorValue::scalar(std::abs(evalAst(node->args[0].get(), vars).scalar()));
+                return Tensor::scalar(std::abs(evalAst(node->args[0].get(), vars).scalar()));
             case AstNode::Kind::Sym:
                 return sym(evalAst(node->args[0].get(), vars));
             case AstNode::Kind::Trace:
-                return TensorValue::scalar(trace(evalAst(node->args[0].get(), vars)));
+                return Tensor::scalar(trace(evalAst(node->args[0].get(), vars)));
             case AstNode::Kind::Transpose:
                 return transpose(evalAst(node->args[0].get(), vars));
-
-            // 字面量结构
-            case AstNode::Kind::VectorLit:
-                return TensorValue::vector(
-                    evalAst(node->args[0].get(), vars).scalar(),
-                    evalAst(node->args[1].get(), vars).scalar(),
-                    evalAst(node->args[2].get(), vars).scalar());
-            case AstNode::Kind::MatrixLit:
-                return TensorValue::matrix3(
-                    evalAst(node->args[0].get(), vars).scalar(), evalAst(node->args[1].get(), vars).scalar(), evalAst(node->args[2].get(), vars).scalar(),
-                    evalAst(node->args[3].get(), vars).scalar(), evalAst(node->args[4].get(), vars).scalar(), evalAst(node->args[5].get(), vars).scalar(),
-                    evalAst(node->args[6].get(), vars).scalar(), evalAst(node->args[7].get(), vars).scalar(), evalAst(node->args[8].get(), vars).scalar());
+            case AstNode::Kind::VectorLit: {
+                TensorData vec(node->args.size());
+                for (size_t i = 0; i < node->args.size(); ++i) {
+                    vec[i] = evalAst(node->args[i].get(), vars).scalar();
+                }
+                return Tensor::vector(vec);
             }
-            return TensorValue::scalar(0.0);
+            case AstNode::Kind::MatrixLit: {
+                TensorData mat(static_cast<Index>(node->args.size()));
+                for (int r = 0; r < node->rows; ++r) {
+                    for (int c = 0; c < node->cols; ++c) {
+                        mat[c * node->rows + r] = evalAst(node->args[r * node->cols + c].get(), vars).scalar();
+                    }
+                }
+                return Tensor::matrix(node->rows, node->cols, mat);
+            }
+            }
+            return Tensor::scalar(0.0);
         }
 
-        // 常量折叠 (Constant Folding): 编译期计算静态树，消除运行时开销
         bool foldConstants(AstNode* node)
         {
             if (node->kind == AstNode::Kind::Constant)
                 return true;
             if (node->kind == AstNode::Kind::VarIndex)
                 return false;
-
             bool all_const = true;
-            for (auto& arg : node->args) {
+            for (auto& arg : node->args)
                 if (!foldConstants(arg.get()))
                     all_const = false;
-            }
-
             if (all_const) {
                 node->val = evalAst(node, nullptr);
                 node->kind = AstNode::Kind::Constant;
@@ -136,13 +139,16 @@ namespace mpfem {
             }
             return false;
         }
-    } // namespace
+    }
 
     // =========================================================================
-    // 最终封装入 VariableNode 的实体：持有 AST 与 唯一的依赖去重列表
+    // 最终运行节点
     // =========================================================================
-
     class CompiledExpressionNode final : public VariableNode {
+        std::unique_ptr<AstNode> ast_;
+        std::vector<std::string> dep_names_;
+        std::vector<const VariableNode*> resolved_deps_;
+
     public:
         CompiledExpressionNode(std::unique_ptr<AstNode> ast, std::vector<std::string> deps)
             : ast_(std::move(ast)), dep_names_(std::move(deps)) { }
@@ -150,7 +156,6 @@ namespace mpfem {
         void resolve(const VariableManager& mgr) override
         {
             resolved_deps_.clear();
-            resolved_deps_.reserve(dep_names_.size());
             for (const auto& name : dep_names_) {
                 const VariableNode* n = mgr.get(name);
                 if (!n)
@@ -159,59 +164,7 @@ namespace mpfem {
             }
         }
 
-        std::vector<const VariableNode*> getChildren() const override
-        {
-            return resolved_deps_;
-        }
-
-        // 重构：expr/expression_parser.cpp 中的 CompiledExpressionNode::evaluateBatch
-        void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
-        {
-            const size_t n = dest.size(); // 积分点数量
-            const size_t m = resolved_deps_.size(); // 依赖变量数量
-
-            if (m == 0) {
-                // 无依赖的纯常量，直接填充
-                TensorValue val = evalAst(ast_.get(), nullptr);
-                std::fill(dest.begin(), dest.end(), val);
-                return;
-            }
-
-            // 栈上分配变量求值缓存（一个积分点最多不会超过32个依赖项）
-            TensorValue stack_vars[32];
-            std::vector<TensorValue> heap_vars;
-            TensorValue* pointVars = stack_vars;
-
-            if (m > 32) {
-                heap_vars.resize(m);
-                pointVars = heap_vars.data();
-            }
-
-            // 将外层循环从“按依赖项”改为“按积分点”，消除巨大的 scratchpad
-            // 复用 EvaluationContext 为单个积分点创建子上下文
-            for (size_t i = 0; i < n; ++i) {
-                EvaluationContext pointCtx = ctx;
-                if (!ctx.physicalPoints.empty()) {
-                    pointCtx.physicalPoints = ctx.physicalPoints.subspan(i, 1);
-                }
-                if (!ctx.referencePoints.empty()) {
-                    pointCtx.referencePoints = ctx.referencePoints.subspan(i, 1);
-                }
-                if (!ctx.invJacobianTransposes.empty()) {
-                    pointCtx.invJacobianTransposes = ctx.invJacobianTransposes.subspan(i, 1);
-                }
-
-                // 求取该积分点所有依赖项的值
-                for (size_t d = 0; d < m; ++d) {
-                    std::span<TensorValue> singleSpan(&pointVars[d], 1);
-                    resolved_deps_[d]->evaluateBatch(pointCtx, singleSpan);
-                }
-
-                // 使用准备好的变量数组执行极速 AST
-                dest[i] = evalAst(ast_.get(), pointVars);
-            }
-        }
-
+        std::vector<const VariableNode*> getChildren() const override { return resolved_deps_; }
         bool isConstant() const override { return ast_->kind == AstNode::Kind::Constant; }
 
         std::uint64_t revision() const override
@@ -219,407 +172,433 @@ namespace mpfem {
             if (isConstant())
                 return 0;
             std::uint64_t rev = 0;
-            for (const auto* dep : resolved_deps_) {
+            for (const auto* dep : resolved_deps_)
                 rev = std::max(rev, dep->revision());
-            }
             return rev;
         }
 
-    private:
-        std::unique_ptr<AstNode> ast_;
-        std::vector<std::string> dep_names_;
-        std::vector<const VariableNode*> resolved_deps_;
+        void evaluateBatch(const EvaluationContext& ctx, std::span<Tensor> dest) const override
+        {
+            const size_t n = dest.size();
+            const size_t m = resolved_deps_.size();
+            if (m == 0) {
+                std::fill(dest.begin(), dest.end(), evalAst(ast_.get(), nullptr));
+                return;
+            }
+
+            Tensor stack_vars[32];
+            std::vector<Tensor> heap_vars;
+            Tensor* pointVars = (m > 32) ? (heap_vars.resize(m), heap_vars.data()) : stack_vars;
+
+            for (size_t i = 0; i < n; ++i) {
+                EvaluationContext pointCtx = ctx;
+                if (!ctx.physicalPoints.empty())
+                    pointCtx.physicalPoints = ctx.physicalPoints.subspan(i, 1);
+                if (!ctx.referencePoints.empty())
+                    pointCtx.referencePoints = ctx.referencePoints.subspan(i, 1);
+                if (!ctx.transforms.empty())
+                    pointCtx.transforms = ctx.transforms.subspan(i, 1);
+
+                for (size_t d = 0; d < m; ++d) {
+                    std::span<Tensor> singleSpan(&pointVars[d], 1);
+                    resolved_deps_[d]->evaluateBatch(pointCtx, singleSpan);
+                }
+                dest[i] = evalAst(ast_.get(), pointVars);
+            }
+        }
     };
 
     // =========================================================================
-    // Parser: 将文本解析为 AST，并提取去重的依赖项列表
+    // 词法分析器与 Pratt Parser (彻底替代零碎的 parseTerm/parsePower)
     // =========================================================================
-
     namespace {
+        enum class TokenType {
+            Eof,
+            Number,
+            Identifier,
+            Plus,
+            Minus,
+            Star,
+            Slash,
+            Caret,
+            LParen,
+            RParen,
+            LBrack,
+            RBrack,
+            LBrace,
+            RBrace,
+            Comma,
+            Semi,
+            T
+        };
 
-        bool isNearOne(Real value) { return std::abs(value - 1.0) < 1e-15; }
+        struct Token {
+            TokenType type;
+            std::string_view text;
+            Real val = 0.0;
+        };
 
-        class TensorAstCompiler {
+        class Lexer {
+            std::string_view text_;
+            size_t pos_ = 0;
+
         public:
-            explicit TensorAstCompiler(std::string_view text) : text_(text) { }
-
-            std::unique_ptr<VariableNode> compile()
+            explicit Lexer(std::string_view text) : text_(text) { }
+            Token next()
             {
-                auto root = parseExpression();
-                skipWhitespace();
-                if (!eof())
-                    MPFEM_THROW(ArgumentException, "Unexpected token near: " + std::string(text_.substr(pos_)));
+                while (pos_ < text_.size() && std::isspace(text_[pos_]))
+                    pos_++;
+                if (pos_ >= text_.size())
+                    return {TokenType::Eof, ""};
 
-                // 常量折叠
-                foldConstants(root.get());
-                return std::make_unique<CompiledExpressionNode>(std::move(root), std::move(dep_names_));
-            }
+                char c = text_[pos_];
+                if (c == '\'') {
+                    pos_++;
+                    return next();
+                } // 直接跳过单引号 (COMSOL格式兼容)
 
-        private:
-            std::vector<std::string> dep_names_;
-
-            int getOrAddDep(const std::string& name)
-            {
-                for (size_t i = 0; i < dep_names_.size(); ++i) {
-                    if (dep_names_[i] == name)
-                        return static_cast<int>(i);
+                if (std::isdigit(c) || c == '.') {
+                    char* end = nullptr;
+                    Real val = std::strtod(text_.data() + pos_, &end);
+                    size_t len = end - (text_.data() + pos_);
+                    pos_ += len;
+                    return {TokenType::Number, text_.substr(pos_ - len, len), val};
                 }
-                dep_names_.push_back(name);
-                return static_cast<int>(dep_names_.size() - 1);
-            }
-
-            std::unique_ptr<AstNode> makeNode(AstNode::Kind k)
-            {
-                auto n = std::make_unique<AstNode>();
-                n->kind = k;
-                return n;
-            }
-
-            std::unique_ptr<AstNode> makeBinary(AstNode::Kind k, std::unique_ptr<AstNode> l, std::unique_ptr<AstNode> r)
-            {
-                auto n = makeNode(k);
-                n->args.push_back(std::move(l));
-                n->args.push_back(std::move(r));
-                return n;
-            }
-
-            std::unique_ptr<AstNode> makeUnary(AstNode::Kind k, std::unique_ptr<AstNode> arg)
-            {
-                auto n = makeNode(k);
-                n->args.push_back(std::move(arg));
-                return n;
-            }
-
-            std::unique_ptr<AstNode> parseExpression()
-            {
-                auto lhs = parseTerm();
-                for (;;) {
-                    skipWhitespace();
-                    if (match('+')) {
-                        lhs = makeBinary(AstNode::Kind::Add, std::move(lhs), parseTerm());
-                        continue;
-                    }
-                    if (match('-')) {
-                        lhs = makeBinary(AstNode::Kind::Sub, std::move(lhs), parseTerm());
-                        continue;
-                    }
-                    return lhs;
-                }
-            }
-
-            std::unique_ptr<AstNode> parseTerm()
-            {
-                auto lhs = parsePower();
-                for (;;) {
-                    skipWhitespace();
-                    if (match('*')) {
-                        lhs = makeBinary(AstNode::Kind::Mul, std::move(lhs), parsePower());
-                        continue;
-                    }
-                    if (match('/')) {
-                        lhs = makeBinary(AstNode::Kind::Div, std::move(lhs), parsePower());
-                        continue;
-                    }
-                    return lhs;
-                }
-            }
-
-            std::unique_ptr<AstNode> parsePower()
-            {
-                auto lhs = parseUnary();
-                skipWhitespace();
-                if (match('^'))
-                    return makeBinary(AstNode::Kind::Pow, std::move(lhs), parsePower());
-                return lhs;
-            }
-
-            std::unique_ptr<AstNode> parseUnary()
-            {
-                skipWhitespace();
-                if (match('+'))
-                    return parseUnary();
-                if (match('-'))
-                    return makeUnary(AstNode::Kind::Neg, parseUnary());
-                return parsePrimary();
-            }
-
-            std::unique_ptr<AstNode> parsePrimary()
-            {
-                skipWhitespace();
-                if (match('(')) {
-                    auto inner = parseExpression();
-                    skipWhitespace();
-                    if (!match(')'))
-                        MPFEM_THROW(ArgumentException, "Missing closing ')'");
-                    return applyUnitSuffix(std::move(inner));
+                if (std::isalpha(c) || c == '_') {
+                    size_t start = pos_;
+                    while (pos_ < text_.size() && (std::isalnum(text_[pos_]) || text_[pos_] == '_'))
+                        pos_++;
+                    return {TokenType::Identifier, text_.substr(start, pos_ - start)};
                 }
 
-                // 如果恰好是一个 '['，必定是向量/矩阵的字面量开端
-                if (peek() == '[') {
-                    return applyUnitSuffix(parseBracketLiteral());
+                pos_++;
+                switch (c) {
+                case '+':
+                    return {TokenType::Plus, "+"};
+                case '-':
+                    return {TokenType::Minus, "-"};
+                case '*':
+                    return {TokenType::Star, "*"};
+                case '/':
+                    return {TokenType::Slash, "/"};
+                case '^':
+                    return {TokenType::Caret, "^"};
+                case '(':
+                    return {TokenType::LParen, "("};
+                case ')':
+                    return {TokenType::RParen, ")"};
+                case '[':
+                    return {TokenType::LBrack, "["};
+                case ']':
+                    return {TokenType::RBrack, "]"};
+                case '{':
+                    return {TokenType::LBrace, "{"};
+                case '}':
+                    return {TokenType::RBrace, "}"};
+                case ',':
+                    return {TokenType::Comma, ","};
+                case ';':
+                    return {TokenType::Semi, ";"};
+                default:
+                    MPFEM_THROW(ArgumentException, "Unknown char");
                 }
-
-                if (peekIsNumberStart()) {
-                    return applyUnitSuffix(parseNumber());
-                }
-
-                if (peekIsIdentifierStart()) {
-                    std::string name = parseIdentifier();
-                    skipWhitespace();
-                    if (match('(')) {
-                        return applyUnitSuffix(parseFunction(name));
-                    }
-
-                    if (name == "pi") {
-                        auto n = makeNode(AstNode::Kind::Constant);
-                        n->val = TensorValue::scalar(3.141592653589793);
-                        return n;
-                    }
-                    if (name == "e") {
-                        auto n = makeNode(AstNode::Kind::Constant);
-                        n->val = TensorValue::scalar(2.718281828459045);
-                        return n;
-                    }
-
-                    int idx = getOrAddDep(name);
-                    auto node = makeNode(AstNode::Kind::VarIndex);
-                    node->var_index = idx;
-                    return applyUnitSuffix(std::move(node));
-                }
-                MPFEM_THROW(ArgumentException, "Unexpected token near: " + std::string(text_.substr(pos_)));
             }
+        };
 
-            std::unique_ptr<AstNode> parseNumber()
+        // 优先级权重 (Precedences)
+        enum Precedence { P_NONE = 0,
+            P_TERM,
+            P_FACTOR,
+            P_POWER,
+            P_CALL };
+
+        class PrattParser {
+            Lexer lexer_;
+            Token current_;
+            std::vector<std::string> deps_;
+
+            void advance() { current_ = lexer_.next(); }
+            bool match(TokenType type)
             {
-                const char* begin = text_.data() + pos_;
-                char* end = nullptr;
-                Real value = std::strtod(begin, &end);
-                pos_ += (end - begin);
-                auto n = makeNode(AstNode::Kind::Constant);
-                n->val = TensorValue::scalar(value);
-                return n;
-            }
-
-            std::string parseIdentifier()
-            {
-                size_t begin = pos_++;
-                while (!eof() && (std::isalnum(text_[pos_]) || text_[pos_] == '_'))
-                    ++pos_;
-                return std::string(text_.substr(begin, pos_ - begin));
-            }
-
-            std::unique_ptr<AstNode> parseFunction(const std::string& name)
-            {
-                std::vector<std::unique_ptr<AstNode>> args;
-                if (!match(')')) {
-                    do {
-                        args.push_back(parseExpression());
-                        skipWhitespace();
-                    } while (match(','));
-                    if (!match(')'))
-                        MPFEM_THROW(ArgumentException, "Missing ')' in function " + name);
-                }
-
-                if (args.size() == 1) {
-                    if (name == "sin")
-                        return makeUnary(AstNode::Kind::Sin, std::move(args[0]));
-                    if (name == "cos")
-                        return makeUnary(AstNode::Kind::Cos, std::move(args[0]));
-                    if (name == "tan")
-                        return makeUnary(AstNode::Kind::Tan, std::move(args[0]));
-                    if (name == "exp")
-                        return makeUnary(AstNode::Kind::Exp, std::move(args[0]));
-                    if (name == "log")
-                        return makeUnary(AstNode::Kind::Log, std::move(args[0]));
-                    if (name == "sqrt")
-                        return makeUnary(AstNode::Kind::Sqrt, std::move(args[0]));
-                    if (name == "abs")
-                        return makeUnary(AstNode::Kind::Abs, std::move(args[0]));
-                    if (name == "sym")
-                        return makeUnary(AstNode::Kind::Sym, std::move(args[0]));
-                    if (name == "trace" || name == "tr")
-                        return makeUnary(AstNode::Kind::Trace, std::move(args[0]));
-                    if (name == "transpose")
-                        return makeUnary(AstNode::Kind::Transpose, std::move(args[0]));
-                }
-                else if (args.size() == 2) {
-                    if (name == "dot")
-                        return makeBinary(AstNode::Kind::Dot, std::move(args[0]), std::move(args[1]));
-                    if (name == "pow")
-                        return makeBinary(AstNode::Kind::Pow, std::move(args[0]), std::move(args[1]));
-                    if (name == "min")
-                        return makeBinary(AstNode::Kind::Min, std::move(args[0]), std::move(args[1]));
-                    if (name == "max")
-                        return makeBinary(AstNode::Kind::Max, std::move(args[0]), std::move(args[1]));
-                }
-                MPFEM_THROW(ArgumentException, "Unsupported function or wrong arity: " + name);
-            }
-
-            // 直接通过嵌套调用 parseExpression 解析，彻底移除了老版丑陋的切割字符串、查单位的操作
-            std::unique_ptr<AstNode> parseBracketLiteral()
-            {
-                match('[');
-                std::vector<std::vector<std::unique_ptr<AstNode>>> rows;
-                rows.emplace_back();
-
-                while (!eof()) {
-                    skipWhitespace();
-                    rows.back().push_back(parseExpression());
-                    skipWhitespace();
-                    if (match(','))
-                        continue;
-                    if (match(';')) {
-                        rows.emplace_back();
-                        continue;
-                    }
-                    if (match(']'))
-                        break;
-                    MPFEM_THROW(ArgumentException, "Expected ',', ';', or ']' in bracket literal");
-                }
-
-                skipWhitespace();
-                bool isTranspose = match('^');
-                if (isTranspose) {
-                    skipWhitespace();
-                    if (!match('T'))
-                        MPFEM_THROW(ArgumentException, "Expected '^T'");
-                }
-
-                const size_t rowCount = rows.size();
-                const size_t colCount = rows.front().size();
-
-                if (rowCount == 1 && colCount == 1)
-                    return std::move(rows.front().front());
-
-                if (rowCount == 1 && colCount == 3) {
-                    auto n = makeNode(AstNode::Kind::VectorLit);
-                    n->args.push_back(std::move(rows[0][0]));
-                    n->args.push_back(std::move(rows[0][1]));
-                    n->args.push_back(std::move(rows[0][2]));
-                    return n;
-                }
-
-                if (rowCount == 3 && colCount == 3) {
-                    auto n = makeNode(AstNode::Kind::MatrixLit);
-                    for (size_t i = 0; i < 3; ++i)
-                        for (size_t j = 0; j < 3; ++j)
-                            n->args.push_back(std::move(rows[i][j]));
-                    return n;
-                }
-
-                MPFEM_THROW(ArgumentException, "Unsupported bracket literal shape");
-            }
-
-            // 无歧义的应用单位乘数
-            std::unique_ptr<AstNode> applyUnitSuffix(std::unique_ptr<AstNode> node)
-            {
-                skipWhitespace();
-                if (!match('['))
-                    return node;
-
-                size_t begin = pos_;
-                while (!eof() && text_[pos_] != ']')
-                    ++pos_;
-                if (eof())
-                    MPFEM_THROW(ArgumentException, "Missing ']' for unit suffix");
-
-                std::string unit = strings::trim(std::string(text_.substr(begin, pos_ - begin)));
-                ++pos_;
-
-                Real mult = parseUnit(unit);
-                if (isNearOne(mult))
-                    return node;
-
-                auto c = makeNode(AstNode::Kind::Constant);
-                c->val = TensorValue::scalar(mult);
-                return makeBinary(AstNode::Kind::Mul, std::move(c), std::move(node));
-            }
-
-            char peek() const { return eof() ? '\0' : text_[pos_]; }
-            bool peekIsIdentifierStart() const { return !eof() && (std::isalpha(text_[pos_]) || text_[pos_] == '_'); }
-            bool peekIsNumberStart() const { return !eof() && (std::isdigit(text_[pos_]) || text_[pos_] == '.'); }
-            bool eof() const { return pos_ >= text_.size(); }
-
-            void skipWhitespace()
-            {
-                while (!eof() && std::isspace(text_[pos_]))
-                    ++pos_;
-            }
-
-            bool match(char c)
-            {
-                if (peek() == c) {
-                    ++pos_;
+                if (current_.type == type) {
+                    advance();
                     return true;
                 }
                 return false;
             }
-
-            std::string_view text_;
-            size_t pos_ = 0;
-        };
-
-        // Comsol 矩阵模板预处理
-        struct MatrixTemplate {
-            bool literalMatrix = false;
-            std::vector<std::string> components;
-        };
-
-        bool isSeparator(char c) { return std::isspace(static_cast<unsigned char>(c)) != 0 || c == ','; }
-
-        MatrixTemplate parseComsolMatrixTemplate(std::string_view expression)
-        {
-            MatrixTemplate tpl;
-            const std::string trimmed = strings::trim(std::string(expression));
-
-            if (trimmed.size() < 2 || trimmed.front() != '{' || trimmed.back() != '}')
-                return tpl;
-
-            tpl.literalMatrix = true;
-            const std::string_view content(trimmed.data() + 1, trimmed.size() - 2);
-
-            size_t index = 0;
-            while (index < content.size()) {
-                while (index < content.size() && isSeparator(content[index]))
-                    ++index;
-                if (index >= content.size())
-                    break;
-                if (content[index] != '\'')
-                    MPFEM_THROW(ArgumentException, "Invalid comsol matrix");
-                const size_t endQuote = content.find('\'', index + 1);
-                if (endQuote == std::string_view::npos)
-                    MPFEM_THROW(ArgumentException, "Unterminated quote");
-                tpl.components.push_back(strings::trim(std::string(content.substr(index + 1, endQuote - index - 1))));
-                index = endQuote + 1;
+            void consume(TokenType type)
+            {
+                if (!match(type))
+                    MPFEM_THROW(ArgumentException, "Unexpected token");
             }
-            return tpl;
-        }
 
-        std::string convertComsolMatrixToBracketLiteral(const MatrixTemplate& tpl)
-        {
-            if (tpl.components.size() == 1) {
-                const std::string& c = tpl.components[0];
-                return "[" + c + ",0,0;0," + c + ",0;0,0," + c + "]";
+            int getInfixPrecedence(TokenType type)
+            {
+                switch (type) {
+                case TokenType::Plus:
+                case TokenType::Minus:
+                    return P_TERM;
+                case TokenType::Star:
+                case TokenType::Slash:
+                    return P_FACTOR;
+                case TokenType::Caret:
+                    return P_POWER;
+                case TokenType::LBrack:
+                    return P_CALL; // 后缀单位处理 [unit]
+                default:
+                    return P_NONE;
+                }
             }
-            return "[" + tpl.components[0] + "," + tpl.components[3] + "," + tpl.components[6] + ";"
-                + tpl.components[1] + "," + tpl.components[4] + "," + tpl.components[7] + ";"
-                + tpl.components[2] + "," + tpl.components[5] + "," + tpl.components[8] + "]";
-        }
-    } // namespace
+
+            int getDepId(const std::string& name)
+            {
+                auto it = std::find(deps_.begin(), deps_.end(), name);
+                if (it != deps_.end())
+                    return std::distance(deps_.begin(), it);
+                deps_.push_back(name);
+                return deps_.size() - 1;
+            }
+
+            std::unique_ptr<AstNode> parsePrefix()
+            {
+                Token token = current_;
+                advance();
+                switch (token.type) {
+                case TokenType::Number: {
+                    auto n = AstNode::make(AstNode::Kind::Constant);
+                    n->val = Tensor::scalar(token.val);
+                    return n;
+                }
+                case TokenType::Identifier: {
+                    std::string name(token.text);
+                    if (match(TokenType::LParen))
+                        return parseFunctionCall(name); // 函数
+                    if (name == "pi") {
+                        auto n = AstNode::make(AstNode::Kind::Constant);
+                        n->val = Tensor::scalar(3.141592653589793);
+                        return n;
+                    }
+                    if (name == "e") {
+                        auto n = AstNode::make(AstNode::Kind::Constant);
+                        n->val = Tensor::scalar(2.718281828459045);
+                        return n;
+                    }
+
+                    auto n = AstNode::make(AstNode::Kind::VarIndex);
+                    n->var_index = getDepId(name);
+                    return n;
+                }
+                case TokenType::Minus: {
+                    auto n = AstNode::make(AstNode::Kind::Neg);
+                    n->args.push_back(parseExpression(P_POWER)); // 一元负号优先级同级或高于 Power
+                    return n;
+                }
+                case TokenType::Plus:
+                    return parseExpression(P_POWER);
+                case TokenType::LParen: {
+                    auto expr = parseExpression();
+                    consume(TokenType::RParen);
+                    return expr;
+                }
+                case TokenType::LBrack:
+                    return parseBracketMatrix();
+                case TokenType::LBrace:
+                    return parseComsolMatrix();
+                default:
+                    MPFEM_THROW(ArgumentException, "Expected expression");
+                }
+            }
+
+            std::unique_ptr<AstNode> parseInfix(std::unique_ptr<AstNode> left, Token op)
+            {
+                if (op.type == TokenType::LBrack) {
+                    // 作为单位后缀被触发，例如 20[MPa]
+                    std::string unitName;
+                    while (current_.type != TokenType::RBrack && current_.type != TokenType::Eof) {
+                        unitName += current_.text;
+                        advance();
+                    }
+                    consume(TokenType::RBrack);
+
+                    Real mult = parseUnit(unitName);
+                    if (std::abs(mult - 1.0) < 1e-15)
+                        return left;
+
+                    auto c = AstNode::make(AstNode::Kind::Constant);
+                    c->val = Tensor::scalar(mult);
+                    auto n = AstNode::make(AstNode::Kind::Mul);
+                    n->args.push_back(std::move(c));
+                    n->args.push_back(std::move(left));
+                    return n;
+                }
+
+                auto right = parseExpression(getInfixPrecedence(op.type));
+                auto n = AstNode::make(
+                    op.type == TokenType::Plus ? AstNode::Kind::Add : op.type == TokenType::Minus ? AstNode::Kind::Sub
+                        : op.type == TokenType::Star                                              ? AstNode::Kind::Mul
+                        : op.type == TokenType::Slash                                             ? AstNode::Kind::Div
+                                                                                                  : AstNode::Kind::Pow);
+                n->args.push_back(std::move(left));
+                n->args.push_back(std::move(right));
+                return n;
+            }
+
+            std::unique_ptr<AstNode> parseFunctionCall(const std::string& name)
+            {
+                std::vector<std::unique_ptr<AstNode>> args;
+                if (!match(TokenType::RParen)) {
+                    do {
+                        args.push_back(parseExpression());
+                    } while (match(TokenType::Comma));
+                    consume(TokenType::RParen);
+                }
+                auto n = AstNode::make(AstNode::Kind::Constant); // Default assign
+                if (args.size() == 1) {
+                    if (name == "sin")
+                        n->kind = AstNode::Kind::Sin;
+                    else if (name == "cos")
+                        n->kind = AstNode::Kind::Cos;
+                    else if (name == "tan")
+                        n->kind = AstNode::Kind::Tan;
+                    else if (name == "exp")
+                        n->kind = AstNode::Kind::Exp;
+                    else if (name == "log")
+                        n->kind = AstNode::Kind::Log;
+                    else if (name == "sqrt")
+                        n->kind = AstNode::Kind::Sqrt;
+                    else if (name == "abs")
+                        n->kind = AstNode::Kind::Abs;
+                    else if (name == "sym")
+                        n->kind = AstNode::Kind::Sym;
+                    else if (name == "trace" || name == "tr")
+                        n->kind = AstNode::Kind::Trace;
+                    else if (name == "transpose")
+                        n->kind = AstNode::Kind::Transpose;
+                    else
+                        MPFEM_THROW(ArgumentException, "Unknown unary function: " + name);
+                }
+                else if (args.size() == 2) {
+                    if (name == "dot")
+                        n->kind = AstNode::Kind::Dot;
+                    else if (name == "pow")
+                        n->kind = AstNode::Kind::Pow;
+                    else if (name == "min")
+                        n->kind = AstNode::Kind::Min;
+                    else if (name == "max")
+                        n->kind = AstNode::Kind::Max;
+                    else
+                        MPFEM_THROW(ArgumentException, "Unknown binary function: " + name);
+                }
+                else {
+                    MPFEM_THROW(ArgumentException, "Wrong arguments for function: " + name);
+                }
+                n->args = std::move(args);
+                return n;
+            }
+
+            // 原生解析 [...] 矩阵格式
+            std::unique_ptr<AstNode> parseBracketMatrix()
+            {
+                std::vector<std::unique_ptr<AstNode>> elems;
+                int cols = 0, rows = 1, currentCols = 0;
+                while (current_.type != TokenType::RBrack) {
+                    elems.push_back(parseExpression());
+                    currentCols++;
+                    if (match(TokenType::Comma))
+                        continue;
+                    if (match(TokenType::Semi)) {
+                        if (cols == 0)
+                            cols = currentCols;
+                        else if (cols != currentCols)
+                            MPFEM_THROW(ArgumentException, "Inconsistent column count in matrix");
+                        rows++;
+                        currentCols = 0;
+                    }
+                }
+                consume(TokenType::RBrack);
+                if (cols == 0)
+                    cols = currentCols;
+
+                if (match(TokenType::Caret))
+                    consume(TokenType::Identifier); // Consume ^T
+
+                if (rows == 1 && cols == 1)
+                    return std::move(elems.front());
+
+                auto n = AstNode::make(rows == 1 ? AstNode::Kind::VectorLit : AstNode::Kind::MatrixLit);
+                n->rows = rows;
+                n->cols = cols;
+                n->args = std::move(elems);
+                return n;
+            }
+
+            // 原生解析 COMSOL {...} 矩阵格式
+            std::unique_ptr<AstNode> parseComsolMatrix()
+            {
+                std::vector<std::unique_ptr<AstNode>> elems;
+                while (current_.type != TokenType::RBrace) {
+                    elems.push_back(parseExpression());
+                    match(TokenType::Comma);
+                }
+                consume(TokenType::RBrace);
+                // For 9 elements, COMSOL is transposed 3x3
+                if (elems.size() == 9) {
+                    auto n = AstNode::make(AstNode::Kind::MatrixLit);
+                    n->rows = 3;
+                    n->cols = 3;
+                    // COMSOL: c0, c3, c6 (first col) -> c0, c1, c2 (first row)
+                    // Input order is c0, c1, c2, c3, c4, c5, c6, c7, c8 (row-major in COMSOL's internal storage, but it represents column-major)
+                    // Wait, COMSOL {c0, c1, c2, c3, c4, c5, c6, c7, c8} means:
+                    // [c0, c3, c6]
+                    // [c1, c4, c7]
+                    // [c2, c5, c8]
+                    // So we reorder to our row-major: c0, c3, c6, c1, c4, c7, c2, c5, c8
+                    n->args.push_back(std::move(elems[0]));
+                    n->args.push_back(std::move(elems[3]));
+                    n->args.push_back(std::move(elems[6]));
+                    n->args.push_back(std::move(elems[1]));
+                    n->args.push_back(std::move(elems[4]));
+                    n->args.push_back(std::move(elems[7]));
+                    n->args.push_back(std::move(elems[2]));
+                    n->args.push_back(std::move(elems[5]));
+                    n->args.push_back(std::move(elems[8]));
+                    return n;
+                }
+
+                MPFEM_THROW(ArgumentException, "Unsupported COMSOL matrix element count");
+            }
+
+        public:
+            explicit PrattParser(std::string_view text) : lexer_(text) { advance(); }
+
+            std::unique_ptr<AstNode> parseExpression(int precedence = P_NONE)
+            {
+                auto left = parsePrefix();
+                while (precedence < getInfixPrecedence(current_.type)) {
+                    Token op = current_;
+                    advance();
+                    left = parseInfix(std::move(left), op);
+                }
+                return left;
+            }
+
+            std::unique_ptr<VariableNode> compile()
+            {
+                auto root = parseExpression();
+                if (current_.type != TokenType::Eof)
+                    MPFEM_THROW(ArgumentException, "Unexpected trailing token");
+                foldConstants(root.get());
+                return std::make_unique<CompiledExpressionNode>(std::move(root), std::move(deps_));
+            }
+        };
+    }
 
     std::unique_ptr<VariableNode> ExpressionParser::parse(const std::string& expression)
     {
-        std::string expressionText = strings::trim(expression);
-        if (expressionText.empty())
+        if (strings::trim(expression).empty())
             MPFEM_THROW(ArgumentException, "Empty expression string");
-
-        MatrixTemplate comsol = parseComsolMatrixTemplate(expressionText);
-        if (comsol.literalMatrix) {
-            expressionText = convertComsolMatrixToBracketLiteral(comsol);
-        }
-
-        TensorAstCompiler compiler(expressionText);
-        return compiler.compile();
+        PrattParser parser(expression);
+        return parser.compile();
     }
 
 } // namespace mpfem

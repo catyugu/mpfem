@@ -89,17 +89,17 @@ inline FECollection::FECollection(int order, Type type)
 inline void FECollection::initialize() {
     elements_.clear();
 
-    const auto addH1Elements = [this]() {
-        elements_[Geometry::Segment] = std::make_unique<ReferenceElement>(Geometry::Segment, order_);
-        elements_[Geometry::Triangle] = std::make_unique<ReferenceElement>(Geometry::Triangle, order_);
-        elements_[Geometry::Square] = std::make_unique<ReferenceElement>(Geometry::Square, order_);
-        elements_[Geometry::Tetrahedron] = std::make_unique<ReferenceElement>(Geometry::Tetrahedron, order_);
-        elements_[Geometry::Cube] = std::make_unique<ReferenceElement>(Geometry::Cube, order_);
+    const auto addElements = [this](BasisType basisType) {
+        elements_[Geometry::Segment] = std::make_unique<ReferenceElement>(Geometry::Segment, order_, basisType);
+        elements_[Geometry::Triangle] = std::make_unique<ReferenceElement>(Geometry::Triangle, order_, basisType);
+        elements_[Geometry::Square] = std::make_unique<ReferenceElement>(Geometry::Square, order_, basisType);
+        elements_[Geometry::Tetrahedron] = std::make_unique<ReferenceElement>(Geometry::Tetrahedron, order_, basisType);
+        elements_[Geometry::Cube] = std::make_unique<ReferenceElement>(Geometry::Cube, order_, basisType);
     };
 
     switch (type_) {
     case Type::H1:
-        addH1Elements();
+        addElements(BasisType::H1);
         return;
     case Type::L2:
     case Type::ND:

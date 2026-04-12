@@ -26,9 +26,9 @@ mpfem_add_test(mpfem_test_mesh test_mesh_read.cpp  mpfem::mesh mpfem::io)
 mpfem_add_test(mpfem_test_quadrature test_quadrature.cpp mpfem::fe )
 
 # =============================================================================
-# Shape Function Tests
+# H1 Element Tests
 # =============================================================================
-mpfem_add_test(mpfem_test_shape_function test_shape_function.cpp mpfem::fe)
+mpfem_add_test(mpfem_test_h1 test_h1.cpp mpfem::fe)
 
 # =============================================================================
 # Element Transform Tests

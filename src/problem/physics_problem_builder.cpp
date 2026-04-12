@@ -93,7 +93,7 @@ namespace mpfem {
                 return rev;
             }
 
-            void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
+            void evaluateBatch(const EvaluationContext& ctx, std::span<Tensor> dest) const override
             {
                 auto it = children_.find(ctx.domainId);
                 if (it == children_.end()) {
@@ -114,22 +114,19 @@ namespace mpfem {
         public:
             explicit GridFunctionValueProvider(const GridFunction* field) : field_(field) { }
 
-            void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
+            void evaluateBatch(const EvaluationContext& ctx, std::span<Tensor> dest) const override
             {
                 if (!field_) {
-                    std::fill(dest.begin(), dest.end(), TensorValue::scalar(Real(0)));
+                    std::fill(dest.begin(), dest.end(), Tensor::scalar(Real(0)));
                     return;
                 }
 
                 for (size_t i = 0; i < dest.size(); ++i) {
-                    const Real* xi = nullptr;
-                    if (i < ctx.referencePoints.size()) {
-                        xi = &ctx.referencePoints[i].x();
-                    }
-                    else {
+                    if (i >= ctx.referencePoints.size()) {
                         MPFEM_THROW(ArgumentException, "GridFunctionValueProvider requires referencePoints in EvaluationContext.");
                     }
-                    dest[i] = TensorValue::scalar(field_->eval(ctx.elementId, xi));
+                    const Vector3& xi = ctx.referencePoints[i];
+                    dest[i] = Tensor::scalar(field_->eval(ctx.elementId, xi));
                 }
             }
 
@@ -149,22 +146,28 @@ namespace mpfem {
         public:
             explicit GridFunctionGradientProvider(const GridFunction* field) : field_(field) { }
 
-            void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
+            void evaluateBatch(const EvaluationContext& ctx, std::span<Tensor> dest) const override
             {
                 if (!field_) {
-                    std::fill(dest.begin(), dest.end(), TensorValue::zero(TensorShape::vector(3)));
+                    std::fill(dest.begin(), dest.end(), Tensor::zero(TensorShape::vector(3)));
                     return;
                 }
 
-                if (ctx.referencePoints.size() < dest.size() || ctx.invJacobianTransposes.size() < dest.size()) {
+                if (ctx.referencePoints.size() < dest.size() || ctx.transforms.size() < dest.size()) {
                     MPFEM_THROW(ArgumentException,
-                        "GridFunctionGradientProvider requires referencePoints and invJacobianTransposes in EvaluationContext.");
+                        "GridFunctionGradientProvider requires referencePoints and transforms in EvaluationContext.");
                 }
 
                 for (size_t i = 0; i < dest.size(); ++i) {
-                    const Real* xi = &ctx.referencePoints[i].x();
-                    Vector3 g = field_->gradient(ctx.elementId, xi, ctx.invJacobianTransposes[i]);
-                    dest[i] = TensorValue::vector(g.x(), g.y(), g.z());
+                    ElementTransform* trans = ctx.transforms[i];
+                    if (!trans) {
+                        MPFEM_THROW(ArgumentException,
+                            "GridFunctionGradientProvider received null transform in EvaluationContext.");
+                    }
+                    const Vector3& xi = ctx.referencePoints[i];
+                    Matrix3 invJT = trans->invJacobianT();
+                    Vector3 g = field_->gradient(ctx.elementId, xi, invJT);
+                    dest[i] = Tensor::vector3(g);
                 }
             }
 
@@ -371,14 +374,11 @@ namespace mpfem {
             problem.globalVariables_.bindNode("grad(T)", std::make_unique<GridFunctionGradientProvider>(&problem.heatTransfer->field()));
 
             const VariableNode* k = requireDomainMatrixNode(problem, kPropThermalConductivity);
-            const VariableNode* density = requireDomainScalarNode(problem, kPropDensity);
-            const VariableNode* heatCapacity = requireDomainScalarNode(problem, kPropHeatCapacity);
-            (void)density;
-            (void)heatCapacity;
+            (void)requireDomainScalarNode(problem, kPropDensity);
+            (void)requireDomainScalarNode(problem, kPropHeatCapacity);
 
-            if (!problem.globalVariables_.get("thermal_mass")) {
-                problem.globalVariables_.define("thermal_mass", "density * heatcapacity");
-            }
+            problem.globalVariables_.define("thermal_mass", "density * heatcapacity");
+
             const VariableNode* rhoCpNode = problem.globalVariables_.get("thermal_mass");
 
             for (int domainId : problem.materials.domainIds()) {
@@ -416,7 +416,7 @@ namespace mpfem {
 
             for (const auto& bc : physics.boundaries) {
                 if (bc.type == "Fixed") {
-                    problem.structural->addFixedDisplacementBC(bc.ids, problem.globalVariables_.get("[0, 0, 0]") );
+                    problem.structural->addFixedDisplacementBC(bc.ids, problem.globalVariables_.get("[0, 0, 0]"));
                 }
             }
         }
@@ -425,10 +425,7 @@ namespace mpfem {
         {
             const std::set<int> activeDomains = cp.domainIds;
             (void)requireDomainMatrixNode(problem, kPropElectricConductivity);
-
-            if (!problem.globalVariables_.get("JouleHeat")) {
-                problem.globalVariables_.define("JouleHeat", "dot(grad_V, electricconductivity * grad_V)");
-            }
+            problem.globalVariables_.define("JouleHeat", "dot(grad_V, electricconductivity * grad_V)");
             const VariableNode* joule = problem.globalVariables_.get("JouleHeat");
             problem.heatTransfer->setHeatSource(activeDomains, joule);
             LOG_INFO << "Joule heating domains: " << activeDomains.size() << " domains";
@@ -446,18 +443,11 @@ namespace mpfem {
             (void)requireDomainScalarNode(problem, kPropYoungModulus);
             (void)requireDomainScalarNode(problem, kPropPoissonRatio);
 
-            if (!problem.globalVariables_.get("lambda")) {
-                problem.globalVariables_.define("lambda", "E*nu/((1+nu)*(1-2*nu))");
-            }
-            if (!problem.globalVariables_.get("mu")) {
-                problem.globalVariables_.define("mu", "E/(2*(1+nu))");
-            }
-            if (!problem.globalVariables_.get("alpha_iso")) {
-                problem.globalVariables_.define(
-                    "alpha_iso",
-                    "dot([1,1,1]^T, thermalexpansioncoefficient * [1,1,1]^T)/3.0");
-            }
-
+            problem.globalVariables_.define("lambda", "E*nu/((1+nu)*(1-2*nu))");
+            problem.globalVariables_.define("mu", "E/(2*(1+nu))");
+            problem.globalVariables_.define(
+                "alpha_iso",
+                "dot([1,1,1]^T, thermalexpansioncoefficient * [1,1,1]^T)/3.0");
             problem.globalVariables_.define("T_ref", std::to_string(T_ref));
             problem.globalVariables_.define("thermal_dT", "T - T_ref");
             problem.globalVariables_.define(

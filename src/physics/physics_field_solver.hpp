@@ -38,7 +38,7 @@ namespace mpfem {
             matAsm_ = std::make_unique<BilinearFormAssembler>(fes_.get());
             vecAsm_ = std::make_unique<LinearFormAssembler>(fes_.get());
             if (solverConfig_) {
-                solver_ = SolverFactory::create(*solverConfig_);
+                solver_ = OperatorFactory::create(*solverConfig_);
             }
 
             LOG_INFO << fieldName() << " Solver: " << fes_->numDofs() << " DOFs initialized.";

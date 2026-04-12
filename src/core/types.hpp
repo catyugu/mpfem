@@ -54,35 +54,26 @@ namespace mpfem {
     /// Maximum spatial dimension
     inline constexpr LocalIndex MaxDim = 3;
 
-    /// Maximum vector field dimension (for displacement, velocity, etc.)
-    inline constexpr LocalIndex MaxVectorDim = 3;
-
     // =============================================================================
     // Element-related constants (for fixed-size stack arrays)
     // =============================================================================
 
+    inline constexpr LocalIndex MaxDofsPerElement = 81; // 预留足够的空间，高阶矢量基函数的 DOF 通常多于节点数
+
+    inline constexpr LocalIndex MaxDofsPerBdrElement = 27;
     /// Maximum number of nodes per volume element (for fixed-size arrays)
     /// hex27: 3x3x3 = 27 nodes for second-order hexahedron
     inline constexpr LocalIndex MaxNodesPerElement = 27;
 
-    /// Maximum number of nodes per boundary element
-    /// quad9: 3x3 = 9 nodes for second-order quadrilateral
-    inline constexpr LocalIndex MaxNodesPerBdrElement = 9;
+    using ShapeMatrix = Eigen::Matrix<Real,
+        Eigen::Dynamic, Eigen::Dynamic,
+        Eigen::ColMajor,
+        MaxDofsPerElement, MaxDim>;
 
-    /// Maximum number of vertices per element (first-order)
-    inline constexpr LocalIndex MaxVerticesPerElement = 8; // hex8
-
-    /// Maximum DOFs per volume element (scalar field)
-    inline constexpr LocalIndex MaxDofsPerElement = MaxNodesPerElement;
-
-    /// Maximum DOFs per boundary element (scalar field)
-    inline constexpr LocalIndex MaxDofsPerBdrElement = MaxNodesPerBdrElement;
-
-    /// Maximum DOFs per volume element (vector field, e.g., displacement)
-    inline constexpr LocalIndex MaxVectorDofsPerElement = MaxDofsPerElement * MaxVectorDim;
-
-    /// Maximum DOFs per boundary element (vector field)
-    inline constexpr LocalIndex MaxVectorDofsPerBdrElement = MaxDofsPerBdrElement * MaxVectorDim;
+    using DerivMatrix = Eigen::Matrix<Real,
+        Eigen::Dynamic, Eigen::Dynamic,
+        Eigen::RowMajor,
+        MaxDofsPerElement, MaxDim>;
 
     /// Maximum quadrature points per element
     inline constexpr LocalIndex MaxQuadraturePoints = 27;
@@ -115,6 +106,9 @@ namespace mpfem {
         IntegrationPoint(Real x, Real w) : xi(x), weight(w) { }
         IntegrationPoint(Real x, Real y, Real w) : xi(x), eta(y), weight(w) { }
         IntegrationPoint(Real x, Real y, Real z, Real w) : xi(x), eta(y), zeta(z), weight(w) { }
+
+        /// Get reference coordinates as Vector3
+        Vector3 getXi() const { return Vector3(xi, eta, zeta); }
     };
 
     // Note: QuadratureRule is defined in fe/quadrature.hpp

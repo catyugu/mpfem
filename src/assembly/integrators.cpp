@@ -9,19 +9,18 @@ namespace mpfem {
         EvaluationContext makeSinglePointContext(ElementTransform& trans,
             std::array<Vector3, 1>& refPts,
             std::array<Vector3, 1>& physPts,
-            std::array<Matrix, 1>& invJTs)
+            std::array<ElementTransform*, 1>& transforms)
         {
-            const IntegrationPoint& ip = trans.integrationPoint();
-            refPts[0] = Vector3(ip.xi, ip.eta, ip.zeta);
-            trans.transform(ip, physPts[0]);
-            invJTs[0] = trans.invJacobianT();
+            refPts[0] = trans.ipXi();
+            physPts[0] = trans.transform(refPts[0]);
+            transforms[0] = &trans;
 
             EvaluationContext ctx;
             ctx.domainId = static_cast<int>(trans.attribute());
-            ctx.elementId = trans.elementIndex();
-            ctx.referencePoints = std::span<const Vector3>(refPts.data(), refPts.size());
-            ctx.physicalPoints = std::span<const Vector3>(physPts.data(), physPts.size());
-            ctx.invJacobianTransposes = std::span<const Matrix>(invJTs.data(), invJTs.size());
+            ctx.elementId = trans.elementId();
+            ctx.referencePoints = std::span<const Vector3>(refPts);
+            ctx.physicalPoints = std::span<const Vector3>(physPts);
+            ctx.transforms = std::span<ElementTransform* const>(transforms);
             return ctx;
         }
 
@@ -32,10 +31,10 @@ namespace mpfem {
             }
             std::array<Vector3, 1> refPts;
             std::array<Vector3, 1> physPts;
-            std::array<Matrix, 1> invJTs;
-            std::array<TensorValue, 1> value {};
-            const EvaluationContext ctx = makeSinglePointContext(trans, refPts, physPts, invJTs);
-            node->evaluateBatch(ctx, std::span<TensorValue>(value.data(), value.size()));
+            std::array<ElementTransform*, 1> transforms {};
+            std::array<Tensor, 1> value {};
+            const EvaluationContext ctx = makeSinglePointContext(trans, refPts, physPts, transforms);
+            node->evaluateBatch(ctx, std::span<Tensor>(value));
             return value[0].scalar();
         }
 
@@ -47,12 +46,12 @@ namespace mpfem {
 
             std::array<Vector3, 1> refPts;
             std::array<Vector3, 1> physPts;
-            std::array<Matrix, 1> invJTs;
-            std::array<TensorValue, 1> value {};
-            const EvaluationContext ctx = makeSinglePointContext(trans, refPts, physPts, invJTs);
-            node->evaluateBatch(ctx, std::span<TensorValue>(value.data(), value.size()));
+            std::array<ElementTransform*, 1> transforms {};
+            std::array<Tensor, 1> value {};
+            const EvaluationContext ctx = makeSinglePointContext(trans, refPts, physPts, transforms);
+            node->evaluateBatch(ctx, std::span<Tensor>(value));
 
-            return value[0].toMatrix3();
+            return value[0].asMatrix3();
         }
 
     } // namespace
@@ -76,17 +75,16 @@ namespace mpfem {
 
         for (int q = 0; q < nq; ++q) {
             const IntegrationPoint& ip = ref.integrationPoint(q);
-            Real xi[3] = {ip.xi, ip.eta, ip.zeta};
-            trans.setIntegrationPoint(xi);
+            trans.setIntegrationPoint(ip.getXi());
 
             const Real w = ip.weight * trans.weight();
             const Matrix3 D = evalMatrixNode(coef_, trans);
 
-            const Vector3* refGrads = ref.shapeGradientsAtQuad(q);
+            const Matrix& refGrads = ref.shapeDerivativesAtQuad(q);
 
             for (int i = 0; i < nd; ++i) {
-                Vector3 physGrad;
-                trans.transformGradient(refGrads[i].data(), physGrad.data());
+                const Vector3 refGrad(refGrads(i, 0), refGrads(i, 1), refGrads(i, 2));
+                const Vector3 physGrad = trans.transformGradient(refGrad);
                 gradMat.row(i) = physGrad;
             }
 
@@ -110,16 +108,15 @@ namespace mpfem {
 
         for (int q = 0; q < nq; ++q) {
             const IntegrationPoint& ip = ref.integrationPoint(q);
-            Real xi[3] = {ip.xi, ip.eta, ip.zeta};
-            trans.setIntegrationPoint(xi);
+            trans.setIntegrationPoint(ip.getXi());
 
             const Real w = ip.weight * trans.weight();
             const Real coef = evalScalarNode(coef_, trans);
 
-            const Real* phi = ref.shapeValuesAtQuad(q);
-            Eigen::Map<const Eigen::VectorXd> phiMap(phi, nd);
+            const Matrix& phi = ref.shapeValuesAtQuad(q);
+            const auto phiVec = phi.col(0);
 
-            elmat.noalias() += w * coef * (phiMap * phiMap.transpose());
+            elmat.noalias() += w * coef * (phiVec * phiVec.transpose());
         }
     }
 
@@ -138,16 +135,15 @@ namespace mpfem {
 
         for (int q = 0; q < nq; ++q) {
             const IntegrationPoint& ip = ref.integrationPoint(q);
-            Real xi[3] = {ip.xi, ip.eta, ip.zeta};
-            trans.setIntegrationPoint(xi);
+            trans.setIntegrationPoint(ip.getXi());
 
             const Real w = ip.weight * trans.weight();
             const Real f = evalScalarNode(coef_, trans);
 
-            const Real* phi = ref.shapeValuesAtQuad(q);
-            Eigen::Map<const Eigen::VectorXd> phiMap(phi, nd);
+            const Matrix& phi = ref.shapeValuesAtQuad(q);
+            const auto phiVec = phi.col(0);
 
-            elvec.noalias() += w * f * phiMap;
+            elvec.noalias() += w * f * phiVec;
         }
     }
 
@@ -156,7 +152,7 @@ namespace mpfem {
     // =============================================================================
 
     void BoundaryLFIntegrator::assembleFaceVector(const ReferenceElement& ref,
-        FacetElementTransform& trans,
+        ElementTransform& trans,
         Vector& elvec) const
     {
         const int nd = ref.numDofs();
@@ -166,16 +162,15 @@ namespace mpfem {
 
         for (int q = 0; q < nq; ++q) {
             const IntegrationPoint& ip = ref.integrationPoint(q);
-            Real xi[3] = {ip.xi, ip.eta, ip.zeta};
-            trans.setIntegrationPoint(xi);
+            trans.setIntegrationPoint(ip.getXi());
 
             const Real w = ip.weight * trans.weight();
             const Real g = evalScalarNode(coef_, trans);
 
-            const Real* phi = ref.shapeValuesAtQuad(q);
-            Eigen::Map<const Eigen::VectorXd> phiMap(phi, nd);
+            const Matrix& phi = ref.shapeValuesAtQuad(q);
+            const auto phiVec = phi.col(0);
 
-            elvec.noalias() += w * g * phiMap;
+            elvec.noalias() += w * g * phiVec;
         }
     }
 
@@ -184,7 +179,7 @@ namespace mpfem {
     // =============================================================================
 
     void ConvectionMassIntegrator::assembleFaceMatrix(const ReferenceElement& ref,
-        FacetElementTransform& trans,
+        ElementTransform& trans,
         Matrix& elmat) const
     {
         const int nd = ref.numDofs();
@@ -194,21 +189,20 @@ namespace mpfem {
 
         for (int q = 0; q < nq; ++q) {
             const IntegrationPoint& ip = ref.integrationPoint(q);
-            Real xi[3] = {ip.xi, ip.eta, ip.zeta};
-            trans.setIntegrationPoint(xi);
+            trans.setIntegrationPoint(ip.getXi());
 
             const Real w = ip.weight * trans.weight();
             const Real h = evalScalarNode(coef_, trans);
 
-            const Real* phi = ref.shapeValuesAtQuad(q);
-            Eigen::Map<const Eigen::VectorXd> phiMap(phi, nd);
+            const Matrix& phi = ref.shapeValuesAtQuad(q);
+            const auto phiVec = phi.col(0);
 
-            elmat.noalias() += w * h * (phiMap * phiMap.transpose());
+            elmat.noalias() += w * h * (phiVec * phiVec.transpose());
         }
     }
 
     void ConvectionLFIntegrator::assembleFaceVector(const ReferenceElement& ref,
-        FacetElementTransform& trans,
+        ElementTransform& trans,
         Vector& elvec) const
     {
         const int nd = ref.numDofs();
@@ -218,17 +212,16 @@ namespace mpfem {
 
         for (int q = 0; q < nq; ++q) {
             const IntegrationPoint& ip = ref.integrationPoint(q);
-            Real xi[3] = {ip.xi, ip.eta, ip.zeta};
-            trans.setIntegrationPoint(xi);
+            trans.setIntegrationPoint(ip.getXi());
 
             const Real w = ip.weight * trans.weight();
             const Real h = evalScalarNode(coef_, trans);
             const Real Tinf = evalScalarNode(Tinf_, trans);
 
-            const Real* phi = ref.shapeValuesAtQuad(q);
-            Eigen::Map<const Eigen::VectorXd> phiMap(phi, nd);
+            const Matrix& phi = ref.shapeValuesAtQuad(q);
+            const auto phiVec = phi.col(0);
 
-            elvec.noalias() += w * h * Tinf * phiMap;
+            elvec.noalias() += w * h * Tinf * phiVec;
         }
     }
 
@@ -237,7 +230,7 @@ namespace mpfem {
     // =============================================================================
 
     namespace {
-        // Helper function to compute strain-displacement B matrix from shape function gradients
+        // Helper function to compute strain-displacement B matrix from H1 basis derivatives
         template <typename BMatrix>
         inline void computeStrainDispMatrix(
             BMatrix& B,
@@ -247,10 +240,10 @@ namespace mpfem {
             int vdim,
             int q)
         {
-            const Vector3* refGrads = ref.shapeGradientsAtQuad(q);
+            const Matrix& refGrads = ref.shapeDerivativesAtQuad(q);
             for (int a = 0; a < nd; ++a) {
-                Vector3 physGrad;
-                trans.transformGradient(refGrads[a].data(), physGrad.data());
+                const Vector3 refGrad(refGrads(a, 0), refGrads(a, 1), refGrads(a, 2));
+                const Vector3 physGrad = trans.transformGradient(refGrad);
                 int col = a * vdim;
                 B(0, col + 0) = physGrad[0];
                 B(1, col + 1) = physGrad[1];
@@ -294,16 +287,15 @@ namespace mpfem {
         Eigen::Matrix<Real, 6, 6> C;
         fillElasticityTensorC(C, lambda, mu);
 
-        Eigen::Matrix<Real, MaxStrainComponents, MaxVectorDofsPerElement> B_full;
-        Eigen::Matrix<Real, MaxStrainComponents, MaxVectorDofsPerElement> CB_full;
+        Eigen::Matrix<Real, MaxStrainComponents, MaxDofsPerElement> B_full;
+        Eigen::Matrix<Real, MaxStrainComponents, MaxDofsPerElement> CB_full;
 
         auto B = B_full.leftCols(totalDofs);
         auto CB = CB_full.leftCols(totalDofs);
 
         for (int q = 0; q < nq; ++q) {
             const IntegrationPoint& ip = ref.integrationPoint(q);
-            Real xi[3] = {ip.xi, ip.eta, ip.zeta};
-            trans.setIntegrationPoint(xi);
+            trans.setIntegrationPoint(ip.getXi());
 
             const Real w = ip.weight * trans.weight();
 
@@ -326,15 +318,14 @@ namespace mpfem {
 
         elvec.setZero(totalDofs);
 
-        Eigen::Matrix<Real, MaxStrainComponents, MaxVectorDofsPerElement> B_full;
+        Eigen::Matrix<Real, MaxStrainComponents, MaxDofsPerElement> B_full;
         Eigen::Matrix<Real, 6, 1> sigmaVoigt;
         Matrix3 stress;
         auto B = B_full.leftCols(totalDofs);
 
         for (int q = 0; q < nq; ++q) {
             const IntegrationPoint& ip = ref.integrationPoint(q);
-            Real xi[3] = {ip.xi, ip.eta, ip.zeta};
-            trans.setIntegrationPoint(xi);
+            trans.setIntegrationPoint(ip.getXi());
 
             const Real w = ip.weight * trans.weight();
 

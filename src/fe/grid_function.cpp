@@ -1,81 +1,71 @@
 #include "grid_function.hpp"
-#include "shape_function.hpp"
+#include "core/exception.hpp"
+#include "finite_element.hpp"
 
-namespace mpfem
-{
+#include <array>
 
-    namespace
-    {
-        // Thread-local buffers to avoid repeated heap allocation
-        thread_local std::vector<Real> t_phiBuf;
-        thread_local std::vector<Vector3> t_gradBuf;
-        thread_local std::vector<Index> t_dofsBuf;
+namespace mpfem {
 
-        inline void ensureCapacity(int nShape, int nElemDofs)
-        {
-            if (static_cast<int>(t_phiBuf.size()) < nShape)
-            {
-                t_phiBuf.resize(nShape);
-            }
-            if (static_cast<int>(t_gradBuf.size()) < nShape)
-            {
-                t_gradBuf.resize(nShape);
-            }
-            if (static_cast<int>(t_dofsBuf.size()) < nElemDofs)
-            {
-                t_dofsBuf.resize(nElemDofs);
-            }
-        }
-    } // namespace
-
-    Real GridFunction::eval(Index elem, const Real *xi) const
+    Real GridFunction::eval(Index elem, const Vector3& xi) const
     {
         if (!fes_)
             return 0.0;
 
-        const ReferenceElement *ref = fes_->elementRefElement(elem);
+        const ReferenceElement* ref = fes_->elementRefElement(elem);
         if (!ref)
             return 0.0;
 
-        const ShapeFunction *sf = ref->shapeFunction();
-        const int nd = sf->numDofs();
+        const FiniteElement& basis = ref->basis();
+        const int nd = basis.numDofs();
         const int vdim = fes_->vdim();
         const int totalDofs = fes_->numElementDofs(elem);
-        ensureCapacity(nd, totalDofs);
 
-        sf->evalValues(xi, t_phiBuf.data());
-        fes_->getElementDofs(elem, std::span<Index>{t_dofsBuf.data(), static_cast<size_t>(totalDofs)});
+        if (nd > MaxDofsPerElement || totalDofs > MaxDofsPerElement) {
+            MPFEM_THROW(Exception, "GridFunction::eval exceeds fixed stack buffer limits");
+        }
+
+        ShapeMatrix shapeBuf;
+        std::array<Index, MaxDofsPerElement> dofsBuf {};
+
+        basis.evalShape(xi, shapeBuf);
+        fes_->getElementDofs(elem, std::span<Index> {dofsBuf.data(), static_cast<size_t>(totalDofs)});
 
         Real val = 0.0;
-        for (int i = 0; i < nd; ++i)
-        {
-            val += t_phiBuf[i] * values_[t_dofsBuf[static_cast<size_t>(i) * vdim]];
+        for (int i = 0; i < nd; ++i) {
+            val += shapeBuf(i, 0) * values_[dofsBuf[static_cast<size_t>(i) * vdim]];
         }
         return val;
     }
 
-    Vector3 GridFunction::gradient(Index elem, const Real *xi, const Matrix3 &invJacobianTranspose) const
+    Vector3 GridFunction::gradient(Index elem, const Vector3& xi, const Matrix3& invJacobianTranspose) const
     {
         if (!fes_)
             return Vector3::Zero();
 
-        const ReferenceElement *ref = fes_->elementRefElement(elem);
+        const ReferenceElement* ref = fes_->elementRefElement(elem);
         if (!ref)
             return Vector3::Zero();
 
-        const ShapeFunction *sf = ref->shapeFunction();
-        const int nd = sf->numDofs();
+        const FiniteElement& basis = ref->basis();
+        const int nd = basis.numDofs();
         const int vdim = fes_->vdim();
         const int totalDofs = fes_->numElementDofs(elem);
-        ensureCapacity(nd, totalDofs);
 
-        sf->evalGrads(xi, t_gradBuf.data());
-        fes_->getElementDofs(elem, std::span<Index>{t_dofsBuf.data(), static_cast<size_t>(totalDofs)});
+        if (nd > MaxDofsPerElement || totalDofs > MaxDofsPerElement) {
+            MPFEM_THROW(Exception, "GridFunction::gradient exceeds fixed stack buffer limits");
+        }
+
+        DerivMatrix derivBuf;
+        std::array<Index, MaxDofsPerElement> dofsBuf {};
+
+        basis.evalDerivatives(xi, derivBuf);
+        fes_->getElementDofs(elem, std::span<Index> {dofsBuf.data(), static_cast<size_t>(totalDofs)});
 
         Vector3 gRef = Vector3::Zero();
-        for (int i = 0; i < nd; ++i)
-        {
-            gRef += t_gradBuf[i] * values_[t_dofsBuf[static_cast<size_t>(i) * vdim]];
+        for (int i = 0; i < nd; ++i) {
+            gRef.x() += derivBuf(i, 0) * values_[dofsBuf[static_cast<size_t>(i) * vdim]];
+            gRef.y() += derivBuf(i, 1) * values_[dofsBuf[static_cast<size_t>(i) * vdim]];
+            gRef.z() += derivBuf(i, 2) * values_[dofsBuf[static_cast<size_t>(i) * vdim]];
         }
 
         return invJacobianTranspose * gRef;

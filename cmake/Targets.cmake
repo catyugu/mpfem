@@ -174,9 +174,10 @@ mpfem_add_library(mpfem_fe
     SOURCES
         src/fe/quadrature.cpp
         src/fe/element_transform.cpp
-        src/fe/facet_element_transform.cpp
+        src/fe/finite_element.cpp
+        src/fe/geometry_mapping.cpp
+        src/fe/h1.cpp
         src/fe/grid_function.cpp
-        src/fe/shape_function.cpp
         src/fe/fe_space.cpp
     PUBLIC_LINK
         Eigen3::Eigen

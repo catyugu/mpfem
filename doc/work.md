@@ -20,5 +20,3 @@
   * 提交一次代码，然后继续完成下一个子任务。
 
 ## 具体工作任务
-
-* 我们的三角形和四面体的节点、边、面排序很怪异而且和COMSOL内在地不符合。你需要重写geometry, shape_function 与 mphtxt_reader.hpp（并把实现移到cpp文件中）

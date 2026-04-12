@@ -1,6 +1,8 @@
 #include "assembly/assembler.hpp"
+#include "assembly/element_binding.hpp"
 #include "assembly/integrators.hpp"
 #include "core/logger.hpp"
+#include "core/types.hpp"
 #include "expr/variable_graph.hpp"
 #include "fe/element_transform.hpp"
 #include "fe/fe_collection.hpp"
@@ -22,14 +24,14 @@ namespace {
     public:
         explicit ScalarConstantNode(Real value) : value_(value) { }
 
-        void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
+        void evaluateBatch(const EvaluationContext& ctx, std::span<Tensor> dest) const override
         {
             const size_t n = ctx.physicalPoints.empty() ? dest.size() : ctx.physicalPoints.size();
             if (dest.size() != n) {
                 throw std::runtime_error("ScalarConstantNode destination size mismatch");
             }
             for (size_t i = 0; i < dest.size(); ++i) {
-                dest[i] = TensorValue::scalar(value_);
+                dest[i] = Tensor::scalar(value_);
             }
         }
 
@@ -41,14 +43,14 @@ namespace {
     public:
         explicit MatrixConstantNode(const Matrix3& value) : value_(value) { }
 
-        void evaluateBatch(const EvaluationContext& ctx, std::span<TensorValue> dest) const override
+        void evaluateBatch(const EvaluationContext& ctx, std::span<Tensor> dest) const override
         {
             const size_t n = ctx.physicalPoints.empty() ? dest.size() : ctx.physicalPoints.size();
             if (dest.size() != n) {
                 throw std::runtime_error("MatrixConstantNode destination size mismatch");
             }
             for (size_t i = 0; i < n; ++i) {
-                dest[i] = TensorValue::matrix3(value_);
+                dest[i] = Tensor::matrix3(value_);
             }
         }
 
@@ -70,6 +72,7 @@ protected:
         mesh_.addVertex(0.0, 1.0, 0.0);
         mesh_.addVertex(0.0, 0.0, 1.0);
         mesh_.addElement(Geometry::Tetrahedron, {0, 1, 2, 3}, 1, 1);
+        mesh_.buildTopology();
 
         fes_ = std::make_unique<FESpace>(&mesh_, std::make_unique<FECollection>(1));
 
@@ -93,7 +96,8 @@ protected:
 
 TEST_F(IntegratorTest, DiffusionElementMatrix)
 {
-    ElementTransform trans(&mesh_, 0);
+    ElementTransform trans;
+    bindElementToTransform(trans, mesh_, 0);
     const ReferenceElement* refElem = fes_->elementRefElement(0);
 
     DiffusionIntegrator integ(mat1_.get());
@@ -119,7 +123,8 @@ TEST_F(IntegratorTest, DiffusionElementMatrix)
 
 TEST_F(IntegratorTest, DiffusionMatrixScaling)
 {
-    ElementTransform trans(&mesh_, 0);
+    ElementTransform trans;
+    bindElementToTransform(trans, mesh_, 0);
     const ReferenceElement* refElem = fes_->elementRefElement(0);
 
     DiffusionIntegrator integ1(mat1_.get());
@@ -138,7 +143,8 @@ TEST_F(IntegratorTest, DiffusionMatrixScaling)
 
 TEST_F(IntegratorTest, AnisotropicDiffusion)
 {
-    ElementTransform trans(&mesh_, 0);
+    ElementTransform trans;
+    bindElementToTransform(trans, mesh_, 0);
     const ReferenceElement* refElem = fes_->elementRefElement(0);
 
     // Create anisotropic matrix coefficient
@@ -169,7 +175,8 @@ TEST_F(IntegratorTest, AnisotropicDiffusion)
 
 TEST_F(IntegratorTest, MassElementMatrix)
 {
-    ElementTransform trans(&mesh_, 0);
+    ElementTransform trans;
+    bindElementToTransform(trans, mesh_, 0);
     const ReferenceElement* refElem = fes_->elementRefElement(0);
 
     MassIntegrator integ(k1_.get());
@@ -193,7 +200,8 @@ TEST_F(IntegratorTest, MassElementMatrix)
 
 TEST_F(IntegratorTest, DomainLoadVector)
 {
-    ElementTransform trans(&mesh_, 0);
+    ElementTransform trans;
+    bindElementToTransform(trans, mesh_, 0);
     const ReferenceElement* refElem = fes_->elementRefElement(0);
 
     DomainLFIntegrator integ(k1_.get());
@@ -207,7 +215,8 @@ TEST_F(IntegratorTest, DomainLoadVector)
 
 TEST_F(IntegratorTest, StrainLoadVectorScaling)
 {
-    ElementTransform trans(&mesh_, 0);
+    ElementTransform trans;
+    bindElementToTransform(trans, mesh_, 0);
     const ReferenceElement* refElem = fes_->elementRefElement(0);
 
     Matrix3 sigma1 = Matrix3::Zero();

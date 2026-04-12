@@ -133,36 +133,33 @@ namespace mpfem {
 
     inline OperatorType operatorTypeFromName(std::string_view name)
     {
-        const std::string key = [name]() {
-            std::string normalized;
-            normalized.reserve(name.size());
-            for (char ch : name) {
-                const unsigned char value = static_cast<unsigned char>(ch);
-                if (std::isalnum(value)) {
-                    normalized.push_back(static_cast<char>(std::tolower(value)));
-                }
+        // Case-insensitive comparison helper
+        auto iequals = [](std::string_view a, std::string_view b) {
+            if (a.size() != b.size())
+                return false;
+            for (size_t i = 0; i < a.size(); ++i) {
+                if (std::tolower(static_cast<unsigned char>(a[i])) != std::tolower(static_cast<unsigned char>(b[i])))
+                    return false;
             }
-            return normalized;
-        }();
+            return true;
+        };
 
-        if (key == "sparselu")
-            return OperatorType::SparseLU;
-        if (key == "pardiso")
-            return OperatorType::Pardiso;
-        if (key == "umfpack")
-            return OperatorType::Umfpack;
-        if (key == "cg")
-            return OperatorType::CG;
-        if (key == "dgmres")
-            return OperatorType::DGMRES;
-        if (key == "diagonal")
-            return OperatorType::Diagonal;
-        if (key == "icc")
-            return OperatorType::ICC;
-        if (key == "ilu")
-            return OperatorType::ILU;
-        if (key == "additiveschwarz")
-            return OperatorType::AdditiveSchwarz;
+        // Normalize input: lowercase, alphanumeric only
+        std::string normalized;
+        normalized.reserve(name.size());
+        for (char ch : name) {
+            const unsigned char value = static_cast<unsigned char>(ch);
+            if (std::isalnum(value)) {
+                normalized.push_back(static_cast<char>(std::tolower(value)));
+            }
+        }
+
+        // Search registry (single source of truth)
+        for (size_t i = 0; i < detail::operatorRegistrySize; ++i) {
+            if (iequals(detail::operatorRegistry[i].name, normalized)) {
+                return detail::operatorRegistry[i].type;
+            }
+        }
 
         throw std::runtime_error("Unknown operator type: " + std::string(name));
     }

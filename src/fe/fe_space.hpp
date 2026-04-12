@@ -17,17 +17,17 @@ namespace mpfem {
      *
      * **Geometric Order vs Field Order**:
      * - Geometric order: From mesh element, used for coordinate transformation (ElementTransform)
-     * - Field order: From FECollection, used for shape functions and DOF management
+    * - Field order: From FECollection, used for FiniteElement basis and DOF management
      *
      * **Isoparametric, Subparametric, Superparametric**:
      * - Isoparametric: geo_order == field_order
      * - Subparametric: geo_order < field_order (linear mesh, quadratic field)
      * - Superparametric: geo_order > field_order (curved mesh, linear field)
      *
-     * **DOF Mapping**:
-     * - For subparametric: DOFs are created beyond mesh vertices (new nodes)
-     * - For superparametric: DOFs are a subset of mesh vertices
-     * - For isoparametric: DOFs exactly match mesh vertices
+    * **DOF Mapping**:
+    * - DOFs are attached to topology entities (vertex/edge/face/cell)
+    * - Global numbering is contiguous by entity dimension
+    * - Element local-to-global mapping is generated from mesh topology
      */
     class FESpace {
     public:
@@ -63,7 +63,7 @@ namespace mpfem {
         // -------------------------------------------------------------------------
 
         Index numDofs() const { return numDofs_; }
-        Index numDofsPerVertex() const { return numDofsPerVertex_; }
+        Index scalarNumDofs() const { return scalarNumDofs_; }
 
         void getElementDofs(Index elemIdx, std::span<Index> dofs) const;
         void getBdrElementDofs(Index bdrIdx, std::span<Index> dofs) const;
@@ -137,7 +137,7 @@ namespace mpfem {
         int vdim_ = 1;
 
         Index numDofs_ = 0;
-        Index numDofsPerVertex_ = 0; // For subparametric: DOFs per vertex (corner)
+        Index scalarNumDofs_ = 0;
 
         // Element DOF table: [elemIdx * maxDofsPerElem + localDof]
         std::vector<Index> elemDofs_;

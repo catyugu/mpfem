@@ -4,6 +4,13 @@
 
 namespace mpfem {
 
+std::uint64_t Mesh::edgeKey(Index a, Index b)
+{
+    const Index lo = std::min(a, b);
+    const Index hi = std::max(a, b);
+    return (static_cast<std::uint64_t>(lo) << 32) | static_cast<std::uint64_t>(hi);
+}
+
 Mesh::Mesh(int dim, Index numVertices, Index numElements, Index numBdrElements)
     : dim_(dim) {
     // Use reserve instead of resize to allow automatic expansion
@@ -128,14 +135,78 @@ void Mesh::clear() {
     bdrElements_.clear();
     dim_ = 3;
     topologyBuilt_ = false;
+    edgeInfoList_.clear();
+    edgeKeyToIndex_.clear();
+    elementToEdge_.clear();
     faceInfoList_.clear();
     faceKeyToIndex_.clear();
     elementToFace_.clear();
     boundaryFaceIndices_.clear();
     interiorFaceIndices_.clear();
     bdrElementToFace_.clear();
+    bdrIdExternalCache_.clear();
     cornerVertexIndices_.clear();
     cornerVertexMap_.clear();
+}
+
+std::vector<Index> Mesh::getElementVertices(Index elemIdx) const
+{
+    if (elemIdx >= numElements()) {
+        return {};
+    }
+
+    const Element& elem = element(elemIdx);
+    const int corners = elem.numCorners();
+    std::vector<Index> out;
+    out.reserve(static_cast<size_t>(corners));
+    for (int i = 0; i < corners; ++i) {
+        out.push_back(elem.vertex(i));
+    }
+    return out;
+}
+
+std::vector<Index> Mesh::getElementEdges(Index elemIdx) const
+{
+    if (elemIdx >= static_cast<Index>(elementToEdge_.size())) {
+        return {};
+    }
+
+    std::vector<std::pair<int, Index>> localToGlobal = elementToEdge_[elemIdx];
+    std::sort(localToGlobal.begin(), localToGlobal.end(),
+        [](const auto& a, const auto& b) { return a.first < b.first; });
+
+    std::vector<Index> out;
+    out.reserve(localToGlobal.size());
+    for (const auto& [localEdge, globalEdge] : localToGlobal) {
+        (void)localEdge;
+        out.push_back(globalEdge);
+    }
+    return out;
+}
+
+std::vector<Index> Mesh::getElementFaces(Index elemIdx) const
+{
+    if (elemIdx >= static_cast<Index>(elementToFace_.size())) {
+        return {};
+    }
+
+    std::vector<std::pair<int, Index>> localToGlobal = elementToFace_[elemIdx];
+    std::sort(localToGlobal.begin(), localToGlobal.end(),
+        [](const auto& a, const auto& b) { return a.first < b.first; });
+
+    std::vector<Index> out;
+    out.reserve(localToGlobal.size());
+    for (const auto& [localFace, globalFace] : localToGlobal) {
+        (void)localFace;
+        out.push_back(globalFace);
+    }
+    return out;
+}
+
+Index Mesh::edgeIndex(Index a, Index b) const
+{
+    const auto it = edgeKeyToIndex_.find(edgeKey(a, b));
+    return (it == edgeKeyToIndex_.end()) ? InvalidIndex : it->second;
 }
 
 std::pair<Vector3, Vector3> Mesh::getBoundingBox() const {
@@ -184,12 +255,18 @@ void Mesh::buildTopology() {
     LOG_DEBUG << "Building mesh topology...";
     
     // Clear previous data
+    edgeInfoList_.clear();
+    edgeKeyToIndex_.clear();
+    elementToEdge_.clear();
     faceInfoList_.clear();
     faceKeyToIndex_.clear();
     elementToFace_.clear();
     boundaryFaceIndices_.clear();
     interiorFaceIndices_.clear();
     bdrElementToFace_.clear();
+
+    // Build edge -> element mapping
+    buildEdgeToElementMap();
     
     // Build face -> element mapping
     buildFaceToElementMap();
@@ -232,8 +309,37 @@ void Mesh::buildTopology() {
     
     LOG_DEBUG << "Topology built: " << boundaryFaceIndices_.size() << " boundary faces, "
               << interiorFaceIndices_.size() << " interior faces, "
+              << edgeInfoList_.size() << " edges, "
               << bdrElementToFace_.size() << " boundary elements mapped, "
               << cornerVertexIndices_.size() << " corner vertices";
+}
+
+void Mesh::buildEdgeToElementMap() {
+    elementToEdge_.clear();
+    elementToEdge_.resize(numElements());
+
+    for (Index elemIdx = 0; elemIdx < numElements(); ++elemIdx) {
+        const Element& elem = element(elemIdx);
+        const int nEdges = elem.numEdges();
+
+        for (int localEdge = 0; localEdge < nEdges; ++localEdge) {
+            const auto [v0, v1] = elem.edgeVertices(localEdge);
+            const std::uint64_t key = edgeKey(v0, v1);
+
+            auto it = edgeKeyToIndex_.find(key);
+            Index edgeIdx = InvalidIndex;
+            if (it == edgeKeyToIndex_.end()) {
+                edgeIdx = static_cast<Index>(edgeInfoList_.size());
+                edgeInfoList_.push_back(EdgeInfo {std::min(v0, v1), std::max(v0, v1)});
+                edgeKeyToIndex_[key] = edgeIdx;
+            }
+            else {
+                edgeIdx = it->second;
+            }
+
+            elementToEdge_[elemIdx].push_back({localEdge, edgeIdx});
+        }
+    }
 }
 
 void Mesh::buildFaceToElementMap() {
@@ -250,11 +356,11 @@ void Mesh::buildFaceToElementMap() {
             
             // Create a sorted key for the face
             FaceKey key;
-            key.reserve(faceVerts.size());
+            key.count = 0;
             for (Index v : faceVerts) {
-                key.push_back(v);
+                key.nodes[key.count++] = v;
             }
-            std::sort(key.begin(), key.end());
+            std::sort(key.nodes, key.nodes + key.count);
             
             // Check if face already exists
             auto it = faceMap.find(key);
@@ -336,11 +442,11 @@ void Mesh::buildBoundaryElementMapping() {
         // Get sorted vertex key for boundary element - ONLY CORNER NODES
         FaceKey key;
         int numCorners = bdrElem.numCorners();
-        key.reserve(numCorners);
+        key.count = numCorners;
         for (int i = 0; i < numCorners; ++i) {
-            key.push_back(bdrElem.vertex(i));
+            key.nodes[i] = bdrElem.vertex(i);
         }
-        std::sort(key.begin(), key.end());
+        std::sort(key.nodes, key.nodes + key.count);
         
         // Find matching face
         auto it = faceKeyToIndex_.find(key);

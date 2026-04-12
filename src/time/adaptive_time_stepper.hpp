@@ -77,7 +77,7 @@ namespace mpfem {
                     underlyingDt = std::min(underlyingDt * cfg_.growFactor, cfg_.maxDt);
                 }
                 else {
-                    LOG_WARN << "Convergence failed, shrinking time step.";
+                    LOG_WARNING << "Convergence failed, shrinking time step.";
                     underlyingDt *= cfg_.shrinkFactor;
                     if (underlyingDt < cfg_.minDt) {
                         LOG_ERROR << "Time step too small. Aborting.";
