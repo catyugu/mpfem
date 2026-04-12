@@ -110,17 +110,6 @@ if(MPFEM_OPENMP_FOUND)
 endif()
 
 # =============================================================================
-# Model library (header-only)
-# =============================================================================
-
-mpfem_add_library(mpfem_model
-    HEADER_ONLY
-    PUBLIC_LINK
-        Eigen3::Eigen
-        mpfem_core
-)
-
-# =============================================================================
 # Mesh library
 # =============================================================================
 
@@ -162,7 +151,6 @@ mpfem_add_library(mpfem_io
         Eigen3::Eigen
         mpfem_core
         mpfem_expr
-        mpfem_model
         tinyxml2::tinyxml2
 )
 
@@ -183,7 +171,6 @@ mpfem_add_library(mpfem_fe
         Eigen3::Eigen
         mpfem_core
         mpfem_mesh
-        mpfem_model
 )
 
 # =============================================================================
@@ -214,18 +201,6 @@ mpfem_add_library(mpfem_assembly
 )
 
 # =============================================================================
-# Coupling library (header-only)
-# =============================================================================
-
-mpfem_add_library(mpfem_coupling
-    HEADER_ONLY
-    PUBLIC_LINK
-        Eigen3::Eigen
-        mpfem_core
-        mpfem_fe
-)
-
-# =============================================================================
 # Problem library (header-only) - 纯数据基类
 # =============================================================================
 
@@ -240,7 +215,7 @@ mpfem_add_library(mpfem_problem
         mpfem_mesh
         mpfem_fe
         mpfem_io
-        mpfem_model
+        mpfem_assembly
         mpfem_physics
 )
 
@@ -264,9 +239,7 @@ mpfem_add_library(mpfem_physics
         mpfem_fe
         mpfem_assembly
         mpfem_solver
-        mpfem_coupling
         mpfem_io
-        mpfem_model
 )
 
 # =============================================================================
@@ -275,12 +248,10 @@ mpfem_add_library(mpfem_physics
 
 mpfem_create_alias(core)
 mpfem_create_alias(expr)
-mpfem_create_alias(model)
 mpfem_create_alias(mesh)
 mpfem_create_alias(io)
 mpfem_create_alias(fe)
 mpfem_create_alias(assembly)
 mpfem_create_alias(solver)
-mpfem_create_alias(coupling)
 mpfem_create_alias(problem)
 mpfem_create_alias(physics)
