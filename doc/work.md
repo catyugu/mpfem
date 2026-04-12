@@ -29,17 +29,21 @@
 
 ### 1. 核心问题诊断与反模式识别
 
-1. **过早/冗余的手动底层优化（Anti-pattern）**：`core/kernels.hpp` 中手动展开了 1x1 到 3x3 矩阵的 `det` 和 `inverse`。既然项目已经深度依赖了高度优化的 `Eigen` 库，手动写 `det3` 完全多此一举，不但没有性能提升，反而增加了代码维护成本。
-2. **宏污染与核心逻辑强耦合（Anti-pattern / Verbosity）**：`assembler.cpp` 中为了实现 OpenMP 并行，充斥着大量的 `#ifdef _OPENMP` 分支，导致真正的组装逻辑（数学积分）被淹没在线程缓冲区初始化和锁中。
-3. **AST 树的指针嵌套导致内存碎片与缓存不友好（Performance/Memory）**：在 `expression_parser.cpp` 中，AST 节点包含 `std::vector<std::unique_ptr<AstNode>> args`。对每一求值点执行递归指针调用会导致极差的 CPU Cache 命中率和多余的堆内存分配。
-4. **巨型 Switch-Case 代码重复（Verbosity）**：`geometry_mapping.cpp` 和 `h1.cpp` 中包含两套冗长、硬编码的形状函数与形函数的导数表达式。
-5. **向后兼容的妥协（Redundancy）**：`Tensor` 类存在大量的 `asVector3`、`matrix3` 等为了兼容旧版代码而存在的转换函数，破坏了封装的统一性。
+1. **宏污染与核心逻辑强耦合（Anti-pattern / Verbosity）**：`assembler.cpp` 中为了实现 OpenMP 并行，充斥着大量的 `#ifdef _OPENMP` 分支，导致真正的组装逻辑（数学积分）被淹没在线程缓冲区初始化和锁中。
+2. **AST 树的指针嵌套导致内存碎片与缓存不友好（Performance/Memory）**：在 `expression_parser.cpp` 中，AST 节点包含 `std::vector<std::unique_ptr<AstNode>> args`。对每一求值点执行递归指针调用会导致极差的 CPU Cache 命中率和多余的堆内存分配。
+3. **巨型 Switch-Case 代码重复（Verbosity）**：`geometry_mapping.cpp` 和 `h1.cpp` 中包含两套冗长、硬编码的形状函数与形函数的导数表达式。
+4. **向后兼容的妥协（Redundancy）**：`Tensor` 类存在大量的 `asVector3`、`matrix3` 等为了兼容旧版代码而存在的转换函数，破坏了封装的统一性。
 
 ---
 
 ### 2. 步骤化重构方案
 
-#### 步骤 1：消除 OpenMP 宏污染，提取并行装配模式
+#### 步骤 1：清理底层计算内核与精简数据结构（删除向后兼容）
+**目标**：消除 `core/kernels.hpp`，精简 `Tensor` 和 `VariableGraph`，统一采用 `Eigen` 内置的定长矩阵优化。
+。
+* **精简 `Tensor` 类**：删除所有兼容性构造和检查。直接保留 `TensorShape` 和 `TensorData` 即可，让调用方直接通过标准的数学运算符操作，不要保留 `asMatrix3()`, `asVector3()` 等冗余方法，只给维度无关的 `vector()`, `matrix()` 接口，强制接口统一。
+
+#### 步骤 2：消除 OpenMP 宏污染，提取并行装配模式
 **目标**：将 `assembler.cpp` 的 300 多行代码缩减 50% 以上，分离“线程调度”与“数学装配”。
 
 * **重构动作**：在 `core` 模块中实现一个泛型的 `parallel_for` 迭代器，将复杂的 OpenMP 分支收敛到一处。
@@ -71,7 +75,7 @@ void BilinearFormAssembler::assemble() {
 }
 ```
 
-#### 步骤 2：消除 Integrator 中的 Boilerplate 代码
+#### 步骤 3：消除 Integrator 中的 Boilerplate 代码
 **目标**：解决 `integrators.cpp` 中每个子类都重复写高斯积分点遍历的问题。
 
 * **重构动作**：在基类或者工具命名空间中提供一个高阶函数 `integrateElement`。
@@ -91,7 +95,7 @@ void DiffusionIntegrator::assembleElementMatrix(const ReferenceElement& ref, Ele
 }
 ```
 
-#### 步骤 3： AST 求值引擎的“扁平化” / 引入轻量级虚拟机 (VM)
+#### 步骤 4： AST 求值引擎的“扁平化” / 引入轻量级虚拟机 (VM)
 **目标**：彻底解决 `expression_parser.cpp` 中庞大、低效的树形指针结构。这能极大节省内存，避免递归函数调用，并且加快大批量数据的求值效率。
 
 * **重构动作**：将 `AstNode` 的树结构（Tree）在编译后（`VariableManager::compile`）展平为线性的字节码（Bytecode）数组（即后缀表达式/逆波兰表示）。
@@ -132,7 +136,7 @@ class CompiledExpressionNode final : public VariableNode {
 };
 ```
 
-#### 步骤 4：消除重叠功能，统一 Shape 映射
+#### 步骤 5：消除重叠功能，统一 Shape 映射
 **目标**：解决 `geometry_mapping.cpp`（完全手动写死的多项式）与 `h1.cpp` 中（拉格朗日多项式引擎）逻辑重合且代码冗长的问题。
 
 * **重构动作**：废弃 `GeometryMapping` 里 500 多行的巨型 Switch 语句。改用基于张量积（Tensor Product）的统一生成器。
