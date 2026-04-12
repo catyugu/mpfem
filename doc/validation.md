@@ -1,12 +1,5 @@
 # 验证准则
 
-## 编译方式
-
-```bash
-cmake -S . -B build
-cmake --build build --parallel --config=Release
-```
-
 ## 1阶稳态
 
 ### 运行方式

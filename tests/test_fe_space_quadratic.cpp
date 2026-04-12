@@ -671,7 +671,7 @@ TEST_F(COMSOLMeshTest, FiniteElementKroneckerDelta)
         ShapeMatrix values;
 
         // At each node position, only the corresponding H1 basis function should be 1.
-        for (size_t i = 0; i < dofCoords.size(); ++i) {
+        for (int i = 0; i < static_cast<int>(dofCoords.size()); ++i) {
             h1Element.evalShape(dofCoords[i], values);
 
             for (int j = 0; j < values.rows(); ++j) {
