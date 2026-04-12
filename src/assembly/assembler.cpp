@@ -57,7 +57,8 @@ namespace mpfem {
     // BilinearFormAssembler
     // =============================================================================
 
-    BilinearFormAssembler::BilinearFormAssembler(const FESpace* fes) : fes_(fes)
+    BilinearFormAssembler::BilinearFormAssembler(const FESpace* fes)
+        : fes_(fes)
     {
         if (fes_ && fes_->numDofs() > 0) {
             mat_.resize(fes_->numDofs(), fes_->numDofs());
@@ -89,8 +90,7 @@ namespace mpfem {
         triplets_.clear();
 
         // 预估 triplet 数量：
-        const int totalDofs = fes_->numDofs();
-        const size_t estimatedTriplets = totalDofs * MaxDofsPerElement;
+        const size_t estimatedTriplets = fes_->numDofs() * MaxDofsPerElement;
         triplets_.reserve(estimatedTriplets);
 
 #ifdef _OPENMP
@@ -284,7 +284,8 @@ namespace mpfem {
     // LinearFormAssembler
     // =============================================================================
 
-    LinearFormAssembler::LinearFormAssembler(const FESpace* fes) : fes_(fes)
+    LinearFormAssembler::LinearFormAssembler(const FESpace* fes)
+        : fes_(fes)
     {
         if (fes_ && fes_->numDofs() > 0) {
             vec_.setZero(fes_->numDofs());

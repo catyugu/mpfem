@@ -1,6 +1,5 @@
 #include "fe/fe_space.hpp"
 #include "mesh/element.hpp"
-#include "mesh/mesh.hpp"
 
 #include <algorithm>
 
