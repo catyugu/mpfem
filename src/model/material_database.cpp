@@ -97,7 +97,7 @@ namespace mpfem {
         return impl_->scalarExpressions.find(name) != impl_->scalarExpressions.end();
     }
 
-    bool MaterialPropertyModel::hasMatrix(const std::string& name) const
+    bool MaterialPropertyModel::hasMatrix3(const std::string& name) const
     {
         return impl_->matrixExpressions.find(name) != impl_->matrixExpressions.end();
     }

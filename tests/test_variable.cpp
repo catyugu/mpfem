@@ -72,8 +72,8 @@ TEST_F(VariableNodeTest, VectorLiteralMatMulAndDotEvaluation)
     ivNode->evaluateBatch(ctx, std::span<Tensor>(ivOut));
 
     ASSERT_TRUE(ivOut[0].isVector());
-    Vector3 iv0 = ivOut[0].toVector3();
-    Vector3 iv1 = ivOut[1].toVector3();
+    Vector3 iv0 = ivOut[0].asVector3();
+    Vector3 iv1 = ivOut[1].asVector3();
     EXPECT_NEAR(iv0.x(), 1.5, 1e-12);
     EXPECT_NEAR(iv0.y(), -2.0, 1e-12);
     EXPECT_NEAR(iv0.z(), 3.0, 1e-12);
@@ -110,7 +110,7 @@ TEST_F(VariableNodeTest, TensorSymTraceTransposeEvaluation)
     std::array<Tensor, 1> sOut {};
     sNode->evaluateBatch(ctx, std::span<Tensor>(sOut));
     ASSERT_TRUE(sOut[0].isMatrix());
-    Matrix3 s = sOut[0].toMatrix3();
+    Matrix3 s = sOut[0].asMatrix3();
     EXPECT_NEAR(s(0, 0), 1.0, 1e-12);
     EXPECT_NEAR(s(0, 1), 3.0, 1e-12);
     EXPECT_NEAR(s(0, 2), 5.0, 1e-12);
@@ -124,7 +124,7 @@ TEST_F(VariableNodeTest, TensorSymTraceTransposeEvaluation)
     std::array<Tensor, 1> stOut {};
     stNode->evaluateBatch(ctx, std::span<Tensor>(stOut));
     ASSERT_TRUE(stOut[0].isMatrix());
-    Matrix3 st = stOut[0].toMatrix3();
+    Matrix3 st = stOut[0].asMatrix3();
     EXPECT_NEAR(st(0, 0), 1.0, 1e-12);
     EXPECT_NEAR(st(0, 1), 4.0, 1e-12);
     EXPECT_NEAR(st(0, 2), 7.0, 1e-12);

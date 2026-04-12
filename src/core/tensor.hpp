@@ -4,335 +4,210 @@
 #include "core/exception.hpp"
 #include "core/tensor_shape.hpp"
 #include "core/types.hpp"
-#include <algorithm>
-#include <array>
-#include <variant>
+#include <Eigen/Dense>
 
 namespace mpfem {
 
     /**
-     * @brief Unified tensor value using std::variant for zero heap allocation
-     *
-     * Design principles:
-     * - NO std::vector (eliminates ALL heap allocations)
-     * - std::variant<Real, Vector3, Matrix3> for type-safe storage
-     * - All operations use std::visit for open-closed polymorphic dispatch
-     * - Type mismatches throw exceptions (fail-fast, no silent Zero() returns)
+     * @brief 最高支持 36 个元素的栈上零堆分配张量（例如 6x6 矩阵或 36维向量），超出则自动降级为堆分配
+     * 
+     * 内部存储顺序：Column-Major (与 Eigen 默认一致)
      */
-    using TensorData = std::variant<Real, Vector3, Matrix3>;
-
-    /// C++17 overloaded visitor pattern - eliminates if-else type chains
-    template <class... Ts>
-    struct overloaded : Ts... {
-        using Ts::operator()...;
-    };
-    template <class... Ts>
-    overloaded(Ts...) -> overloaded<Ts...>;
+    using TensorData = Eigen::Matrix<Real, Eigen::Dynamic, 1, Eigen::ColMajor, 36, 1>;
 
     class Tensor {
     public:
-        Tensor() : data_(Real(0)) { }
-        explicit Tensor(Real v) : data_(v) { }
-        explicit Tensor(const Vector3& v) : data_(v) { }
-        explicit Tensor(const Matrix3& m) : data_(m) { }
+        TensorShape shape_;
+        TensorData data_;
 
-        // Shape query
-        TensorShape shape() const
+        Tensor() : shape_(TensorShape::scalar())
         {
-            if (isScalar())
-                return TensorShape();
-            if (isVector())
-                return TensorShape::vector(3);
-            return TensorShape::matrix(3, 3);
-        }
-        bool isScalar() const { return std::holds_alternative<Real>(data_); }
-        bool isVector() const { return std::holds_alternative<Vector3>(data_); }
-        bool isMatrix() const { return std::holds_alternative<Matrix3>(data_); }
-
-        // Type-safe extractors
-        Real asScalar() const { return std::get<Real>(data_); }
-        const Vector3& asVector() const { return std::get<Vector3>(data_); }
-        const Matrix3& asMatrix() const { return std::get<Matrix3>(data_); }
-
-        // Raw buffer access
-        Real* data()
-        {
-            return std::visit(overloaded {
-                                  [](Real& x) -> Real* { return &x; },
-                                  [](Vector3& x) -> Real* { return x.data(); },
-                                  [](Matrix3& x) -> Real* { return x.data(); }},
-                data_);
-        }
-        const Real* data() const
-        {
-            return std::visit(overloaded {
-                                  [](const Real& x) -> const Real* { return &x; },
-                                  [](const Vector3& x) -> const Real* { return x.data(); },
-                                  [](const Matrix3& x) -> const Real* { return x.data(); }},
-                data_);
-        }
-        size_t size() const
-        {
-            return std::visit(overloaded {
-                                  [](const Real&) -> size_t { return 1; },
-                                  [](const Vector3&) -> size_t { return 3; },
-                                  [](const Matrix3&) -> size_t { return 9; }},
-                data_);
+            data_.setZero(1);
         }
 
-        // Element access
-        Real scalar() const { return asScalar(); }
-        Real operator[](int i) const
+        explicit Tensor(Real v) : shape_(TensorShape::scalar())
         {
-            return std::visit(overloaded {
-                                  [](const Real& x) -> Real { return x; },
-                                  [i](const Vector3& v) -> Real { return v(i); },
-                                  [i](const Matrix3& m) -> Real { return m.data()[i]; }},
-                data_);
+            data_.setConstant(1, v);
         }
-        Real at(int row, int col) const { return asMatrix()(row, col); }
 
-        // Factory methods
+        // 支持任意形状初始化
+        Tensor(TensorShape shape, TensorData data) : shape_(shape), data_(std::move(data)) { }
+
+        // 生成工厂
         static Tensor scalar(Real v) { return Tensor(v); }
-        static Tensor vector(Real x, Real y, Real z) { return Tensor(Vector3(x, y, z)); }
-        static Tensor vector3(const Vector3& v) { return Tensor(v); }
-        static Tensor matrix3(const Matrix3& m) { return Tensor(m); }
-        static Tensor matrix3(Real m00, Real m01, Real m02,
-            Real m10, Real m11, Real m12,
-            Real m20, Real m21, Real m22)
+
+        static Tensor vector(const TensorData& v)
         {
-            Matrix3 m;
-            m << m00, m01, m02, m10, m11, m12, m20, m21, m22;
-            return Tensor(m);
+            return Tensor(TensorShape::vector(static_cast<int>(v.size())), v);
         }
-        static Tensor identity3()
+
+        static Tensor vector(std::initializer_list<Real> vals)
         {
-            Matrix3 m;
-            m.setIdentity();
-            return Tensor(m);
+            TensorData v(static_cast<Index>(vals.size()));
+            int i = 0;
+            for (auto val : vals) v[i++] = val;
+            return vector(v);
         }
+
+        static Tensor matrix(int r, int c, const TensorData& m)
+        {
+            MPFEM_ASSERT(m.size() == static_cast<Index>(r) * c, "Matrix data size mismatch");
+            return Tensor(TensorShape::matrix(r, c), m);
+        }
+
+        /**
+         * @brief 从行优先初始化列表创建矩阵 (转为内部列优先存储)
+         */
+        static Tensor matrix(int r, int c, std::initializer_list<Real> vals)
+        {
+            MPFEM_ASSERT(vals.size() == static_cast<size_t>(r * c), "Matrix data size mismatch");
+            TensorData m(static_cast<Index>(vals.size()));
+            auto it = vals.begin();
+            for (int i = 0; i < r; ++i) {
+                for (int j = 0; j < c; ++j) {
+                    m[j * r + i] = *it++; // Row-major to Column-major
+                }
+            }
+            return matrix(r, c, m);
+        }
+
         static Tensor zero(const TensorShape& shape)
         {
-            if (shape.isScalar())
-                return Tensor(Real(0));
-            if (shape.isVector())
-                return Tensor(Vector3::Zero().eval());
-            return Tensor(Matrix3::Zero().eval());
+            Tensor t;
+            t.shape_ = shape;
+            t.data_.setZero(static_cast<Index>(shape.size()));
+            return t;
         }
 
-        // Extractors
-        Real toScalar() const { return asScalar(); }
-        Vector3 toVector3() const { return asVector(); }
-        Matrix3 toMatrix3() const { return asMatrix(); }
-        void copyTo(Real* dest) const
+        // Compatibility factories
+        static Tensor vector3(const Vector3& v) { return vector(v); }
+        static Tensor matrix3(const Matrix3& m)
         {
-            const Real* src = data();
-            for (size_t i = 0; i < size(); ++i)
-                dest[i] = src[i];
+            TensorData d(9);
+            Eigen::Map<Matrix3>(d.data()) = m; // Matrix3 is ColMajor
+            return matrix(3, 3, d);
         }
 
-        // Variant accessor
-        const TensorData& variant() const { return data_; }
+        // Compatibility accessors
+        Real asScalar() const { return data_[0]; }
+        Eigen::Map<const Vector3> asVector3() const
+        {
+            MPFEM_ASSERT(isVector() && data_.size() >= 3, "Not a 3D vector");
+            return Eigen::Map<const Vector3>(data_.data());
+        }
+        Eigen::Map<const Matrix3> asMatrix3() const
+        {
+            MPFEM_ASSERT(isMatrix() && data_.size() >= 9, "Not a 3x3 matrix");
+            return Eigen::Map<const Matrix3>(data_.data());
+        }
 
-        // =============================================================================
-        // Operator overloads - std::visit with overloaded pattern
-        // Throws on type mismatch (fail-fast, not silent Zero() return)
-        // =============================================================================
+        // Shape query
+        const TensorShape& shape() const { return shape_; }
+        bool isScalar() const { return shape_.isScalar(); }
+        bool isVector() const { return shape_.isVector(); }
+        bool isMatrix() const { return shape_.isMatrix(); }
+
+        // Element access
+        Real scalar() const { return data_[0]; }
+        Real operator[](int i) const { return data_[i]; }
+        Real& operator[](int i) { return data_[i]; }
+
+        Real operator()(int r, int c) const
+        {
+            MPFEM_ASSERT(isMatrix(), "Not a matrix");
+            return data_[c * shape_.rows() + r]; // Column-major indexing
+        }
+
+        // --- 统一的数学运算 ---
 
         Tensor operator+(const Tensor& rhs) const
         {
-            return applySameShapeBinary(data_, rhs.data_, [](const auto& a, const auto& b) { return a + b; }, "Tensor shape mismatch in add");
+            MPFEM_ASSERT(shape_ == rhs.shape_, "Tensor shape mismatch in add");
+            return Tensor(shape_, data_ + rhs.data_);
         }
 
         Tensor operator-(const Tensor& rhs) const
         {
-            return applySameShapeBinary(data_, rhs.data_, [](const auto& a, const auto& b) { return a - b; }, "Tensor shape mismatch in subtract");
+            MPFEM_ASSERT(shape_ == rhs.shape_, "Tensor shape mismatch in sub");
+            return Tensor(shape_, data_ - rhs.data_);
         }
 
-        Tensor operator-() const
-        {
-            return std::visit(overloaded {
-                                  [](Real x) -> Tensor { return Tensor(-x); },
-                                  [](const Vector3& v) -> Tensor { return Tensor((-v).eval()); },
-                                  [](const Matrix3& m) -> Tensor { return Tensor((-m).eval()); }},
-                data_);
-        }
+        Tensor operator-() const { return Tensor(shape_, -data_); }
 
         Tensor operator*(const Tensor& rhs) const
         {
-            return std::visit(overloaded {
-                                  // Scalar * Scalar
-                                  [](Real a, Real b) -> Tensor { return Tensor(a * b); },
-                                  // Scalar * Vector
-                                  [](Real a, const Vector3& v) -> Tensor { return Tensor((a * v).eval()); },
-                                  // Scalar * Matrix
-                                  [](Real a, const Matrix3& m) -> Tensor { return Tensor((a * m).eval()); },
-                                  // Vector * Scalar
-                                  [](const Vector3& v, Real a) -> Tensor { return Tensor((v * a).eval()); },
-                                  // Matrix * Scalar
-                                  [](const Matrix3& m, Real a) -> Tensor { return Tensor((m * a).eval()); },
-                                  // Matrix * Vector
-                                  [](const Matrix3& A, const Vector3& v) -> Tensor { return Tensor((A * v).eval()); },
-                                  // Matrix * Matrix
-                                  [](const Matrix3& A, const Matrix3& B) -> Tensor { return Tensor((A * B).eval()); },
-                                  // Invalid combinations
-                                  [](auto&&, auto&&) -> Tensor {
-                                      MPFEM_THROW(ArgumentException, "Invalid tensor multiplication shapes");
-                                  }},
-                data_, rhs.data_);
+            if (shape_.isScalar()) return Tensor(rhs.shape_, data_[0] * rhs.data_);
+            if (rhs.shape_.isScalar()) return Tensor(shape_, data_ * rhs.data_[0]);
+
+            // 矩阵 * 向量
+            if (shape_.isMatrix() && rhs.shape_.isVector()) {
+                MPFEM_ASSERT(shape_.cols() == rhs.shape_.rows(), "Mat*Vec dim mismatch");
+                Eigen::Map<const Eigen::Matrix<Real, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor>> mat(data_.data(), shape_.rows(), shape_.cols());
+                return Tensor(TensorShape::vector(shape_.rows()), mat * rhs.data_);
+            }
+            // 矩阵 * 矩阵
+            if (shape_.isMatrix() && rhs.shape_.isMatrix()) {
+                MPFEM_ASSERT(shape_.cols() == rhs.shape_.rows(), "Mat*Mat dim mismatch");
+                Eigen::Map<const Eigen::Matrix<Real, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor>> A(data_.data(), shape_.rows(), shape_.cols());
+                Eigen::Map<const Eigen::Matrix<Real, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor>> B(rhs.data_.data(), rhs.shape_.rows(), rhs.shape_.cols());
+                Eigen::Matrix<Real, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor> C = A * B;
+                return Tensor(TensorShape::matrix(shape_.rows(), rhs.shape_.cols()),
+                    Eigen::Map<TensorData>(C.data(), C.size()));
+            }
+
+            MPFEM_THROW(ArgumentException, "Invalid tensor multiplication shapes");
         }
 
         Tensor operator/(const Tensor& rhs) const
         {
-            return std::visit(overloaded {
-                                  [](Real a, Real b) -> Tensor { return Tensor(a / b); },
-                                  [](const Vector3& v, Real s) -> Tensor { return Tensor((v / s).eval()); },
-                                  [](const Matrix3& m, Real s) -> Tensor { return Tensor((m / s).eval()); },
-                                  [](auto&&, auto&&) -> Tensor {
-                                      MPFEM_THROW(ArgumentException, "Invalid tensor division: only tensor/scalar supported");
-                                  }},
-                data_, rhs.data_);
+            MPFEM_ASSERT(rhs.shape_.isScalar(), "Only divide by scalar supported");
+            return Tensor(shape_, data_ / rhs.data_[0]);
         }
-
-    private:
-        template <typename Op>
-        static Tensor applySameShapeBinary(const TensorData& lhs, const TensorData& rhs, Op op, const char* error)
-        {
-            return std::visit(overloaded {
-                                  [&op](Real a, Real b) -> Tensor { return Tensor(op(a, b)); },
-                                  [&op](const Vector3& a, const Vector3& b) -> Tensor {
-                                      return Tensor(op(a, b).eval());
-                                  },
-                                  [&op](const Matrix3& a, const Matrix3& b) -> Tensor {
-                                      return Tensor(op(a, b).eval());
-                                  },
-                                  [error](auto&&, auto&&) -> Tensor {
-                                      MPFEM_THROW(ArgumentException, error);
-                                  }},
-                lhs, rhs);
-        }
-
-        TensorData data_;
     };
 
-    // =============================================================================
-    // Free functions - also using std::visit for consistency
-    // =============================================================================
-
-    inline Tensor scale(const Tensor& t, Real s)
-    {
-        return std::visit(overloaded {
-                              [s](Real x) -> Tensor { return Tensor(x * s); },
-                              [s](const Vector3& v) -> Tensor { return Tensor((v * s).eval()); },
-                              [s](const Matrix3& m) -> Tensor { return Tensor((m * s).eval()); }},
-            t.variant());
-    }
-
-    inline Tensor add(const Tensor& a, const Tensor& b)
-    {
-        return a + b; // Delegates to operator+
-    }
-
-    inline Tensor subtract(const Tensor& a, const Tensor& b)
-    {
-        return a - b; // Delegates to operator-
-    }
-
-    inline Tensor negate(const Tensor& t)
-    {
-        return -t; // Delegates to operator-
-    }
-
-    inline Tensor matvec(const Tensor& A, const Tensor& b)
-    {
-        return std::visit(overloaded {
-                              [](const Matrix3& A, const Vector3& v) -> Tensor {
-                                  return Tensor((A * v).eval());
-                              },
-                              [](auto&&, auto&&) -> Tensor {
-                                  MPFEM_THROW(ArgumentException, "matvec requires Matrix3 * Vector3");
-                              }},
-            A.variant(), b.variant());
-    }
-
-    inline Tensor matmat(const Tensor& A, const Tensor& B)
-    {
-        return std::visit(overloaded {
-                              [](const Matrix3& A, const Matrix3& B) -> Tensor {
-                                  return Tensor((A * B).eval());
-                              },
-                              [](auto&&, auto&&) -> Tensor {
-                                  MPFEM_THROW(ArgumentException, "matmat requires Matrix3 * Matrix3");
-                              }},
-            A.variant(), B.variant());
-    }
-
+    // Free functions
     inline Real dot(const Tensor& a, const Tensor& b)
     {
-        return std::visit(overloaded {
-                              [](const Vector3& u, const Vector3& v) -> Real { return u.dot(v); },
-                              [](Real a, Real b) -> Real { return a * b; },
-                              [](auto&&, auto&&) -> Real {
-                                  MPFEM_THROW(ArgumentException, "dot requires Vector3.Vector3 or Scalar*Scalar");
-                              }},
-            a.variant(), b.variant());
+        MPFEM_ASSERT(a.shape_ == b.shape_, "Dot product requires matching shapes");
+        return a.data_.dot(b.data_);
     }
 
-    inline Tensor cross(const Tensor& a, const Tensor& b)
+    inline Tensor transpose(const Tensor& a)
     {
-        return std::visit(overloaded {
-                              [](const Vector3& u, const Vector3& v) -> Tensor {
-                                  return Tensor(u.cross(v));
-                              },
-                              [](auto&&, auto&&) -> Tensor {
-                                  MPFEM_THROW(ArgumentException, "cross requires Vector3 x Vector3");
-                              }},
-            a.variant(), b.variant());
+        if (!a.shape_.isMatrix()) return a;
+        Eigen::Map<const Eigen::Matrix<Real, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor>> mat(a.data_.data(), a.shape_.rows(), a.shape_.cols());
+        Eigen::Matrix<Real, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor> trans = mat.transpose();
+        return Tensor(TensorShape::matrix(a.shape_.cols(), a.shape_.rows()),
+            Eigen::Map<TensorData>(trans.data(), trans.size()));
     }
 
     inline Real trace(const Tensor& m)
     {
-        return std::visit(overloaded {
-                              [](const Matrix3& mat) -> Real { return mat.trace(); },
-                              [](Real r) -> Real { return r; },
-                              [](auto&&) -> Real {
-                                  MPFEM_THROW(ArgumentException, "trace requires Matrix3 or Scalar");
-                              }},
-            m.variant());
-    }
-
-    inline Tensor transpose(const Tensor& m)
-    {
-        return std::visit(overloaded {
-                              [](const Matrix3& mat) -> Tensor {
-                                  return Tensor(Matrix3(mat.transpose().eval()));
-                              },
-                              [](auto&&) -> Tensor {
-                                  MPFEM_THROW(ArgumentException, "transpose requires Matrix3");
-                              }},
-            m.variant());
+        if (m.shape_.isScalar()) return m.scalar();
+        MPFEM_ASSERT(m.shape_.isMatrix() && m.shape_.rows() == m.shape_.cols(), "Trace requires square matrix");
+        Eigen::Map<const Eigen::Matrix<Real, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor>> mat(m.data_.data(), m.shape_.rows(), m.shape_.cols());
+        return mat.trace();
     }
 
     inline Tensor sym(const Tensor& m)
     {
-        return std::visit(overloaded {
-                              [](const Matrix3& mat) -> Tensor {
-                                  return Tensor(Matrix3((Real(0.5) * (mat + mat.transpose())).eval()));
-                              },
-                              [](auto&&) -> Tensor {
-                                  MPFEM_THROW(ArgumentException, "sym requires Matrix3");
-                              }},
-            m.variant());
+        if (m.shape_.isScalar()) return m;
+        MPFEM_ASSERT(m.shape_.isMatrix() && m.shape_.rows() == m.shape_.cols(), "Sym requires square matrix");
+        Eigen::Map<const Eigen::Matrix<Real, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor>> mat(m.data_.data(), m.shape_.rows(), m.shape_.cols());
+        Eigen::Matrix<Real, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor> res = 0.5 * (mat + mat.transpose());
+        return Tensor(m.shape_, Eigen::Map<TensorData>(res.data(), res.size()));
     }
 
     inline Real norm(const Tensor& t)
     {
-        return std::visit(overloaded {
-                              [](const Real& x) -> Real { return std::abs(x); },
-                              [](const Vector3& v) -> Real { return v.norm(); },
-                              [](const Matrix3& m) -> Real { return m.norm(); }},
-            t.variant());
+        return t.data_.norm();
     }
+
+    // Compatibility functions
+    inline Tensor scale(const Tensor& t, Real s) { return t * Tensor::scalar(s); }
+    inline Tensor add(const Tensor& a, const Tensor& b) { return a + b; }
+    inline Tensor subtract(const Tensor& a, const Tensor& b) { return a - b; }
+    inline Tensor negate(const Tensor& t) { return -t; }
 
 } // namespace mpfem
 

@@ -44,6 +44,8 @@ namespace mpfem {
 
             Tensor val;
             int var_index = -1;
+            int rows = 1;
+            int cols = 1;
             std::vector<std::unique_ptr<AstNode>> args;
 
             static std::unique_ptr<AstNode> make(Kind k)
@@ -99,13 +101,22 @@ namespace mpfem {
                 return Tensor::scalar(trace(evalAst(node->args[0].get(), vars)));
             case AstNode::Kind::Transpose:
                 return transpose(evalAst(node->args[0].get(), vars));
-            case AstNode::Kind::VectorLit:
-                return Tensor::vector(evalAst(node->args[0].get(), vars).scalar(), evalAst(node->args[1].get(), vars).scalar(), evalAst(node->args[2].get(), vars).scalar());
-            case AstNode::Kind::MatrixLit:
-                return Tensor::matrix3(
-                    evalAst(node->args[0].get(), vars).scalar(), evalAst(node->args[1].get(), vars).scalar(), evalAst(node->args[2].get(), vars).scalar(),
-                    evalAst(node->args[3].get(), vars).scalar(), evalAst(node->args[4].get(), vars).scalar(), evalAst(node->args[5].get(), vars).scalar(),
-                    evalAst(node->args[6].get(), vars).scalar(), evalAst(node->args[7].get(), vars).scalar(), evalAst(node->args[8].get(), vars).scalar());
+            case AstNode::Kind::VectorLit: {
+                TensorData vec(node->args.size());
+                for (size_t i = 0; i < node->args.size(); ++i) {
+                    vec[i] = evalAst(node->args[i].get(), vars).scalar();
+                }
+                return Tensor::vector(vec);
+            }
+            case AstNode::Kind::MatrixLit: {
+                TensorData mat(static_cast<Index>(node->args.size()));
+                for (int r = 0; r < node->rows; ++r) {
+                    for (int c = 0; c < node->cols; ++c) {
+                        mat[c * node->rows + r] = evalAst(node->args[r * node->cols + c].get(), vars).scalar();
+                    }
+                }
+                return Tensor::matrix(node->rows, node->cols, mat);
+            }
             }
             return Tensor::scalar(0.0);
         }
@@ -498,6 +509,8 @@ namespace mpfem {
                     if (match(TokenType::Semi)) {
                         if (cols == 0)
                             cols = currentCols;
+                        else if (cols != currentCols)
+                            MPFEM_THROW(ArgumentException, "Inconsistent column count in matrix");
                         rows++;
                         currentCols = 0;
                     }
@@ -511,20 +524,15 @@ namespace mpfem {
 
                 if (rows == 1 && cols == 1)
                     return std::move(elems.front());
-                if (rows == 1 && cols == 3) {
-                    auto n = AstNode::make(AstNode::Kind::VectorLit);
-                    n->args = std::move(elems);
-                    return n;
-                }
-                if (rows == 3 && cols == 3) {
-                    auto n = AstNode::make(AstNode::Kind::MatrixLit);
-                    n->args = std::move(elems);
-                    return n;
-                }
-                MPFEM_THROW(ArgumentException, "Unsupported matrix shape");
+
+                auto n = AstNode::make(rows == 1 ? AstNode::Kind::VectorLit : AstNode::Kind::MatrixLit);
+                n->rows = rows;
+                n->cols = cols;
+                n->args = std::move(elems);
+                return n;
             }
 
-            // 原生解析 COMSOL {...} 矩阵格式，消灭字符串拼装与分配
+            // 原生解析 COMSOL {...} 矩阵格式
             std::unique_ptr<AstNode> parseComsolMatrix()
             {
                 std::vector<std::unique_ptr<AstNode>> elems;
@@ -533,17 +541,18 @@ namespace mpfem {
                     match(TokenType::Comma);
                 }
                 consume(TokenType::RBrace);
-
-                auto zero = []() { auto z = AstNode::make(AstNode::Kind::Constant); z->val = Tensor::scalar(0.0); return z; };
-
-                auto n = AstNode::make(AstNode::Kind::MatrixLit);
-                if (elems.size() == 1) {
-                    // 各向同性 {c} -> [c,0,0; 0,c,0; 0,0,c]
-                    for (int i = 0; i < 9; ++i)
-                        n->args.push_back(i % 4 == 0 ? std::move(elems[0]) : zero());
-                }
-                else if (elems.size() == 9) {
-                    // COMSOL输入为转置排列 {c0,c1,c2,c3,c4,c5,c6,c7,c8}
+                // For 9 elements, COMSOL is transposed 3x3
+                if (elems.size() == 9) {
+                    auto n = AstNode::make(AstNode::Kind::MatrixLit);
+                    n->rows = 3;
+                    n->cols = 3;
+                    // COMSOL: c0, c3, c6 (first col) -> c0, c1, c2 (first row)
+                    // Input order is c0, c1, c2, c3, c4, c5, c6, c7, c8 (row-major in COMSOL's internal storage, but it represents column-major)
+                    // Wait, COMSOL {c0, c1, c2, c3, c4, c5, c6, c7, c8} means:
+                    // [c0, c3, c6]
+                    // [c1, c4, c7]
+                    // [c2, c5, c8]
+                    // So we reorder to our row-major: c0, c3, c6, c1, c4, c7, c2, c5, c8
                     n->args.push_back(std::move(elems[0]));
                     n->args.push_back(std::move(elems[3]));
                     n->args.push_back(std::move(elems[6]));
@@ -553,11 +562,10 @@ namespace mpfem {
                     n->args.push_back(std::move(elems[2]));
                     n->args.push_back(std::move(elems[5]));
                     n->args.push_back(std::move(elems[8]));
+                    return n;
                 }
-                else {
-                    MPFEM_THROW(ArgumentException, "Unsupported COMSOL matrix element count");
-                }
-                return n;
+
+                MPFEM_THROW(ArgumentException, "Unsupported COMSOL matrix element count");
             }
 
         public:

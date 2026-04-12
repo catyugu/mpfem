@@ -22,8 +22,13 @@ void evalGrads(const FiniteElement& shape, const Vector3& xi, std::vector<Vector
     DerivMatrix derivatives;
     shape.evalDerivatives(xi, derivatives);
     grads.resize(derivatives.rows());
+    int d = derivatives.cols();
     for (int i = 0; i < derivatives.rows(); ++i) {
-        grads[i] = Vector3(derivatives(i, 0), derivatives(i, 1), derivatives(i, 2));
+        grads[i] = Vector3(
+            d > 0 ? derivatives(i, 0) : 0.0,
+            d > 1 ? derivatives(i, 1) : 0.0,
+            d > 2 ? derivatives(i, 2) : 0.0
+        );
     }
 }
 

@@ -51,7 +51,7 @@ namespace mpfem {
             const EvaluationContext ctx = makeSinglePointContext(trans, refPts, physPts, transforms);
             node->evaluateBatch(ctx, std::span<Tensor>(value));
 
-            return value[0].toMatrix3();
+            return value[0].asMatrix3();
         }
 
     } // namespace

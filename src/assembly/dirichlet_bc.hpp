@@ -94,7 +94,7 @@ namespace mpfem {
                                 value = out[0].asScalar();
                             }
                             else if (out[0].isVector()) {
-                                value = (c < 3) ? out[0].asVector()(c) : 0.0;
+                                value = (c < 3) ? out[0].asVector3()(c) : 0.0;
                             }
                             else {
                                 MPFEM_THROW(ArgumentException, "Dirichlet BC expects scalar or vector, got matrix");
