@@ -44,8 +44,8 @@ TEST_F(BracketLiteralTest, VectorBracketLiteral)
     std::array<Tensor, 1> out {};
     node->evaluateBatch(ctx, std::span<Tensor>(out));
     EXPECT_TRUE(out[0].isVector());
-    EXPECT_EQ(out[0].asVector3().size(), 3);
-    Vector3 v = out[0].asVector3();
+    EXPECT_EQ(out[0].vector().size(), 3);
+    Vector3 v = out[0].vector();
     EXPECT_NEAR(v(0), 1.0, 1e-12);
     EXPECT_NEAR(v(1), 2.0, 1e-12);
     EXPECT_NEAR(v(2), 3.0, 1e-12);
@@ -66,9 +66,9 @@ TEST_F(BracketLiteralTest, MatrixBracketLiteral)
     std::array<Tensor, 1> out {};
     node->evaluateBatch(ctx, std::span<Tensor>(out));
     EXPECT_TRUE(out[0].isMatrix());
-    EXPECT_EQ(out[0].asMatrix3().rows(), 3);
-    EXPECT_EQ(out[0].asMatrix3().cols(), 3);
-    Matrix3 M = out[0].asMatrix3();
+    EXPECT_EQ(out[0].matrix().rows(), 3);
+    EXPECT_EQ(out[0].matrix().cols(), 3);
+    Matrix3 M = out[0].matrix();
 
     // Row 0
     EXPECT_NEAR(M(0, 0), 1.0, 1e-12);
@@ -99,8 +99,8 @@ TEST_F(BracketLiteralTest, MatrixVectorExpression)
     std::array<Tensor, 1> out {};
     node->evaluateBatch(ctx, std::span<Tensor>(out));
     EXPECT_TRUE(out[0].isVector());
-    EXPECT_EQ(out[0].asVector3().size(), 3);
-    Vector3 v = out[0].asVector3();
+    EXPECT_EQ(out[0].vector().size(), 3);
+    Vector3 v = out[0].vector();
     // Identity matrix times [x,y,z] should give [x,y,z]
     EXPECT_NEAR(v(0), 1.0, 1e-12);
     EXPECT_NEAR(v(1), 2.0, 1e-12);

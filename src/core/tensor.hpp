@@ -55,6 +55,14 @@ namespace mpfem {
             return Tensor(TensorShape::matrix(r, c), m);
         }
 
+        template <typename Derived>
+        static Tensor matrix(int r, int c, const Eigen::MatrixBase<Derived>& m)
+        {
+            static_assert(std::is_same_v<typename Derived::Scalar, Real>, "Matrix scalar type mismatch");
+            MPFEM_ASSERT(m.rows() == r && m.cols() == c, "Matrix dimension mismatch");
+            return matrix(r, c, Eigen::Map<const TensorData>(m.derived().data(), m.size()));
+        }
+
         /**
          * @brief 从行优先初始化列表创建矩阵 (转为内部列优先存储)
          */
@@ -79,25 +87,21 @@ namespace mpfem {
             return t;
         }
 
-        // Compatibility factories
-        static Tensor vector3(const Vector3& v) { return vector(v); }
-        static Tensor matrix3(const Matrix3& m)
+        // Generic accessors returning Eigen::Map
+        Eigen::Map<const Vector> vector() const
         {
-            TensorData d(9);
-            Eigen::Map<Matrix3>(d.data()) = m; // Matrix3 is ColMajor
-            return matrix(3, 3, d);
+            if (!shape_.isVector()) {
+                MPFEM_THROW(ArgumentException, "Not a vector");
+            }
+            return Eigen::Map<const Vector>(data_.data(), data_.size());
         }
 
-        // Compatibility accessors
-        Eigen::Map<const Vector3> asVector3() const
+        Eigen::Map<const Matrix> matrix() const
         {
-            MPFEM_ASSERT(isVector() && data_.size() >= 3, "Not a 3D vector");
-            return Eigen::Map<const Vector3>(data_.data());
-        }
-        Eigen::Map<const Matrix3> asMatrix3() const
-        {
-            MPFEM_ASSERT(isMatrix() && data_.size() >= 9, "Not a 3x3 matrix");
-            return Eigen::Map<const Matrix3>(data_.data());
+            if (!shape_.isMatrix()) {
+                MPFEM_THROW(ArgumentException, "Not a matrix");
+            }
+            return Eigen::Map<const Matrix>(data_.data(), shape_.rows(), shape_.cols());
         }
 
         // Shape query
