@@ -91,10 +91,10 @@ namespace mpfem {
                         Real value = 0.0;
                         if (coef) {
                             if (out[0].isScalar()) {
-                                value = out[0].asScalar();
+                                value = out[0].scalar();
                             }
                             else if (out[0].isVector()) {
-                                value = (c < 3) ? out[0].asVector3()(c) : 0.0;
+                                value = (c < static_cast<int>(out[0].shape().size())) ? out[0][c] : 0.0;
                             }
                             else {
                                 MPFEM_THROW(ArgumentException, "Dirichlet BC expects scalar or vector, got matrix");

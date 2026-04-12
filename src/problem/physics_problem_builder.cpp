@@ -167,7 +167,7 @@ namespace mpfem {
                     const Vector3& xi = ctx.referencePoints[i];
                     Matrix3 invJT = trans->invJacobianT();
                     Vector3 g = field_->gradient(ctx.elementId, xi, invJT);
-                    dest[i] = Tensor::vector3(g);
+                    dest[i] = Tensor::vector(g);
                 }
             }
 

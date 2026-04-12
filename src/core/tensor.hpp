@@ -89,7 +89,6 @@ namespace mpfem {
         }
 
         // Compatibility accessors
-        Real asScalar() const { return data_[0]; }
         Eigen::Map<const Vector3> asVector3() const
         {
             MPFEM_ASSERT(isVector() && data_.size() >= 3, "Not a 3D vector");
@@ -202,12 +201,6 @@ namespace mpfem {
     {
         return t.data_.norm();
     }
-
-    // Compatibility functions
-    inline Tensor scale(const Tensor& t, Real s) { return t * Tensor::scalar(s); }
-    inline Tensor add(const Tensor& a, const Tensor& b) { return a + b; }
-    inline Tensor subtract(const Tensor& a, const Tensor& b) { return a - b; }
-    inline Tensor negate(const Tensor& t) { return -t; }
 
 } // namespace mpfem
 
