@@ -4,6 +4,12 @@
 
 cmake_minimum_required(VERSION 3.20)
 
+
+if(DEFINED ENV{VCPKG_ROOT})
+    set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" CACHE STRING "vcpkg toolchain")
+    message(STATUS "Using VCPKG_ROOT: $ENV{VCPKG_ROOT}")
+endif()
+
 project(mpfem
     VERSION 0.1.0
     DESCRIPTION "Multi-Physics Finite Element Method Library"
