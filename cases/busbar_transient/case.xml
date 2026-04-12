@@ -61,12 +61,7 @@
           <MaxIterations>1000</MaxIterations>
           <PrintLevel>0</PrintLevel>
         </Parameters>
-        <Preconditioner type="AdditiveSchwarz">
-          <Parameters>
-            <Overlap>1</Overlap>
-          </Parameters>
-          <LocalSolver type="Diagonal"/>
-        </Preconditioner>
+        <Preconditioner type="Diagonal"/>
       </LinearSolver>
     </SolverConfiguration>
     <boundary kind="convection" ids="1-7">

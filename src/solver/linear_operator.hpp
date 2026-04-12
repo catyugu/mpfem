@@ -62,6 +62,8 @@ namespace mpfem {
          * @param x Solution vector (output)
          *
          * Implements x = M^{-1} * b where M is this operator.
+         * Marked as const because applying the operator shouldn't change its state
+         * (other than metadata like iterations or residual).
          */
         virtual void apply(const Vector& b, Vector& x) = 0;
 
