@@ -43,7 +43,7 @@ int main(int argc, char* argv[])
             auto& steadyProb = static_cast<SteadyProblem&>(*setup);
             SteadyResult result = steadyProb.solve();
             if (!result.converged) {
-                LOG_WARN << "Coupling did not converge after " << result.iterations << " iterations";
+                LOG_WARNING << "Coupling did not converge after " << result.iterations << " iterations";
             }
             else {
                 LOG_INFO << "Coupling converged in " << result.iterations << " iterations";

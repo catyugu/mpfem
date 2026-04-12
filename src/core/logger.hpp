@@ -152,7 +152,7 @@ private:
 
 #define LOG_DEBUG   ::mpfem::LogMessage(::mpfem::LogLevel::Debug)
 #define LOG_INFO    ::mpfem::LogMessage(::mpfem::LogLevel::Info)
-#define LOG_WARN    ::mpfem::LogMessage(::mpfem::LogLevel::Warning)
+#define LOG_WARNING    ::mpfem::LogMessage(::mpfem::LogLevel::Warning)
 #define LOG_ERROR   ::mpfem::LogMessage(::mpfem::LogLevel::Error)
 
 /**
