@@ -25,7 +25,7 @@ namespace {
         uniqueAttrs.reserve(static_cast<size_t>(mesh.numElements()));
 
         for (mpfem::Index e = 0; e < mesh.numElements(); ++e) {
-            uniqueAttrs.insert(mesh.element(e).attribute());
+            uniqueAttrs.insert(mesh.element(e).attribute);
         }
 
         DomainIntegratorMap attrMap;
@@ -127,10 +127,10 @@ namespace mpfem {
                     continue;
                 int nd = ref->numDofs();
 
-                const Element& elem = mesh->element(e);
+                const Element elem = mesh->element(e);
                 bindElementToTransform(trans, *mesh, e, false);
 
-                const int elemAttr = elem.attribute();
+                const int elemAttr = elem.attribute;
                 const auto domainIt = activeDomains.find(elemAttr);
                 if (domainIt == activeDomains.end() || domainIt->second.empty())
                     continue;
@@ -208,8 +208,8 @@ namespace mpfem {
             bbuf.ensureDynMatrixSize(maxDynSize);
 
             for (Index b = 0; b < mesh->numBdrElements(); ++b) {
-                const Element& belem = mesh->bdrElement(b);
-                int attr = belem.attribute();
+                const Element belem = mesh->bdrElement(b);
+                int attr = belem.attribute;
 
                 if (!fes_->isExternalBoundaryId(attr))
                     continue;
@@ -345,10 +345,10 @@ namespace mpfem {
                         continue;
                     int nd = ref->numDofs();
 
-                    const Element& elem = mesh->element(e);
+                    const Element elem = mesh->element(e);
                     bindElementToTransform(trans, *mesh, e, false);
 
-                    const int elemAttr = elem.attribute();
+                    const int elemAttr = elem.attribute;
                     const auto domainIt = activeDomains.find(elemAttr);
                     if (domainIt == activeDomains.end() || domainIt->second.empty())
                         continue;
@@ -418,8 +418,8 @@ namespace mpfem {
             ThreadBuffer bbuf;
 
             for (Index b = 0; b < mesh->numBdrElements(); ++b) {
-                const Element& belem = mesh->bdrElement(b);
-                int attr = belem.attribute();
+                const Element belem = mesh->bdrElement(b);
+                int attr = belem.attribute;
 
                 if (!fes_->isExternalBoundaryId(attr))
                     continue;

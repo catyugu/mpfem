@@ -2,8 +2,8 @@
 #define MPFEM_IO_PROBLEM_INPUT_LOADER_HPP
 
 #include "mesh/mesh.hpp"
-#include "model/case_definition.hpp"
-#include "model/material_database.hpp"
+#include "io/case_definition.hpp"
+#include "io/material_database.hpp"
 
 #include <memory>
 #include <string>

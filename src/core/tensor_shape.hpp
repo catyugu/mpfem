@@ -33,14 +33,6 @@ namespace mpfem {
             }
         }
 
-        explicit TensorShape(const std::vector<int>& d)
-        {
-            num_dims = static_cast<int>(std::min<size_t>(d.size(), 4));
-            for (int i = 0; i < num_dims; ++i) {
-                dims[i] = d[i];
-            }
-        }
-
         // 工厂方法
         static TensorShape scalar() { return TensorShape(); }
         static TensorShape vector(int n) { return TensorShape({n}); }

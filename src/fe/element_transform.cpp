@@ -1,6 +1,5 @@
 #include "fe/element_transform.hpp"
 #include "core/exception.hpp"
-#include "core/kernels.hpp"
 #include <cmath>
 
 namespace mpfem {
@@ -33,7 +32,7 @@ namespace mpfem {
 
         // Compute weight and determinant
         if (dim_ == 3) {
-            detJ_ = kernels::det3(jacobian_.data());
+            detJ_ = jacobian_.determinant();
             weight_ = std::abs(detJ_);
         }
         else if (dim_ == 2) {
@@ -55,7 +54,7 @@ namespace mpfem {
 
         if (dim_ == 3) {
             if (std::abs(detJ_) > 1e-15) {
-                kernels::inverse3(jacobian_.data(), invJacobian_.data());
+                invJacobian_ = jacobian_.inverse();
             }
         }
         else if (dim_ == 2) {

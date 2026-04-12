@@ -45,10 +45,10 @@ TEST_F(MeshReadTest, ReadBusbarMesh)
     // Count unique domain IDs (only from tetrahedral elements)
     std::set<Index> domains;
     for (Index i = 0; i < mesh.numElements(); ++i) {
-        const auto& elem = mesh.element(i);
+        const auto elem = mesh.element(i);
         // Only count tetrahedra for domain IDs
-        if (elem.geometry() == Geometry::Tetrahedron) {
-            domains.insert(elem.attribute());
+        if (elem.geometry == Geometry::Tetrahedron) {
+            domains.insert(elem.attribute);
         }
     }
     EXPECT_EQ(domains.size(), 7) << "Expected 7 domains";
@@ -56,7 +56,7 @@ TEST_F(MeshReadTest, ReadBusbarMesh)
     // Count unique boundary IDs
     std::set<Index> boundaries;
     for (Index i = 0; i < mesh.numBdrElements(); ++i) {
-        boundaries.insert(mesh.bdrElement(i).attribute());
+        boundaries.insert(mesh.bdrElement(i).attribute);
     }
     EXPECT_EQ(boundaries.size(), 43) << "Expected 43 boundaries";
 }

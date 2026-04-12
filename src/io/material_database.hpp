@@ -3,7 +3,7 @@
 
 #include "core/exception.hpp"
 #include "core/types.hpp"
-#include "model/case_definition.hpp"
+#include "io/case_definition.hpp"
 #include <map>
 #include <memory>
 #include <string>

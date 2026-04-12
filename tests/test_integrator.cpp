@@ -50,7 +50,7 @@ namespace {
                 throw std::runtime_error("MatrixConstantNode destination size mismatch");
             }
             for (size_t i = 0; i < n; ++i) {
-                dest[i] = Tensor::matrix3(value_);
+                dest[i] = Tensor::matrix(3, 3, value_);
             }
         }
 
