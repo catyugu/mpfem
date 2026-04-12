@@ -1,10 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <case name="busbar_transient_order2">
-  <paths
-    mesh="mesh.mphtxt"
-    materials="material.xml"
-    comsol_result="result.txt"
-  />
+  <paths mesh="mesh.mphtxt" materials="material.xml" comsol_result="result.txt" />
 
   <study type="transient">
     <time start="0" end="100" step="10" scheme="BDF1"/>
@@ -74,7 +70,7 @@
 
   <physics kind="solid_mechanics" order="2">
     <SolverConfiguration>
-      <LinearSolver type="UMFPACK">
+      <LinearSolver type="Pardiso">
         <Parameters>
           <Tolerance>1e-10</Tolerance>
           <MaxIterations>1000</MaxIterations>
