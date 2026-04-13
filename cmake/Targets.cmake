@@ -1,7 +1,6 @@
 # =============================================================================
-# Targets.cmake - Library target definitions
+# Targets.cmake - Library target definitions (Optimized for Build Speed)
 # =============================================================================
-
 
 # =============================================================================
 # Helper function for creating mpfem library targets
@@ -21,7 +20,6 @@ function(mpfem_add_library name)
                 $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
                 $<INSTALL_INTERFACE:include>
         )
-        # For INTERFACE libraries, use INTERFACE keyword for link libraries
         if(ARG_PUBLIC_LINK)
             target_link_libraries(${name} INTERFACE ${ARG_PUBLIC_LINK})
         endif()
@@ -35,7 +33,6 @@ function(mpfem_add_library name)
                 $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
                 $<INSTALL_INTERFACE:include>
         )
-        # For regular libraries, use PUBLIC/PRIVATE keywords
         if(ARG_PUBLIC_LINK)
             target_link_libraries(${name} PUBLIC ${ARG_PUBLIC_LINK})
         endif()
@@ -49,15 +46,12 @@ function(mpfem_add_library name)
     endif()
 endfunction()
 
-# =============================================================================
-# Create simple aliases for all libraries
-# =============================================================================
 macro(mpfem_create_alias name)
     add_library(mpfem::${name} ALIAS mpfem_${name})
 endmacro()
 
 # =============================================================================
-# Core library
+# 1. Core library (Bottom of the dependency tree)
 # =============================================================================
 
 mpfem_add_library(mpfem_core
@@ -67,14 +61,12 @@ mpfem_add_library(mpfem_core
         Eigen3::Eigen
 )
 
-# --- MKL support (PARDISO solver + optional BLAS acceleration) ---
 if(MPFEM_MKL_FOUND)
     target_compile_definitions(mpfem_core PUBLIC MPFEM_USE_MKL)
     target_link_libraries(mpfem_core PUBLIC MKL::MKL)
     message(STATUS "MKL enabled for PARDISO solver")
 endif()
 
-# --- SuiteSparse::UMFPACK support ---
 if(MPFEM_UMFPACK_FOUND)
     target_compile_definitions(mpfem_core PUBLIC MPFEM_USE_UMFPACK)
     if(TARGET SuiteSparse::UMFPACK)
@@ -85,26 +77,20 @@ if(MPFEM_UMFPACK_FOUND)
     message(STATUS "SuiteSparse::UMFPACK solver enabled")
 endif()
 
-# --- OpenMP support ---
 if(MPFEM_OPENMP_FOUND)
     target_link_libraries(mpfem_core PUBLIC OpenMP::OpenMP_CXX)
 endif()
 
 # =============================================================================
-# Mesh library
+# 2. Base Modules (Depend only on Core)
 # =============================================================================
 
 mpfem_add_library(mpfem_mesh
     SOURCES
         src/mesh/mesh.cpp
     PUBLIC_LINK
-        Eigen3::Eigen
         mpfem_core
 )
-
-# =============================================================================
-# Expression runtime library
-# =============================================================================
 
 mpfem_add_library(mpfem_expr
     SOURCES
@@ -112,12 +98,17 @@ mpfem_add_library(mpfem_expr
         src/expr/expression_parser.cpp
         src/expr/variable_graph.cpp
     PUBLIC_LINK
-        Eigen3::Eigen
+        mpfem_core
+)
+
+mpfem_add_library(mpfem_solver
+    HEADER_ONLY
+    PUBLIC_LINK
         mpfem_core
 )
 
 # =============================================================================
-# IO library
+# 3. Intermediate Modules
 # =============================================================================
 
 mpfem_add_library(mpfem_io
@@ -129,15 +120,11 @@ mpfem_add_library(mpfem_io
         src/io/result_exporter.cpp
         src/io/mphtxt_reader.cpp
     PUBLIC_LINK
-        Eigen3::Eigen
-        mpfem_core
         mpfem_expr
         tinyxml2::tinyxml2
+    PRIVATE_LINK
+        mpfem_mesh # IO needs mesh internally to read/write formats
 )
-
-# =============================================================================
-# FE library
-# =============================================================================
 
 mpfem_add_library(mpfem_fe
     SOURCES
@@ -149,40 +136,19 @@ mpfem_add_library(mpfem_fe
         src/fe/grid_function.cpp
         src/fe/fe_space.cpp
     PUBLIC_LINK
-        Eigen3::Eigen
-        mpfem_core
         mpfem_mesh
 )
-
-# =============================================================================
-# Solver library (header-only)
-# =============================================================================
-
-mpfem_add_library(mpfem_solver
-    HEADER_ONLY
-    PUBLIC_LINK
-        Eigen3::Eigen
-        mpfem_core
-)
-
-# =============================================================================
-# Assembly library
-# =============================================================================
 
 mpfem_add_library(mpfem_assembly
     SOURCES
         src/assembly/assembler.cpp
         src/assembly/integrators.cpp
     PUBLIC_LINK
-        Eigen3::Eigen
-        mpfem_core
-        mpfem_mesh
         mpfem_fe
-        mpfem_solver
 )
 
 # =============================================================================
-# Physics library
+# 4. High-Level Modules (Physics & Problem)
 # =============================================================================
 
 mpfem_add_library(mpfem_physics
@@ -190,20 +156,9 @@ mpfem_add_library(mpfem_physics
         src/physics/electrostatics_solver.cpp
         src/physics/heat_transfer_solver.cpp
         src/physics/structural_solver.cpp
-
     PUBLIC_LINK
-        Eigen3::Eigen
-        mpfem_core
-        mpfem_mesh
-        mpfem_fe
         mpfem_assembly
-        mpfem_solver
-        mpfem_io
 )
-
-# =============================================================================
-# Problem library
-# =============================================================================
 
 mpfem_add_library(mpfem_problem
     SOURCES
@@ -214,20 +169,14 @@ mpfem_add_library(mpfem_problem
         src/problem/time/bdf1_integrator.cpp
         src/problem/time/bdf2_integrator.cpp
     PUBLIC_LINK
-        Eigen3::Eigen
-        mpfem_core
-        mpfem_expr
-        mpfem_mesh
-        mpfem_fe
-        mpfem_io
-        mpfem_assembly
         mpfem_physics
+    PRIVATE_LINK
+        mpfem_io 
+        mpfem_expr
 )
 
-
-
 # =============================================================================
-# Create simple aliases (mpfem::core, mpfem::mesh, etc.)
+# Create simple aliases
 # =============================================================================
 
 mpfem_create_alias(core)
