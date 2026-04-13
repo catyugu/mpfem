@@ -141,9 +141,17 @@ mpfem_add_library(mpfem_fe
         src/fe/finite_element.cpp
         src/fe/geometry_mapping.cpp
         src/fe/h1.cpp
-        src/fe/grid_function.cpp
-        src/fe/fe_space.cpp
+        src/fe/nd.cpp
     PUBLIC_LINK
+        mpfem_mesh
+)
+
+mpfem_add_library(mpfem_field
+    SOURCES
+        src/field/fe_space.cpp
+        src/field/grid_function.cpp
+    PUBLIC_LINK
+        mpfem_fe
         mpfem_mesh
 )
 
@@ -152,7 +160,7 @@ mpfem_add_library(mpfem_assembly
         src/assembly/assembler.cpp
         src/assembly/integrators.cpp
     PUBLIC_LINK
-        mpfem_fe
+        mpfem_field
 )
 
 # =============================================================================
@@ -192,6 +200,7 @@ mpfem_create_alias(expr)
 mpfem_create_alias(mesh)
 mpfem_create_alias(io)
 mpfem_create_alias(fe)
+mpfem_create_alias(field)
 mpfem_create_alias(assembly)
 mpfem_create_alias(solver)
 mpfem_create_alias(physics)

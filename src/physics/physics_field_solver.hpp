@@ -3,8 +3,8 @@
 
 #include "assembly/assembler.hpp"
 #include "core/logger.hpp"
-#include "fe/fe_space.hpp"
-#include "fe/grid_function.hpp"
+#include "field/fe_space.hpp"
+#include "field/grid_function.hpp"
 #include "mesh/mesh.hpp"
 #include "physics/field_values.hpp"
 #include "solver/linear_operator.hpp"
@@ -28,8 +28,8 @@ namespace mpfem {
             fieldValues_ = &fieldValues;
             order_ = order;
 
-            auto fec = std::make_unique<FECollection>(order_, FECollection::Type::H1);
-            fes_ = std::make_unique<FESpace>(&mesh, std::move(fec), VDim());
+            auto fec = std::make_unique<H1Collection>(order_, VDim());
+            fes_ = std::make_unique<FESpace>(&mesh, std::move(fec));
 
             TensorShape shape = VDim() == 1 ? TensorShape::scalar() : TensorShape::vector(VDim());
             fieldValues.createField(fieldName(), fes_.get(), shape);

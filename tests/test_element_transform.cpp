@@ -7,7 +7,6 @@
 #include <cmath>
 #include <gtest/gtest.h>
 
-
 using namespace mpfem;
 
 // =============================================================================
@@ -396,7 +395,7 @@ TEST(IntegrationTransformTest, IntegrateOverTetrahedron)
     Real integral = 0.0;
 
     for (const auto& ip : rule) {
-        trans.setIntegrationPoint(ip);
+        trans.setIntegrationPoint(ip.getXi());
         integral += ip.weight * trans.weight();
     }
 
@@ -416,7 +415,7 @@ TEST(IntegrationTransformTest, IntegrateOverTriangleBoundary)
     Real integral = 0.0;
 
     for (const auto& ip : rule) {
-        trans.setIntegrationPoint(ip);
+        trans.setIntegrationPoint(ip.getXi());
         integral += ip.weight * trans.weight();
     }
 

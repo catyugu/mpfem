@@ -2,16 +2,22 @@
 
 #include "core/exception.hpp"
 #include "h1.hpp"
+#include "nd.hpp"
 
 namespace mpfem {
 
-    std::unique_ptr<FiniteElement> FiniteElement::create(BasisType type, Geometry geom, int order)
+    std::unique_ptr<FiniteElement> FiniteElement::create(BasisType type, Geometry geom, int order, int vdim)
     {
-        if (type != BasisType::H1) {
-            MPFEM_THROW(NotImplementedException, "Only H1 basis is implemented");
+        switch (type) {
+        case BasisType::H1:
+            return std::make_unique<H1FiniteElement>(geom, order, vdim);
+        case BasisType::ND:
+            return std::make_unique<NDFiniteElement>(geom, order);
+        case BasisType::L2:
+        case BasisType::RT:
+            MPFEM_THROW(NotImplementedException, "Finite element basis type is not implemented");
         }
-
-        return std::make_unique<H1FiniteElement>(geom, order);
+        MPFEM_THROW(NotImplementedException, "Unknown finite element basis type");
     }
 
 } // namespace mpfem

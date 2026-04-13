@@ -1,7 +1,7 @@
 #include "core/geometry.hpp"
 #include "fe/fe_collection.hpp"
-#include "fe/fe_space.hpp"
 #include "fe/quadrature.hpp"
+#include "field/fe_space.hpp"
 #include "mesh/mesh.hpp"
 #include <gtest/gtest.h>
 
@@ -168,7 +168,7 @@ protected:
     void SetUp() override
     {
         mesh_ = createTriMesh2D();
-        feSpace_ = std::make_unique<FESpace>(&mesh_, std::make_unique<FECollection>(1));
+        feSpace_ = std::make_unique<FESpace>(&mesh_, std::make_unique<H1Collection>(1));
     }
 
     Mesh mesh_;
@@ -241,7 +241,7 @@ protected:
     void SetUp() override
     {
         mesh_ = createTriMesh2D();
-        feSpace_ = std::make_unique<FESpace>(&mesh_, std::make_unique<FECollection>(2));
+        feSpace_ = std::make_unique<FESpace>(&mesh_, std::make_unique<H1Collection>(2));
     }
 
     Mesh mesh_;
@@ -295,7 +295,7 @@ protected:
     void SetUp() override
     {
         mesh_ = createTetMesh3D();
-        feSpace_ = std::make_unique<FESpace>(&mesh_, std::make_unique<FECollection>(1));
+        feSpace_ = std::make_unique<FESpace>(&mesh_, std::make_unique<H1Collection>(1));
     }
 
     Mesh mesh_;
@@ -345,7 +345,7 @@ protected:
     void SetUp() override
     {
         mesh_ = createQuadMesh2D();
-        feSpace_ = std::make_unique<FESpace>(&mesh_, std::make_unique<FECollection>(1));
+        feSpace_ = std::make_unique<FESpace>(&mesh_, std::make_unique<H1Collection>(1));
     }
 
     Mesh mesh_;
@@ -392,7 +392,7 @@ protected:
     void SetUp() override
     {
         mesh_ = createQuadMesh2D();
-        feSpace_ = std::make_unique<FESpace>(&mesh_, std::make_unique<FECollection>(2));
+        feSpace_ = std::make_unique<FESpace>(&mesh_, std::make_unique<H1Collection>(2));
     }
 
     Mesh mesh_;
@@ -431,7 +431,7 @@ protected:
 
 TEST_F(FESpaceMixedGeometryTest, LinearMixedMeshDofs)
 {
-    FESpace fes(&mesh_, std::make_unique<FECollection>(1));
+    FESpace fes(&mesh_, std::make_unique<H1Collection>(1));
 
     EXPECT_EQ(fes.numDofs(), 5);
 
@@ -447,7 +447,7 @@ TEST_F(FESpaceMixedGeometryTest, LinearMixedMeshDofs)
 
 TEST_F(FESpaceMixedGeometryTest, QuadraticMixedMeshDofs)
 {
-    FESpace fes(&mesh_, std::make_unique<FECollection>(2));
+    FESpace fes(&mesh_, std::make_unique<H1Collection>(2));
 
     // 5 used vertices + 6 edge + 1 quad cell interior = 12 scalar DOFs.
     EXPECT_EQ(fes.numDofs(), 12);
@@ -471,7 +471,7 @@ protected:
     {
         mesh_ = createTriMesh2D();
         // Create a vector field with 2 components
-        feSpace_ = std::make_unique<FESpace>(&mesh_, std::make_unique<FECollection>(1), 2);
+        feSpace_ = std::make_unique<FESpace>(&mesh_, std::make_unique<H1Collection>(1, 2));
     }
 
     Mesh mesh_;
@@ -506,7 +506,7 @@ protected:
     {
         mesh_ = createTetMesh3D();
         // Create a 3D displacement field
-        feSpace_ = std::make_unique<FESpace>(&mesh_, std::make_unique<FECollection>(1), 3);
+        feSpace_ = std::make_unique<FESpace>(&mesh_, std::make_unique<H1Collection>(1, 3));
     }
 
     Mesh mesh_;
@@ -537,7 +537,7 @@ TEST_F(FESpace3DVectorTest, ElementDofs)
 
 TEST(FECollectionTest, LinearCollection)
 {
-    FECollection fec(1);
+    H1Collection fec(1);
 
     EXPECT_EQ(fec.order(), 1);
 
@@ -551,7 +551,7 @@ TEST(FECollectionTest, LinearCollection)
 
 TEST(FECollectionTest, QuadraticCollection)
 {
-    FECollection fec(2);
+    H1Collection fec(2);
 
     EXPECT_EQ(fec.order(), 2);
 
@@ -572,7 +572,7 @@ protected:
     void SetUp() override
     {
         mesh_ = createTriMesh2D();
-        feSpace_ = std::make_unique<FESpace>(&mesh_, std::make_unique<FECollection>(1));
+        feSpace_ = std::make_unique<FESpace>(&mesh_, std::make_unique<H1Collection>(1));
     }
 
     Mesh mesh_;

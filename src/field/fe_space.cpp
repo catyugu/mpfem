@@ -1,4 +1,5 @@
-#include "fe/fe_space.hpp"
+#include "field/fe_space.hpp"
+
 #include "mesh/mesh.hpp"
 
 #include <algorithm>
@@ -63,17 +64,13 @@ namespace mpfem {
         if (!refElem)
             return;
 
-        const int nd = refElem->numDofs();
-        const int totalDofs = nd * vdim_;
+        const int totalDofs = refElem->numDofs() * vdim();
         if (static_cast<int>(dofs.size()) < totalDofs)
             return;
 
         const Index base = elemIdx * maxDofsPerElem_;
-        for (int i = 0; i < nd; ++i) {
-            Index globalDof = elemDofs_[base + i];
-            for (int c = 0; c < vdim_; ++c) {
-                dofs[i * vdim_ + c] = globalDof * vdim_ + c;
-            }
+        for (int i = 0; i < totalDofs; ++i) {
+            dofs[i] = elemDofs_[base + i];
         }
     }
 
@@ -87,17 +84,13 @@ namespace mpfem {
         if (!refElem)
             return;
 
-        const int nd = refElem->numDofs();
-        const int totalDofs = nd * vdim_;
+        const int totalDofs = refElem->numDofs() * vdim();
         if (static_cast<int>(dofs.size()) < totalDofs)
             return;
 
         const Index base = bdrIdx * maxDofsPerBdrElem_;
-        for (int i = 0; i < nd; ++i) {
-            Index globalDof = bdrElemDofs_[base + i];
-            for (int c = 0; c < vdim_; ++c) {
-                dofs[i * vdim_ + c] = globalDof * vdim_ + c;
-            }
+        for (int i = 0; i < totalDofs; ++i) {
+            dofs[i] = bdrElemDofs_[base + i];
         }
     }
 
@@ -107,7 +100,7 @@ namespace mpfem {
             return 0;
         const Element elem = mesh_->element(elemIdx);
         const ReferenceElement* refElem = fec_->get(elem.geometry);
-        return refElem ? refElem->numDofs() * vdim_ : 0;
+        return refElem ? refElem->numDofs() * vdim() : 0;
     }
 
     int FESpace::numBdrElementDofs(Index bdrIdx) const
@@ -116,7 +109,7 @@ namespace mpfem {
             return 0;
         const Element bdrElem = mesh_->bdrElement(bdrIdx);
         const ReferenceElement* refElem = fec_->get(bdrElem.geometry);
-        return refElem ? refElem->numDofs() * vdim_ : 0;
+        return refElem ? refElem->numDofs() * vdim() : 0;
     }
 
     void FESpace::buildDofTable()
@@ -133,6 +126,8 @@ namespace mpfem {
             MPFEM_THROW(Exception, "FESpace::buildDofTable requires non-empty mesh");
         }
 
+        const int fieldVdim = vdim();
+
         maxDofsPerElem_ = 0;
         maxDofsPerBdrElem_ = 0;
 
@@ -141,7 +136,7 @@ namespace mpfem {
             if (!refElem) {
                 MPFEM_THROW(Exception, "FESpace::buildDofTable missing volume reference element");
             }
-            maxDofsPerElem_ = std::max(maxDofsPerElem_, refElem->numDofs());
+            maxDofsPerElem_ = std::max(maxDofsPerElem_, refElem->numDofs() * fieldVdim);
         }
 
         for (Index i = 0; i < mesh_->numBdrElements(); ++i) {
@@ -149,7 +144,7 @@ namespace mpfem {
             if (!refElem) {
                 MPFEM_THROW(Exception, "FESpace::buildDofTable missing boundary reference element");
             }
-            maxDofsPerBdrElem_ = std::max(maxDofsPerBdrElem_, refElem->numDofs());
+            maxDofsPerBdrElem_ = std::max(maxDofsPerBdrElem_, refElem->numDofs() * fieldVdim);
         }
 
         const int meshDim = mesh_->dim();
@@ -164,7 +159,11 @@ namespace mpfem {
         for (Index elemIdx = 0; elemIdx < mesh_->numElements(); ++elemIdx) {
             const Element elem = mesh_->element(elemIdx);
             const ReferenceElement* refElem = fec_->get(elem.geometry);
-            const DofLayout layout = refElem->basis().dofLayout();
+            DofLayout layout = refElem->basis().dofLayout();
+            layout.numVertexDofs *= fieldVdim;
+            layout.numEdgeDofs *= fieldVdim;
+            layout.numFaceDofs *= fieldVdim;
+            layout.numVolumeDofs *= fieldVdim;
 
             for (int i = 0; i < elem.numCorners(); ++i) {
                 const Index vId = elem.vertex(i);
@@ -198,7 +197,11 @@ namespace mpfem {
         for (Index bdrIdx = 0; bdrIdx < mesh_->numBdrElements(); ++bdrIdx) {
             const Element bdrElem = mesh_->bdrElement(bdrIdx);
             const ReferenceElement* refElem = fec_->get(bdrElem.geometry);
-            const DofLayout layout = refElem->basis().dofLayout();
+            DofLayout layout = refElem->basis().dofLayout();
+            layout.numVertexDofs *= fieldVdim;
+            layout.numEdgeDofs *= fieldVdim;
+            layout.numFaceDofs *= fieldVdim;
+            layout.numVolumeDofs *= fieldVdim;
 
             for (int i = 0; i < bdrElem.numCorners(); ++i) {
                 const Index cornerId = mesh_->vertexToCornerIndex(bdrElem.vertex(i));
@@ -251,8 +254,7 @@ namespace mpfem {
             offset += cellDofs[i];
         }
 
-        scalarNumDofs_ = offset;
-        numDofs_ = scalarNumDofs_ * vdim_;
+        numDofs_ = offset;
 
         elemDofs_.assign(mesh_->numElements() * maxDofsPerElem_, InvalidIndex);
         bdrElemDofs_.assign(mesh_->numBdrElements() * maxDofsPerBdrElem_, InvalidIndex);
@@ -302,7 +304,11 @@ namespace mpfem {
         for (Index elemIdx = 0; elemIdx < mesh_->numElements(); ++elemIdx) {
             const Element elem = mesh_->element(elemIdx);
             const ReferenceElement* refElem = fec_->get(elem.geometry);
-            const DofLayout layout = refElem->basis().dofLayout();
+            DofLayout layout = refElem->basis().dofLayout();
+            layout.numVertexDofs *= fieldVdim;
+            layout.numEdgeDofs *= fieldVdim;
+            layout.numFaceDofs *= fieldVdim;
+            layout.numVolumeDofs *= fieldVdim;
 
             const Index base = elemIdx * maxDofsPerElem_;
             int localDof = 0;
@@ -362,7 +368,7 @@ namespace mpfem {
                 }
             }
 
-            if (localDof != refElem->numDofs()) {
+            if (localDof != refElem->numDofs() * fieldVdim) {
                 MPFEM_THROW(Exception, "FESpace::buildDofTable local DOF count mismatch on volume element");
             }
         }
@@ -370,7 +376,11 @@ namespace mpfem {
         for (Index bdrIdx = 0; bdrIdx < mesh_->numBdrElements(); ++bdrIdx) {
             const Element bdrElem = mesh_->bdrElement(bdrIdx);
             const ReferenceElement* refElem = fec_->get(bdrElem.geometry);
-            const DofLayout layout = refElem->basis().dofLayout();
+            DofLayout layout = refElem->basis().dofLayout();
+            layout.numVertexDofs *= fieldVdim;
+            layout.numEdgeDofs *= fieldVdim;
+            layout.numFaceDofs *= fieldVdim;
+            layout.numVolumeDofs *= fieldVdim;
 
             const Index base = bdrIdx * maxDofsPerBdrElem_;
             int localDof = 0;
@@ -409,7 +419,7 @@ namespace mpfem {
                 }
             }
 
-            if (localDof != refElem->numDofs()) {
+            if (localDof != refElem->numDofs() * fieldVdim) {
                 MPFEM_THROW(Exception, "FESpace::buildDofTable local DOF count mismatch on boundary element");
             }
         }

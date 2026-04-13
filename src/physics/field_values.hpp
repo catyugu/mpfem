@@ -4,8 +4,8 @@
 #include "core/exception.hpp"
 #include "core/tensor_shape.hpp"
 #include "core/types.hpp"
-#include "fe/fe_space.hpp"
-#include "fe/grid_function.hpp"
+#include "field/fe_space.hpp"
+#include "field/grid_function.hpp"
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -41,7 +41,8 @@ namespace mpfem {
     public:
         FieldValues() = default;
 
-        explicit FieldValues(int maxHistorySteps) : maxHistorySteps_(maxHistorySteps) { }
+        explicit FieldValues(int maxHistorySteps)
+            : maxHistorySteps_(maxHistorySteps) { }
 
         // Rule of Zero: default copy/move operations automatically deep-copy via GridFunction value semantics
         FieldValues(const FieldValues&) = default;

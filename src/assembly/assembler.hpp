@@ -25,9 +25,6 @@ namespace mpfem {
         void addDomainIntegrator(std::unique_ptr<DomainBilinearIntegratorBase> integ,
             const std::set<int>& domains = {})
         {
-            if (integ) {
-                maxIvdim_ = std::max(maxIvdim_, integ->vdim());
-            }
             domainIntegs_.push_back(std::move(integ));
             domainSets_.emplace_back(domains.begin(), domains.end());
         }
@@ -60,7 +57,6 @@ namespace mpfem {
         std::vector<int> bdrIds_;
         SparseMatrix mat_;
         std::vector<SparseMatrix::Triplet> triplets_;
-        int maxIvdim_ = 1; // Track maximum ivdim across all integrators for pre-sizing
     };
 
     // =============================================================================

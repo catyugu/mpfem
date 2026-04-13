@@ -38,7 +38,7 @@ mpfem_add_test(mpfem_test_element_transform test_element_transform.cpp mpfem::fe
 # =============================================================================
 # FE Space Tests
 # =============================================================================
-mpfem_add_test(mpfem_test_fe_space test_fe_space.cpp mpfem::fe)
+mpfem_add_test(mpfem_test_fe_space test_fe_space.cpp mpfem::assembly)
 
 # =============================================================================
 # IO Tests
@@ -49,7 +49,7 @@ mpfem_add_test(mpfem_test_material_xml_reader test_material_xml_reader.cpp mpfem
 # =============================================================================
 # Grid Function Tests
 # =============================================================================
-mpfem_add_test(mpfem_test_grid_function test_grid_function.cpp mpfem::fe)
+mpfem_add_test(mpfem_test_grid_function test_grid_function.cpp mpfem::assembly)
 
 # =============================================================================
 # Curved Element Tests (Second-order geometry)
@@ -59,7 +59,7 @@ mpfem_add_test(mpfem_test_curved_element test_curved_element.cpp mpfem::fe)
 # =============================================================================
 # Quadratic FE Space Tests
 # =============================================================================
-mpfem_add_test(mpfem_test_fe_space_quadratic test_fe_space_quadratic.cpp mpfem::fe mpfem::io)
+mpfem_add_test(mpfem_test_fe_space_quadratic test_fe_space_quadratic.cpp mpfem::assembly mpfem::io)
 
 # =============================================================================
 # Variable Tests (includes order 1 and order 2 tests)

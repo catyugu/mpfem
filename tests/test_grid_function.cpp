@@ -2,8 +2,8 @@
 #include "core/logger.hpp"
 #include "fe/element_transform.hpp"
 #include "fe/fe_collection.hpp"
-#include "fe/fe_space.hpp"
-#include "fe/grid_function.hpp"
+#include "field/fe_space.hpp"
+#include "field/grid_function.hpp"
 #include "mesh/mesh.hpp"
 #include <gtest/gtest.h>
 
@@ -41,7 +41,7 @@ protected:
 TEST_F(GridFunctionTest, Construction)
 {
     Mesh mesh = createSimpleTetMesh();
-    FESpace fes(&mesh, std::make_unique<FECollection>(1), 1);
+    FESpace fes(&mesh, std::make_unique<H1Collection>(1));
 
     GridFunction gf(&fes);
 
@@ -52,7 +52,7 @@ TEST_F(GridFunctionTest, Construction)
 TEST_F(GridFunctionTest, Initialization)
 {
     Mesh mesh = createSimpleTetMesh();
-    FESpace fes(&mesh, std::make_unique<FECollection>(1), 1);
+    FESpace fes(&mesh, std::make_unique<H1Collection>(1));
 
     GridFunction gf(&fes, 3.14);
 
@@ -64,7 +64,7 @@ TEST_F(GridFunctionTest, Initialization)
 TEST_F(GridFunctionTest, SetValues)
 {
     Mesh mesh = createSimpleTetMesh();
-    FESpace fes(&mesh, std::make_unique<FECollection>(1), 1);
+    FESpace fes(&mesh, std::make_unique<H1Collection>(1));
 
     GridFunction gf(&fes);
     gf.setConstant(1.0);
@@ -78,7 +78,7 @@ TEST_F(GridFunctionTest, SetValues)
 TEST_F(GridFunctionTest, InterpolationLinear)
 {
     Mesh mesh = createSimpleTetMesh();
-    FESpace fes(&mesh, std::make_unique<FECollection>(1), 1);
+    FESpace fes(&mesh, std::make_unique<H1Collection>(1));
 
     GridFunction gf(&fes);
 
@@ -110,7 +110,7 @@ TEST_F(GridFunctionTest, InterpolationLinear)
 TEST_F(GridFunctionTest, ElementValues)
 {
     Mesh mesh = createSimpleTetMesh();
-    FESpace fes(&mesh, std::make_unique<FECollection>(1), 1);
+    FESpace fes(&mesh, std::make_unique<H1Collection>(1));
 
     GridFunction gf(&fes);
     gf.setConstant(1.0);
@@ -127,7 +127,7 @@ TEST_F(GridFunctionTest, ElementValues)
 TEST_F(GridFunctionTest, VectorField)
 {
     Mesh mesh = createSimpleTetMesh();
-    FESpace fes(&mesh, std::make_unique<FECollection>(1), 3); // vdim = 3 for vector field
+    FESpace fes(&mesh, std::make_unique<H1Collection>(1, 3)); // vdim = 3 for vector field
 
     GridFunction gf(&fes);
     EXPECT_EQ(gf.vdim(), 3);
@@ -137,7 +137,7 @@ TEST_F(GridFunctionTest, VectorField)
 TEST_F(GridFunctionTest, QuadraticElement)
 {
     Mesh mesh = createSimpleTetMesh();
-    FESpace fes(&mesh, std::make_unique<FECollection>(2), 1);
+    FESpace fes(&mesh, std::make_unique<H1Collection>(2));
 
     GridFunction gf(&fes);
 

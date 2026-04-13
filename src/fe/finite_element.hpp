@@ -7,7 +7,6 @@
 #include <span>
 #include <vector>
 
-
 namespace mpfem {
 
     enum class BasisType {
@@ -43,7 +42,7 @@ namespace mpfem {
 
         int dim() const { return geom::dim(geometry()); }
 
-        static std::unique_ptr<FiniteElement> create(BasisType type, Geometry geom, int order);
+        static std::unique_ptr<FiniteElement> create(BasisType type, Geometry geom, int order, int vdim = 1);
     };
 
 } // namespace mpfem

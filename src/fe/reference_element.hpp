@@ -7,7 +7,6 @@
 #include "quadrature.hpp"
 #include <memory>
 
-
 namespace mpfem {
 
     /**
@@ -25,7 +24,7 @@ namespace mpfem {
         ReferenceElement() = default;
 
         /// Construct from geometry and polynomial order
-        ReferenceElement(Geometry geom, int order, BasisType basisType = BasisType::H1);
+        ReferenceElement(Geometry geom, int order, BasisType basisType = BasisType::H1, int vdim = 1);
 
         // -------------------------------------------------------------------------
         // Geometry info
@@ -42,6 +41,9 @@ namespace mpfem {
 
         /// Get basis type
         BasisType basisType() const { return basisType_; }
+
+        /// Get vector dimension used by this reference basis
+        int vdim() const { return vdim_; }
 
         // -------------------------------------------------------------------------
         // Basis
@@ -127,6 +129,7 @@ namespace mpfem {
         Geometry geometry_ = Geometry::Invalid;
         int order_ = 1;
         BasisType basisType_ = BasisType::H1;
+        int vdim_ = 1;
         std::unique_ptr<FiniteElement> basis_;
         QuadratureRule quadrature_;
         std::vector<ShapeMatrix> cachedShapeValues_;
@@ -137,8 +140,8 @@ namespace mpfem {
     // Inline implementations
     // =============================================================================
 
-    inline ReferenceElement::ReferenceElement(Geometry geom, int order, BasisType basisType)
-        : geometry_(geom), order_(order), basisType_(basisType)
+    inline ReferenceElement::ReferenceElement(Geometry geom, int order, BasisType basisType, int vdim)
+        : geometry_(geom), order_(order), basisType_(basisType), vdim_(vdim)
     {
         initialize();
     }
@@ -150,7 +153,7 @@ namespace mpfem {
 
     inline void ReferenceElement::initialize()
     {
-        basis_ = FiniteElement::create(basisType_, geometry_, order_);
+        basis_ = FiniteElement::create(basisType_, geometry_, order_, vdim_);
 
         // Create quadrature rule with order 2*order for exact integration
         quadrature_ = quadrature::get(geometry_, std::max(1, 2 * order_));

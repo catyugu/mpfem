@@ -8,7 +8,6 @@
 #include <cmath>
 #include <gtest/gtest.h>
 
-
 using namespace mpfem;
 
 // =============================================================================
@@ -586,7 +585,7 @@ TEST(CurvedIntegrationTest, IntegrateOverCurvedTriangle)
     Real area = 0.0;
 
     for (const auto& ip : rule) {
-        trans.setIntegrationPoint(ip);
+        trans.setIntegrationPoint(ip.getXi());
         area += ip.weight * trans.weight();
     }
 
@@ -608,7 +607,7 @@ TEST(CurvedIntegrationTest, IntegrateOverCurvedTetrahedron)
     Real volume = 0.0;
 
     for (const auto& ip : rule) {
-        trans.setIntegrationPoint(ip);
+        trans.setIntegrationPoint(ip.getXi());
         volume += ip.weight * trans.weight();
     }
 
