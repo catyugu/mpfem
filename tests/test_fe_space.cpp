@@ -1,9 +1,10 @@
-#include <gtest/gtest.h>
-#include "mesh/mesh.hpp"
-#include "mesh/geometry.hpp"
-#include "fe/fe_space.hpp"
+#include "core/geometry.hpp"
 #include "fe/fe_collection.hpp"
+#include "fe/fe_space.hpp"
 #include "fe/quadrature.hpp"
+#include "mesh/mesh.hpp"
+#include <gtest/gtest.h>
+
 
 using namespace mpfem;
 
@@ -12,41 +13,43 @@ using namespace mpfem;
 // =============================================================================
 
 /// Create a simple 2D triangular mesh
-Mesh createTriMesh2D() {
+Mesh createTriMesh2D()
+{
     Mesh mesh(2, 4, 2);
-    
+
     // Two triangles sharing an edge
-    mesh.addVertex(0.0, 0.0, 0.0);  // 0
-    mesh.addVertex(1.0, 0.0, 0.0);  // 1
-    mesh.addVertex(0.0, 1.0, 0.0);  // 2
-    mesh.addVertex(1.0, 1.0, 0.0);  // 3
-    
-    mesh.addElement(Geometry::Triangle, {0, 1, 2});  // Element 0
-    mesh.addElement(Geometry::Triangle, {1, 3, 2});  // Element 1
-    
+    mesh.addVertex(0.0, 0.0, 0.0); // 0
+    mesh.addVertex(1.0, 0.0, 0.0); // 1
+    mesh.addVertex(0.0, 1.0, 0.0); // 2
+    mesh.addVertex(1.0, 1.0, 0.0); // 3
+
+    mesh.addElement(Geometry::Triangle, {0, 1, 2}); // Element 0
+    mesh.addElement(Geometry::Triangle, {1, 3, 2}); // Element 1
+
     // Boundary edges
-    mesh.addBdrElement(Geometry::Segment, {0, 1});  // Bottom
-    mesh.addBdrElement(Geometry::Segment, {1, 3});  // Right
+    mesh.addBdrElement(Geometry::Segment, {0, 1}); // Bottom
+    mesh.addBdrElement(Geometry::Segment, {1, 3}); // Right
 
     mesh.buildTopology();
-    
+
     return mesh;
 }
 
 /// Create a simple 3D tetrahedral mesh
-Mesh createTetMesh3D() {
+Mesh createTetMesh3D()
+{
     Mesh mesh(3, 5, 4);
-    
+
     // Two tetrahedra sharing a face
-    mesh.addVertex(0.0, 0.0, 0.0);  // 0
-    mesh.addVertex(1.0, 0.0, 0.0);  // 1
-    mesh.addVertex(0.0, 1.0, 0.0);  // 2
-    mesh.addVertex(0.0, 0.0, 1.0);  // 3
-    mesh.addVertex(1.0, 1.0, 1.0);  // 4
-    
-    mesh.addElement(Geometry::Tetrahedron, {0, 1, 2, 3});  // Element 0
-    mesh.addElement(Geometry::Tetrahedron, {1, 2, 3, 4});  // Element 1
-    
+    mesh.addVertex(0.0, 0.0, 0.0); // 0
+    mesh.addVertex(1.0, 0.0, 0.0); // 1
+    mesh.addVertex(0.0, 1.0, 0.0); // 2
+    mesh.addVertex(0.0, 0.0, 1.0); // 3
+    mesh.addVertex(1.0, 1.0, 1.0); // 4
+
+    mesh.addElement(Geometry::Tetrahedron, {0, 1, 2, 3}); // Element 0
+    mesh.addElement(Geometry::Tetrahedron, {1, 2, 3, 4}); // Element 1
+
     // Boundary faces (triangles)
     mesh.addBdrElement(Geometry::Triangle, {0, 1, 2});
     mesh.addBdrElement(Geometry::Triangle, {0, 1, 3});
@@ -54,31 +57,32 @@ Mesh createTetMesh3D() {
     mesh.addBdrElement(Geometry::Triangle, {1, 2, 4});
 
     mesh.buildTopology();
-    
+
     return mesh;
 }
 
 /// Create a simple 2D quadrilateral mesh
-Mesh createQuadMesh2D() {
+Mesh createQuadMesh2D()
+{
     Mesh mesh(2, 9, 4);
-    
+
     // 2x2 grid of quads
-    mesh.addVertex(0.0, 0.0, 0.0);  // 0
-    mesh.addVertex(1.0, 0.0, 0.0);  // 1
-    mesh.addVertex(2.0, 0.0, 0.0);  // 2
-    mesh.addVertex(0.0, 1.0, 0.0);  // 3
-    mesh.addVertex(1.0, 1.0, 0.0);  // 4
-    mesh.addVertex(2.0, 1.0, 0.0);  // 5
-    mesh.addVertex(0.0, 2.0, 0.0);  // 6
-    mesh.addVertex(1.0, 2.0, 0.0);  // 7
-    mesh.addVertex(2.0, 2.0, 0.0);  // 8
-    
+    mesh.addVertex(0.0, 0.0, 0.0); // 0
+    mesh.addVertex(1.0, 0.0, 0.0); // 1
+    mesh.addVertex(2.0, 0.0, 0.0); // 2
+    mesh.addVertex(0.0, 1.0, 0.0); // 3
+    mesh.addVertex(1.0, 1.0, 0.0); // 4
+    mesh.addVertex(2.0, 1.0, 0.0); // 5
+    mesh.addVertex(0.0, 2.0, 0.0); // 6
+    mesh.addVertex(1.0, 2.0, 0.0); // 7
+    mesh.addVertex(2.0, 2.0, 0.0); // 8
+
     // Quads (counter-clockwise)
-    mesh.addElement(Geometry::Square, {0, 1, 4, 3});  // Element 0
-    mesh.addElement(Geometry::Square, {1, 2, 5, 4});  // Element 1
-    mesh.addElement(Geometry::Square, {3, 4, 7, 6});  // Element 2
-    mesh.addElement(Geometry::Square, {4, 5, 8, 7});  // Element 3
-    
+    mesh.addElement(Geometry::Square, {0, 1, 4, 3}); // Element 0
+    mesh.addElement(Geometry::Square, {1, 2, 5, 4}); // Element 1
+    mesh.addElement(Geometry::Square, {3, 4, 7, 6}); // Element 2
+    mesh.addElement(Geometry::Square, {4, 5, 8, 7}); // Element 3
+
     // Boundary edges
     mesh.addBdrElement(Geometry::Segment, {0, 1});
     mesh.addBdrElement(Geometry::Segment, {1, 2});
@@ -86,20 +90,21 @@ Mesh createQuadMesh2D() {
     mesh.addBdrElement(Geometry::Segment, {5, 8});
 
     mesh.buildTopology();
-    
+
     return mesh;
 }
 
 /// Create a mixed 2D mesh: one quad + one triangle sharing an edge
-Mesh createMixedMesh2D() {
+Mesh createMixedMesh2D()
+{
     Mesh mesh(2, 6, 2);
 
-    mesh.addVertex(0.0, 0.0, 0.0);  // 0
-    mesh.addVertex(1.0, 0.0, 0.0);  // 1
-    mesh.addVertex(1.0, 1.0, 0.0);  // 2
-    mesh.addVertex(0.0, 1.0, 0.0);  // 3
-    mesh.addVertex(2.0, 0.0, 0.0);  // 4
-    mesh.addVertex(2.0, 1.0, 0.0);  // 5
+    mesh.addVertex(0.0, 0.0, 0.0); // 0
+    mesh.addVertex(1.0, 0.0, 0.0); // 1
+    mesh.addVertex(1.0, 1.0, 0.0); // 2
+    mesh.addVertex(0.0, 1.0, 0.0); // 3
+    mesh.addVertex(2.0, 0.0, 0.0); // 4
+    mesh.addVertex(2.0, 1.0, 0.0); // 5
 
     mesh.addElement(Geometry::Square, {0, 1, 2, 3});
     mesh.addElement(Geometry::Triangle, {1, 4, 2});
@@ -115,38 +120,41 @@ Mesh createMixedMesh2D() {
 }
 
 /// Create a 3D hexahedral mesh
-Mesh createHexMesh3D() {
+Mesh createHexMesh3D()
+{
     Mesh mesh(3, 8, 0);
-    
+
     // Single cube
-    mesh.addVertex(0.0, 0.0, 0.0);  // 0
-    mesh.addVertex(1.0, 0.0, 0.0);  // 1
-    mesh.addVertex(1.0, 1.0, 0.0);  // 2
-    mesh.addVertex(0.0, 1.0, 0.0);  // 3
-    mesh.addVertex(0.0, 0.0, 1.0);  // 4
-    mesh.addVertex(1.0, 0.0, 1.0);  // 5
-    mesh.addVertex(1.0, 1.0, 1.0);  // 6
-    mesh.addVertex(0.0, 1.0, 1.0);  // 7
-    
+    mesh.addVertex(0.0, 0.0, 0.0); // 0
+    mesh.addVertex(1.0, 0.0, 0.0); // 1
+    mesh.addVertex(1.0, 1.0, 0.0); // 2
+    mesh.addVertex(0.0, 1.0, 0.0); // 3
+    mesh.addVertex(0.0, 0.0, 1.0); // 4
+    mesh.addVertex(1.0, 0.0, 1.0); // 5
+    mesh.addVertex(1.0, 1.0, 1.0); // 6
+    mesh.addVertex(0.0, 1.0, 1.0); // 7
+
     mesh.addElement(Geometry::Cube, {0, 1, 2, 3, 4, 5, 6, 7});
 
     mesh.buildTopology();
-    
+
     return mesh;
 }
 
-std::vector<Index> getElementDofsVec(const FESpace& fes, Index elemIdx) {
+std::vector<Index> getElementDofsVec(const FESpace& fes, Index elemIdx)
+{
     std::vector<Index> dofs(static_cast<size_t>(fes.numElementDofs(elemIdx)), InvalidIndex);
     if (!dofs.empty()) {
-        fes.getElementDofs(elemIdx, std::span<Index>{dofs});
+        fes.getElementDofs(elemIdx, std::span<Index> {dofs});
     }
     return dofs;
 }
 
-std::vector<Index> getBdrElementDofsVec(const FESpace& fes, Index bdrIdx) {
+std::vector<Index> getBdrElementDofsVec(const FESpace& fes, Index bdrIdx)
+{
     std::vector<Index> dofs(static_cast<size_t>(fes.numBdrElementDofs(bdrIdx)), InvalidIndex);
     if (!dofs.empty()) {
-        fes.getBdrElementDofs(bdrIdx, std::span<Index>{dofs});
+        fes.getBdrElementDofs(bdrIdx, std::span<Index> {dofs});
     }
     return dofs;
 }
@@ -157,43 +165,48 @@ std::vector<Index> getBdrElementDofsVec(const FESpace& fes, Index bdrIdx) {
 
 class FESpaceLinearTest : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void SetUp() override
+    {
         mesh_ = createTriMesh2D();
         feSpace_ = std::make_unique<FESpace>(&mesh_, std::make_unique<FECollection>(1));
     }
-    
+
     Mesh mesh_;
     std::unique_ptr<FESpace> feSpace_;
 };
 
-TEST_F(FESpaceLinearTest, BasicProperties) {
+TEST_F(FESpaceLinearTest, BasicProperties)
+{
     EXPECT_EQ(feSpace_->order(), 1);
     EXPECT_EQ(feSpace_->vdim(), 1);
     EXPECT_EQ(feSpace_->dim(), 2);
 }
 
-TEST_F(FESpaceLinearTest, NumDofs) {
+TEST_F(FESpaceLinearTest, NumDofs)
+{
     // Linear elements: one DOF per vertex
     // 4 vertices = 4 DOFs
     EXPECT_EQ(feSpace_->numDofs(), 4);
 }
 
-TEST_F(FESpaceLinearTest, ElementDofs) {
+TEST_F(FESpaceLinearTest, ElementDofs)
+{
     // Check DOF mapping for each element
     std::vector<Index> dofs0 = getElementDofsVec(*feSpace_, 0);
-    EXPECT_EQ(dofs0.size(), 3);  // 3 nodes per triangle
-    
+    EXPECT_EQ(dofs0.size(), 3); // 3 nodes per triangle
+
     std::vector<Index> dofs1 = getElementDofsVec(*feSpace_, 1);
     EXPECT_EQ(dofs1.size(), 3);
 }
 
-TEST_F(FESpaceLinearTest, DofMappingConsistency) {
+TEST_F(FESpaceLinearTest, DofMappingConsistency)
+{
     // Element 0: vertices (0, 1, 2) -> DOFs (0, 1, 2)
     std::vector<Index> dofs0 = getElementDofsVec(*feSpace_, 0);
     EXPECT_EQ(dofs0[0], 0);
     EXPECT_EQ(dofs0[1], 1);
     EXPECT_EQ(dofs0[2], 2);
-    
+
     // Element 1: vertices (1, 3, 2) -> DOFs (1, 3, 2)
     std::vector<Index> dofs1 = getElementDofsVec(*feSpace_, 1);
     EXPECT_EQ(dofs1[0], 1);
@@ -201,17 +214,19 @@ TEST_F(FESpaceLinearTest, DofMappingConsistency) {
     EXPECT_EQ(dofs1[2], 2);
 }
 
-TEST_F(FESpaceLinearTest, SharedDofConsistency) {
+TEST_F(FESpaceLinearTest, SharedDofConsistency)
+{
     // Vertex 2 is shared by both elements
     std::vector<Index> dofs0 = getElementDofsVec(*feSpace_, 0);
     std::vector<Index> dofs1 = getElementDofsVec(*feSpace_, 1);
-    
+
     // Vertex 2 -> DOF 2 in both elements
     EXPECT_EQ(dofs0[2], dofs1[2]);
     EXPECT_EQ(dofs0[2], 2);
 }
 
-TEST_F(FESpaceLinearTest, BoundaryElementDofs) {
+TEST_F(FESpaceLinearTest, BoundaryElementDofs)
+{
     // Boundary 0: vertices (0, 1) -> DOFs (0, 1)
     std::vector<Index> dofs = getElementDofsVec(*feSpace_, 0);
     EXPECT_EQ(dofs.size(), 3);
@@ -223,38 +238,43 @@ TEST_F(FESpaceLinearTest, BoundaryElementDofs) {
 
 class FESpaceQuadraticTest : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void SetUp() override
+    {
         mesh_ = createTriMesh2D();
         feSpace_ = std::make_unique<FESpace>(&mesh_, std::make_unique<FECollection>(2));
     }
-    
+
     Mesh mesh_;
     std::unique_ptr<FESpace> feSpace_;
 };
 
-TEST_F(FESpaceQuadraticTest, BasicProperties) {
+TEST_F(FESpaceQuadraticTest, BasicProperties)
+{
     EXPECT_EQ(feSpace_->order(), 2);
     EXPECT_EQ(feSpace_->vdim(), 1);
 }
 
-TEST_F(FESpaceQuadraticTest, NumDofs) {
+TEST_F(FESpaceQuadraticTest, NumDofs)
+{
     // 2D quadratic triangle on this mesh: 4 corner vertex DOFs + 5 edge DOFs.
     EXPECT_EQ(feSpace_->numDofs(), 9);
 }
 
-TEST_F(FESpaceQuadraticTest, ElementDofs) {
+TEST_F(FESpaceQuadraticTest, ElementDofs)
+{
     // Quadratic triangle has 6 local DOFs: 3 vertex + 3 edge.
     std::vector<Index> dofs0 = getElementDofsVec(*feSpace_, 0);
-    EXPECT_EQ(dofs0.size(), 6);  // Reference element has 6 DOFs
+    EXPECT_EQ(dofs0.size(), 6); // Reference element has 6 DOFs
     for (Index d : dofs0) {
         EXPECT_NE(d, InvalidIndex);
     }
-    
+
     std::vector<Index> dofs1 = getElementDofsVec(*feSpace_, 1);
     EXPECT_EQ(dofs1.size(), 6);
 }
 
-TEST_F(FESpaceQuadraticTest, EdgeDofSharing) {
+TEST_F(FESpaceQuadraticTest, EdgeDofSharing)
+{
     std::vector<Index> dofs0 = getElementDofsVec(*feSpace_, 0);
     std::vector<Index> dofs1 = getElementDofsVec(*feSpace_, 1);
 
@@ -272,38 +292,42 @@ TEST_F(FESpaceQuadraticTest, EdgeDofSharing) {
 
 class FESpaceTetTest : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void SetUp() override
+    {
         mesh_ = createTetMesh3D();
         feSpace_ = std::make_unique<FESpace>(&mesh_, std::make_unique<FECollection>(1));
     }
-    
+
     Mesh mesh_;
     std::unique_ptr<FESpace> feSpace_;
 };
 
-TEST_F(FESpaceTetTest, NumDofs) {
+TEST_F(FESpaceTetTest, NumDofs)
+{
     // 5 vertices = 5 DOFs for linear elements
     EXPECT_EQ(feSpace_->numDofs(), 5);
 }
 
-TEST_F(FESpaceTetTest, ElementDofs) {
+TEST_F(FESpaceTetTest, ElementDofs)
+{
     // Linear tetrahedron has 4 DOFs
     std::vector<Index> dofs0 = getElementDofsVec(*feSpace_, 0);
     EXPECT_EQ(dofs0.size(), 4);
-    
+
     std::vector<Index> dofs1 = getElementDofsVec(*feSpace_, 1);
     EXPECT_EQ(dofs1.size(), 4);
 }
 
-TEST_F(FESpaceTetTest, SharedFaceDofs) {
+TEST_F(FESpaceTetTest, SharedFaceDofs)
+{
     // Elements 0 and 1 share face with vertices (1, 2, 3)
     std::vector<Index> dofs0 = getElementDofsVec(*feSpace_, 0);
     std::vector<Index> dofs1 = getElementDofsVec(*feSpace_, 1);
-    
+
     // Element 0: vertices (0, 1, 2, 3)
     // Element 1: vertices (1, 2, 3, 4)
     // Shared vertices: 1, 2, 3
-    
+
     // DOF 1 in element 0 should equal DOF 0 in element 1 (vertex 1)
     EXPECT_EQ(dofs0[1], dofs1[0]);
     // DOF 2 in element 0 should equal DOF 1 in element 1 (vertex 2)
@@ -318,37 +342,41 @@ TEST_F(FESpaceTetTest, SharedFaceDofs) {
 
 class FESpaceQuadTest : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void SetUp() override
+    {
         mesh_ = createQuadMesh2D();
         feSpace_ = std::make_unique<FESpace>(&mesh_, std::make_unique<FECollection>(1));
     }
-    
+
     Mesh mesh_;
     std::unique_ptr<FESpace> feSpace_;
 };
 
-TEST_F(FESpaceQuadTest, NumDofs) {
+TEST_F(FESpaceQuadTest, NumDofs)
+{
     // 9 vertices = 9 DOFs
     EXPECT_EQ(feSpace_->numDofs(), 9);
 }
 
-TEST_F(FESpaceQuadTest, ElementDofs) {
+TEST_F(FESpaceQuadTest, ElementDofs)
+{
     // Linear quad has 4 DOFs
     std::vector<Index> dofs = getElementDofsVec(*feSpace_, 0);
     EXPECT_EQ(dofs.size(), 4);
 }
 
-TEST_F(FESpaceQuadTest, SharedEdgeDofs) {
+TEST_F(FESpaceQuadTest, SharedEdgeDofs)
+{
     // Element 0: vertices {0, 1, 4, 3}
     // Element 1: vertices {1, 2, 5, 4}
     // Shared edge: vertices {1, 4}
-    
+
     std::vector<Index> dofs0 = getElementDofsVec(*feSpace_, 0);
     std::vector<Index> dofs1 = getElementDofsVec(*feSpace_, 1);
-    
+
     // Element 0 DOFs: [vertex0, vertex1, vertex4, vertex3] = [0, 1, 4, 3]
     // Element 1 DOFs: [vertex1, vertex2, vertex5, vertex4] = [1, 2, 5, 4]
-    
+
     // Vertex 1: DOF index 1 in elem 0, DOF index 0 in elem 1
     EXPECT_EQ(dofs0[1], dofs1[0]);
     // Vertex 4: DOF index 2 in elem 0, DOF index 3 in elem 1
@@ -361,24 +389,27 @@ TEST_F(FESpaceQuadTest, SharedEdgeDofs) {
 
 class FESpaceQuadQuadraticTest : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void SetUp() override
+    {
         mesh_ = createQuadMesh2D();
         feSpace_ = std::make_unique<FESpace>(&mesh_, std::make_unique<FECollection>(2));
     }
-    
+
     Mesh mesh_;
     std::unique_ptr<FESpace> feSpace_;
 };
 
-TEST_F(FESpaceQuadQuadraticTest, NumDofs) {
+TEST_F(FESpaceQuadQuadraticTest, NumDofs)
+{
     // 2D quadratic quad: 9 vertex DOFs + 12 edge DOFs + 4 cell-interior DOFs.
     EXPECT_EQ(feSpace_->numDofs(), 25);
 }
 
-TEST_F(FESpaceQuadQuadraticTest, ElementDofs) {
+TEST_F(FESpaceQuadQuadraticTest, ElementDofs)
+{
     // Quadratic quad has 9 local DOFs and all should map to valid globals.
     std::vector<Index> dofs = getElementDofsVec(*feSpace_, 0);
-    EXPECT_EQ(dofs.size(), 9);  // Reference element has 9 DOFs
+    EXPECT_EQ(dofs.size(), 9); // Reference element has 9 DOFs
     for (int i = 0; i < 9; ++i) {
         EXPECT_NE(dofs[i], InvalidIndex) << "DOF " << i << " should be valid";
     }
@@ -390,14 +421,16 @@ TEST_F(FESpaceQuadQuadraticTest, ElementDofs) {
 
 class FESpaceMixedGeometryTest : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void SetUp() override
+    {
         mesh_ = createMixedMesh2D();
     }
 
     Mesh mesh_;
 };
 
-TEST_F(FESpaceMixedGeometryTest, LinearMixedMeshDofs) {
+TEST_F(FESpaceMixedGeometryTest, LinearMixedMeshDofs)
+{
     FESpace fes(&mesh_, std::make_unique<FECollection>(1));
 
     EXPECT_EQ(fes.numDofs(), 5);
@@ -412,7 +445,8 @@ TEST_F(FESpaceMixedGeometryTest, LinearMixedMeshDofs) {
     EXPECT_EQ(quadDofs[2], triDofs[2]);
 }
 
-TEST_F(FESpaceMixedGeometryTest, QuadraticMixedMeshDofs) {
+TEST_F(FESpaceMixedGeometryTest, QuadraticMixedMeshDofs)
+{
     FESpace fes(&mesh_, std::make_unique<FECollection>(2));
 
     // 5 used vertices + 6 edge + 1 quad cell interior = 12 scalar DOFs.
@@ -433,26 +467,30 @@ TEST_F(FESpaceMixedGeometryTest, QuadraticMixedMeshDofs) {
 
 class FESpaceVectorTest : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void SetUp() override
+    {
         mesh_ = createTriMesh2D();
         // Create a vector field with 2 components
         feSpace_ = std::make_unique<FESpace>(&mesh_, std::make_unique<FECollection>(1), 2);
     }
-    
+
     Mesh mesh_;
     std::unique_ptr<FESpace> feSpace_;
 };
 
-TEST_F(FESpaceVectorTest, VectorDimension) {
+TEST_F(FESpaceVectorTest, VectorDimension)
+{
     EXPECT_EQ(feSpace_->vdim(), 2);
 }
 
-TEST_F(FESpaceVectorTest, NumDofs) {
+TEST_F(FESpaceVectorTest, NumDofs)
+{
     // 4 vertices * 2 components = 8 DOFs
     EXPECT_EQ(feSpace_->numDofs(), 8);
 }
 
-TEST_F(FESpaceVectorTest, ElementDofs) {
+TEST_F(FESpaceVectorTest, ElementDofs)
+{
     // 3 nodes * 2 components = 6 DOFs per element
     std::vector<Index> dofs = getElementDofsVec(*feSpace_, 0);
     EXPECT_EQ(dofs.size(), 6);
@@ -464,26 +502,30 @@ TEST_F(FESpaceVectorTest, ElementDofs) {
 
 class FESpace3DVectorTest : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void SetUp() override
+    {
         mesh_ = createTetMesh3D();
         // Create a 3D displacement field
         feSpace_ = std::make_unique<FESpace>(&mesh_, std::make_unique<FECollection>(1), 3);
     }
-    
+
     Mesh mesh_;
     std::unique_ptr<FESpace> feSpace_;
 };
 
-TEST_F(FESpace3DVectorTest, VectorDimension) {
+TEST_F(FESpace3DVectorTest, VectorDimension)
+{
     EXPECT_EQ(feSpace_->vdim(), 3);
 }
 
-TEST_F(FESpace3DVectorTest, NumDofs) {
+TEST_F(FESpace3DVectorTest, NumDofs)
+{
     // 5 vertices * 3 components = 15 DOFs
     EXPECT_EQ(feSpace_->numDofs(), 15);
 }
 
-TEST_F(FESpace3DVectorTest, ElementDofs) {
+TEST_F(FESpace3DVectorTest, ElementDofs)
+{
     // 4 nodes * 3 components = 12 DOFs per element
     std::vector<Index> dofs = getElementDofsVec(*feSpace_, 0);
     EXPECT_EQ(dofs.size(), 12);
@@ -493,11 +535,12 @@ TEST_F(FESpace3DVectorTest, ElementDofs) {
 // FE Collection Tests
 // =============================================================================
 
-TEST(FECollectionTest, LinearCollection) {
+TEST(FECollectionTest, LinearCollection)
+{
     FECollection fec(1);
-    
+
     EXPECT_EQ(fec.order(), 1);
-    
+
     // Should have shape functions for all geometry types
     EXPECT_NE(fec.get(Geometry::Segment), nullptr);
     EXPECT_NE(fec.get(Geometry::Triangle), nullptr);
@@ -506,11 +549,12 @@ TEST(FECollectionTest, LinearCollection) {
     EXPECT_NE(fec.get(Geometry::Cube), nullptr);
 }
 
-TEST(FECollectionTest, QuadraticCollection) {
+TEST(FECollectionTest, QuadraticCollection)
+{
     FECollection fec(2);
-    
+
     EXPECT_EQ(fec.order(), 2);
-    
+
     // Check numDofs for each geometry
     EXPECT_EQ(fec.get(Geometry::Segment)->numDofs(), 3);
     EXPECT_EQ(fec.get(Geometry::Triangle)->numDofs(), 6);
@@ -525,28 +569,31 @@ TEST(FECollectionTest, QuadraticCollection) {
 
 class FESpaceBdrTest : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void SetUp() override
+    {
         mesh_ = createTriMesh2D();
         feSpace_ = std::make_unique<FESpace>(&mesh_, std::make_unique<FECollection>(1));
     }
-    
+
     Mesh mesh_;
     std::unique_ptr<FESpace> feSpace_;
 };
 
-TEST_F(FESpaceBdrTest, BoundaryElementDofs) {
+TEST_F(FESpaceBdrTest, BoundaryElementDofs)
+{
     // Get DOFs for boundary element 0 (edge 0-1)
     std::vector<Index> dofs = getBdrElementDofsVec(*feSpace_, 0);
-    
+
     // Linear edge has 2 DOFs
     EXPECT_EQ(dofs.size(), 2);
-    
+
     // Should be vertex DOFs 0 and 1
     EXPECT_EQ(dofs[0], 0);
     EXPECT_EQ(dofs[1], 1);
 }
 
-TEST_F(FESpaceBdrTest, NumBdrElementDofs) {
+TEST_F(FESpaceBdrTest, NumBdrElementDofs)
+{
     EXPECT_EQ(feSpace_->numBdrElementDofs(0), 2);
 }
 
@@ -554,11 +601,12 @@ TEST_F(FESpaceBdrTest, NumBdrElementDofs) {
 // Reference Element Access Tests
 // =============================================================================
 
-TEST_F(FESpaceLinearTest, ReferenceElementAccess) {
+TEST_F(FESpaceLinearTest, ReferenceElementAccess)
+{
     // Get reference element for triangle
     const ReferenceElement* refElem = feSpace_->elementRefElement(0);
     ASSERT_NE(refElem, nullptr);
-    
+
     EXPECT_EQ(refElem->geometry(), Geometry::Triangle);
     EXPECT_EQ(refElem->numDofs(), 3);
 }

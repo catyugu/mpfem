@@ -1,12 +1,13 @@
 #include "assembly/element_binding.hpp"
+#include "core/geometry.hpp"
 #include "core/types.hpp"
 #include "fe/element_transform.hpp"
 #include "fe/h1.hpp"
 #include "fe/quadrature.hpp"
-#include "mesh/geometry.hpp"
 #include "mesh/mesh.hpp"
 #include <cmath>
 #include <gtest/gtest.h>
+
 
 using namespace mpfem;
 

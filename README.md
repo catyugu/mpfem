@@ -24,10 +24,6 @@ build-msvc\examples\Release\busbar_example.exe
 cmd /c "call E:\env\cpp\VS14\Common7\Tools\VsDevCmd.bat & cmake -S . -B build-msvc & cmake --build build-msvc --parallel --config=Release"
 ```
 
-```bash
-bash -c "call E:\env\cpp\VS14\Common7\Tools\VsDevCmd.bat & cmake -S . -B build-msvc & cmake --build build-msvc --parallel --config=Release"
-```
-
 ### 使用LLVM风格编译器
 
 ```cmd

@@ -1,11 +1,12 @@
 #ifndef MPFEM_FINITE_ELEMENT_HPP
 #define MPFEM_FINITE_ELEMENT_HPP
 
+#include "core/geometry.hpp"
 #include "core/types.hpp"
-#include "mesh/geometry.hpp"
 #include <memory>
 #include <span>
 #include <vector>
+
 
 namespace mpfem {
 

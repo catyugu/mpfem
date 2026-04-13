@@ -2,20 +2,21 @@
 #define MPFEM_REFERENCE_ELEMENT_HPP
 
 #include "core/exception.hpp"
+#include "core/geometry.hpp"
 #include "finite_element.hpp"
-#include "mesh/geometry.hpp"
 #include "quadrature.hpp"
 #include <memory>
+
 
 namespace mpfem {
 
     /**
-    * @brief Reference element combining geometry, FiniteElement basis, and quadrature.
+     * @brief Reference element combining geometry, FiniteElement basis, and quadrature.
      *
      * A ReferenceElement provides all the information needed for finite element
      * calculations on the reference (canonical) element.
      *
-    * Precomputes basis values and derivatives at all quadrature points
+     * Precomputes basis values and derivatives at all quadrature points
      * to avoid runtime memory allocation during assembly.
      */
     class ReferenceElement {

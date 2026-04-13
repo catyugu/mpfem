@@ -1,4 +1,5 @@
 #include "assembly/element_binding.hpp"
+#include "core/geometry.hpp"
 #include "core/types.hpp"
 #include "fe/element_transform.hpp"
 #include "fe/fe_collection.hpp"
@@ -6,11 +7,11 @@
 #include "fe/grid_function.hpp"
 #include "fe/quadrature.hpp"
 #include "io/mphtxt_reader.hpp"
-#include "mesh/geometry.hpp"
 #include "mesh/mesh.hpp"
 #include <cmath>
 #include <gtest/gtest.h>
 #include <set>
+
 
 using namespace mpfem;
 

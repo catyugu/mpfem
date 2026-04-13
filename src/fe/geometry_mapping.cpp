@@ -1,7 +1,7 @@
 #include "fe/geometry_mapping.hpp"
 
 #include "core/exception.hpp"
-#include "mesh/geometry.hpp"
+#include "core/geometry.hpp"
 
 namespace mpfem {
 

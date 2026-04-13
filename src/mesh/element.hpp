@@ -1,11 +1,10 @@
 #ifndef MPFEM_ELEMENT_HPP
 #define MPFEM_ELEMENT_HPP
 
+#include "core/geometry.hpp"
 #include "core/types.hpp"
-#include "geometry.hpp"
 #include <span>
 #include <vector>
-
 
 namespace mpfem {
 
