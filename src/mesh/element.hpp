@@ -14,14 +14,18 @@ namespace mpfem {
     struct Element {
         Geometry geometry = Geometry::Invalid;
         std::span<const Index> vertices;
+        std::span<const Index> nodes;
         Index attribute = 0;
         int order = 1;
 
         /// Get spatial dimension of the element
         int dim() const { return geom::dim(geometry); }
 
-        /// Get number of vertices
+        /// Get number of topological vertices
         int numVertices() const { return static_cast<int>(vertices.size()); }
+
+        /// Get number of interpolation nodes
+        int numNodes() const { return static_cast<int>(nodes.size()); }
 
         /// Get number of edges (from geometry)
         int numEdges() const { return geom::numEdges(geometry); }
@@ -40,9 +44,6 @@ namespace mpfem {
 
         /// Get vertex index
         Index vertex(int i) const { return vertices[i]; }
-
-        /// Get number of corner vertices (first-order nodes)
-        int numCorners() const { return geom::numCorners(geometry); }
 
         /// Get global vertex indices for an edge
         std::pair<Index, Index> edgeVertices(int edgeIdx) const

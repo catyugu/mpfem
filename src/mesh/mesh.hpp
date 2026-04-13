@@ -15,7 +15,7 @@
 namespace mpfem {
 
     /**
-     * @brief Mesh class storing vertices, elements, and topology.
+     * @brief Mesh class storing nodes, elements, and topology.
      *
      * This class manages:
      * - Vertex coordinates
@@ -86,8 +86,8 @@ namespace mpfem {
         /// Set spatial dimension
         void setDim(int dim);
 
-        /// Get number of vertices
-        Index numVertices() const { return static_cast<Index>(vertices_.size()); }
+        /// Get number of nodes
+        Index numNodes() const { return static_cast<Index>(nodes_.size()); }
 
         /// Get total number of unique topology edges
         Index numEdges() const { return static_cast<Index>(edgeInfoList_.size()); }
@@ -96,23 +96,23 @@ namespace mpfem {
         // Vertex access
         // -------------------------------------------------------------------------
 
-        /// Get vertex by index
-        const Vector3& vertex(Index i) const { return vertices_[i]; }
-        Vector3& vertex(Index i) { return vertices_[i]; }
+        /// Get node by index
+        const Vector3& node(Index i) const { return nodes_[i]; }
+        Vector3& node(Index i) { return nodes_[i]; }
 
-        /// Get all vertices
-        const std::vector<Vector3>& vertices() const { return vertices_; }
-        std::vector<Vector3>& vertices() { return vertices_; }
+        /// Get all nodes
+        const std::vector<Vector3>& nodes() const { return nodes_; }
+        std::vector<Vector3>& nodes() { return nodes_; }
 
-        /// Add a vertex
-        void addVertex(const Vector3& v);
-        void addVertex(Vector3&& v);
+        /// Add a node
+        void addNode(const Vector3& v);
+        void addNode(Vector3&& v);
 
-        /// Add a vertex from coordinates
-        Index addVertex(Real x, Real y = 0.0, Real z = 0.0);
+        /// Add a node from coordinates
+        Index addNode(Real x, Real y = 0.0, Real z = 0.0);
 
-        /// Reserve space for vertices
-        void reserveVertices(Index n);
+        /// Reserve space for nodes
+        void reserveNodes(Index n);
 
         // -------------------------------------------------------------------------
         // Volume element access
@@ -125,8 +125,8 @@ namespace mpfem {
         Index numElements() const { return static_cast<Index>(elementGeoms_.size()); }
 
         /// Add an element
-        Index addElement(Geometry geom, std::span<const Index> vertices, Index attr = 0, int order = 1);
-        Index addElement(Geometry geom, const std::vector<Index>& vertices, Index attr = 0, int order = 1);
+        Index addElement(Geometry geom, std::span<const Index> nodes, Index attr = 0, int order = 1);
+        Index addElement(Geometry geom, const std::vector<Index>& nodes, Index attr = 0, int order = 1);
 
         /// Reserve space for elements
         void reserveElements(Index n);
@@ -142,8 +142,8 @@ namespace mpfem {
         Index numBdrElements() const { return static_cast<Index>(bdrElementGeoms_.size()); }
 
         /// Add a boundary element
-        Index addBdrElement(Geometry geom, std::span<const Index> vertices, Index attr = 0, int order = 1);
-        Index addBdrElement(Geometry geom, const std::vector<Index>& vertices, Index attr = 0, int order = 1);
+        Index addBdrElement(Geometry geom, std::span<const Index> nodes, Index attr = 0, int order = 1);
+        Index addBdrElement(Geometry geom, const std::vector<Index>& nodes, Index attr = 0, int order = 1);
 
         /// Reserve space for boundary elements
         void reserveBdrElements(Index n);
@@ -202,7 +202,7 @@ namespace mpfem {
         /// Get total number of unique faces
         Index numFaces() const { return static_cast<Index>(faceInfoList_.size()); }
 
-        /// Get global topology vertices used by an element (corner vertices only)
+        /// Get global topology vertices used by an element
         std::vector<Index> getElementVertices(Index elemIdx) const;
 
         /// Get global topology edge indices used by an element (local edge order)
@@ -241,19 +241,6 @@ namespace mpfem {
         // Corner vertices (topological vertices for high-order meshes)
         // -------------------------------------------------------------------------
 
-        /// Get number of corner vertices (topological vertices)
-        /// For linear meshes, this equals numVertices()
-        /// For quadratic meshes, this returns only the geometric corners
-        Index numCornerVertices() const;
-
-        /// Get corner vertex indices (lazy evaluation, cached)
-        /// Returns a sorted list of unique corner vertex indices
-        const std::vector<Index>& cornerVertexIndices() const;
-
-        /// Get mapping from vertex index to corner index
-        /// Returns InvalidIndex if vertex is not a corner
-        Index vertexToCornerIndex(Index vertexIdx) const;
-
     private:
         static std::uint64_t edgeKey(Index a, Index b);
         void buildEdgeToElementMap();
@@ -263,21 +250,21 @@ namespace mpfem {
         void buildBoundaryElementMapping();
 
         int dim_ = 3;
-        std::vector<Vector3> vertices_;
+        std::vector<Vector3> nodes_;
 
         // Flattened volume element storage
         std::vector<Geometry> elementGeoms_;
         std::vector<Index> elementAttributes_;
         std::vector<int> elementOrders_;
         std::vector<Index> elementOffsets_;
-        std::vector<Index> elementVertices_;
+        std::vector<Index> elementNodes_;
 
         // Flattened boundary element storage
         std::vector<Geometry> bdrElementGeoms_;
         std::vector<Index> bdrElementAttributes_;
         std::vector<int> bdrElementOrders_;
         std::vector<Index> bdrElementOffsets_;
-        std::vector<Index> bdrElementVertices_;
+        std::vector<Index> bdrElementNodes_;
 
         // Topology data
         bool topologyBuilt_ = false;
@@ -298,10 +285,6 @@ namespace mpfem {
         std::vector<Index> interiorFaceIndices_;
         std::unordered_map<Index, Index> bdrElementToFace_;
         std::unordered_map<Index, bool> bdrIdExternalCache_; ///< Cache: boundary ID -> isExternal
-
-        // Corner vertex data (for high-order meshes)
-        std::vector<Index> cornerVertexIndices_; ///< Sorted list of corner vertex indices
-        std::vector<Index> cornerVertexMap_; ///< Mapping: vertex index -> corner index (InvalidIndex if not corner)
     };
 
 } // namespace mpfem

@@ -76,11 +76,11 @@ TEST(FESpaceNDTest, EdgeOrientationFlipsOnReversedLocalEdge)
     Mesh mesh;
     mesh.setDim(3);
 
-    mesh.addVertex(0.0, 0.0, 0.0); // 0
-    mesh.addVertex(1.0, 0.0, 0.0); // 1
-    mesh.addVertex(0.0, 1.0, 0.0); // 2
-    mesh.addVertex(0.0, 0.0, 1.0); // 3
-    mesh.addVertex(1.0, 1.0, 1.0); // 4
+    mesh.addNode(0.0, 0.0, 0.0); // 0
+    mesh.addNode(1.0, 0.0, 0.0); // 1
+    mesh.addNode(0.0, 1.0, 0.0); // 2
+    mesh.addNode(0.0, 0.0, 1.0); // 3
+    mesh.addNode(1.0, 1.0, 1.0); // 4
 
     mesh.addElement(Geometry::Tetrahedron, {0, 1, 2, 3});
     mesh.addElement(Geometry::Tetrahedron, {1, 0, 2, 4});

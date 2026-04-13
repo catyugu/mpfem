@@ -34,7 +34,7 @@ TEST_F(MeshReadTest, ReadBusbarMesh)
 
     // Verify basic stats
     EXPECT_EQ(mesh.dim(), 3);
-    EXPECT_EQ(mesh.numVertices(), 7340); // Actual vertex count in the file
+    EXPECT_EQ(mesh.numNodes(), 7340); // Actual vertex count in the file
 
     // Verify we have volume elements (tetrahedra)
     EXPECT_GT(mesh.numElements(), 0);

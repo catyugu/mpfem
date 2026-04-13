@@ -3,6 +3,7 @@
 #include "mesh/mesh.hpp"
 
 #include <algorithm>
+#include <unordered_map>
 
 namespace mpfem {
 
@@ -59,32 +60,19 @@ namespace mpfem {
         if (!mesh_ || !fec_ || elemIdx >= mesh_->numElements())
             return;
 
-        const Element elem = mesh_->element(elemIdx);
-        const ReferenceElement* refElem = fec_->get(elem.geometry);
-        if (!refElem)
-            return;
-
-        const int totalDofs = refElem->numDofs() * vdim();
-        if (static_cast<int>(dofs.size()) < totalDofs)
-            return;
-
+        const int count = numElementDofs(elemIdx);
         const Index base = elemIdx * maxDofsPerElem_;
-        for (int i = 0; i < totalDofs; ++i) {
-            dofs[i] = elemDofs_[base + i];
+        for (int i = 0; i < count; ++i) {
+            dofs[static_cast<size_t>(i)] = elemDofs_[base + i];
         }
     }
 
     std::span<const int> FESpace::getElementOrientations(Index elemIdx) const
     {
-        if (!mesh_ || !fec_ || elemIdx >= mesh_->numElements()) {
+        if (!mesh_ || !fec_ || elemIdx >= mesh_->numElements())
             return {};
-        }
-        const int ndofs = numElementDofs(elemIdx);
-        if (ndofs <= 0) {
-            return {};
-        }
         const Index base = elemIdx * maxDofsPerElem_;
-        return std::span<const int> {&elemOrientations_[base], static_cast<size_t>(ndofs)};
+        return {&elemOrientations_[base], static_cast<size_t>(numElementDofs(elemIdx))};
     }
 
     void FESpace::getBdrElementDofs(Index bdrIdx, std::span<Index> dofs) const
@@ -92,36 +80,22 @@ namespace mpfem {
         if (!mesh_ || !fec_ || bdrIdx >= mesh_->numBdrElements())
             return;
 
-        const Element bdrElem = mesh_->bdrElement(bdrIdx);
-        const ReferenceElement* refElem = fec_->get(bdrElem.geometry);
-        if (!refElem)
-            return;
-
-        const int totalDofs = refElem->numDofs() * vdim();
-        if (static_cast<int>(dofs.size()) < totalDofs)
-            return;
-
+        const int count = numBdrElementDofs(bdrIdx);
         const Index base = bdrIdx * maxDofsPerBdrElem_;
-        for (int i = 0; i < totalDofs; ++i) {
-            dofs[i] = bdrElemDofs_[base + i];
+        for (int i = 0; i < count; ++i) {
+            dofs[static_cast<size_t>(i)] = bdrElemDofs_[base + i];
         }
     }
 
     int FESpace::numElementDofs(Index elemIdx) const
     {
-        if (!mesh_ || !fec_ || elemIdx >= mesh_->numElements())
-            return 0;
-        const Element elem = mesh_->element(elemIdx);
-        const ReferenceElement* refElem = fec_->get(elem.geometry);
+        const ReferenceElement* refElem = elementRefElement(elemIdx);
         return refElem ? refElem->numDofs() * vdim() : 0;
     }
 
     int FESpace::numBdrElementDofs(Index bdrIdx) const
     {
-        if (!mesh_ || !fec_ || bdrIdx >= mesh_->numBdrElements())
-            return 0;
-        const Element bdrElem = mesh_->bdrElement(bdrIdx);
-        const ReferenceElement* refElem = fec_->get(bdrElem.geometry);
+        const ReferenceElement* refElem = bdrElementRefElement(bdrIdx);
         return refElem ? refElem->numDofs() * vdim() : 0;
     }
 
@@ -130,16 +104,15 @@ namespace mpfem {
         if (!mesh_ || !fec_) {
             MPFEM_THROW(Exception, "FESpace::buildDofTable requires both mesh and finite element collection");
         }
-
         if (!mesh_->hasTopology()) {
             MPFEM_THROW(Exception, "FESpace::buildDofTable requires mesh topology; call Mesh::buildTopology() first");
         }
-
         if (mesh_->numElements() == 0) {
             MPFEM_THROW(Exception, "FESpace::buildDofTable requires non-empty mesh");
         }
 
         const int fieldVdim = vdim();
+        const int meshDim = mesh_->dim();
 
         maxDofsPerElem_ = 0;
         maxDofsPerBdrElem_ = 0;
@@ -151,7 +124,6 @@ namespace mpfem {
             }
             maxDofsPerElem_ = std::max(maxDofsPerElem_, refElem->numDofs() * fieldVdim);
         }
-
         for (Index i = 0; i < mesh_->numBdrElements(); ++i) {
             const ReferenceElement* refElem = fec_->get(mesh_->bdrElement(i).geometry);
             if (!refElem) {
@@ -160,14 +132,40 @@ namespace mpfem {
             maxDofsPerBdrElem_ = std::max(maxDofsPerBdrElem_, refElem->numDofs() * fieldVdim);
         }
 
-        const int meshDim = mesh_->dim();
-        std::vector<int> vertexDofs(static_cast<size_t>(mesh_->numCornerVertices()), 0);
+        std::vector<Index> vertexIds;
+        vertexIds.reserve(static_cast<size_t>(mesh_->numElements() * 4 + mesh_->numBdrElements() * 4));
+        for (Index elemIdx = 0; elemIdx < mesh_->numElements(); ++elemIdx) {
+            const Element elem = mesh_->element(elemIdx);
+            vertexIds.insert(vertexIds.end(), elem.vertices.begin(), elem.vertices.end());
+        }
+        for (Index bdrIdx = 0; bdrIdx < mesh_->numBdrElements(); ++bdrIdx) {
+            const Element elem = mesh_->bdrElement(bdrIdx);
+            vertexIds.insert(vertexIds.end(), elem.vertices.begin(), elem.vertices.end());
+        }
+        std::sort(vertexIds.begin(), vertexIds.end());
+        vertexIds.erase(std::unique(vertexIds.begin(), vertexIds.end()), vertexIds.end());
+
+        std::unordered_map<Index, size_t> vertexSlot;
+        vertexSlot.reserve(vertexIds.size());
+        for (size_t i = 0; i < vertexIds.size(); ++i) {
+            vertexSlot.emplace(vertexIds[i], i);
+        }
+
+        std::vector<int> vertexDofs(vertexIds.size(), 0);
         std::vector<int> edgeDofs(static_cast<size_t>(mesh_->numEdges()), 0);
         std::vector<int> faceDofs;
         if (meshDim == 3) {
             faceDofs.assign(static_cast<size_t>(mesh_->numFaces()), 0);
         }
         std::vector<int> cellDofs(static_cast<size_t>(mesh_->numElements()), 0);
+
+        const auto vertexIndex = [&](Index vId) -> size_t {
+            const auto it = vertexSlot.find(vId);
+            if (it == vertexSlot.end()) {
+                MPFEM_THROW(Exception, "FESpace::buildDofTable vertex not found in topology set");
+            }
+            return it->second;
+        };
 
         for (Index elemIdx = 0; elemIdx < mesh_->numElements(); ++elemIdx) {
             const Element elem = mesh_->element(elemIdx);
@@ -178,27 +176,20 @@ namespace mpfem {
             layout.numFaceDofs *= fieldVdim;
             layout.numVolumeDofs *= fieldVdim;
 
-            for (int i = 0; i < elem.numCorners(); ++i) {
-                const Index vId = elem.vertex(i);
-                const Index cornerId = mesh_->vertexToCornerIndex(vId);
-                if (cornerId == InvalidIndex) {
-                    MPFEM_THROW(Exception, "FESpace::buildDofTable non-corner vertex encountered");
-                }
-                const size_t idx = static_cast<size_t>(cornerId);
+            for (Index vId : elem.vertices) {
+                const size_t idx = vertexIndex(vId);
                 vertexDofs[idx] = std::max(vertexDofs[idx], layout.numVertexDofs);
             }
 
             const auto elemEdges = mesh_->getElementEdges(elemIdx);
             for (Index edgeId : elemEdges) {
-                const size_t idx = static_cast<size_t>(edgeId);
-                edgeDofs[idx] = std::max(edgeDofs[idx], layout.numEdgeDofs);
+                edgeDofs[static_cast<size_t>(edgeId)] = std::max(edgeDofs[static_cast<size_t>(edgeId)], layout.numEdgeDofs);
             }
 
             if (meshDim == 3) {
                 const auto elemFaces = mesh_->getElementFaces(elemIdx);
                 for (Index faceId : elemFaces) {
-                    const size_t idx = static_cast<size_t>(faceId);
-                    faceDofs[idx] = std::max(faceDofs[idx], layout.numFaceDofs);
+                    faceDofs[static_cast<size_t>(faceId)] = std::max(faceDofs[static_cast<size_t>(faceId)], layout.numFaceDofs);
                 }
                 cellDofs[static_cast<size_t>(elemIdx)] = std::max(cellDofs[static_cast<size_t>(elemIdx)], layout.numVolumeDofs);
             }
@@ -208,38 +199,32 @@ namespace mpfem {
         }
 
         for (Index bdrIdx = 0; bdrIdx < mesh_->numBdrElements(); ++bdrIdx) {
-            const Element bdrElem = mesh_->bdrElement(bdrIdx);
-            const ReferenceElement* refElem = fec_->get(bdrElem.geometry);
+            const Element elem = mesh_->bdrElement(bdrIdx);
+            const ReferenceElement* refElem = fec_->get(elem.geometry);
             DofLayout layout = refElem->basis().dofLayout();
             layout.numVertexDofs *= fieldVdim;
             layout.numEdgeDofs *= fieldVdim;
             layout.numFaceDofs *= fieldVdim;
             layout.numVolumeDofs *= fieldVdim;
 
-            for (int i = 0; i < bdrElem.numCorners(); ++i) {
-                const Index cornerId = mesh_->vertexToCornerIndex(bdrElem.vertex(i));
-                if (cornerId == InvalidIndex) {
-                    MPFEM_THROW(Exception, "FESpace::buildDofTable boundary corner vertex not found");
-                }
-                const size_t idx = static_cast<size_t>(cornerId);
+            for (Index vId : elem.vertices) {
+                const size_t idx = vertexIndex(vId);
                 vertexDofs[idx] = std::max(vertexDofs[idx], layout.numVertexDofs);
             }
 
-            for (int localEdge = 0; localEdge < bdrElem.numEdges(); ++localEdge) {
-                const auto [v0, v1] = bdrElem.edgeVertices(localEdge);
+            for (int localEdge = 0; localEdge < elem.numEdges(); ++localEdge) {
+                const auto [v0, v1] = elem.edgeVertices(localEdge);
                 const Index edgeId = mesh_->edgeIndex(v0, v1);
                 if (edgeId == InvalidIndex) {
                     MPFEM_THROW(Exception, "FESpace::buildDofTable boundary edge not found in topology");
                 }
-                const size_t idx = static_cast<size_t>(edgeId);
-                edgeDofs[idx] = std::max(edgeDofs[idx], layout.numEdgeDofs);
+                edgeDofs[static_cast<size_t>(edgeId)] = std::max(edgeDofs[static_cast<size_t>(edgeId)], layout.numEdgeDofs);
             }
 
-            if (meshDim == 3 && geom::dim(bdrElem.geometry) == 2) {
+            if (meshDim == 3 && geom::dim(elem.geometry) == 2) {
                 const Index faceId = mesh_->getBoundaryFaceIndex(bdrIdx);
                 if (faceId != InvalidIndex) {
-                    const size_t idx = static_cast<size_t>(faceId);
-                    faceDofs[idx] = std::max(faceDofs[idx], layout.numFaceDofs);
+                    faceDofs[static_cast<size_t>(faceId)] = std::max(faceDofs[static_cast<size_t>(faceId)], layout.numFaceDofs);
                 }
             }
         }
@@ -274,44 +259,36 @@ namespace mpfem {
         bdrElemDofs_.assign(mesh_->numBdrElements() * maxDofsPerBdrElem_, InvalidIndex);
 
         const auto mapVertexDof = [&](Index vertexId, int k) -> Index {
-            const Index cornerId = mesh_->vertexToCornerIndex(vertexId);
-            if (cornerId == InvalidIndex) {
+            const auto it = vertexSlot.find(vertexId);
+            if (it == vertexSlot.end()) {
                 return InvalidIndex;
             }
-            const size_t idx = static_cast<size_t>(cornerId);
+            const size_t idx = it->second;
             if (k < 0 || k >= vertexDofs[idx]) {
                 return InvalidIndex;
             }
             return vertexOffset[idx] + k;
         };
-
         const auto mapEdgeDof = [&](Index edgeId, int k) -> Index {
-            if (edgeId == InvalidIndex) {
+            if (edgeId == InvalidIndex)
                 return InvalidIndex;
-            }
             const size_t idx = static_cast<size_t>(edgeId);
-            if (k < 0 || k >= edgeDofs[idx]) {
+            if (k < 0 || k >= edgeDofs[idx])
                 return InvalidIndex;
-            }
             return edgeOffset[idx] + k;
         };
-
         const auto mapFaceDof = [&](Index faceId, int k) -> Index {
-            if (faceId == InvalidIndex) {
+            if (faceId == InvalidIndex)
                 return InvalidIndex;
-            }
             const size_t idx = static_cast<size_t>(faceId);
-            if (k < 0 || k >= faceDofs[idx]) {
+            if (k < 0 || k >= faceDofs[idx])
                 return InvalidIndex;
-            }
             return faceOffset[idx] + k;
         };
-
         const auto mapCellDof = [&](Index elemIdx, int k) -> Index {
             const size_t idx = static_cast<size_t>(elemIdx);
-            if (k < 0 || k >= cellDofs[idx]) {
+            if (k < 0 || k >= cellDofs[idx])
                 return InvalidIndex;
-            }
             return cellOffset[idx] + k;
         };
 
@@ -328,8 +305,7 @@ namespace mpfem {
             const Index base = elemIdx * maxDofsPerElem_;
             int localDof = 0;
 
-            for (int i = 0; i < elem.numCorners(); ++i) {
-                const Index vId = elem.vertex(i);
+            for (Index vId : elem.vertices) {
                 for (int k = 0; k < layout.numVertexDofs; ++k) {
                     const Index gdof = mapVertexDof(vId, k);
                     if (gdof == InvalidIndex) {
@@ -396,8 +372,8 @@ namespace mpfem {
         }
 
         for (Index bdrIdx = 0; bdrIdx < mesh_->numBdrElements(); ++bdrIdx) {
-            const Element bdrElem = mesh_->bdrElement(bdrIdx);
-            const ReferenceElement* refElem = fec_->get(bdrElem.geometry);
+            const Element elem = mesh_->bdrElement(bdrIdx);
+            const ReferenceElement* refElem = fec_->get(elem.geometry);
             DofLayout layout = refElem->basis().dofLayout();
             layout.numVertexDofs *= fieldVdim;
             layout.numEdgeDofs *= fieldVdim;
@@ -407,8 +383,7 @@ namespace mpfem {
             const Index base = bdrIdx * maxDofsPerBdrElem_;
             int localDof = 0;
 
-            for (int i = 0; i < bdrElem.numCorners(); ++i) {
-                const Index vId = bdrElem.vertex(i);
+            for (Index vId : elem.vertices) {
                 for (int k = 0; k < layout.numVertexDofs; ++k) {
                     const Index gdof = mapVertexDof(vId, k);
                     if (gdof == InvalidIndex) {
@@ -418,9 +393,12 @@ namespace mpfem {
                 }
             }
 
-            for (int localEdge = 0; localEdge < bdrElem.numEdges(); ++localEdge) {
-                const auto [v0, v1] = bdrElem.edgeVertices(localEdge);
+            for (int localEdge = 0; localEdge < elem.numEdges(); ++localEdge) {
+                const auto [v0, v1] = elem.edgeVertices(localEdge);
                 const Index edgeId = mesh_->edgeIndex(v0, v1);
+                if (edgeId == InvalidIndex) {
+                    MPFEM_THROW(Exception, "FESpace::buildDofTable boundary edge not found in topology");
+                }
                 for (int k = 0; k < layout.numEdgeDofs; ++k) {
                     const Index gdof = mapEdgeDof(edgeId, k);
                     if (gdof == InvalidIndex) {
@@ -430,14 +408,16 @@ namespace mpfem {
                 }
             }
 
-            if (meshDim == 3 && geom::dim(bdrElem.geometry) == 2 && layout.numFaceDofs > 0) {
+            if (meshDim == 3 && geom::dim(elem.geometry) == 2 && layout.numFaceDofs > 0) {
                 const Index faceId = mesh_->getBoundaryFaceIndex(bdrIdx);
-                for (int k = 0; k < layout.numFaceDofs; ++k) {
-                    const Index gdof = mapFaceDof(faceId, k);
-                    if (gdof == InvalidIndex) {
-                        MPFEM_THROW(Exception, "FESpace::buildDofTable invalid boundary face DOF mapping");
+                if (faceId != InvalidIndex) {
+                    for (int k = 0; k < layout.numFaceDofs; ++k) {
+                        const Index gdof = mapFaceDof(faceId, k);
+                        if (gdof == InvalidIndex) {
+                            MPFEM_THROW(Exception, "FESpace::buildDofTable invalid boundary face DOF mapping");
+                        }
+                        bdrElemDofs_[base + localDof++] = gdof;
                     }
-                    bdrElemDofs_[base + localDof++] = gdof;
                 }
             }
 

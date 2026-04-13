@@ -22,7 +22,7 @@ namespace mpfem {
                 const std::string meshPath = caseDir + "/" + input.caseDefinition.meshPath;
                 LOG_INFO << "Reading mesh from " << meshPath;
                 input.mesh = std::make_unique<Mesh>(MphtxtReader::read(meshPath));
-                LOG_INFO << "Mesh loaded: " << input.mesh->numVertices() << " vertices, "
+                LOG_INFO << "Mesh loaded: " << input.mesh->numNodes() << " nodes, "
                          << input.mesh->numElements() << " elements";
 
                 const std::string materialPath = caseDir + "/" + input.caseDefinition.materialsPath;

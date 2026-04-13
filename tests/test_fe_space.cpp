@@ -18,10 +18,10 @@ Mesh createTriMesh2D()
     Mesh mesh(2, 4, 2);
 
     // Two triangles sharing an edge
-    mesh.addVertex(0.0, 0.0, 0.0); // 0
-    mesh.addVertex(1.0, 0.0, 0.0); // 1
-    mesh.addVertex(0.0, 1.0, 0.0); // 2
-    mesh.addVertex(1.0, 1.0, 0.0); // 3
+    mesh.addNode(0.0, 0.0, 0.0); // 0
+    mesh.addNode(1.0, 0.0, 0.0); // 1
+    mesh.addNode(0.0, 1.0, 0.0); // 2
+    mesh.addNode(1.0, 1.0, 0.0); // 3
 
     mesh.addElement(Geometry::Triangle, {0, 1, 2}); // Element 0
     mesh.addElement(Geometry::Triangle, {1, 3, 2}); // Element 1
@@ -41,11 +41,11 @@ Mesh createTetMesh3D()
     Mesh mesh(3, 5, 4);
 
     // Two tetrahedra sharing a face
-    mesh.addVertex(0.0, 0.0, 0.0); // 0
-    mesh.addVertex(1.0, 0.0, 0.0); // 1
-    mesh.addVertex(0.0, 1.0, 0.0); // 2
-    mesh.addVertex(0.0, 0.0, 1.0); // 3
-    mesh.addVertex(1.0, 1.0, 1.0); // 4
+    mesh.addNode(0.0, 0.0, 0.0); // 0
+    mesh.addNode(1.0, 0.0, 0.0); // 1
+    mesh.addNode(0.0, 1.0, 0.0); // 2
+    mesh.addNode(0.0, 0.0, 1.0); // 3
+    mesh.addNode(1.0, 1.0, 1.0); // 4
 
     mesh.addElement(Geometry::Tetrahedron, {0, 1, 2, 3}); // Element 0
     mesh.addElement(Geometry::Tetrahedron, {1, 2, 3, 4}); // Element 1
@@ -67,15 +67,15 @@ Mesh createQuadMesh2D()
     Mesh mesh(2, 9, 4);
 
     // 2x2 grid of quads
-    mesh.addVertex(0.0, 0.0, 0.0); // 0
-    mesh.addVertex(1.0, 0.0, 0.0); // 1
-    mesh.addVertex(2.0, 0.0, 0.0); // 2
-    mesh.addVertex(0.0, 1.0, 0.0); // 3
-    mesh.addVertex(1.0, 1.0, 0.0); // 4
-    mesh.addVertex(2.0, 1.0, 0.0); // 5
-    mesh.addVertex(0.0, 2.0, 0.0); // 6
-    mesh.addVertex(1.0, 2.0, 0.0); // 7
-    mesh.addVertex(2.0, 2.0, 0.0); // 8
+    mesh.addNode(0.0, 0.0, 0.0); // 0
+    mesh.addNode(1.0, 0.0, 0.0); // 1
+    mesh.addNode(2.0, 0.0, 0.0); // 2
+    mesh.addNode(0.0, 1.0, 0.0); // 3
+    mesh.addNode(1.0, 1.0, 0.0); // 4
+    mesh.addNode(2.0, 1.0, 0.0); // 5
+    mesh.addNode(0.0, 2.0, 0.0); // 6
+    mesh.addNode(1.0, 2.0, 0.0); // 7
+    mesh.addNode(2.0, 2.0, 0.0); // 8
 
     // Quads (counter-clockwise)
     mesh.addElement(Geometry::Square, {0, 1, 4, 3}); // Element 0
@@ -99,12 +99,12 @@ Mesh createMixedMesh2D()
 {
     Mesh mesh(2, 6, 2);
 
-    mesh.addVertex(0.0, 0.0, 0.0); // 0
-    mesh.addVertex(1.0, 0.0, 0.0); // 1
-    mesh.addVertex(1.0, 1.0, 0.0); // 2
-    mesh.addVertex(0.0, 1.0, 0.0); // 3
-    mesh.addVertex(2.0, 0.0, 0.0); // 4
-    mesh.addVertex(2.0, 1.0, 0.0); // 5
+    mesh.addNode(0.0, 0.0, 0.0); // 0
+    mesh.addNode(1.0, 0.0, 0.0); // 1
+    mesh.addNode(1.0, 1.0, 0.0); // 2
+    mesh.addNode(0.0, 1.0, 0.0); // 3
+    mesh.addNode(2.0, 0.0, 0.0); // 4
+    mesh.addNode(2.0, 1.0, 0.0); // 5
 
     mesh.addElement(Geometry::Square, {0, 1, 2, 3});
     mesh.addElement(Geometry::Triangle, {1, 4, 2});
@@ -125,14 +125,14 @@ Mesh createHexMesh3D()
     Mesh mesh(3, 8, 0);
 
     // Single cube
-    mesh.addVertex(0.0, 0.0, 0.0); // 0
-    mesh.addVertex(1.0, 0.0, 0.0); // 1
-    mesh.addVertex(1.0, 1.0, 0.0); // 2
-    mesh.addVertex(0.0, 1.0, 0.0); // 3
-    mesh.addVertex(0.0, 0.0, 1.0); // 4
-    mesh.addVertex(1.0, 0.0, 1.0); // 5
-    mesh.addVertex(1.0, 1.0, 1.0); // 6
-    mesh.addVertex(0.0, 1.0, 1.0); // 7
+    mesh.addNode(0.0, 0.0, 0.0); // 0
+    mesh.addNode(1.0, 0.0, 0.0); // 1
+    mesh.addNode(1.0, 1.0, 0.0); // 2
+    mesh.addNode(0.0, 1.0, 0.0); // 3
+    mesh.addNode(0.0, 0.0, 1.0); // 4
+    mesh.addNode(1.0, 0.0, 1.0); // 5
+    mesh.addNode(1.0, 1.0, 1.0); // 6
+    mesh.addNode(0.0, 1.0, 1.0); // 7
 
     mesh.addElement(Geometry::Cube, {0, 1, 2, 3, 4, 5, 6, 7});
 

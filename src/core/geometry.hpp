@@ -8,7 +8,6 @@
 #include <utility>
 #include <vector>
 
-
 namespace mpfem {
 
     /**
@@ -59,7 +58,7 @@ namespace mpfem {
             }
         }
 
-        /// Get the number of vertices for a geometry type (first order)
+        /// Get the number of topological vertices for a geometry type.
         constexpr int numVertices(Geometry g)
         {
             switch (g) {
@@ -80,10 +79,10 @@ namespace mpfem {
             }
         }
 
-        /// Get the number of vertices for a geometry type with given order
+        /// Get the number of interpolation nodes for a geometry type with given order.
         /// @param g Geometry type
         /// @param order Element order (1 = linear, 2 = quadratic)
-        constexpr int numVertices(Geometry g, int order)
+        constexpr int numNodes(Geometry g, int order)
         {
             if (order <= 1)
                 return numVertices(g);
@@ -131,55 +130,6 @@ namespace mpfem {
 
             case Geometry::Cube:
                 return 12;
-
-            default:
-                return 0;
-            }
-        }
-
-        /// Get the number of corner vertices (first-order nodes) for a geometry type
-
-        constexpr int numCorners(Geometry g)
-        {
-
-            return numVertices(g); // Same as first-order vertices
-        }
-
-        /// Get the number of edge midpoints for a second-order element
-
-        constexpr int numEdgeMidpoints(Geometry g)
-        {
-
-            return numEdges(g); // One midpoint per edge
-        }
-
-        /// Get the number of face nodes for a second-order element (center of face for quad)
-
-        constexpr int numFaceNodes(Geometry g)
-        {
-
-            switch (g) {
-
-            case Geometry::Square:
-                return 1; // Center node
-
-            case Geometry::Cube:
-                return 6; // One center per face
-
-            default:
-                return 0;
-            }
-        }
-
-        /// Get the number of interior nodes for a second-order element
-
-        constexpr int numInteriorNodes(Geometry g)
-        {
-
-            switch (g) {
-
-            case Geometry::Cube:
-                return 1; // Center node
 
             default:
                 return 0;

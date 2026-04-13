@@ -20,10 +20,10 @@ Mesh createSingleTetMesh()
     mesh.setDim(3);
 
     // Unit tetrahedron vertices
-    mesh.addVertex(0.0, 0.0, 0.0); // 0
-    mesh.addVertex(1.0, 0.0, 0.0); // 1
-    mesh.addVertex(0.0, 1.0, 0.0); // 2
-    mesh.addVertex(0.0, 0.0, 1.0); // 3
+    mesh.addNode(0.0, 0.0, 0.0); // 0
+    mesh.addNode(1.0, 0.0, 0.0); // 1
+    mesh.addNode(0.0, 1.0, 0.0); // 2
+    mesh.addNode(0.0, 0.0, 1.0); // 3
 
     // Tetrahedron
     mesh.addElement(Geometry::Tetrahedron, {0, 1, 2, 3});
@@ -37,9 +37,9 @@ Mesh createSingleTriBdrMesh()
     Mesh mesh;
     mesh.setDim(3); // 3D mesh with 2D boundary
 
-    mesh.addVertex(0.0, 0.0, 0.0); // 0
-    mesh.addVertex(1.0, 0.0, 0.0); // 1
-    mesh.addVertex(0.0, 1.0, 0.0); // 2
+    mesh.addNode(0.0, 0.0, 0.0); // 0
+    mesh.addNode(1.0, 0.0, 0.0); // 1
+    mesh.addNode(0.0, 1.0, 0.0); // 2
 
     mesh.addBdrElement(Geometry::Triangle, {0, 1, 2});
 
@@ -53,14 +53,14 @@ Mesh createSingleHexMesh()
     mesh.setDim(3);
 
     // Unit cube vertices
-    mesh.addVertex(0.0, 0.0, 0.0); // 0: (0,0,0)
-    mesh.addVertex(1.0, 0.0, 0.0); // 1: (1,0,0)
-    mesh.addVertex(1.0, 1.0, 0.0); // 2: (1,1,0)
-    mesh.addVertex(0.0, 1.0, 0.0); // 3: (0,1,0)
-    mesh.addVertex(0.0, 0.0, 1.0); // 4: (0,0,1)
-    mesh.addVertex(1.0, 0.0, 1.0); // 5: (1,0,1)
-    mesh.addVertex(1.0, 1.0, 1.0); // 6: (1,1,1)
-    mesh.addVertex(0.0, 1.0, 1.0); // 7: (0,1,1)
+    mesh.addNode(0.0, 0.0, 0.0); // 0: (0,0,0)
+    mesh.addNode(1.0, 0.0, 0.0); // 1: (1,0,0)
+    mesh.addNode(1.0, 1.0, 0.0); // 2: (1,1,0)
+    mesh.addNode(0.0, 1.0, 0.0); // 3: (0,1,0)
+    mesh.addNode(0.0, 0.0, 1.0); // 4: (0,0,1)
+    mesh.addNode(1.0, 0.0, 1.0); // 5: (1,0,1)
+    mesh.addNode(1.0, 1.0, 1.0); // 6: (1,1,1)
+    mesh.addNode(0.0, 1.0, 1.0); // 7: (0,1,1)
 
     // Hexahedron (cube) - tensor product ordering to match H1 basis functions
     // Reference cube node order: (-1,-1,-1), (1,-1,-1), (1,1,-1), (-1,1,-1), (-1,-1,1), (1,-1,1), (1,1,1), (-1,1,1)
@@ -77,10 +77,10 @@ Mesh createSingleSquareBdrMesh()
     Mesh mesh;
     mesh.setDim(3); // 3D mesh with 2D boundary
 
-    mesh.addVertex(0.0, 0.0, 0.0); // 0: (0,0)
-    mesh.addVertex(1.0, 0.0, 0.0); // 1: (1,0)
-    mesh.addVertex(1.0, 1.0, 0.0); // 2: (1,1)
-    mesh.addVertex(0.0, 1.0, 0.0); // 3: (0,1)
+    mesh.addNode(0.0, 0.0, 0.0); // 0: (0,0)
+    mesh.addNode(1.0, 0.0, 0.0); // 1: (1,0)
+    mesh.addNode(1.0, 1.0, 0.0); // 2: (1,1)
+    mesh.addNode(0.0, 1.0, 0.0); // 3: (0,1)
 
     // Square boundary - tensor product ordering to match H1 basis functions
     // Reference square node order: (-1,-1), (1,-1), (1,1), (-1,1)
@@ -424,10 +424,10 @@ TEST(ScaledElementTest, ScaledTetrahedron)
     // Create a tetrahedron scaled by factor of 2
     Mesh mesh;
     mesh.setDim(3);
-    mesh.addVertex(0.0, 0.0, 0.0);
-    mesh.addVertex(2.0, 0.0, 0.0);
-    mesh.addVertex(0.0, 2.0, 0.0);
-    mesh.addVertex(0.0, 0.0, 2.0);
+    mesh.addNode(0.0, 0.0, 0.0);
+    mesh.addNode(2.0, 0.0, 0.0);
+    mesh.addNode(0.0, 2.0, 0.0);
+    mesh.addNode(0.0, 0.0, 2.0);
     mesh.addElement(Geometry::Tetrahedron, {0, 1, 2, 3});
 
     ElementTransform trans;
@@ -448,9 +448,9 @@ TEST(ScaledElementTest, ScaledTriangleBoundary)
     // Create a triangle scaled by factor of 2
     Mesh mesh;
     mesh.setDim(3);
-    mesh.addVertex(0.0, 0.0, 0.0);
-    mesh.addVertex(2.0, 0.0, 0.0);
-    mesh.addVertex(0.0, 2.0, 0.0);
+    mesh.addNode(0.0, 0.0, 0.0);
+    mesh.addNode(2.0, 0.0, 0.0);
+    mesh.addNode(0.0, 2.0, 0.0);
     mesh.addBdrElement(Geometry::Triangle, {0, 1, 2});
 
     ElementTransform trans;
@@ -477,10 +477,10 @@ TEST(GradientTransformTest, NumericalVerification)
     // Create a non-trivial tetrahedron
     Mesh mesh;
     mesh.setDim(3);
-    mesh.addVertex(0.0, 0.0, 0.0);
-    mesh.addVertex(1.0, 0.0, 0.0);
-    mesh.addVertex(0.3, 0.8, 0.1);
-    mesh.addVertex(0.2, 0.1, 0.9);
+    mesh.addNode(0.0, 0.0, 0.0);
+    mesh.addNode(1.0, 0.0, 0.0);
+    mesh.addNode(0.3, 0.8, 0.1);
+    mesh.addNode(0.2, 0.1, 0.9);
     mesh.addElement(Geometry::Tetrahedron, {0, 1, 2, 3});
 
     ElementTransform trans;

@@ -33,10 +33,10 @@ static std::vector<Index> getElementDofsVec(const FESpace& fes, Index elemIdx)
     return dofs;
 }
 
-static Index getCornerVertexDof(const FESpace& fes, Index vertexIdx)
+static Index getVertexDof(const FESpace& fes, Index vertexIdx)
 {
     const Mesh* mesh = fes.mesh();
-    if (!mesh || mesh->vertexToCornerIndex(vertexIdx) == InvalidIndex) {
+    if (!mesh) {
         return InvalidIndex;
     }
 
@@ -83,17 +83,17 @@ Mesh createQuadraticTriangleMesh()
     // Triangle 1: vertices 2, 1, 3
 
     // Corner vertices
-    mesh.addVertex(0.0, 0.0, 0.0); // 0
-    mesh.addVertex(1.0, 0.0, 0.0); // 1
-    mesh.addVertex(0.5, 1.0, 0.0); // 2
-    mesh.addVertex(1.5, 1.0, 0.0); // 3
+    mesh.addNode(0.0, 0.0, 0.0); // 0
+    mesh.addNode(1.0, 0.0, 0.0); // 1
+    mesh.addNode(0.5, 1.0, 0.0); // 2
+    mesh.addNode(1.5, 1.0, 0.0); // 3
 
     // Edge midpoint vertices
-    mesh.addVertex(0.5, 0.0, 0.0); // 4: edge 0-1
-    mesh.addVertex(0.75, 0.5, 0.0); // 5: edge 1-2
-    mesh.addVertex(0.25, 0.5, 0.0); // 6: edge 2-0
-    mesh.addVertex(1.25, 0.5, 0.0); // 7: edge 1-3
-    mesh.addVertex(1.0, 1.0, 0.0); // 8: edge 2-3 (shared edge)
+    mesh.addNode(0.5, 0.0, 0.0); // 4: edge 0-1
+    mesh.addNode(0.75, 0.5, 0.0); // 5: edge 1-2
+    mesh.addNode(0.25, 0.5, 0.0); // 6: edge 2-0
+    mesh.addNode(1.25, 0.5, 0.0); // 7: edge 1-3
+    mesh.addNode(1.0, 1.0, 0.0); // 8: edge 2-3 (shared edge)
 
     // Triangle2 COMSOL ordering: V0, V1, V2, E01, E20, E12
     mesh.addElement(Geometry::Triangle, {0, 1, 2, 4, 6, 5}, 1, 2);
@@ -113,25 +113,25 @@ Mesh createQuadraticTetrahedronMesh()
     // Create a simple mesh with 2 tetrahedra sharing a face
 
     // Corner vertices
-    mesh.addVertex(0.0, 0.0, 0.0); // 0
-    mesh.addVertex(1.0, 0.0, 0.0); // 1
-    mesh.addVertex(0.5, 1.0, 0.0); // 2
-    mesh.addVertex(0.5, 0.5, 1.0); // 3
-    mesh.addVertex(1.5, 0.5, 1.0); // 4
+    mesh.addNode(0.0, 0.0, 0.0); // 0
+    mesh.addNode(1.0, 0.0, 0.0); // 1
+    mesh.addNode(0.5, 1.0, 0.0); // 2
+    mesh.addNode(0.5, 0.5, 1.0); // 3
+    mesh.addNode(1.5, 0.5, 1.0); // 4
 
     // Edge midpoint vertices (10 edges total for 2 tets)
     // First tet: edges from vertices (0,1,2,3)
-    mesh.addVertex(0.5, 0.0, 0.0); // 5: edge 0-1
-    mesh.addVertex(0.75, 0.5, 0.0); // 6: edge 1-2
-    mesh.addVertex(0.25, 0.5, 0.0); // 7: edge 2-0
-    mesh.addVertex(0.25, 0.25, 0.5); // 8: edge 0-3
-    mesh.addVertex(0.75, 0.25, 0.5); // 9: edge 1-3
-    mesh.addVertex(0.5, 0.75, 0.5); // 10: edge 2-3
+    mesh.addNode(0.5, 0.0, 0.0); // 5: edge 0-1
+    mesh.addNode(0.75, 0.5, 0.0); // 6: edge 1-2
+    mesh.addNode(0.25, 0.5, 0.0); // 7: edge 2-0
+    mesh.addNode(0.25, 0.25, 0.5); // 8: edge 0-3
+    mesh.addNode(0.75, 0.25, 0.5); // 9: edge 1-3
+    mesh.addNode(0.5, 0.75, 0.5); // 10: edge 2-3
 
     // Additional edge midpoints for second tet
-    mesh.addVertex(1.0, 0.0, 0.0); // 11: edge 1-4
-    mesh.addVertex(1.0, 0.75, 0.5); // 12: edge 2-4
-    mesh.addVertex(1.0, 0.5, 1.0); // 13: edge 3-4
+    mesh.addNode(1.0, 0.0, 0.0); // 11: edge 1-4
+    mesh.addNode(1.0, 0.75, 0.5); // 12: edge 2-4
+    mesh.addNode(1.0, 0.5, 1.0); // 13: edge 3-4
 
     // Tetrahedron2 COMSOL ordering: V0, V1, V2, V3, E01, E02, E12, E03, E13, E23
     mesh.addElement(Geometry::Tetrahedron, {0, 1, 2, 3, 5, 7, 6, 8, 9, 10}, 1, 2);
@@ -253,20 +253,20 @@ TEST_F(QuadraticGridFunctionTest, InterpolateLinearFunction)
     // Interpolate f(x,y) = x
 
     // Set corner vertex DOFs from physical vertex values.
-    for (Index v = 0; v < mesh_.numVertices(); ++v) {
-        Index d = getCornerVertexDof(*fes_, v);
+    for (Index v = 0; v < mesh_.numNodes(); ++v) {
+        Index d = getVertexDof(*fes_, v);
         if (d == InvalidIndex) {
             continue;
         }
-        const Vector3& vert = mesh_.vertex(v);
+        const Vector3& vert = mesh_.node(v);
         (*gf_)(d) = vert.x();
     }
 
     // Check corner-vertex DOFs.
     for (Index v = 0; v < 4; ++v) { // Only check corner vertices
-        Index d = getCornerVertexDof(*fes_, v);
+        Index d = getVertexDof(*fes_, v);
         ASSERT_NE(d, InvalidIndex);
-        const Vector3& vert = mesh_.vertex(v);
+        const Vector3& vert = mesh_.node(v);
         EXPECT_NEAR((*gf_)(d), vert.x(), 1e-12);
     }
 }
@@ -291,17 +291,17 @@ TEST_F(QuadraticGridFunctionTest, EvalQuadraticFunction)
     // Set up a quadratic function f = x^2 + y^2
     // On a quadratic element, this should be represented exactly
 
-    for (Index v = 0; v < mesh_.numVertices(); ++v) {
-        Index d = getCornerVertexDof(*fes_, v);
+    for (Index v = 0; v < mesh_.numNodes(); ++v) {
+        Index d = getVertexDof(*fes_, v);
         if (d == InvalidIndex) {
             continue;
         }
-        const Vector3& p = mesh_.vertex(v);
+        const Vector3& p = mesh_.node(v);
         (*gf_)(d) = p.x() * p.x() + p.y() * p.y();
     }
 
     // Check value at vertex 1: (1,0) -> 1.0
-    const Index d1 = getCornerVertexDof(*fes_, 1);
+    const Index d1 = getVertexDof(*fes_, 1);
     ASSERT_NE(d1, InvalidIndex);
     EXPECT_NEAR((*gf_)(d1), 1.0, 1e-12);
 }
@@ -406,12 +406,12 @@ TEST(QuadraticIntegrationTest, IntegrateQuadraticFunctionExactly)
     mesh.setDim(3);
 
     // Unit right triangle
-    mesh.addVertex(0.0, 0.0, 0.0); // 0
-    mesh.addVertex(1.0, 0.0, 0.0); // 1
-    mesh.addVertex(0.0, 1.0, 0.0); // 2
-    mesh.addVertex(0.5, 0.0, 0.0); // 3: edge 0-1 midpoint
-    mesh.addVertex(0.0, 0.5, 0.0); // 4: edge 2-0 midpoint
-    mesh.addVertex(0.5, 0.5, 0.0); // 5: edge 1-2 midpoint
+    mesh.addNode(0.0, 0.0, 0.0); // 0
+    mesh.addNode(1.0, 0.0, 0.0); // 1
+    mesh.addNode(0.0, 1.0, 0.0); // 2
+    mesh.addNode(0.5, 0.0, 0.0); // 3: edge 0-1 midpoint
+    mesh.addNode(0.0, 0.5, 0.0); // 4: edge 2-0 midpoint
+    mesh.addNode(0.5, 0.5, 0.0); // 5: edge 1-2 midpoint
 
     mesh.addElement(Geometry::Triangle, {0, 1, 2, 3, 4, 5}, 1, 2);
     mesh.buildTopology();
@@ -505,7 +505,7 @@ TEST_F(COMSOLMeshTest, LoadQuadraticMesh)
     Mesh mesh = MphtxtReader::read(meshPath_);
 
     // Basic sanity checks
-    EXPECT_GT(mesh.numVertices(), 0);
+    EXPECT_GT(mesh.numNodes(), 0);
     EXPECT_GT(mesh.numElements(), 0);
 
     // Check for quadratic elements
@@ -535,24 +535,24 @@ TEST_F(COMSOLMeshTest, Tetrahedron2EdgeMidpoints)
             continue;
         }
 
-        const auto vertices = elem.vertices;
+        const auto nodes = elem.nodes;
 
-        ASSERT_EQ(vertices.size(), 10) << "Tetrahedron2 should have 10 vertices";
+        ASSERT_EQ(nodes.size(), 10) << "Tetrahedron2 should have 10 nodes";
 
         // Corner vertices
-        auto v0 = mesh.vertex(vertices[0]);
-        auto v1 = mesh.vertex(vertices[1]);
-        auto v2 = mesh.vertex(vertices[2]);
-        auto v3 = mesh.vertex(vertices[3]);
+        auto v0 = mesh.node(nodes[0]);
+        auto v1 = mesh.node(nodes[1]);
+        auto v2 = mesh.node(nodes[2]);
+        auto v3 = mesh.node(nodes[3]);
 
         // Edge midpoints in COMSOL ordering:
         // dof 4: E01, dof 5: E02, dof 6: E12, dof 7: E03, dof 8: E13, dof 9: E23
-        auto e01 = mesh.vertex(vertices[4]); // Edge 0-1
-        auto e02 = mesh.vertex(vertices[5]); // Edge 0-2
-        auto e12 = mesh.vertex(vertices[6]); // Edge 1-2
-        auto e03 = mesh.vertex(vertices[7]); // Edge 0-3
-        auto e13 = mesh.vertex(vertices[8]); // Edge 1-3
-        auto e23 = mesh.vertex(vertices[9]); // Edge 2-3
+        auto e01 = mesh.node(nodes[4]); // Edge 0-1
+        auto e02 = mesh.node(nodes[5]); // Edge 0-2
+        auto e12 = mesh.node(nodes[6]); // Edge 1-2
+        auto e03 = mesh.node(nodes[7]); // Edge 0-3
+        auto e13 = mesh.node(nodes[8]); // Edge 1-3
+        auto e23 = mesh.node(nodes[9]); // Edge 2-3
 
         // Verify edge midpoints are at the correct positions
         auto checkMidpoint = [&](const Vector3& mid, const Vector3& a, const Vector3& b,
@@ -621,7 +621,7 @@ TEST_F(COMSOLMeshTest, FESpaceConsistency)
     FESpace fes(&mesh, std::make_unique<H1Collection>(2));
 
     // DOFs should map directly to mesh vertices for COMSOL-style meshes
-    EXPECT_EQ(fes.numDofs(), mesh.numVertices());
+    EXPECT_EQ(fes.numDofs(), mesh.numNodes());
 
     // Check element DOF mapping consistency
     for (Index e = 0; e < std::min(mesh.numElements(), Index(10)); ++e) {
@@ -630,12 +630,12 @@ TEST_F(COMSOLMeshTest, FESpaceConsistency)
             continue;
 
         std::vector<Index> dofs = getElementDofsVec(fes, e);
-        auto vertices = elem.vertices;
+        auto nodes = elem.nodes;
 
-        ASSERT_EQ(dofs.size(), vertices.size());
+        ASSERT_EQ(dofs.size(), nodes.size());
 
-        for (int i = 0; i < elem.numCorners(); ++i) {
-            const Index expected = getCornerVertexDof(fes, vertices[static_cast<size_t>(i)]);
+        for (int i = 0; i < elem.numVertices(); ++i) {
+            const Index expected = getVertexDof(fes, elem.vertices[static_cast<size_t>(i)]);
             EXPECT_EQ(dofs[static_cast<size_t>(i)], expected)
                 << "Corner DOF mismatch at local index " << i
                 << " of element " << e;

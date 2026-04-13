@@ -314,7 +314,7 @@ namespace mpfem {
 
     std::vector<int> H1FiniteElement::vertexDofs(int vertexIdx) const
     {
-        if (vertexIdx < 0 || vertexIdx >= geom::numCorners(geom_)) {
+        if (vertexIdx < 0 || vertexIdx >= geom::numVertices(geom_)) {
             return {};
         }
         return {vertexIdx};
@@ -336,7 +336,7 @@ namespace mpfem {
             dofs = {0, 1};
             if (order_ > 1) {
                 for (int j = 0; j < layout.numEdgeDofs; ++j) {
-                    dofs.push_back(geom::numCorners(geom_) + j);
+                    dofs.push_back(geom::numVertices(geom_) + j);
                 }
             }
             return dofs;
@@ -354,7 +354,7 @@ namespace mpfem {
             return dofs;
         }
 
-        const int edgeBase = geom::numCorners(geom_);
+        const int edgeBase = geom::numVertices(geom_);
         const int base = edgeBase + edgeIdx * layout.numEdgeDofs;
         for (int j = 0; j < layout.numEdgeDofs; ++j) {
             dofs.push_back(base + j);
@@ -378,7 +378,7 @@ namespace mpfem {
 
         const std::vector<int> faceEdges = geom::faceEdges(geom_, faceIdx);
         const int edgeDofs = layout.numEdgeDofs;
-        const int edgeBase = geom::numCorners(geom_);
+        const int edgeBase = geom::numVertices(geom_);
 
         for (int edgeIdx : faceEdges) {
             const int base = edgeBase + edgeIdx * edgeDofs;
@@ -413,7 +413,7 @@ namespace mpfem {
             return {};
         }
 
-        const int edgeBase = geom::numCorners(geom_);
+        const int edgeBase = geom::numVertices(geom_);
         const int faceBase = edgeBase + geom::numEdges(geom_) * layout.numEdgeDofs;
         const int cellBase = faceBase + geom::numFaces(geom_) * layout.numFaceDofs;
 

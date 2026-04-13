@@ -29,10 +29,10 @@ namespace mpfem {
 
         Mesh mesh;
         mesh.setDim(data.sdim);
-        mesh.reserveVertices(static_cast<Index>(data.vertices.size()));
+        mesh.reserveNodes(static_cast<Index>(data.vertices.size()));
 
         for (const auto& v : data.vertices) {
-            mesh.addVertex(Vector3(v[0], v[1], v[2]));
+            mesh.addNode(Vector3(v[0], v[1], v[2]));
         }
 
         Index numVolumeElems = 0;
@@ -74,7 +74,7 @@ namespace mpfem {
             }
         }
 
-        LOG_INFO << "Mesh loaded: " << mesh.numVertices() << " vertices, "
+        LOG_INFO << "Mesh loaded: " << mesh.numNodes() << " nodes, "
                  << numVolumeElems << " volume elements, "
                  << numBdrElems << " boundary elements";
 
