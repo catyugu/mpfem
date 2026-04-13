@@ -68,7 +68,7 @@ namespace mpfem {
 
         inline constexpr bool isSuiteSparseAvailable()
         {
-#ifdef MPFEM_USE_SUITESPARSE
+#ifdef MPFEM_USE_UMFPACK
             return true;
 #else
             return false;
@@ -205,7 +205,8 @@ namespace mpfem {
 
         // Convenience constructor
         LinearOperatorConfig() = default;
-        explicit LinearOperatorConfig(OperatorType t) : type(t) { }
+        explicit LinearOperatorConfig(OperatorType t)
+            : type(t) { }
     };
 
 } // namespace mpfem

@@ -1,7 +1,7 @@
 #include "problem/transient_problem.hpp"
 #include "core/logger.hpp"
-#include "time/adaptive_time_stepper.hpp"
-#include "time/time_integrator.hpp"
+#include "problem/time/adaptive_time_stepper.hpp"
+#include "problem/time/time_integrator.hpp"
 
 namespace mpfem {
 
@@ -47,8 +47,7 @@ namespace mpfem {
         AdaptiveTimeStepper stepper(AdaptiveTimeStepperConfig {
             .sampleStep = timeStep,
             .maxDt = 10.0,
-            .growFactor = 2.0
-        });
+            .growFactor = 2.0});
         return stepper.solve(*this, *integrator);
     }
 

@@ -1,5 +1,6 @@
 #include "fe/element_transform.hpp"
 #include "core/exception.hpp"
+#include <Eigen/Cholesky>
 #include <cmath>
 
 namespace mpfem {

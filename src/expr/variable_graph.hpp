@@ -1,6 +1,7 @@
 #ifndef MPFEM_EXPR_VARIABLE_GRAPH_HPP
 #define MPFEM_EXPR_VARIABLE_GRAPH_HPP
 
+#include "core/tensor.hpp"
 #include "expr/evaluation_context.hpp"
 
 #include <cstdint>

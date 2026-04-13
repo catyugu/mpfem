@@ -5,7 +5,7 @@
 #include "physics/heat_transfer_solver.hpp"
 #include "physics/structural_solver.hpp"
 #include "problem.hpp"
-#include "time/time_scheme.hpp"
+#include "problem/time/time_scheme.hpp"
 #include <memory>
 
 namespace mpfem {

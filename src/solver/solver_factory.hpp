@@ -81,7 +81,7 @@ namespace mpfem {
                 throw std::runtime_error("PardisoOperator: MKL not available");
 #endif
             case OperatorType::Umfpack:
-#ifdef MPFEM_USE_SUITESPARSE
+#ifdef MPFEM_USE_UMFPACK
                 return std::make_unique<UmfpackSolver>();
 #else
                 throw std::runtime_error("UmfpackOperator: SuiteSparse not available");

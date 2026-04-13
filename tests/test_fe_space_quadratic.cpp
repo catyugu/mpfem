@@ -258,7 +258,7 @@ TEST_F(QuadraticGridFunctionTest, InterpolateLinearFunction)
         if (d == InvalidIndex) {
             continue;
         }
-        const Vertex& vert = mesh_.vertex(v);
+        const Vector3& vert = mesh_.vertex(v);
         (*gf_)(d) = vert.x();
     }
 
@@ -266,7 +266,7 @@ TEST_F(QuadraticGridFunctionTest, InterpolateLinearFunction)
     for (Index v = 0; v < 4; ++v) { // Only check corner vertices
         Index d = getCornerVertexDof(*fes_, v);
         ASSERT_NE(d, InvalidIndex);
-        const Vertex& vert = mesh_.vertex(v);
+        const Vector3& vert = mesh_.vertex(v);
         EXPECT_NEAR((*gf_)(d), vert.x(), 1e-12);
     }
 }
@@ -278,7 +278,10 @@ TEST_F(QuadraticGridFunctionTest, EvalAtReferencePoint)
 
     // Evaluate at reference point (0.5, 0.5) - should be 1
     Vector3 xi(0.5, 0.5, 0.0);
-    Real val = gf_->eval(0, xi);
+    ElementTransform trans;
+    bindElementToTransform(trans, mesh_, 0);
+    trans.setIntegrationPoint(xi);
+    Real val = gf_->eval(0, trans);
 
     EXPECT_NEAR(val, 1.0, 1e-12);
 }
@@ -293,7 +296,7 @@ TEST_F(QuadraticGridFunctionTest, EvalQuadraticFunction)
         if (d == InvalidIndex) {
             continue;
         }
-        const Vertex& p = mesh_.vertex(v);
+        const Vector3& p = mesh_.vertex(v);
         (*gf_)(d) = p.x() * p.x() + p.y() * p.y();
     }
 
@@ -437,7 +440,7 @@ TEST(QuadraticIntegrationTest, IntegrateQuadraticFunctionExactly)
 
     for (const auto& ip : rule) {
         trans.setIntegrationPoint(ip);
-        Real f_val = gf.eval(0, ip.getXi());
+        Real f_val = gf.eval(0, trans);
         integral += ip.weight * trans.weight() * f_val;
     }
 
@@ -552,9 +555,9 @@ TEST_F(COMSOLMeshTest, Tetrahedron2EdgeMidpoints)
         auto e23 = mesh.vertex(vertices[9]); // Edge 2-3
 
         // Verify edge midpoints are at the correct positions
-        auto checkMidpoint = [&](const Vertex& mid, const Vertex& a, const Vertex& b,
+        auto checkMidpoint = [&](const Vector3& mid, const Vector3& a, const Vector3& b,
                                  const std::string& edgeName) {
-            Vertex expected((a.x() + b.x()) / 2, (a.y() + b.y()) / 2, (a.z() + b.z()) / 2, 3);
+            Vector3 expected((a.x() + b.x()) / 2, (a.y() + b.y()) / 2, (a.z() + b.z()) / 2);
             Real dist = std::sqrt(
                 std::pow(mid.x() - expected.x(), 2) + std::pow(mid.y() - expected.y(), 2) + std::pow(mid.z() - expected.z(), 2));
             EXPECT_LT(dist, tol) << "Edge " << edgeName << " midpoint mismatch in element " << e
@@ -671,7 +674,7 @@ TEST_F(COMSOLMeshTest, FiniteElementKroneckerDelta)
         ShapeMatrix values;
 
         // At each node position, only the corresponding H1 basis function should be 1.
-        for (size_t i = 0; i < dofCoords.size(); ++i) {
+        for (int i = 0; i < static_cast<int>(dofCoords.size()); ++i) {
             h1Element.evalShape(dofCoords[i], values);
 
             for (int j = 0; j < values.rows(); ++j) {

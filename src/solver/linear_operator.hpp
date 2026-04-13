@@ -1,12 +1,14 @@
 #ifndef MPFEM_LINEAR_OPERATOR_HPP
 #define MPFEM_LINEAR_OPERATOR_HPP
 
+#include "core/sparse_matrix.hpp"
 #include "core/types.hpp"
 #include "solver/solver_config.hpp"
-#include "core/sparse_matrix.hpp"
+#include <Eigen/IterativeLinearSolvers>
 #include <memory>
 #include <string>
 #include <string_view>
+
 
 namespace mpfem {
 
@@ -62,6 +64,8 @@ namespace mpfem {
          * @param x Solution vector (output)
          *
          * Implements x = M^{-1} * b where M is this operator.
+         * Marked as const because applying the operator shouldn't change its state
+         * (other than metadata like iterations or residual).
          */
         virtual void apply(const Vector& b, Vector& x) = 0;
 

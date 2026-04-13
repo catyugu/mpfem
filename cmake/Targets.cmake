@@ -2,7 +2,6 @@
 # Targets.cmake - Library target definitions
 # =============================================================================
 
-include(CompilerOptions)
 
 # =============================================================================
 # Helper function for creating mpfem library targets
@@ -36,7 +35,6 @@ function(mpfem_add_library name)
                 $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
                 $<INSTALL_INTERFACE:include>
         )
-        mpfem_set_default_compiler_options(${name})
         # For regular libraries, use PUBLIC/PRIVATE keywords
         if(ARG_PUBLIC_LINK)
             target_link_libraries(${name} PUBLIC ${ARG_PUBLIC_LINK})
@@ -76,32 +74,15 @@ if(MPFEM_MKL_FOUND)
     message(STATUS "MKL enabled for PARDISO solver")
 endif()
 
-# --- OpenBLAS support (BLAS acceleration for Eigen) ---
-if(MPFEM_OPENBLAS_FOUND)
-    target_compile_definitions(mpfem_core PUBLIC MPFEM_USE_OPENBLAS)
-    target_compile_definitions(mpfem_core PUBLIC EIGEN_USE_BLAS)
-    if(TARGET OpenBLAS::OpenBLAS)
-        target_link_libraries(mpfem_core PUBLIC OpenBLAS::OpenBLAS)
-    elseif(TARGET PkgConfig::OpenBLAS)
-        target_link_libraries(mpfem_core PUBLIC PkgConfig::OpenBLAS)
-    else()
-        target_include_directories(mpfem_core PUBLIC ${OpenBLAS_INCLUDE_DIRS})
-        target_link_libraries(mpfem_core PUBLIC ${OpenBLAS_LIBRARIES})
-    endif()
-    message(STATUS "OpenBLAS acceleration enabled for Eigen")
-endif()
-
-# --- SuiteSparse support (UMFPACK solver) ---
-if(MPFEM_SUITESPARSE_FOUND)
-    target_compile_definitions(mpfem_core PUBLIC MPFEM_USE_SUITESPARSE)
+# --- SuiteSparse::UMFPACK support ---
+if(MPFEM_UMFPACK_FOUND)
+    target_compile_definitions(mpfem_core PUBLIC MPFEM_USE_UMFPACK)
     if(TARGET SuiteSparse::UMFPACK)
         target_link_libraries(mpfem_core PUBLIC SuiteSparse::UMFPACK)
-    elseif(TARGET UMFPACK::UMFPACK)
-        target_link_libraries(mpfem_core PUBLIC UMFPACK::UMFPACK)
     else()
         target_link_libraries(mpfem_core PUBLIC ${UMFPACK_LIBRARIES})
     endif()
-    message(STATUS "SuiteSparse/UMFPACK solver enabled")
+    message(STATUS "SuiteSparse::UMFPACK solver enabled")
 endif()
 
 # --- OpenMP support ---
@@ -201,13 +182,37 @@ mpfem_add_library(mpfem_assembly
 )
 
 # =============================================================================
-# Problem library (header-only) - 纯数据基类
+# Physics library
+# =============================================================================
+
+mpfem_add_library(mpfem_physics
+    SOURCES
+        src/physics/electrostatics_solver.cpp
+        src/physics/heat_transfer_solver.cpp
+        src/physics/structural_solver.cpp
+
+    PUBLIC_LINK
+        Eigen3::Eigen
+        mpfem_core
+        mpfem_mesh
+        mpfem_fe
+        mpfem_assembly
+        mpfem_solver
+        mpfem_io
+)
+
+# =============================================================================
+# Problem library
 # =============================================================================
 
 mpfem_add_library(mpfem_problem
     SOURCES
         src/problem/problem.cpp
+        src/problem/transient_problem.cpp
         src/problem/physics_problem_builder.cpp
+        src/problem/time/time_integrator.cpp
+        src/problem/time/bdf1_integrator.cpp
+        src/problem/time/bdf2_integrator.cpp
     PUBLIC_LINK
         Eigen3::Eigen
         mpfem_core
@@ -219,28 +224,7 @@ mpfem_add_library(mpfem_problem
         mpfem_physics
 )
 
-# =============================================================================
-# Physics library
-# =============================================================================
 
-mpfem_add_library(mpfem_physics
-    SOURCES
-        src/physics/electrostatics_solver.cpp
-        src/physics/heat_transfer_solver.cpp
-        src/physics/structural_solver.cpp
-        src/problem/transient_problem.cpp
-        src/time/time_integrator.cpp
-        src/time/bdf1_integrator.cpp
-        src/time/bdf2_integrator.cpp
-    PUBLIC_LINK
-        Eigen3::Eigen
-        mpfem_core
-        mpfem_mesh
-        mpfem_fe
-        mpfem_assembly
-        mpfem_solver
-        mpfem_io
-)
 
 # =============================================================================
 # Create simple aliases (mpfem::core, mpfem::mesh, etc.)
@@ -253,5 +237,5 @@ mpfem_create_alias(io)
 mpfem_create_alias(fe)
 mpfem_create_alias(assembly)
 mpfem_create_alias(solver)
-mpfem_create_alias(problem)
 mpfem_create_alias(physics)
+mpfem_create_alias(problem)

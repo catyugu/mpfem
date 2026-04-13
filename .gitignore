@@ -1,6 +1,8 @@
 build*
+external
 .vscode
 results
 __pycache__
 .sisyphus
 *.log
+vcpkg_installed

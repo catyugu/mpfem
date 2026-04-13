@@ -2,29 +2,45 @@
 #define MPFEM_EIGEN_SOLVER_HPP
 
 #include "core/logger.hpp"
+#include "eigen_preconditioner_adapter.hpp"
 #include "linear_operator.hpp"
 #include <Eigen/IterativeLinearSolvers>
-#include <Eigen/Sparse>
+#include <Eigen/SparseCore>
+#include <Eigen/SparseLU>
 #include <unsupported/Eigen/IterativeSolvers>
 
 namespace mpfem {
 
-    // =============================================================================
-    // Eigen CG Operator
-    // =============================================================================
-
-    class CgOperator : public LinearOperator {
+    /**
+     * @brief Unified template for Eigen iterative solvers.
+     *
+     * This class implements the DRY principle by providing a common base for
+     * CG, DGMRES, BiCGSTAB, etc. It dynamically bridges our nested LinearOperator
+     * preconditioners into Eigen's iterative solver loop.
+     */
+    template <typename EigenSolverType, const char* SolverName>
+    class EigenIterativeOperator : public LinearOperator {
     public:
-        std::string_view name() const override { return "CG"; }
+        std::string_view name() const override { return SolverName; }
 
         void setup(const SparseMatrix* A) override
         {
-            if (!A) {
-                throw std::runtime_error("CgOperator: null matrix in setup");
-            }
+            if (!A)
+                throw std::runtime_error(std::string(SolverName) + ": null matrix in setup");
+
             solver_.setMaxIterations(maxIterations_);
             solver_.setTolerance(tolerance_);
             solver_.compute(A->eigen());
+
+            // Dynamically mount and setup the configured nested preconditioner
+            if (preconditioner()) {
+                preconditioner()->setup(A);
+                solver_.preconditioner().set_operator(preconditioner());
+            }
+            else {
+                solver_.preconditioner().set_operator(nullptr);
+            }
+
             set_matrix(A);
             mark_setup();
         }
@@ -36,18 +52,13 @@ namespace mpfem {
             residual_ = solver_.error();
         }
 
-        void set_max_iterations(int iter) { maxIterations_ = iter; }
-        void set_tolerance(Real tol) { tolerance_ = tol; }
-        int max_iterations() const { return maxIterations_; }
-        Real tolerance() const { return tolerance_; }
-
         void configure(const LinearOperatorConfig& config) override
         {
             if (auto it = config.parameters.find("MaxIterations"); it != config.parameters.end()) {
-                set_max_iterations(static_cast<int>(it->second));
+                maxIterations_ = static_cast<int>(it->second);
             }
             if (auto it = config.parameters.find("Tolerance"); it != config.parameters.end()) {
-                set_tolerance(it->second);
+                tolerance_ = it->second;
             }
         }
 
@@ -59,67 +70,32 @@ namespace mpfem {
         Real tolerance_ = 1e-10;
         int iterations_ = 0;
         Real residual_ = 0.0;
-        Eigen::ConjugateGradient<Eigen::SparseMatrix<Real>,
-            Eigen::Lower | Eigen::Upper,
-            Eigen::DiagonalPreconditioner<Real>>
-            solver_;
+        EigenSolverType solver_;
     };
 
     // =============================================================================
-    // Eigen DGMRES Operator
+    // Iterative Operator Definitions
     // =============================================================================
 
-    class GmresOperator : public LinearOperator {
-    public:
-        std::string_view name() const override { return "DGMRES"; }
+    inline constexpr char CgName[] = "CG";
+    inline constexpr char GmresName[] = "DGMRES";
 
-        void setup(const SparseMatrix* A) override
-        {
-            if (!A) {
-                throw std::runtime_error("GmresOperator: null matrix in setup");
-            }
-            solver_.setMaxIterations(maxIterations_);
-            solver_.setTolerance(tolerance_);
-            solver_.compute(A->eigen());
-            set_matrix(A);
-            mark_setup();
-        }
+    /**
+     * @brief Conjugate Gradient solver for symmetric positive definite matrices.
+     */
+    using CgOperator = EigenIterativeOperator<
+        Eigen::ConjugateGradient<Eigen::SparseMatrix<Real>, Eigen::Lower | Eigen::Upper, EigenPreconditionerAdapter>,
+        CgName>;
 
-        void apply(const Vector& b, Vector& x) override
-        {
-            x = solver_.solveWithGuess(b, x);
-            iterations_ = static_cast<int>(solver_.iterations());
-            residual_ = solver_.error();
-        }
-
-        void set_max_iterations(int iter) { maxIterations_ = iter; }
-        void set_tolerance(Real tol) { tolerance_ = tol; }
-        int max_iterations() const { return maxIterations_; }
-        Real tolerance() const { return tolerance_; }
-
-        void configure(const LinearOperatorConfig& config) override
-        {
-            if (auto it = config.parameters.find("MaxIterations"); it != config.parameters.end()) {
-                set_max_iterations(static_cast<int>(it->second));
-            }
-            if (auto it = config.parameters.find("Tolerance"); it != config.parameters.end()) {
-                set_tolerance(it->second);
-            }
-        }
-
-        int iterations() const override { return iterations_; }
-        Real residual() const override { return residual_; }
-
-    private:
-        int maxIterations_ = 1000;
-        Real tolerance_ = 1e-10;
-        int iterations_ = 0;
-        Real residual_ = 0.0;
-        Eigen::DGMRES<Eigen::SparseMatrix<Real>, Eigen::DiagonalPreconditioner<Real>> solver_;
-    };
+    /**
+     * @brief Dynamic GMRES solver for general unsymmetric matrices.
+     */
+    using GmresOperator = EigenIterativeOperator<
+        Eigen::DGMRES<Eigen::SparseMatrix<Real>, EigenPreconditionerAdapter>,
+        GmresName>;
 
     // =============================================================================
-    // Eigen SparseLU Operator
+    // Direct Solver: Eigen SparseLU
     // =============================================================================
 
     class EigenSparseLUOperator : public LinearOperator {
@@ -128,9 +104,8 @@ namespace mpfem {
 
         void setup(const SparseMatrix* A) override
         {
-            if (!A) {
+            if (!A)
                 throw std::runtime_error("EigenSparseLUOperator: null matrix in setup");
-            }
             solver_.compute(A->eigen());
             if (solver_.info() != Eigen::Success) {
                 throw std::runtime_error("EigenSparseLUOperator: factorization failed");

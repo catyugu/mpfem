@@ -102,7 +102,7 @@ namespace mpfem {
             MKL_INT nrhs = 1;
             phase_ = 33; // Solve
 
-            // PARDISO modifies RHS, so copy to mutable buffer
+            // PARDISO modifies RHS, so copy to buffer
             Vector b_copy = b;
             x.resize(n_);
 

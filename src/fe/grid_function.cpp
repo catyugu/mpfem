@@ -1,12 +1,33 @@
 #include "grid_function.hpp"
 #include "core/exception.hpp"
+#include "fe/element_transform.hpp"
 #include "finite_element.hpp"
 
 #include <array>
 
 namespace mpfem {
 
-    Real GridFunction::eval(Index elem, const Vector3& xi) const
+    void GridFunction::getElementValues(Index elem, std::span<Real> outValues) const
+    {
+        if (!fes_)
+            return;
+
+        const int totalDofs = fes_->numElementDofs(elem);
+        if (totalDofs > MaxDofsPerElement) {
+            MPFEM_THROW(Exception, "GridFunction::getElementValues exceeds fixed stack buffer limits");
+        }
+        if (static_cast<int>(outValues.size()) < totalDofs) {
+            MPFEM_THROW(ArgumentException, "GridFunction::getElementValues output buffer is too small");
+        }
+
+        std::array<Index, MaxDofsPerElement> dofsBuf {};
+        fes_->getElementDofs(elem, std::span<Index> {dofsBuf.data(), static_cast<size_t>(totalDofs)});
+        for (int i = 0; i < totalDofs; ++i) {
+            outValues[i] = values_[dofsBuf[i]];
+        }
+    }
+
+    Real GridFunction::eval(Index elem, const ElementTransform& trans) const
     {
         if (!fes_)
             return 0.0;
@@ -27,7 +48,7 @@ namespace mpfem {
         ShapeMatrix shapeBuf;
         std::array<Index, MaxDofsPerElement> dofsBuf {};
 
-        basis.evalShape(xi, shapeBuf);
+        basis.evalShape(trans.ipXi(), shapeBuf);
         fes_->getElementDofs(elem, std::span<Index> {dofsBuf.data(), static_cast<size_t>(totalDofs)});
 
         Real val = 0.0;
@@ -37,7 +58,7 @@ namespace mpfem {
         return val;
     }
 
-    Vector3 GridFunction::gradient(Index elem, const Vector3& xi, const Matrix3& invJacobianTranspose) const
+    Vector3 GridFunction::gradient(Index elem, const ElementTransform& trans) const
     {
         if (!fes_)
             return Vector3::Zero();
@@ -58,7 +79,7 @@ namespace mpfem {
         DerivMatrix derivBuf;
         std::array<Index, MaxDofsPerElement> dofsBuf {};
 
-        basis.evalDerivatives(xi, derivBuf);
+        basis.evalDerivatives(trans.ipXi(), derivBuf);
         fes_->getElementDofs(elem, std::span<Index> {dofsBuf.data(), static_cast<size_t>(totalDofs)});
 
         Vector3 gRef = Vector3::Zero();
@@ -68,7 +89,7 @@ namespace mpfem {
             gRef.z() += derivBuf(i, 2) * values_[dofsBuf[static_cast<size_t>(i) * vdim]];
         }
 
-        return invJacobianTranspose * gRef;
+        return trans.invJacobianT() * gRef;
     }
 
 } // namespace mpfem

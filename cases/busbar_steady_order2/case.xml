@@ -1,10 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <case name="busbar">
-  <paths
-    mesh="mesh.mphtxt"
-    materials="material.xml"
-    comsol_result="result.txt"
-  />
+  <paths mesh="mesh.mphtxt" materials="material.xml" comsol_result="result.txt" />
 
   <study type="steady" />
 
@@ -55,12 +51,7 @@
           <MaxIterations>2000</MaxIterations>
           <PrintLevel>0</PrintLevel>
         </Parameters>
-        <Preconditioner type="AdditiveSchwarz">
-          <Parameters>
-            <Overlap>1</Overlap>
-          </Parameters>
-          <LocalSolver type="Diagonal"/>
-        </Preconditioner>
+        <Preconditioner type="Diagonal"/>
       </LinearSolver>
     </SolverConfiguration>
     <boundary kind="convection" ids="1-7, 9-14, 16-28, 29-42">
@@ -73,7 +64,7 @@
 
   <physics kind="solid_mechanics" order="2">
     <SolverConfiguration>
-      <LinearSolver type="UMFPACK">
+      <LinearSolver type="Pardiso">
         <Parameters>
           <Tolerance>1e-10</Tolerance>
           <MaxIterations>1000</MaxIterations>

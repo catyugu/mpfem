@@ -3,7 +3,7 @@
 
 #include "core/exception.hpp"
 #include "core/types.hpp"
-#include <Eigen/Sparse>
+#include <Eigen/SparseCore>
 #include <cstdint>
 #include <cstring>
 #include <fstream>

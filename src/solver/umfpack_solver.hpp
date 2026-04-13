@@ -7,13 +7,13 @@
 #include <stdexcept>
 #include <vector>
 
-#ifdef MPFEM_USE_SUITESPARSE
+#ifdef MPFEM_USE_UMFPACK
 #include <Eigen/UmfPackSupport>
 #endif
 
 namespace mpfem {
 
-#ifdef MPFEM_USE_SUITESPARSE
+#ifdef MPFEM_USE_UMFPACK
 
     /**
      * @brief SuiteSparse UMFPACK direct solver.
@@ -94,7 +94,7 @@ namespace mpfem {
         }
     };
 
-#endif // MPFEM_USE_SUITESPARSE
+#endif // MPFEM_USE_UMFPACK
 
 } // namespace mpfem
 

@@ -1,8 +1,9 @@
 #ifndef MPFEM_TIME_STEPPER_HPP
 #define MPFEM_TIME_STEPPER_HPP
 
+#include "problem/time/time_integrator.hpp"
 #include "problem/transient_problem.hpp"
-#include "time/time_integrator.hpp"
+
 
 namespace mpfem {
 

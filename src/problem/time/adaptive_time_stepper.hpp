@@ -2,7 +2,7 @@
 #define MPFEM_ADAPTIVE_TIME_STEPPER_HPP
 
 #include "core/logger.hpp"
-#include "time/time_stepper.hpp"
+#include "problem/time/time_stepper.hpp"
 #include <algorithm>
 
 namespace mpfem {

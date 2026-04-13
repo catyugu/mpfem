@@ -9,7 +9,6 @@
 #include "fe/fe_space.hpp"
 #include "fe/quadrature.hpp"
 #include "mesh/geometry.hpp"
-#include "mesh/mesh.hpp"
 #include <cmath>
 #include <gtest/gtest.h>
 
@@ -22,7 +21,8 @@ namespace {
 
     class ScalarConstantNode final : public VariableNode {
     public:
-        explicit ScalarConstantNode(Real value) : value_(value) { }
+        explicit ScalarConstantNode(Real value)
+            : value_(value) { }
 
         void evaluateBatch(const EvaluationContext& ctx, std::span<Tensor> dest) const override
         {
@@ -41,7 +41,8 @@ namespace {
 
     class MatrixConstantNode final : public VariableNode {
     public:
-        explicit MatrixConstantNode(const Matrix3& value) : value_(value) { }
+        explicit MatrixConstantNode(const Matrix3& value)
+            : value_(value) { }
 
         void evaluateBatch(const EvaluationContext& ctx, std::span<Tensor> dest) const override
         {

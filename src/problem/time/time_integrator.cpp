@@ -1,7 +1,7 @@
 #include "time_integrator.hpp"
 #include "core/logger.hpp"
-#include "time/bdf1_integrator.hpp"
-#include "time/bdf2_integrator.hpp"
+#include "problem/time/bdf1_integrator.hpp"
+#include "problem/time/bdf2_integrator.hpp"
 
 #include <memory>
 
