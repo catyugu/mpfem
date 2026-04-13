@@ -1,7 +1,7 @@
-#include "grid_function.hpp"
+#include "field/grid_function.hpp"
 #include "core/exception.hpp"
 #include "fe/element_transform.hpp"
-#include "finite_element.hpp"
+#include "fe/finite_element.hpp"
 
 #include <array>
 

@@ -1,11 +1,13 @@
 #include "assembler.hpp"
 #include "assembly/element_binding.hpp"
 #include "fe/element_transform.hpp"
-#include "fe/fe_space.hpp"
+#include "field/fe_space.hpp"
 #include <algorithm>
 #include <cmath>
 #include <unordered_map>
 #include <unordered_set>
+
+
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -124,17 +126,13 @@ namespace mpfem {
 
             ElementTransform trans;
 
-            // Pre-size dynMatrix to maximum possible iTotalDofs once per thread
-            const int maxPossibleIvdims = maxIvdim_ > 0 ? maxIvdim_ : 1;
-            const int maxDynSize = MaxDofsPerElement * maxPossibleIvdims;
+            const int maxDynSize = MaxDofsPerElement * vdim;
             buf.ensureDynMatrixSize(maxDynSize);
 #else
         ThreadBuffer buf;
         ElementTransform trans;
 
-        // Pre-size dynMatrix to maximum possible iTotalDofs
-        const int maxPossibleIvdims = maxIvdim_ > 0 ? maxIvdim_ : 1;
-        const int maxDynSize = MaxDofsPerElement * maxPossibleIvdims;
+        const int maxDynSize = MaxDofsPerElement * vdim;
         buf.ensureDynMatrixSize(maxDynSize);
 #endif
 
@@ -167,23 +165,21 @@ namespace mpfem {
                 for (size_t ki : domainIt->second) {
                     const auto& integ = domainIntegs_[ki];
                     int ivdim = integ->vdim();
-                    int iTotalDofs = nd * ivdim;
-                    // Only resize if needed (should be rare with pre-sizing)
-                    if (buf.dynMatrix.rows() < iTotalDofs) {
+                    if (ivdim != vdim) {
+                        MPFEM_THROW(ArgumentException, "Bilinear integrator vdim must match FESpace vdim");
+                    }
+
+                    const int iTotalDofs = nd * ivdim;
+                    if (buf.dynMatrix.rows() < iTotalDofs || buf.dynMatrix.cols() < iTotalDofs) {
                         buf.dynMatrix.resize(iTotalDofs, iTotalDofs);
                     }
+
                     integ->assembleElementMatrix(*ref, trans, buf.dynMatrix);
 
-                    if (ivdim == 1) {
-                        // Scalar integrator: expand to vector field diagonal blocks
-                        for (int c = 0; c < vdim; ++c) {
-                            buf.elmatVector.block(c * nd, c * nd, nd, nd) += buf.dynMatrix;
-                        }
+                    if (buf.dynMatrix.rows() != iTotalDofs || buf.dynMatrix.cols() != iTotalDofs) {
+                        MPFEM_THROW(ArgumentException, "Bilinear integrator returned matrix with unexpected size");
                     }
-                    else {
-                        // Vector integrator: add directly
-                        buf.elmatVector.topLeftCorner(iTotalDofs, iTotalDofs) += buf.dynMatrix;
-                    }
+                    buf.elmatVector.topLeftCorner(iTotalDofs, iTotalDofs) += buf.dynMatrix.topLeftCorner(iTotalDofs, iTotalDofs);
                 }
 
                 // Pre-compute valid DOF indices to reduce branching in inner loop
@@ -224,8 +220,7 @@ namespace mpfem {
         if (!bdrIntegs_.empty()) {
             ElementTransform btrans;
             ThreadBuffer bbuf;
-            const int maxPossibleIvdims = maxIvdim_ > 0 ? maxIvdim_ : 1;
-            const int maxDynSize = MaxDofsPerElement * maxPossibleIvdims;
+            const int maxDynSize = MaxDofsPerElement * vdim;
             bbuf.ensureDynMatrixSize(maxDynSize);
 
             for (Index b = 0; b < mesh->numBdrElements(); ++b) {
@@ -264,14 +259,10 @@ namespace mpfem {
                     bbuf.dynMatrix.resize(0, 0);
                     bdrIntegs_[k]->assembleFaceMatrix(*ref, btrans, bbuf.dynMatrix);
 
-                    if (bbuf.dynMatrix.rows() == nd && bbuf.dynMatrix.cols() == nd) {
-                        for (int c = 0; c < vdim; ++c) {
-                            bbuf.elmatVector.block(c * nd, c * nd, nd, nd) += bbuf.dynMatrix;
-                        }
+                    if (bbuf.dynMatrix.rows() != totalDofs || bbuf.dynMatrix.cols() != totalDofs) {
+                        MPFEM_THROW(ArgumentException, "Boundary bilinear integrator returned matrix with unexpected size");
                     }
-                    else if (bbuf.dynMatrix.rows() == totalDofs && bbuf.dynMatrix.cols() == totalDofs) {
-                        bbuf.elmatVector.topLeftCorner(totalDofs, totalDofs) += bbuf.dynMatrix;
-                    }
+                    bbuf.elmatVector.topLeftCorner(totalDofs, totalDofs) += bbuf.dynMatrix;
                 }
 
                 // Pre-compute valid DOF indices to reduce branching
@@ -386,20 +377,17 @@ namespace mpfem {
                     for (size_t ki : domainIt->second) {
                         const auto& integ = domainIntegs_[ki];
                         int ivdim = integ->vdim();
+                        if (ivdim != vdim) {
+                            MPFEM_THROW(ArgumentException, "Linear integrator vdim must match FESpace vdim");
+                        }
                         int iTotalDofs = nd * ivdim;
                         buf.dynVector.resize(iTotalDofs);
                         integ->assembleElementVector(*ref, trans, buf.dynVector);
 
-                        if (ivdim == 1) {
-                            // Scalar integrator: expand to vector field segments
-                            for (int c = 0; c < vdim; ++c) {
-                                buf.elvecVector.segment(c * nd, nd) += buf.dynVector;
-                            }
+                        if (buf.dynVector.size() != iTotalDofs) {
+                            MPFEM_THROW(ArgumentException, "Linear integrator returned vector with unexpected size");
                         }
-                        else {
-                            // Vector integrator: add directly
-                            buf.elvecVector.head(iTotalDofs) += buf.dynVector;
-                        }
+                        buf.elvecVector.head(iTotalDofs) += buf.dynVector;
                     }
 
                     // Pre-compute valid DOF indices to reduce branching
@@ -474,14 +462,10 @@ namespace mpfem {
                     bbuf.dynVector.resize(0);
                     bdrIntegs_[k]->assembleFaceVector(*ref, btrans, bbuf.dynVector);
 
-                    if (bbuf.dynVector.size() == nd) {
-                        for (int c = 0; c < vdim; ++c) {
-                            bbuf.elvecVector.segment(c * nd, nd) += bbuf.dynVector;
-                        }
+                    if (bbuf.dynVector.size() != totalDofs) {
+                        MPFEM_THROW(ArgumentException, "Boundary linear integrator returned vector with unexpected size");
                     }
-                    else if (bbuf.dynVector.size() == totalDofs) {
-                        bbuf.elvecVector.head(totalDofs) += bbuf.dynVector;
-                    }
+                    bbuf.elvecVector.head(totalDofs) += bbuf.dynVector;
                 }
 
                 // Pre-compute valid DOF indices to reduce branching

@@ -1,11 +1,9 @@
 #ifndef MPFEM_ELEMENT_TRANSFORM_HPP
 #define MPFEM_ELEMENT_TRANSFORM_HPP
 
+#include "core/geometry.hpp"
 #include "core/types.hpp"
-#include "expr/evaluation_context.hpp"
 #include "fe/geometry_mapping.hpp"
-#include "fe/quadrature.hpp"
-#include "mesh/geometry.hpp"
 #include <Eigen/Geometry>
 #include <array>
 #include <span>
@@ -53,11 +51,6 @@ namespace mpfem {
             ipXi_ = xi;
             computeJacobian();
             computeInverse();
-        }
-
-        void setIntegrationPoint(const IntegrationPoint& ip)
-        {
-            setIntegrationPoint(ip.getXi());
         }
 
         // -------------------------------------------------------------------------

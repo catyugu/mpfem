@@ -1,6 +1,7 @@
 #include "io/result_exporter.hpp"
 #include "core/exception.hpp"
 #include "core/logger.hpp"
+#include "mesh/mesh.hpp"
 
 #include <cmath>
 #include <ctime>

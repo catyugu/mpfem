@@ -1,7 +1,7 @@
 #ifndef MPFEM_GRID_FUNCTION_HPP
 #define MPFEM_GRID_FUNCTION_HPP
 
-#include "fe/fe_space.hpp"
+#include "field/fe_space.hpp"
 #include <Eigen/Dense>
 #include <cstdint>
 #include <span>

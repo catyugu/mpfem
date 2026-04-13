@@ -1,7 +1,6 @@
 #ifndef MPFEM_IO_PROBLEM_INPUT_LOADER_HPP
 #define MPFEM_IO_PROBLEM_INPUT_LOADER_HPP
 
-#include "mesh/mesh.hpp"
 #include "io/case_definition.hpp"
 #include "io/material_database.hpp"
 
@@ -10,20 +9,22 @@
 
 namespace mpfem {
 
-struct ProblemInputData {
-    CaseDefinition caseDefinition;
-    std::unique_ptr<Mesh> mesh;
-    MaterialDatabase materials;
-};
+    class Mesh;
 
-class ProblemInputLoader {
-public:
-    virtual ~ProblemInputLoader() = default;
-    virtual ProblemInputData load(const std::string& caseDir) const = 0;
-};
+    struct ProblemInputData {
+        CaseDefinition caseDefinition;
+        std::unique_ptr<Mesh> mesh;
+        MaterialDatabase materials;
+    };
 
-std::unique_ptr<ProblemInputLoader> createXmlProblemInputLoader();
+    class ProblemInputLoader {
+    public:
+        virtual ~ProblemInputLoader() = default;
+        virtual ProblemInputData load(const std::string& caseDir) const = 0;
+    };
 
-}  // namespace mpfem
+    std::unique_ptr<ProblemInputLoader> createXmlProblemInputLoader();
 
-#endif  // MPFEM_IO_PROBLEM_INPUT_LOADER_HPP
+} // namespace mpfem
+
+#endif // MPFEM_IO_PROBLEM_INPUT_LOADER_HPP

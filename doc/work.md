@@ -2,8 +2,7 @@
 
 ## 前言
 
-* 你必须首先阅读我们项目的README.md
-
+* **极其重要**: 你必须首先阅读我们项目的 `README.md`
 * 这是一项非常冗长的任务，建议您充分利用完整的输出上下文，充分利用子agent来处理。
 建议您充分利用完整的输出上下文来处理——整体输入和输出 tokens 控制在 200k tokens，充分利用上下文窗口长度将任务彻底完成，避免耗尽 tokens。充分利用上下文窗口长度将任务彻底完成，避免耗尽 tokens。
 
@@ -25,97 +24,102 @@
 
 ## 任务
 
-根据您提供的 `mpfem` 项目源代码，我识别出以下**设计反模式、冗长、循环依赖和性能隐患**，并针对**编译/链接速度慢**这一首要痛点，给出分步重构计划。以下分析基于对 `CMakeLists.txt`、`Targets.cmake`、各模块头文件及 `src` 结构的审查。
+这是一项非常关键的架构重构。在深入分析您的 `mpfem` 源码后，我发现目前在有限元（FE）、网格（Mesh）和组装（Assembly）层之间存在一些典型的**设计反模式、冗余代码和不合理的依赖关系**。
+
+以下是针对您要求的缺陷分析以及步骤化的重构计划。
+
+### 🚨 识别出的架构问题
+
+1. **依赖倒置与层级破坏 (FESpace 越权与依赖污染)**：
+   * **问题**：`src/fe/fe_space.cpp` 严重依赖 `src/mesh/mesh.hpp`。`FE` 层本应是纯粹的参考单元和形函数数学库，完全不应知道全局网格、拓扑或内存分布。这导致了 `FE` -> `Mesh` 的反向依赖，破坏了模块的单向流动。
+2. **违反开闭原则 (FECollection 的 Factory 反模式)**：
+   * **问题**：当前的 `FECollection` 使用了 `enum class Type { H1, L2, ND, RT }` 和内置的 Switch-Case 工厂方法来创建。如果您未来想添加新的单元类型，就必须修改这个核心类的代码，这是典型的反模式。
+3. **职责混淆 (FESpace 管理 vdim)**：
+   * **问题**：`FESpace` 构造时接收了 `vdim`（向量维度），并在获取 DOF 时进行 `for (int c = 0; c < vdim_; ++c)` 的硬编码循环。实际上，Nedelec 单元（虽然物理上是 3 维矢量）的自由度是在边上（`vdim` 概念对其并不适用）。让 `FESpace` 管理 `vdim` 导致了泛用性的丧失。
+4. **Assembler 中的冗长与分支 (Verbose Array Expansions)**：
+   * **问题**：在 `Assembler::assemble()` 中，为了兼容标量积分器和矢量 `vdim`，强行写了 `if (ivdim == 1) { 展开到对角块 } else { 直接加 }`。这会在最热的循环中引入不必要的分支和冗余的复制。
 
 ---
 
-## 🔍 一、关键问题诊断（编译/链接缓慢的根源）
+### 🛠️ 步骤化重构计划 (强制不向后兼容)
 
-### 1. 库依赖链存在**循环依赖与反向依赖**
-- `mpfem_problem` 显式链接了 `mpfem_physics`（见 `Targets.cmake` 第 132 行），但 `mpfem_physics` 却**编译了** `src/problem/transient_problem.cpp`，导致 `physics` 库反向依赖 `problem` 层的符号。  
-  → 链接时可能出现重复符号、延长链接时间，且破坏模块分层。
+#### **步骤 1：抽象 FECollection，下放 vdim 职责 (解决开闭原则与 vdim 管理)**
+**目标**：剥离 `FESpace` 对 `vdim` 的管理，使用面向对象继承替代 Enum。
 
-### 2. 大量实现细节**裸露在头文件中**
-- 几乎所有模块的头文件（`.hpp`）都包含了完整的成员变量定义、内联函数实现（如 `FESpace`、`ElementTransform`、`GridFunction` 等）。  
-  → 任何对私有成员的修改都会触发**大规模重新编译**，且头文件展开后体积庞大，拖慢编译速度。
+1. 修改 `FECollection` 为纯虚基类：
+   ```cpp
+   class FECollection {
+   public:
+       virtual ~FECollection() = default;
+       virtual const ReferenceElement* get(Geometry geom) const = 0;
+       virtual std::string name() const = 0;
+   };
+   ```
+2. 创建 `H1_Collection` 继承体系：
+   * 只有 H1 需要 `vdim`。添加 `H1_Collection : public FECollection`。
+   * 构造函数签名改为：`H1_Collection(int order, int vdim = 1)`。
+   * 它在内部直接初始化带有 `vdim` 信息的 `H1FiniteElement`。
+3. `H1FiniteElement` 存储 `vdim_`。其形函数矩阵大小直接变为 `[ndof * vdim, vdim]`。
 
-### 3. 过度使用模板且**无显式实例化**
-- `solver/eigen_solver.hpp` 中的 `EigenIterativeOperator` 是模板类，但未在 `.cpp` 中显式实例化常用类型（如 `CgOperator`、`GmresOperator`）。  
-  → 每个包含该头文件的编译单元都会重复实例化模板代码，增加编译时间和二进制体积。
+#### **步骤 2：基底注册自由度布局 (DofLayout)**
+**目标**：消除 FESpace 中关于几何体、维度、阶数的硬编码猜测。
 
-### 4. **头文件包含地狱**
-- 核心头文件 `core/types.hpp` 包含了 `Eigen/Core`、`Eigen/SparseCore`，且几乎所有模块都直接或间接包含它。  
-  → 修改 `types.hpp` 会导致几乎全项目重编。
+1. 在 `FiniteElement` 抽象类中引入一个标准化的 `DofLayout` 结构体：
+   ```cpp
+   struct DofLayout {
+       int numVertexDofs = 0;
+       int numEdgeDofs = 0;
+       int numFaceDofs = 0;
+       int numVolumeDofs = 0;
+   };
+   ```
+2. **H1 注册**：在 `H1FiniteElement` 构造时，根据 `vdim` 和 `order` 注册自己的 Layout：
+   * 线性 `H1_Collection(1, vdim=3)`：`numVertexDofs = 3`, `numEdgeDofs = 0`。
+   * 二阶 `H1_Collection(2, vdim=1)`：`numVertexDofs = 1`, `numEdgeDofs = 1`，如果是四边形则还有 `numFaceDofs = 1`。
+3. 将此信息直接暴露给 `ReferenceElement`。
 
-### 5. **库粒度不合理**
-- `mpfem_physics` 库同时包含了三个物理场求解器和时间积分器，且依赖 `assembly`、`solver`、`io` 等。  
-  → 任何一个小模块的改动都可能触发 `physics` 库的重链。
+#### **步骤 3：迁移并纯化 FESpace (解决依赖污染)**
+**目标**：将 `FESpace` 从 `src/fe/` 移动到 `src/assembly/` 层，变成纯粹的映射器。
 
-### 6. **缺少前向声明**
-- 例如 `mesh.hpp` 中 `#include "element.hpp"`，而 `element.hpp` 又包含 `geometry.hpp`，但很多地方仅需指针或引用即可使用前向声明。
+1. **移动文件**：将 `fe_space.hpp/cpp` 移到 `assembly` 模块下。这样 `fe` 模块就完全与 `mesh` 解耦，纯粹处理数学。
+2. **重写全局自由度分配**：
+   * `FESpace` **不再知道什么是 H1 还是 vdim**。
+   * 遍历拓扑：根据 `FECollection` 提供的 `DofLayout`，自动在 `Mesh` 的各个拓扑实体（节点、边、面、体）上按需分配全局连续的 DOF 编号。
+   * 删除所有类似于 `for(c=0; c<vdim)` 的嵌套逻辑。分配器只需要问：“这条边需要几个 DOF？” Layout 答：“3个”，分配器就直接连续分配 3 个。
+
+#### **步骤 4：集成一阶与二阶 Nedelec (ND) 单元**
+**目标**：验证架构是否已真正通用，支持棱边元。
+
+1. 创建 `ND_Collection : public FECollection`，构造函数只接收 `order`。
+2. 创建 `NDFiniteElement`：
+   * **一阶 Nedelec 布局**：`numVertexDofs = 0`, `numEdgeDofs = 1`。
+   * **二阶 Nedelec 布局**：`numVertexDofs = 0`, `numEdgeDofs = 2`, `numFaceDofs = 2` (对四面体)。
+3. **引入 Piola 变换**：
+   * Node 单元使用标准插值：$u(x) = \hat{u}(\hat{x})$。
+   * Nedelec 单元表示矢量场（如电场、磁场），**必须**使用协变 Piola 变换（Covariant Piola Transform）保证旋度连续（$H(curl)$）：
+     $$\mathbf{u}(\mathbf{x}) = J^{-T} \hat{\mathbf{u}}(\hat{\mathbf{x}})$$
+   * 在 `FiniteElement` 或 `ElementTransform` 接口中，提供一个通用的变换评估函数 `transformBasis(...)`，ND 单元重载此函数并乘上 `trans.invJacobianT()`。
+
+#### **步骤 5：清理 Assembler 的冗长与内存优化**
+**目标**：简化装配层，提升热点性能。
+
+1. **去除冗余分支**：由于现在的 `H1_Collection` 已经直接在 `FiniteElement` 层合并了 `vdim`，`Integrator` 返回的直接是 `[totalDof x totalDof]` 的满阵。
+   * 删除 `Assembler.cpp` 中 `if (ivdim == 1)` 的展开逻辑，直接使用 `+= buf.dynMatrix`。
+2. **预分配机制（Pre-allocation）优化**：
+   * `FESpace` 由于彻底变成了 Flat 结构，`fes->getElementDofs` 现在直接以 `span` 返回一维的平铺索引数组。无需在 `Assembler` 内进行二次 `vdim` 乘法。
 
 ---
 
-## 📐 二、重构目标与原则
+### 🚀 执行建议 (执行此重构的 Checklist)
 
-1. **严格分层**：消除循环依赖，形成单向依赖链。
-2. **隐藏实现**：大量使用 PIMPL 手法，将私有成员移入 `.cpp`。
-3. **减少模板膨胀**：显式实例化常用模板，或将模板改为运行时分发。
-4. **精简头文件**：用前向声明替代 `#include`，提取纯类型定义到独立轻量头文件。
-5. **库拆分与合并**：按职责重组库目标，减少链接时符号解析开销。
+请遵循您在 `work.md` 中制定的原则，严格**放弃向后兼容**。
 
----
-
-## 🛠️ 三、分步重构计划（按优先级排序）
-
-### **Phase 1：解决循环依赖与库重组（最关键，直接改善链接速度）**
-
-| 步骤 | 任务                                                                                                                                                                                                     | 预期效果                                       |
-| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| 1.1  | **修复 `problem` ↔ `physics` 反向依赖**：将 `src/problem/transient_problem.cpp` 移至 `mpfem_problem` 库，并移除 `mpfem_problem` 对 `mpfem_physics` 的依赖。`physics` 只应被 `problem` 依赖，而不能反向。 | 消除循环链接，减少重复符号解析。               |
-| 1.2  | **拆分 `mpfem_physics` 为三个独立库**：`mpfem_electrostatics`、`mpfem_thermal`、`mpfem_structural`。每个库只依赖 `mpfem_assembly`、`mpfem_core`、`mpfem_fe`。                                            | 并行编译粒度更细，改动局部场不影响其他场链接。 |
-| 1.3  | **将时间积分模块独立**：`src/time/` 编译为 `mpfem_time`，供 `mpfem_problem` 链接，而不是混入 `physics`。                                                                                                 | 时间积分修改不再触发物理场重链。               |
-| 1.4  | **调整 `Targets.cmake` 依赖顺序**，确保依赖关系为：<br>`core` → `mesh` → `fe` → `expr` → `io` → `assembly` → `solver` → `time` → `physics_*` → `problem`。                                               | 清晰的单向依赖图，链接器可更快确定符号位置。   |
-
-### **Phase 2：PIMPL 化核心类（显著减少头文件改动传播）**
-
-优先处理以下频繁被包含且实现复杂的类：
-
-| 类                 | 文件                       | 重构方式                                                                                                                                                          |
-| ------------------ | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Mesh`             | `mesh/mesh.hpp`            | 将 `vertices_`、`elementGeoms_` 等容器移入 `Mesh::Impl`，在 `.cpp` 中定义。对外仅保留查询接口。                                                                   |
-| `FESpace`          | `fe/fe_space.hpp`          | 将 `elemDofs_`、`bdrElemDofs_` 等移入 PIMPL。                                                                                                                     |
-| `ElementTransform` | `fe/element_transform.hpp` | 将 `nodesBuf_`、`jacobian_` 等缓存移入 PIMPL，因为它在热路径中被频繁创建（每个线程一个）。                                                                        |
-| `GridFunction`     | `fe/grid_function.hpp`     | 仅有 `Eigen::VectorXd values_`，但包含 `fes_` 指针，PIMPL 收益一般；可保留但将 `values_` 改为 `std::vector<Real>` 以减少 Eigen 头文件包含？不，Eigen 已普遍包含。 |
-| `VariableManager`  | `expr/variable_graph.hpp`  | 内部 `nodes_` 和编译状态可移入 PIMPL。                                                                                                                            |
-
-> **实施策略**：每完成一个类的 PIMPL 化，全量编译一次，确认编译时间下降。
-
-### **Phase 3：头文件清理与前向声明**
-
-- 创建 `core/fwd.hpp`，集中放置所有类的前向声明（`class Mesh; class FESpace; ...`）。
-- 修改各模块头文件，将 `#include "mesh/mesh.hpp"` 替换为 `#include "core/fwd.hpp"`，并在 `.cpp` 中包含完整头文件。
-- 将 `core/types.hpp` 拆分为：
-  - `core/types_fwd.hpp`：仅含 `Index`、`Real`、`Vector3` 等基础类型别名（不含 Eigen 实现）。
-  - `core/types_eigen.hpp`：包含 Eigen 类型别名，仅供需要完整 Eigen 的模块包含。
-
-### **Phase 4：模板显式实例化**
-
-- 在 `solver/eigen_solver.cpp` 中显式实例化 `CgOperator` 和 `GmresOperator`：
-  ```cpp
-  template class EigenIterativeOperator<Eigen::ConjugateGradient<...>, CgName>;
-  template class EigenIterativeOperator<Eigen::DGMRES<...>, GmresName>;
-  ```
-- 将 `EigenIterativeOperator` 的模板定义移至 `.cpp` 或单独的 `-inl.hpp` 文件，头文件仅保留声明。
-
-### **Phase 5：启用预编译头（PCH）**
-
-在 CMake 中为目标（尤其是 `mpfem_core`、`mpfem_fe`等）启用预编译头，包含最常用的：
-```cpp
-#include <Eigen/Core>
-#include <Eigen/SparseCore>
-#include <vector>
-#include <memory>
-#include <string>
-```
-可大幅加速编译（尤其在 MSVC 下）。
+1. [ ] 删掉 `fe_collection.hpp/cpp` 中的工厂模式。实现 `H1_Collection`。
+2. [ ] 在 `finite_element.hpp` 增加 `DofLayout`。修改 `H1FiniteElement`。
+3. [ ] 将 `fe_space.cpp/hpp` 移动到 `assembly` 目录。更新其构建 `DofTable` 的逻辑。
+4. [ ] 消除 `Assembler::assemble` 中的分支判断代码。
+5. [ ] 编译并运行一阶、二阶稳态测试，确保以上 H1 架构重构未破坏结果。
+6. [ ] 提交代码（第一次 Checkpoint）。
+7. [ ] 添加 `ND_Collection` 和 `NDFiniteElement`。
+8. [ ] 更新 `ElementTransform` 及 `Integrator`，使其支持 `ND` 的 Piola 变换规则。
+9. [ ] 编译通过，完成验证。

@@ -1,9 +1,9 @@
 #include "assembly/element_binding.hpp"
+#include "core/geometry.hpp"
 #include "core/types.hpp"
 #include "fe/element_transform.hpp"
 #include "fe/h1.hpp"
 #include "fe/quadrature.hpp"
-#include "mesh/geometry.hpp"
 #include "mesh/mesh.hpp"
 #include <cmath>
 #include <gtest/gtest.h>
@@ -585,7 +585,7 @@ TEST(CurvedIntegrationTest, IntegrateOverCurvedTriangle)
     Real area = 0.0;
 
     for (const auto& ip : rule) {
-        trans.setIntegrationPoint(ip);
+        trans.setIntegrationPoint(ip.getXi());
         area += ip.weight * trans.weight();
     }
 
@@ -607,7 +607,7 @@ TEST(CurvedIntegrationTest, IntegrateOverCurvedTetrahedron)
     Real volume = 0.0;
 
     for (const auto& ip : rule) {
-        trans.setIntegrationPoint(ip);
+        trans.setIntegrationPoint(ip.getXi());
         volume += ip.weight * trans.weight();
     }
 

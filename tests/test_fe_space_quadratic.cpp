@@ -1,12 +1,12 @@
 #include "assembly/element_binding.hpp"
+#include "core/geometry.hpp"
 #include "core/types.hpp"
 #include "fe/element_transform.hpp"
 #include "fe/fe_collection.hpp"
-#include "fe/fe_space.hpp"
-#include "fe/grid_function.hpp"
 #include "fe/quadrature.hpp"
+#include "field/fe_space.hpp"
+#include "field/grid_function.hpp"
 #include "io/mphtxt_reader.hpp"
-#include "mesh/geometry.hpp"
 #include "mesh/mesh.hpp"
 #include <cmath>
 #include <gtest/gtest.h>
@@ -158,7 +158,7 @@ protected:
 
 TEST_F(QuadraticFESpaceTest, NumDofs)
 {
-    FESpace fes(&mesh_, std::make_unique<FECollection>(2, FECollection::Type::H1));
+    FESpace fes(&mesh_, std::make_unique<H1Collection>(2));
 
     // For 2 triangular elements sharing an edge:
     // - 4 corner vertices -> 4 vertex DOFs
@@ -169,7 +169,7 @@ TEST_F(QuadraticFESpaceTest, NumDofs)
 
 TEST_F(QuadraticFESpaceTest, ElementDofs)
 {
-    FESpace fes(&mesh_, std::make_unique<FECollection>(2, FECollection::Type::H1));
+    FESpace fes(&mesh_, std::make_unique<H1Collection>(2));
 
     // Get DOFs for first element
     std::vector<Index> dofs0 = getElementDofsVec(fes, 0);
@@ -182,7 +182,7 @@ TEST_F(QuadraticFESpaceTest, ElementDofs)
 
 TEST_F(QuadraticFESpaceTest, EdgeDofSharing)
 {
-    FESpace fes(&mesh_, std::make_unique<FECollection>(2, FECollection::Type::H1));
+    FESpace fes(&mesh_, std::make_unique<H1Collection>(2));
 
     // Elements share edge 1-2 (which has edge midpoint at vertex 5)
     std::vector<Index> dofs0 = getElementDofsVec(fes, 0);
@@ -211,7 +211,7 @@ TEST_F(QuadraticFESpaceTest, EdgeDofSharing)
 TEST_F(QuadraticFESpaceTest, VectorFESpace)
 {
     // Test vector-valued FE space (vdim = 2)
-    FESpace fes(&mesh_, std::make_unique<FECollection>(2, FECollection::Type::H1), 2);
+    FESpace fes(&mesh_, std::make_unique<H1Collection>(2, 2));
 
     // Total DOFs should be doubled
     EXPECT_EQ(fes.numDofs(), 18); // 9 * 2
@@ -230,7 +230,7 @@ protected:
     void SetUp() override
     {
         mesh_ = createQuadraticTriangleMesh();
-        fes_ = std::make_unique<FESpace>(&mesh_, std::make_unique<FECollection>(2, FECollection::Type::H1));
+        fes_ = std::make_unique<FESpace>(&mesh_, std::make_unique<H1Collection>(2));
         gf_ = std::make_unique<GridFunction>(fes_.get());
     }
 
@@ -320,7 +320,7 @@ protected:
 
 TEST_F(QuadraticReferenceElementTest, TriangleNumDofs)
 {
-    FECollection fec(2, FECollection::Type::H1);
+    H1Collection fec(2);
     const ReferenceElement* refTri = fec.get(Geometry::Triangle);
     ASSERT_NE(refTri, nullptr);
     EXPECT_EQ(refTri->numDofs(), 6); // 3 + 3
@@ -328,7 +328,7 @@ TEST_F(QuadraticReferenceElementTest, TriangleNumDofs)
 
 TEST_F(QuadraticReferenceElementTest, TetrahedronNumDofs)
 {
-    FECollection fec(2, FECollection::Type::H1);
+    H1Collection fec(2);
     const ReferenceElement* refTet = fec.get(Geometry::Tetrahedron);
     ASSERT_NE(refTet, nullptr);
     EXPECT_EQ(refTet->numDofs(), 10); // 4 + 6
@@ -336,7 +336,7 @@ TEST_F(QuadraticReferenceElementTest, TetrahedronNumDofs)
 
 TEST_F(QuadraticReferenceElementTest, SquareNumDofs)
 {
-    FECollection fec(2, FECollection::Type::H1);
+    H1Collection fec(2);
     const ReferenceElement* refSquare = fec.get(Geometry::Square);
     ASSERT_NE(refSquare, nullptr);
     EXPECT_EQ(refSquare->numDofs(), 9); // 4 + 4 + 1
@@ -344,7 +344,7 @@ TEST_F(QuadraticReferenceElementTest, SquareNumDofs)
 
 TEST_F(QuadraticReferenceElementTest, CubeNumDofs)
 {
-    FECollection fec(2, FECollection::Type::H1);
+    H1Collection fec(2);
     const ReferenceElement* refCube = fec.get(Geometry::Cube);
     ASSERT_NE(refCube, nullptr);
     EXPECT_EQ(refCube->numDofs(), 27); // 8 + 12 + 6 + 1
@@ -352,7 +352,7 @@ TEST_F(QuadraticReferenceElementTest, CubeNumDofs)
 
 TEST_F(QuadraticReferenceElementTest, TriangleFaceDofs)
 {
-    FECollection fec(2, FECollection::Type::H1);
+    H1Collection fec(2);
     const ReferenceElement* refTri = fec.get(Geometry::Triangle);
     ASSERT_NE(refTri, nullptr);
 
@@ -367,7 +367,7 @@ TEST_F(QuadraticReferenceElementTest, TriangleFaceDofs)
 
 TEST_F(QuadraticReferenceElementTest, TetrahedronFaceDofs)
 {
-    FECollection fec(2, FECollection::Type::H1);
+    H1Collection fec(2);
     const ReferenceElement* refTet = fec.get(Geometry::Tetrahedron);
     ASSERT_NE(refTet, nullptr);
 
@@ -382,7 +382,7 @@ TEST_F(QuadraticReferenceElementTest, TetrahedronFaceDofs)
 
 TEST_F(QuadraticReferenceElementTest, CubeFaceDofs)
 {
-    FECollection fec(2, FECollection::Type::H1);
+    H1Collection fec(2);
     const ReferenceElement* refCube = fec.get(Geometry::Cube);
     ASSERT_NE(refCube, nullptr);
 
@@ -416,7 +416,7 @@ TEST(QuadraticIntegrationTest, IntegrateQuadraticFunctionExactly)
     mesh.addElement(Geometry::Triangle, {0, 1, 2, 3, 4, 5}, 1, 2);
     mesh.buildTopology();
 
-    FESpace fes(&mesh, std::make_unique<FECollection>(2));
+    FESpace fes(&mesh, std::make_unique<H1Collection>(2));
     GridFunction gf(&fes);
 
     // Set f(x,y) = x + y at nodal interpolation points of the element.
@@ -439,7 +439,7 @@ TEST(QuadraticIntegrationTest, IntegrateQuadraticFunctionExactly)
     Real integral = 0.0;
 
     for (const auto& ip : rule) {
-        trans.setIntegrationPoint(ip);
+        trans.setIntegrationPoint(ip.getXi());
         Real f_val = gf.eval(0, trans);
         integral += ip.weight * trans.weight() * f_val;
     }
@@ -461,10 +461,10 @@ TEST(MixedOrderTest, SubparametricElement)
     // This is subparametric: curved geometry with linear field
 
     Mesh mesh = createQuadraticTriangleMesh(); // Geometric order = 2
-    FECollection fec(1); // Physical order = 1
+    H1Collection fec(1); // Physical order = 1
 
     // This should work: linear field on curved geometry
-    FESpace fes(&mesh, std::make_unique<FECollection>(1));
+    FESpace fes(&mesh, std::make_unique<H1Collection>(1));
     EXPECT_EQ(fes.order(), 1); // Physical order
 
     // Element has geometric order 2, but FE space has order 1
@@ -479,7 +479,7 @@ TEST(MixedOrderTest, IsoparametricElement)
 
     Mesh mesh = createQuadraticTriangleMesh(); // Geometric order = 2
 
-    FESpace fes(&mesh, std::make_unique<FECollection>(2));
+    FESpace fes(&mesh, std::make_unique<H1Collection>(2));
 
     EXPECT_EQ(mesh.element(0).order, 2); // Geometric order
     EXPECT_EQ(fes.order(), 2); // Physical order
@@ -585,7 +585,7 @@ TEST_F(COMSOLMeshTest, JacobianPositiveDefinite)
     // This is a crucial test for correct node ordering
     Mesh mesh = MphtxtReader::read(meshPath_);
 
-    FESpace fes(&mesh, std::make_unique<FECollection>(2));
+    FESpace fes(&mesh, std::make_unique<H1Collection>(2));
     ElementTransform trans;
 
     int checkedElems = 0;
@@ -600,7 +600,7 @@ TEST_F(COMSOLMeshTest, JacobianPositiveDefinite)
         const QuadratureRule& rule = refElem->quadrature();
 
         for (const auto& ip : rule) {
-            trans.setIntegrationPoint(ip);
+            trans.setIntegrationPoint(ip.getXi());
             Real detJ = trans.detJ();
 
             EXPECT_GT(detJ, 0.0) << "Negative or zero Jacobian determinant at element " << e
@@ -618,7 +618,7 @@ TEST_F(COMSOLMeshTest, FESpaceConsistency)
     // Test that FESpace correctly handles the reordered mesh
     Mesh mesh = MphtxtReader::read(meshPath_);
 
-    FESpace fes(&mesh, std::make_unique<FECollection>(2));
+    FESpace fes(&mesh, std::make_unique<H1Collection>(2));
 
     // DOFs should map directly to mesh vertices for COMSOL-style meshes
     EXPECT_EQ(fes.numDofs(), mesh.numVertices());
@@ -652,7 +652,7 @@ TEST_F(COMSOLMeshTest, FiniteElementKroneckerDelta)
     // This tests the consistency between node ordering and basis definition.
     Mesh mesh = MphtxtReader::read(meshPath_);
 
-    FESpace fes(&mesh, std::make_unique<FECollection>(2));
+    FESpace fes(&mesh, std::make_unique<H1Collection>(2));
     ElementTransform trans;
 
     const Real tol = 1e-10;

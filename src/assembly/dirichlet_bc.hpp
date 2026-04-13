@@ -7,7 +7,7 @@
 #include "core/types.hpp"
 #include "expr/variable_graph.hpp"
 #include "fe/element_transform.hpp"
-#include "fe/fe_space.hpp"
+#include "field/fe_space.hpp"
 #include "mesh/mesh.hpp"
 #include <array>
 #include <cmath>

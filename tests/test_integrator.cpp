@@ -1,14 +1,14 @@
 #include "assembly/assembler.hpp"
 #include "assembly/element_binding.hpp"
 #include "assembly/integrators.hpp"
+#include "core/geometry.hpp"
 #include "core/logger.hpp"
 #include "core/types.hpp"
 #include "expr/variable_graph.hpp"
 #include "fe/element_transform.hpp"
 #include "fe/fe_collection.hpp"
-#include "fe/fe_space.hpp"
 #include "fe/quadrature.hpp"
-#include "mesh/geometry.hpp"
+#include "field/fe_space.hpp"
 #include <cmath>
 #include <gtest/gtest.h>
 
@@ -75,7 +75,7 @@ protected:
         mesh_.addElement(Geometry::Tetrahedron, {0, 1, 2, 3}, 1, 1);
         mesh_.buildTopology();
 
-        fes_ = std::make_unique<FESpace>(&mesh_, std::make_unique<FECollection>(1));
+        fes_ = std::make_unique<FESpace>(&mesh_, std::make_unique<H1Collection>(1));
 
         k1_ = std::make_unique<ScalarConstantNode>(1.0);
         k2_ = std::make_unique<ScalarConstantNode>(2.0);

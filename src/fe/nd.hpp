@@ -1,19 +1,19 @@
-#ifndef MPFEM_H1_HPP
-#define MPFEM_H1_HPP
+#ifndef MPFEM_ND_HPP
+#define MPFEM_ND_HPP
 
 #include "finite_element.hpp"
 
 namespace mpfem {
 
-    class H1FiniteElement final : public FiniteElement {
+    class NDFiniteElement final : public FiniteElement {
     public:
-        H1FiniteElement(Geometry geom, int order, int vdim = 1);
+        NDFiniteElement(Geometry geom, int order);
 
-        BasisType basisType() const override { return BasisType::H1; }
+        BasisType basisType() const override { return BasisType::ND; }
         Geometry geometry() const override { return geom_; }
         int order() const override { return order_; }
-        int numDofs() const override;
-        int vdim() const override { return vdim_; }
+        int numDofs() const override { return numDofs_; }
+        int vdim() const override { return 1; }
         DofLayout dofLayout() const override;
 
         void evalShape(const Vector3& xi, ShapeMatrix& shape) const override;
@@ -23,11 +23,10 @@ namespace mpfem {
 
     private:
         Geometry geom_ = Geometry::Invalid;
-        int order_;
-        int numDofs_;
-        int vdim_ = 1;
+        int order_ = 1;
+        int numDofs_ = 0;
     };
 
 } // namespace mpfem
 
-#endif // MPFEM_H1_HPP
+#endif // MPFEM_ND_HPP

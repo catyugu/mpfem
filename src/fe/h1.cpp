@@ -157,11 +157,14 @@ namespace mpfem {
     // H1FiniteElement 核心实现
     // =========================================================================
 
-    H1FiniteElement::H1FiniteElement(Geometry geom, int order)
-        : geom_(geom), order_(order), numDofs_(h1NumDofs(geom, order))
+    H1FiniteElement::H1FiniteElement(Geometry geom, int order, int vdim)
+        : geom_(geom), order_(order), numDofs_(h1NumDofs(geom, order)), vdim_(vdim)
     {
         if (order < 1 || order > 2) {
             MPFEM_THROW(Exception, "H1FiniteElement: only order 1 and 2 supported");
+        }
+        if (vdim_ < 1) {
+            MPFEM_THROW(ArgumentException, "H1FiniteElement: vdim must be >= 1");
         }
     }
 

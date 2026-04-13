@@ -1,8 +1,8 @@
 #include "assembly/element_binding.hpp"
+#include "core/geometry.hpp"
 #include "core/types.hpp"
 #include "fe/element_transform.hpp"
 #include "fe/quadrature.hpp"
-#include "mesh/geometry.hpp"
 #include "mesh/mesh.hpp"
 #include <cmath>
 #include <gtest/gtest.h>
@@ -395,7 +395,7 @@ TEST(IntegrationTransformTest, IntegrateOverTetrahedron)
     Real integral = 0.0;
 
     for (const auto& ip : rule) {
-        trans.setIntegrationPoint(ip);
+        trans.setIntegrationPoint(ip.getXi());
         integral += ip.weight * trans.weight();
     }
 
@@ -415,7 +415,7 @@ TEST(IntegrationTransformTest, IntegrateOverTriangleBoundary)
     Real integral = 0.0;
 
     for (const auto& ip : rule) {
-        trans.setIntegrationPoint(ip);
+        trans.setIntegrationPoint(ip.getXi());
         integral += ip.weight * trans.weight();
     }
 
