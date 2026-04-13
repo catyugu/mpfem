@@ -356,12 +356,12 @@ TEST_F(QuadraticReferenceElementTest, TriangleFaceDofs)
     const ReferenceElement* refTri = fec.get(Geometry::Triangle);
     ASSERT_NE(refTri, nullptr);
 
-    // Triangle has 3 edges as "faces" (boundary edges)
-    // Each edge is a Segment with 2 corners + 1 midpoint = 3 DOFs
+    // Triangle has 3 edge facets.
+    // Each edge facet has 2 corners + 1 midpoint = 3 DOFs.
 
-    for (int f = 0; f < 3; ++f) {
-        auto faceDofs = refTri->faceDofs(f);
-        EXPECT_EQ(faceDofs.size(), 3); // 2 corners + 1 edge midpoint
+    for (int f = 0; f < refTri->numFacets(); ++f) {
+        auto facetDofs = refTri->facetDofs(f);
+        EXPECT_EQ(facetDofs.size(), 3);
     }
 }
 
@@ -374,9 +374,9 @@ TEST_F(QuadraticReferenceElementTest, TetrahedronFaceDofs)
     // Tetrahedron has 4 triangular faces
     // Each face has 3 corner DOFs + 3 edge DOFs = 6 DOFs
 
-    for (int f = 0; f < 4; ++f) {
-        auto faceDofs = refTet->faceDofs(f);
-        EXPECT_EQ(faceDofs.size(), 6); // 3 corners + 3 edge midpoints
+    for (int f = 0; f < refTet->numFacets(); ++f) {
+        auto facetDofs = refTet->facetDofs(f);
+        EXPECT_EQ(facetDofs.size(), 6); // 3 corners + 3 edge midpoints
     }
 }
 
@@ -389,9 +389,9 @@ TEST_F(QuadraticReferenceElementTest, CubeFaceDofs)
     // Cube has 6 quadrilateral faces
     // Each face has 4 corners + 4 edges + 1 center = 9 DOFs
 
-    for (int f = 0; f < 6; ++f) {
-        auto faceDofs = refCube->faceDofs(f);
-        EXPECT_EQ(faceDofs.size(), 9); // 4 corners + 4 edge midpoints + 1 center
+    for (int f = 0; f < refCube->numFacets(); ++f) {
+        auto facetDofs = refCube->facetDofs(f);
+        EXPECT_EQ(facetDofs.size(), 9); // 4 corners + 4 edge midpoints + 1 center
     }
 }
 

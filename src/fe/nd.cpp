@@ -148,6 +148,19 @@ namespace mpfem {
         return points;
     }
 
+    std::vector<int> NDFiniteElement::edgeDofs(int edgeIdx) const
+    {
+        if (order_ != 1) {
+            MPFEM_THROW(NotImplementedException, "NDFiniteElement::edgeDofs supports order 1 only");
+        }
+
+        if (edgeIdx < 0 || edgeIdx >= geom::numEdges(geom_)) {
+            return {};
+        }
+
+        return {edgeIdx};
+    }
+
     std::vector<int> NDFiniteElement::faceDofs(int faceIdx) const
     {
         if (order_ != 1) {

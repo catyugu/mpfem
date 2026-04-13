@@ -29,6 +29,9 @@ namespace mpfem {
         /// Get number of faces (from geometry)
         int numFaces() const { return geom::numFaces(geometry); }
 
+        /// Get number of facets (from geometry)
+        int numFacets() const { return geom::numFacets(geometry); }
+
         /// Check if element is a volume element
         bool isVolume() const { return geom::isVolume(geometry); }
 
@@ -60,10 +63,27 @@ namespace mpfem {
             return result;
         }
 
+        /// Get global vertex indices for a facet
+        std::vector<Index> facetVertices(int facetIdx) const
+        {
+            std::vector<Index> result;
+            auto localVerts = geom::facetVertices(geometry, facetIdx);
+            result.reserve(localVerts.size());
+            for (int lv : localVerts) {
+                result.push_back(vertices[lv]);
+            }
+            return result;
+        }
+
         /// Get the geometry type of a face
         Geometry faceGeometry(int faceIdx) const
         {
             return geom::faceGeometry(geometry, faceIdx);
+        }
+
+        Geometry facetGeometry(int facetIdx) const
+        {
+            return geom::facetGeometry(geometry, facetIdx);
         }
     };
 

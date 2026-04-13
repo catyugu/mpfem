@@ -312,17 +312,63 @@ namespace mpfem {
         }
     }
 
-    // 维持原有的面边界节点布局逻辑，利用通用接口
+    std::vector<int> H1FiniteElement::vertexDofs(int vertexIdx) const
+    {
+        if (vertexIdx < 0 || vertexIdx >= geom::numCorners(geom_)) {
+            return {};
+        }
+        return {vertexIdx};
+    }
+
+    std::vector<int> H1FiniteElement::edgeDofs(int edgeIdx) const
+    {
+        std::vector<int> dofs;
+        const DofLayout layout = h1DofLayout(geom_, order_);
+
+        if (geom_ == Geometry::Point) {
+            return dofs;
+        }
+
+        if (geom_ == Geometry::Segment) {
+            if (edgeIdx != 0) {
+                return dofs;
+            }
+            dofs = {0, 1};
+            if (order_ > 1) {
+                for (int j = 0; j < layout.numEdgeDofs; ++j) {
+                    dofs.push_back(geom::numCorners(geom_) + j);
+                }
+            }
+            return dofs;
+        }
+
+        if (edgeIdx < 0 || edgeIdx >= geom::numEdges(geom_)) {
+            return dofs;
+        }
+
+        auto [v0, v1] = geom::edgeVertices(geom_, edgeIdx);
+        dofs.push_back(v0);
+        dofs.push_back(v1);
+
+        if (order_ <= 1 || layout.numEdgeDofs <= 0) {
+            return dofs;
+        }
+
+        const int edgeBase = geom::numCorners(geom_);
+        const int base = edgeBase + edgeIdx * layout.numEdgeDofs;
+        for (int j = 0; j < layout.numEdgeDofs; ++j) {
+            dofs.push_back(base + j);
+        }
+
+        return dofs;
+    }
+
     std::vector<int> H1FiniteElement::faceDofs(int faceIdx) const
     {
         std::vector<int> dofs;
         const DofLayout layout = h1DofLayout(geom_, order_);
 
         if (geom_ == Geometry::Segment) {
-            if (faceIdx == 0)
-                return {0};
-            if (faceIdx == 1)
-                return {1};
             return dofs;
         }
 
@@ -345,6 +391,36 @@ namespace mpfem {
             for (int j = 0; j < layout.numFaceDofs; ++j) {
                 dofs.push_back(faceBase + faceIdx * layout.numFaceDofs + j);
             }
+        }
+        if (geom_ == Geometry::Square && layout.numFaceDofs > 0 && faceIdx == 0) {
+            const int faceBase = edgeBase + geom::numEdges(geom_) * edgeDofs;
+            for (int j = 0; j < layout.numFaceDofs; ++j) {
+                dofs.push_back(faceBase + j);
+            }
+        }
+
+        return dofs;
+    }
+
+    std::vector<int> H1FiniteElement::cellDofs(int cellIdx) const
+    {
+        if (cellIdx != 0 || geom::dim(geom_) != 3) {
+            return {};
+        }
+
+        const DofLayout layout = h1DofLayout(geom_, order_);
+        if (layout.numVolumeDofs <= 0) {
+            return {};
+        }
+
+        const int edgeBase = geom::numCorners(geom_);
+        const int faceBase = edgeBase + geom::numEdges(geom_) * layout.numEdgeDofs;
+        const int cellBase = faceBase + geom::numFaces(geom_) * layout.numFaceDofs;
+
+        std::vector<int> dofs;
+        dofs.reserve(static_cast<size_t>(layout.numVolumeDofs));
+        for (int j = 0; j < layout.numVolumeDofs; ++j) {
+            dofs.push_back(cellBase + j);
         }
         return dofs;
     }

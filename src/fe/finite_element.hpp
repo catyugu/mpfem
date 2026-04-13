@@ -45,7 +45,37 @@ namespace mpfem {
         virtual void evalDerivatives(const Vector3& xi, DerivMatrix& derivatives) const = 0;
 
         virtual std::vector<Vector3> interpolationPoints() const = 0;
+        virtual std::vector<int> vertexDofs(int vertexIdx) const
+        {
+            (void)vertexIdx;
+            return {};
+        }
+        virtual std::vector<int> edgeDofs(int edgeIdx) const
+        {
+            (void)edgeIdx;
+            return {};
+        }
         virtual std::vector<int> faceDofs(int faceIdx) const = 0;
+        virtual std::vector<int> cellDofs(int cellIdx) const
+        {
+            (void)cellIdx;
+            return {};
+        }
+
+        virtual std::vector<int> facetDofs(int facetIdx) const
+        {
+            const int d = dim();
+            if (d == 1) {
+                return vertexDofs(facetIdx);
+            }
+            if (d == 2) {
+                return edgeDofs(facetIdx);
+            }
+            if (d == 3) {
+                return faceDofs(facetIdx);
+            }
+            return {};
+        }
 
         int dim() const { return geom::dim(geometry()); }
 

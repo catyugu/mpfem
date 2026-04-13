@@ -20,7 +20,10 @@ namespace mpfem {
         void evalShape(const Vector3& xi, ShapeMatrix& shape) const override;
         void evalDerivatives(const Vector3& xi, DerivMatrix& derivatives) const override;
         std::vector<Vector3> interpolationPoints() const override;
+        std::vector<int> vertexDofs(int vertexIdx) const override;
+        std::vector<int> edgeDofs(int edgeIdx) const override;
         std::vector<int> faceDofs(int faceIdx) const override;
+        std::vector<int> cellDofs(int cellIdx) const override;
 
     private:
         Geometry geom_ = Geometry::Invalid;

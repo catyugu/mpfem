@@ -28,7 +28,7 @@ namespace mpfem {
             domainIntegs_.push_back(std::move(integ));
             domainSets_.emplace_back(domains.begin(), domains.end());
         }
-        void addBoundaryIntegrator(std::unique_ptr<FaceBilinearIntegratorBase> integ, int bid = -1)
+        void addBoundaryIntegrator(std::unique_ptr<FacetBilinearIntegratorBase> integ, int bid = -1)
         {
             bdrIntegs_.push_back(std::move(integ));
             bdrIds_.push_back(bid);
@@ -53,7 +53,7 @@ namespace mpfem {
         const FESpace* fes_;
         std::vector<std::unique_ptr<DomainBilinearIntegratorBase>> domainIntegs_;
         std::vector<std::vector<int>> domainSets_;
-        std::vector<std::unique_ptr<FaceBilinearIntegratorBase>> bdrIntegs_;
+        std::vector<std::unique_ptr<FacetBilinearIntegratorBase>> bdrIntegs_;
         std::vector<int> bdrIds_;
         SparseMatrix mat_;
         std::vector<SparseMatrix::Triplet> triplets_;
@@ -74,7 +74,7 @@ namespace mpfem {
             domainIntegs_.push_back(std::move(integ));
             domainSets_.emplace_back(domains.begin(), domains.end());
         }
-        void addBoundaryIntegrator(std::unique_ptr<FaceLinearIntegratorBase> integ, int bid = -1)
+        void addBoundaryIntegrator(std::unique_ptr<FacetLinearIntegratorBase> integ, int bid = -1)
         {
             bdrIntegs_.push_back(std::move(integ));
             bdrIds_.push_back(bid);
@@ -97,7 +97,7 @@ namespace mpfem {
         const FESpace* fes_;
         std::vector<std::unique_ptr<DomainLinearIntegratorBase>> domainIntegs_;
         std::vector<std::vector<int>> domainSets_;
-        std::vector<std::unique_ptr<FaceLinearIntegratorBase>> bdrIntegs_;
+        std::vector<std::unique_ptr<FacetLinearIntegratorBase>> bdrIntegs_;
         std::vector<int> bdrIds_;
         Vector vec_;
         std::vector<Vector> threadVectors_;

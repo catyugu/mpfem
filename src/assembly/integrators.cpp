@@ -149,7 +149,7 @@ namespace mpfem {
     // Boundary load integrator
     // =============================================================================
 
-    void BoundaryLFIntegrator::assembleFaceVector(const ReferenceElement& ref,
+    void BoundaryLFIntegrator::assembleFacetVector(const ReferenceElement& ref,
         ElementTransform& trans,
         Vector& elvec) const
     {
@@ -176,7 +176,7 @@ namespace mpfem {
     // Convection integrators (Robin BC)
     // =============================================================================
 
-    void ConvectionMassIntegrator::assembleFaceMatrix(const ReferenceElement& ref,
+    void ConvectionMassIntegrator::assembleFacetMatrix(const ReferenceElement& ref,
         ElementTransform& trans,
         Matrix& elmat) const
     {
@@ -199,7 +199,7 @@ namespace mpfem {
         }
     }
 
-    void ConvectionLFIntegrator::assembleFaceVector(const ReferenceElement& ref,
+    void ConvectionLFIntegrator::assembleFacetVector(const ReferenceElement& ref,
         ElementTransform& trans,
         Vector& elvec) const
     {
