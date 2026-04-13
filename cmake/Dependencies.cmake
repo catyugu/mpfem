@@ -34,11 +34,10 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|AppleClang")
     set(MPFEM_USE_MKL OFF)
 endif()
 if(MPFEM_USE_MKL)
-    set(MPFEM_MKL_THREADING "sequential" CACHE STRING "MKL threading layer (sequential|intel_thread|tbb_thread)")
-    set_property(CACHE MPFEM_MKL_THREADING PROPERTY STRINGS sequential intel_thread tbb_thread)
-    set(MKL_THREADING "${MPFEM_MKL_THREADING}" CACHE STRING "MKL threading layer" FORCE)
+    set(MKL_LINK "static")          # 静态链接
+    set(MKL_INTERFACE "lp64")       # 默认整数接口（最通用）
+    set(MKL_THREADING "sequential") # 单线程（无 OpenMP 依赖，最稳定）
 
-    # Set MKL_ROOT from environment if available
     if(DEFINED ENV{MKLROOT})
         set(MKL_ROOT "$ENV{MKLROOT}")
     elseif(DEFINED ENV{MKL_DIR})
@@ -47,7 +46,6 @@ if(MPFEM_USE_MKL)
     
     # Prefer MKL CMake config if available
     if(MKL_ROOT AND EXISTS "${MKL_ROOT}/lib/cmake/mkl/MKLConfig.cmake")
-        set(MKL_DIR "${MKL_ROOT}/lib/cmake/mkl")
         find_package(MKL CONFIG QUIET)
     else()
         # Try system-wide search
