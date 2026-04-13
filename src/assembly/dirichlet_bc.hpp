@@ -1,178 +1,154 @@
 #ifndef MPFEM_DIRICHLET_BC_HPP
 #define MPFEM_DIRICHLET_BC_HPP
 
+#include "assembly/element_binding.hpp"
+#include "core/exception.hpp"
+#include "core/sparse_matrix.hpp"
 #include "core/types.hpp"
-#include "fe/fe_space.hpp"
-#include "fe/coefficient.hpp"
+#include "expr/variable_graph.hpp"
 #include "fe/element_transform.hpp"
-#include "fe/facet_element_transform.hpp"
+#include "field/fe_space.hpp"
 #include "mesh/mesh.hpp"
-#include "solver/sparse_matrix.hpp"
+#include <array>
+#include <cmath>
 #include <map>
 #include <vector>
 
 namespace mpfem {
 
-inline void applyDirichletBC(SparseMatrix& mat, Vector& rhs, Vector& sol,
-                             const FESpace& fes, const Mesh& mesh,
-                             const std::map<int, const Coefficient*>& bcValues) {
-    const Index numDofs = fes.numDofs();
-    if (numDofs == 0) return;
-    
-    std::vector<Real> dofVals(numDofs, 0.0);
-    std::vector<char> hasVal(numDofs, 0);
-    std::vector<Index> eliminated;
-    
-    FacetElementTransform trans;
-    trans.setMesh(&mesh);
-    
-    for (const auto& [bid, coef] : bcValues) {
-        if (!fes.isExternalBoundaryId(bid)) continue;
-        
-        for (Index b = 0; b < mesh.numBdrElements(); ++b) {
-            if (mesh.bdrElement(b).attribute() != bid) continue;
+    inline void applyDirichletBC(SparseMatrix& mat, Vector& rhs, Vector& sol,
+        const FESpace& fes, const Mesh& mesh,
+        const std::map<int, const VariableNode*>& bcValues,
+        bool updateMatrix = true)
+    {
+        const Index numDofs = fes.numDofs();
+        if (numDofs == 0)
+            return;
 
-            const ReferenceElement* refElem = fes.bdrElementRefElement(b);
-            if (!refElem) continue;
-            
-            const auto& dofCoords = refElem->dofCoords();
-            const int nd = refElem->numDofs();
-            const int totalDofs = nd * fes.vdim();
-            if (totalDofs > MaxVectorDofsPerBdrElement) continue;
-            
-            std::array<Index, MaxVectorDofsPerBdrElement> dofs{};
-            fes.getBdrElementDofs(b, std::span<Index>{dofs.data(), static_cast<size_t>(totalDofs)});
-            
-            trans.setBoundaryElement(b);
-            
-            for (int i = 0; i < nd; ++i) {
-                Index d = dofs[i];
-                if (d == InvalidIndex || hasVal[d]) continue;
-                
-                Real xi[3] = {0.0, 0.0, 0.0};
-                for (size_t c = 0; c < dofCoords[i].size() && c < 3; ++c) {
-                    xi[c] = dofCoords[i][c];
+        std::vector<Real> dofVals(numDofs, 0.0);
+        std::vector<Real> dofAccum(numDofs, 0.0);
+        std::vector<Real> dofWeight(numDofs, 0.0);
+
+        ElementTransform trans;
+
+        for (const auto& [bid, coef] : bcValues) {
+            if (!fes.isExternalBoundaryId(bid))
+                continue;
+
+            for (Index b = 0; b < mesh.numBdrElements(); ++b) {
+                const Element belem = mesh.bdrElement(b);
+                if (belem.attribute != bid)
+                    continue;
+
+                const ReferenceElement* refElem = fes.bdrElementRefElement(b);
+                if (!refElem)
+                    continue;
+
+                const int nd = refElem->numDofs();
+                const int totalDofs = nd * fes.vdim();
+                if (totalDofs > MaxDofsPerBdrElement)
+                    continue;
+
+                std::array<Index, MaxDofsPerBdrElement> dofs {};
+                fes.getBdrElementDofs(b, std::span<Index> {dofs.data(), static_cast<size_t>(totalDofs)});
+
+                bindElementToTransform(trans, mesh, b, true);
+                if (mesh.hasTopology()) {
+                    Index faceIdx = mesh.getBoundaryFaceIndex(b);
+                    if (faceIdx != InvalidIndex) {
+                        const auto& faceInfo = mesh.getFaceInfo(faceIdx);
+                        trans.setFaceInfo(faceInfo.elem1, faceInfo.localFace1);
+                    }
                 }
-                
-                trans.setIntegrationPoint(xi);
-                Real value = 0.0;
-                if (coef) coef->eval(trans, value);
-                
-                dofVals[d] = value;
-                hasVal[d] = 1;
-                eliminated.push_back(d);
-            }
-        }
-    }
-    
-    mat.eliminateRows(eliminated, dofVals, rhs);
-    for (Index d : eliminated) sol(d) = dofVals[d];
-}
 
-inline void applyDirichletBC(SparseMatrix& mat, Vector& rhs, Vector& sol,
-                             const FESpace& fes, const Mesh& mesh,
-                             const std::map<int, const VectorCoefficient*>& bcValues,
-                             int vdim) {
-    const Index numDofs = fes.numDofs();
-    if (numDofs == 0) return;
-    
-    std::vector<Real> dofVals(numDofs, 0.0);
-    std::vector<char> hasVal(numDofs, 0);
-    std::vector<Index> eliminated;
-    
-    FacetElementTransform trans;
-    trans.setMesh(&mesh);
-    
-    for (const auto& [bid, coef] : bcValues) {
-        if (!fes.isExternalBoundaryId(bid)) continue;
-        
-        for (Index b = 0; b < mesh.numBdrElements(); ++b) {
-            if (mesh.bdrElement(b).attribute() != bid) continue;
+                Matrix localMass = Matrix::Zero(nd, nd);
+                Matrix localRhs = Matrix::Zero(nd, fes.vdim());
 
-            const ReferenceElement* refElem = fes.bdrElementRefElement(b);
-            if (!refElem) continue;
-            
-            const auto& dofCoords = refElem->dofCoords();
-            const int nd = refElem->numDofs();
-            const int totalDofs = nd * vdim;
-            if (totalDofs > MaxVectorDofsPerBdrElement) continue;
-            
-            std::array<Index, MaxVectorDofsPerBdrElement> dofs{};
-            fes.getBdrElementDofs(b, std::span<Index>{dofs.data(), static_cast<size_t>(totalDofs)});
-            
-            trans.setBoundaryElement(b);
-            
-            for (int i = 0; i < nd; ++i) {
-                Real xi[3] = {0.0, 0.0, 0.0};
-                for (size_t c = 0; c < dofCoords[i].size() && c < 3; ++c) {
-                    xi[c] = dofCoords[i][c];
+                const QuadratureRule& rule = refElem->quadrature();
+                for (int q = 0; q < rule.size(); ++q) {
+                    const IntegrationPoint& ip = rule[q];
+                    trans.setIntegrationPoint(ip.getXi());
+
+                    const Real w = ip.weight * trans.weight();
+                    const auto phi = refElem->shapeValuesAtQuad(q).col(0);
+                    localMass.noalias() += w * (phi * phi.transpose());
+
+                    std::array<Tensor, 1> out {};
+                    if (coef) {
+                        std::array<Vector3, 1> refPts {ip.getXi()};
+                        std::array<Vector3, 1> physPts {trans.transform(ip)};
+                        std::array<ElementTransform*, 1> transforms {&trans};
+                        EvaluationContext ctx;
+                        ctx.domainId = static_cast<int>(trans.attribute());
+                        ctx.elementId = trans.elementId();
+                        ctx.referencePoints = std::span<const Vector3>(refPts);
+                        ctx.physicalPoints = std::span<const Vector3>(physPts);
+                        ctx.transforms = std::span<ElementTransform* const>(transforms);
+                        coef->evaluateBatch(ctx, std::span<Tensor>(out));
+                    }
+
+                    for (int c = 0; c < fes.vdim(); ++c) {
+                        Real value = 0.0;
+                        if (coef) {
+                            if (out[0].isScalar()) {
+                                value = out[0].scalar();
+                            }
+                            else if (out[0].isVector()) {
+                                value = (c < static_cast<int>(out[0].shape().size())) ? out[0][c] : 0.0;
+                            }
+                            else {
+                                MPFEM_THROW(ArgumentException, "Dirichlet BC expects scalar or vector, got matrix");
+                            }
+                        }
+
+                        localRhs.col(c).noalias() += w * value * phi;
+                    }
                 }
-                
-                trans.setIntegrationPoint(xi);
-                Vector3 disp = Vector3::Zero();
-                if (coef) coef->eval(trans, disp);
-                
-                for (int c = 0; c < vdim; ++c) {
-                    Index d = dofs[i * vdim + c];
-                    if (d != InvalidIndex && !hasVal[d]) {
-                        dofVals[d] = disp[c];
-                        hasVal[d] = 1;
-                        eliminated.push_back(d);
+
+                Eigen::LDLT<Matrix> ldlt(localMass);
+                if (ldlt.info() != Eigen::Success) {
+                    continue;
+                }
+
+                for (int c = 0; c < fes.vdim(); ++c) {
+                    const Vector coeffVec = ldlt.solve(localRhs.col(c));
+                    for (int i = 0; i < nd; ++i) {
+                        const Index d = dofs[i * fes.vdim() + c];
+                        if (d == InvalidIndex) {
+                            continue;
+                        }
+
+                        Real wi = std::abs(localMass(i, i));
+                        if (wi <= 0.0) {
+                            wi = 1.0;
+                        }
+                        dofAccum[d] += wi * coeffVec(i);
+                        dofWeight[d] += wi;
                     }
                 }
             }
         }
-    }
-    
-    mat.eliminateRows(eliminated, dofVals, rhs);
-    for (Index d : eliminated) sol(d) = dofVals[d];
-}
 
-inline void applyDirichletBCComponent(SparseMatrix& mat, Vector& rhs, Vector& sol,
-                                      const FESpace& fes, const Mesh& mesh,
-                                      const std::map<int, Real>& componentBCs,
-                                      int vdim) {
-    const Index numDofs = fes.numDofs();
-    if (numDofs == 0) return;
-    
-    std::vector<Real> dofVals(numDofs, 0.0);
-    std::vector<char> hasVal(numDofs, 0);
-    std::vector<Index> eliminated;
-    
-    for (const auto& [key, val] : componentBCs) {
-        int bid = key / vdim;
-        int comp = key % vdim;
-        
-        if (!fes.isExternalBoundaryId(bid)) continue;
-        
-        for (Index b = 0; b < mesh.numBdrElements(); ++b) {
-            if (mesh.bdrElement(b).attribute() != bid) continue;
-
-            const ReferenceElement* refElem = fes.bdrElementRefElement(b);
-            if (!refElem) continue;
-            
-            const int nd = refElem->numDofs();
-            const int totalDofs = nd * vdim;
-            if (totalDofs > MaxVectorDofsPerBdrElement) continue;
-            
-            std::array<Index, MaxVectorDofsPerBdrElement> dofs{};
-            fes.getBdrElementDofs(b, std::span<Index>{dofs.data(), static_cast<size_t>(totalDofs)});
-            
-            for (int i = 0; i < nd; ++i) {
-                Index d = dofs[i * vdim + comp];
-                if (d != InvalidIndex && !hasVal[d]) {
-                    dofVals[d] = val;
-                    hasVal[d] = 1;
-                    eliminated.push_back(d);
-                }
+        std::vector<Index> eliminated;
+        eliminated.reserve(numDofs);
+        for (Index d = 0; d < numDofs; ++d) {
+            if (dofWeight[d] <= 0.0) {
+                continue;
             }
+            dofVals[d] = dofAccum[d] / dofWeight[d];
+            eliminated.push_back(d);
         }
+
+        if (updateMatrix) {
+            mat.eliminateRows(eliminated, dofVals, rhs);
+        }
+        else {
+            mat.eliminateRhsOnly(eliminated, dofVals, rhs);
+        }
+        for (Index d : eliminated)
+            sol(d) = dofVals[d];
     }
-    
-    mat.eliminateRows(eliminated, dofVals, rhs);
-    for (Index d : eliminated) sol(d) = dofVals[d];
-}
 
-}  // namespace mpfem
+} // namespace mpfem
 
-#endif  // MPFEM_DIRICHLET_BC_HPP
+#endif // MPFEM_DIRICHLET_BC_HPP

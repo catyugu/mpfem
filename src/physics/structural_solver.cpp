@@ -6,107 +6,82 @@
 
 namespace mpfem {
 
-    bool StructuralSolver::initialize(const Mesh& mesh, FieldValues& fieldValues, int order, double initialDisplacement)
-    {
-        mesh_ = &mesh;
-        fieldValues_ = &fieldValues;
-        order_ = order;
-
-        auto fec = std::make_unique<FECollection>(order_, FECollection::Type::H1);
-        fes_ = std::make_unique<FESpace>(&mesh, std::move(fec), 3);
-
-        fieldValues.createVectorField(FieldId::Displacement, fes_.get(), 3);
-
-        // Set initial displacement value for all components
-        fieldValues.current(FieldId::Displacement).values().setConstant(initialDisplacement);
-
-        matAsm_ = std::make_unique<BilinearFormAssembler>(fes_.get());
-        vecAsm_ = std::make_unique<LinearFormAssembler>(fes_.get());
-        solver_ = SolverFactory::create(solverConfig_);
-
-        LOG_INFO << "StructuralSolver: " << fes_->numDofs() << " DOFs";
-        return true;
-    }
-
     void StructuralSolver::addElasticity(const std::set<int>& domains,
-        const Coefficient* E,
-        const Coefficient* nu)
+        const VariableNode* E,
+        const VariableNode* nu)
     {
         elasticityBindings_.push_back({domains, E, nu});
     }
 
-    void StructuralSolver::setStrainLoad(const std::set<int>& domains, const MatrixCoefficient* stress)
+    void StructuralSolver::setStrainLoad(const std::set<int>& domains, const VariableNode* stress)
     {
         strainLoadBindings_.push_back({domains, stress});
     }
 
-    void StructuralSolver::addFixedDisplacementBC(const std::set<int>& boundaryIds, const VectorCoefficient* displacement)
+    void StructuralSolver::addFixedDisplacementBC(const std::set<int>& boundaryIds, const VariableNode* displacement)
     {
-        for (int bid : boundaryIds)
-            displacementBCs_[bid] = displacement;
+        displacementBindings_.push_back({boundaryIds, displacement});
     }
 
-    void StructuralSolver::assemble()
+    void StructuralSolver::buildStiffnessMatrix(SparseMatrix& K)
     {
-        ScopedTimer timer("Structural assemble");
+        matAsm_->clear();
+        matAsm_->clearIntegrators();
 
-        if (!fes_)
-            return;
-
-        if (elasticityBindings_.empty()) {
-            LOG_ERROR << "StructuralSolver: material not set";
-            return;
+        for (const auto& binding : elasticityBindings_) {
+            matAsm_->addDomainIntegrator(
+                std::make_unique<ElasticityIntegrator>(binding.E, binding.nu, fes_->vdim()),
+                binding.domains);
         }
+        matAsm_->assemble();
+        K = matAsm_->matrix();
+    }
 
-        const std::uint64_t currentStiffnessTag = stateTagOfRange(elasticityBindings_);
-        const std::uint64_t currentLoadTag = stateTagOfRange(strainLoadBindings_);
-        const std::uint64_t currentBcTag = stateTagOfRange(displacementBCs_);
+    void StructuralSolver::buildRHS(Vector& F)
+    {
+        vecAsm_->clear();
+        vecAsm_->clearIntegrators();
 
-        const bool rebuildStiffness = stiffnessAssemblyState_.needsRebuild(currentStiffnessTag);
-        const bool rebuildLoad = loadAssemblyState_.needsRebuild(currentLoadTag);
-        const bool bcChanged = bcAssemblyState_.needsRebuild(currentBcTag);
-
-        if (!rebuildStiffness && !rebuildLoad && !bcChanged) {
-            LOG_DEBUG << "Structural assemble skipped (coefficients unchanged)";
-            return;
+        for (const auto& binding : strainLoadBindings_) {
+            vecAsm_->addDomainIntegrator(
+                std::make_unique<StrainLoadIntegrator>(binding.stress, fes_->vdim()),
+                binding.domains);
         }
+        vecAsm_->assemble();
+        F = vecAsm_->vector();
+    }
 
-        if (rebuildStiffness) {
-            matAsm_->clear();
-            matAsm_->clearIntegrators();
-
-            for (const auto& binding : elasticityBindings_) {
-                matAsm_->addDomainIntegrator(
-                    std::make_unique<ElasticityIntegrator>(binding.E, binding.nu, fes_->vdim()),
-                    binding.domains);
+    void StructuralSolver::applyEssentialBCs(SparseMatrix& A, Vector& rhs, Vector& solution, bool updateMatrix)
+    {
+        std::map<int, const VariableNode*> displacementBCs;
+        for (const auto& binding : displacementBindings_) {
+            for (int bid : binding.boundaryIds) {
+                displacementBCs[bid] = binding.displacement;
             }
-            matAsm_->assemble();
-            stiffnessMatrixBeforeBC_ = matAsm_->matrix();
         }
-        // Skip copy-back when rebuildStiffness=false - applyDirichletBC will modify in-place anyway
+        applyDirichletBC(A, rhs, solution, *fes_, *mesh_, displacementBCs, updateMatrix);
+    }
 
-        if (rebuildLoad) {
-            vecAsm_->clear();
-            vecAsm_->clearIntegrators();
-
-            for (const auto& binding : strainLoadBindings_) {
-                vecAsm_->addDomainIntegrator(std::make_unique<StrainLoadIntegrator>(
-                                                 binding.stress, fes_->vdim()),
-                    binding.domains);
-            }
-            vecAsm_->assemble();
-            rhsBeforeBC_ = vecAsm_->vector();
+    std::uint64_t StructuralSolver::getMatrixRevision() const
+    {
+        std::uint64_t rev = 0;
+        for (const auto& b : elasticityBindings_) {
+            if (b.E)
+                rev = std::max(rev, b.E->revision());
+            if (b.nu)
+                rev = std::max(rev, b.nu->revision());
         }
-        else {
-            vecAsm_->vector() = rhsBeforeBC_;
+        return rev;
+    }
+
+    std::uint64_t StructuralSolver::getRhsRevision() const
+    {
+        std::uint64_t rev = 0;
+        for (const auto& b : strainLoadBindings_) {
+            if (b.stress)
+                rev = std::max(rev, b.stress->revision());
         }
-
-        applyDirichletBC(matAsm_->matrix(), vecAsm_->vector(), field().values(), *fes_, *mesh_, displacementBCs_, 3);
-        matAsm_->finalize();
-
-        stiffnessAssemblyState_.update(currentStiffnessTag);
-        loadAssemblyState_.update(currentLoadTag);
-        bcAssemblyState_.update(currentBcTag);
+        return rev;
     }
 
 } // namespace mpfem

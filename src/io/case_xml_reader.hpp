@@ -1,7 +1,7 @@
 #ifndef MPFEM_CASE_XML_READER_HPP
 #define MPFEM_CASE_XML_READER_HPP
 
-#include "model/case_definition.hpp"
+#include "io/case_definition.hpp"
 #include <string>
 
 namespace mpfem {

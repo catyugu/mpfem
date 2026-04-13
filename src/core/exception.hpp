@@ -25,50 +25,57 @@ private:
 /// Exception for file I/O errors
 class FileException : public Exception {
 public:
-    explicit FileException(const std::string& message)
-        : Exception("File error: " + message) {}
+    explicit FileException(const std::string& message,
+                           const std::source_location& loc = std::source_location::current())
+        : Exception("File error: " + message, loc) {}
 };
 
 /// Exception for mesh parsing errors
 class MeshException : public Exception {
 public:
-    explicit MeshException(const std::string& message)
-        : Exception("Mesh error: " + message) {}
+    explicit MeshException(const std::string& message,
+                           const std::source_location& loc = std::source_location::current())
+        : Exception("Mesh error: " + message, loc) {}
 };
 
 /// Exception for finite element errors
 class FeException : public Exception {
 public:
-    explicit FeException(const std::string& message)
-        : Exception("Finite element error: " + message) {}
+    explicit FeException(const std::string& message,
+                         const std::source_location& loc = std::source_location::current())
+        : Exception("Finite element error: " + message, loc) {}
 };
 
 /// Exception for solver errors
 class SolverException : public Exception {
 public:
-    explicit SolverException(const std::string& message)
-        : Exception("Solver error: " + message) {}
+    explicit SolverException(const std::string& message,
+                             const std::source_location& loc = std::source_location::current())
+        : Exception("Solver error: " + message, loc) {}
 };
 
 /// Exception for invalid arguments
 class ArgumentException : public Exception {
 public:
-    explicit ArgumentException(const std::string& message)
-        : Exception("Invalid argument: " + message) {}
+    explicit ArgumentException(const std::string& message,
+                               const std::source_location& loc = std::source_location::current())
+        : Exception("Invalid argument: " + message, loc) {}
 };
 
 /// Exception for out-of-range access
 class RangeException : public Exception {
 public:
-    explicit RangeException(const std::string& message)
-        : Exception("Range error: " + message) {}
+    explicit RangeException(const std::string& message,
+                            const std::source_location& loc = std::source_location::current())
+        : Exception("Range error: " + message, loc) {}
 };
 
 /// Exception for not-yet-implemented features
 class NotImplementedException : public Exception {
 public:
-    explicit NotImplementedException(const std::string& feature)
-        : Exception("Not implemented: " + feature) {}
+    explicit NotImplementedException(const std::string& feature,
+                                     const std::source_location& loc = std::source_location::current())
+        : Exception("Not implemented: " + feature, loc) {}
 };
 
 }  // namespace mpfem
@@ -77,7 +84,7 @@ public:
 // Convenience macros
 // =============================================================================
 
-#define MPFEM_THROW(type, msg) throw ::mpfem::type(msg)
+#define MPFEM_THROW(type, msg) throw ::mpfem::type((msg), std::source_location::current())
 
 #define MPFEM_ASSERT(cond, msg)                    \
     do {                                           \

@@ -1,11 +1,8 @@
 #ifndef MPFEM_HEAT_TRANSFER_SOLVER_HPP
 #define MPFEM_HEAT_TRANSFER_SOLVER_HPP
 
-#include "assembly_change_tracker.hpp"
-#include "fe/coefficient.hpp"
+#include "expr/variable_graph.hpp"
 #include "physics_field_solver.hpp"
-#include <cstdint>
-#include <map>
 #include <set>
 #include <vector>
 
@@ -21,141 +18,65 @@ namespace mpfem {
     public:
         HeatTransferSolver() = default;
         explicit HeatTransferSolver(int order) { order_ = order; }
-        std::string fieldName() const override { return "HeatTransfer"; }
-        FieldId fieldId() const override { return FieldId::Temperature; }
-
-        bool initialize(const Mesh& mesh, FieldValues& fieldValues, int order, double initialTemperature = 293.15);
+        std::string fieldName() const override { return "T"; }
+        int VDim() const override { return 1; } // Scalar field
 
         // Material bindings
-        void setThermalConductivity(const std::set<int>& domains, const MatrixCoefficient* k);
+        void setThermalConductivity(const std::set<int>& domains, const VariableNode* k);
 
-        void setHeatSource(const std::set<int>& domains, const Coefficient* Q);
-        void setMassProperties(const std::set<int>& domains, const Coefficient* rho, const Coefficient* Cp);
-
-        // Mass matrix for transient terms: M = ∫ ρCp φᵢ φⱼ dΩ
-        void assembleMassMatrix();
-        const SparseMatrix& massMatrix() const { return massMatrix_; }
-        bool massMatrixAssembled() const { return massMatrixAssembled_; }
+        void setHeatSource(const std::set<int>& domains, const VariableNode* Q);
+        void setMassProperties(const std::set<int>& domains, const VariableNode* rhoCp);
 
         // Boundary conditions
-        void addTemperatureBC(const std::set<int>& boundaryIds, const Coefficient* temperature);
-        void addConvectionBC(const std::set<int>& boundaryIds, const Coefficient* h, const Coefficient* Tinf);
+        void addTemperatureBC(const std::set<int>& boundaryIds, const VariableNode* temperature);
+        void addConvectionBC(const std::set<int>& boundaryIds, const VariableNode* h, const VariableNode* Tinf);
         void clearBoundaryConditions()
         {
-            temperatureBCs_.clear();
-            convBCs_.clear();
+            temperatureBindings_.clear();
+            convectionBindings_.clear();
         }
 
-        void assemble() override;
+    protected:
+        void buildStiffnessMatrix(SparseMatrix& K) override;
+        void buildMassMatrix(SparseMatrix& M) override;
+        void buildRHS(Vector& F) override;
+        void applyEssentialBCs(SparseMatrix& A, Vector& rhs, Vector& solution, bool updateMatrix) override;
 
-        /**
-         * @brief Solve a custom linear system Ax = b with applied boundary conditions
-         *
-         * This is useful for time integrators like BDF1 that need to solve
-         * a modified system (e.g., M + dt*K) rather than the standard K.
-         *
-         * @param A System matrix
-         * @param x Solution vector (output)
-         * @param b Right-hand side vector
-         * @return true if solved successfully
-         */
-        bool solveLinearSystem(SparseMatrix& A, Vector& x, const Vector& b);
-
-        /**
-         * @brief Get stiffness matrix before BC application
-         *
-         * This is needed for transient time integrators like BDF1 that need
-         * to form the combined system (M + dt*K) before BCs are applied.
-         *
-         * @return Stiffness matrix K (without BC modifications)
-         */
-        const SparseMatrix& stiffnessMatrixBeforeBC() const { return stiffnessMatrixBeforeBC_; }
-
-        /**
-         * @brief Get RHS vector before BC application
-         *
-         * This is needed for transient time integrators like BDF1 that need
-         * to form the combined RHS (M*T_prev + dt*Q) before BCs are applied.
-         *
-         * @return RHS vector Q (without BC modifications)
-         */
-        const Vector& rhsBeforeBC() const { return rhsBeforeBC_; }
+        std::uint64_t getMatrixRevision() const override;
+        std::uint64_t getMassRevision() const override;
+        std::uint64_t getRhsRevision() const override;
+        std::uint64_t getBcRevision() const override;
 
     private:
-        struct ConvBC {
-            const Coefficient* h = nullptr;
-            const Coefficient* Tinf = nullptr;
+        struct TemperatureBinding {
+            std::set<int> boundaryIds;
+            const VariableNode* temperature = nullptr;
+        };
 
-            std::uint64_t stiffnessTag() const
-            {
-                return stateTagOf(h);
-            }
-
-            std::uint64_t loadTag() const
-            {
-                return combineTag(stateTagOf(h), stateTagOf(Tinf));
-            }
-
-            std::uint64_t stateTag() const
-            {
-                return loadTag();
-            }
+        struct ConvectionBinding {
+            std::set<int> boundaryIds;
+            const VariableNode* h = nullptr;
+            const VariableNode* Tinf = nullptr;
         };
 
         struct ConductivityBinding {
             std::set<int> domains;
-            const MatrixCoefficient* conductivity = nullptr;
-
-            std::uint64_t stateTag() const
-            {
-                return combineTag(stateTagOf(domains), stateTagOf(conductivity));
-            }
+            const VariableNode* conductivity = nullptr;
         };
         struct HeatSourceBinding {
             std::set<int> domains;
-            const Coefficient* source = nullptr;
-
-            std::uint64_t stateTag() const
-            {
-                return combineTag(stateTagOf(domains), stateTagOf(source));
-            }
+            const VariableNode* source = nullptr;
         };
         struct MassBinding {
             std::set<int> domains;
-            const Coefficient* density = nullptr;
-            const Coefficient* specificHeat = nullptr;
-
-            std::uint64_t stateTag() const
-            {
-                auto tag = stateTagOf(domains);
-                tag = combineTag(tag, stateTagOf(density));
-                tag = combineTag(tag, stateTagOf(specificHeat));
-                return tag;
-            }
+            const VariableNode* thermalMass = nullptr;
         };
 
         std::vector<ConductivityBinding> conductivityBindings_;
         std::vector<HeatSourceBinding> heatSourceBindings_;
         std::vector<MassBinding> massBindings_;
-        SparseMatrix massMatrix_;
-        bool massMatrixAssembled_ = false;
-        AssemblyTagCache massAssemblyState_;
-        std::map<int, const Coefficient*> temperatureBCs_;
-        std::map<int, ConvBC> convBCs_;
-
-        /// @brief Stiffness matrix before BC application (for transient time integrators)
-        SparseMatrix stiffnessMatrixBeforeBC_;
-
-        /// @brief RHS vector before BC application (for transient time integrators)
-        Vector rhsBeforeBC_;
-
-        // Reusable buffers for transient linear systems after BC application.
-        SparseMatrix systemMatrix_;
-        Vector systemRhs_;
-
-        AssemblyTagCache stiffnessAssemblyState_;
-        AssemblyTagCache loadAssemblyState_;
-        AssemblyTagCache bcAssemblyState_;
+        std::vector<TemperatureBinding> temperatureBindings_;
+        std::vector<ConvectionBinding> convectionBindings_;
     };
 
 } // namespace mpfem

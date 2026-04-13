@@ -1,10 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <case name="busbar_transient">
-  <paths
-    mesh="mesh.mphtxt"
-    materials="material.xml"
-    comsol_result="result.txt"
-  />
+  <paths mesh="mesh.mphtxt" materials="material.xml" comsol_result="result.txt" />
 
   <study type="transient">
     <time start="0" end="100" step="10" scheme="BDF1"/>
@@ -31,7 +27,16 @@
   </materials>
 
   <physics kind="electrostatics" order="1">
-    <solver type="eigen.cg_jacobi" max_iter="1000" tolerance="1e-10" print_level="0"/>
+    <SolverConfiguration>
+      <LinearSolver type="CG">
+        <Parameters>
+          <Tolerance>1e-10</Tolerance>
+          <MaxIterations>1000</MaxIterations>
+          <PrintLevel>0</PrintLevel>
+        </Parameters>
+        <Preconditioner type="Diagonal"/>
+      </LinearSolver>
+    </SolverConfiguration>
     <boundary kind="voltage" ids="43">
       <param name="value" value="Vtot"/>
     </boundary>
@@ -45,7 +50,16 @@
   </physics>
 
   <physics kind="heat_transfer" order="1">
-    <solver type="eigen.cg_jacobi" max_iter="1000" tolerance="1e-10" print_level="0"/>
+    <SolverConfiguration>
+      <LinearSolver type="CG">
+        <Parameters>
+          <Tolerance>1e-10</Tolerance>
+          <MaxIterations>1000</MaxIterations>
+          <PrintLevel>0</PrintLevel>
+        </Parameters>
+        <Preconditioner type="Diagonal"/>
+      </LinearSolver>
+    </SolverConfiguration>
     <boundary kind="convection" ids="1-7">
       <param name="h" value="htc"/>
       <param name="T_inf" value="293.15[K]"/>
@@ -67,7 +81,15 @@
   </physics>
 
   <physics kind="solid_mechanics" order="1">
-    <solver type="umfpack.lu" max_iter="1000" tolerance="1e-10" print_level="0"/>
+    <SolverConfiguration>
+      <LinearSolver type="Pardiso">
+        <Parameters>
+          <Tolerance>1e-10</Tolerance>
+          <MaxIterations>1000</MaxIterations>
+          <PrintLevel>0</PrintLevel>
+        </Parameters>
+      </LinearSolver>
+    </SolverConfiguration>
     <boundary kind="fixed_constraint" ids="8" />
     <boundary kind="fixed_constraint" ids="15" />
     <boundary kind="fixed_constraint" ids="43" />

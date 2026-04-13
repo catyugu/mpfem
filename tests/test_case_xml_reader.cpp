@@ -1,17 +1,19 @@
-#include <gtest/gtest.h>
-#include "io/case_xml_reader.hpp"
 #include "core/logger.hpp"
+#include "io/case_xml_reader.hpp"
+#include <gtest/gtest.h>
 
 using namespace mpfem;
 
 class CaseXmlReaderTest : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void SetUp() override
+    {
         Logger::setLevel(LogLevel::Warning);
     }
-    
+
     // Helper to get test data path
-    static std::string dataPath(const std::string& relativePath) {
+    static std::string dataPath(const std::string& relativePath)
+    {
 #ifdef MPFEM_PROJECT_ROOT
         return std::string(MPFEM_PROJECT_ROOT) + "/" + relativePath;
 #else
@@ -20,9 +22,10 @@ protected:
     }
 };
 
-TEST_F(CaseXmlReaderTest, ReadBusbarCase) {
+TEST_F(CaseXmlReaderTest, ReadBusbarCase)
+{
     CaseDefinition caseDef;
-    
+
     // Read the actual case file
     ASSERT_NO_THROW({
         CaseXmlReader::readFromFile(dataPath("cases/busbar_steady/case.xml"), caseDef);
@@ -41,23 +44,23 @@ TEST_F(CaseXmlReaderTest, ReadBusbarCase) {
 
     // Verify variables
     EXPECT_GE(caseDef.variables.size(), 4);
-    
+
     bool foundVtot = false;
     bool foundL = false;
     bool foundHtc = false;
-    
+
     for (const auto& v : caseDef.variables) {
         if (v.name == "Vtot") {
             foundVtot = true;
-            EXPECT_DOUBLE_EQ(v.siValue, 0.02);
+            EXPECT_EQ(v.valueText, "20[mV]");
         }
         if (v.name == "L") {
             foundL = true;
-            EXPECT_DOUBLE_EQ(v.siValue, 0.09);
+            EXPECT_EQ(v.valueText, "9[cm]");
         }
         if (v.name == "htc") {
             foundHtc = true;
-            EXPECT_DOUBLE_EQ(v.siValue, 5.0);
+            EXPECT_EQ(v.valueText, "5[W/m^2/K]");
         }
     }
     EXPECT_TRUE(foundVtot);
@@ -74,19 +77,32 @@ TEST_F(CaseXmlReaderTest, ReadBusbarCase) {
     ASSERT_TRUE(caseDef.physics.count("electrostatics") > 0);
     const auto& electrostatics = caseDef.physics.at("electrostatics");
     EXPECT_EQ(electrostatics.order, 1);
-    EXPECT_GE(electrostatics.boundaries.size(), 2);  // At least voltage and ground
+    ASSERT_NE(electrostatics.solver, nullptr);
+    EXPECT_EQ(electrostatics.solver->type, OperatorType::CG);
+    ASSERT_NE(electrostatics.solver->preconditioner, nullptr);
+    EXPECT_EQ(electrostatics.solver->preconditioner->type, OperatorType::Diagonal);
+    EXPECT_GE(electrostatics.boundaries.size(), 2); // At least voltage and ground
 
     // Check heat transfer physics
     ASSERT_TRUE(caseDef.physics.count("heat_transfer") > 0);
     const auto& heatTransfer = caseDef.physics.at("heat_transfer");
     EXPECT_EQ(heatTransfer.order, 1);
-    EXPECT_GE(heatTransfer.boundaries.size(), 1);  // At least convection
+    ASSERT_NE(heatTransfer.solver, nullptr);
+    EXPECT_EQ(heatTransfer.solver->type, OperatorType::CG);
+    ASSERT_NE(heatTransfer.solver->preconditioner, nullptr);
+    EXPECT_EQ(heatTransfer.solver->preconditioner->type, OperatorType::AdditiveSchwarz);
+    ASSERT_NE(heatTransfer.solver->preconditioner->localSolver, nullptr);
+    EXPECT_EQ(heatTransfer.solver->preconditioner->localSolver->type, OperatorType::Diagonal);
+    EXPECT_GE(heatTransfer.boundaries.size(), 1); // At least convection
 
     // Check solid mechanics physics
     ASSERT_TRUE(caseDef.physics.count("solid_mechanics") > 0);
     const auto& solidMechanics = caseDef.physics.at("solid_mechanics");
     EXPECT_EQ(solidMechanics.order, 1);
-    EXPECT_GE(solidMechanics.boundaries.size(), 1);  // At least fixed constraint
+    ASSERT_NE(solidMechanics.solver, nullptr);
+    EXPECT_EQ(solidMechanics.solver->type, OperatorType::Pardiso);
+    EXPECT_EQ(solidMechanics.solver->preconditioner, nullptr);
+    EXPECT_GE(solidMechanics.boundaries.size(), 1); // At least fixed constraint
 
     // Verify coupled physics definitions
     EXPECT_GE(caseDef.coupledPhysicsDefinitions.size(), 2);
@@ -95,9 +111,10 @@ TEST_F(CaseXmlReaderTest, ReadBusbarCase) {
     EXPECT_GT(caseDef.couplingConfig.maxIterations, 0);
 }
 
-TEST_F(CaseXmlReaderTest, ReadBusbarOrder2Case) {
+TEST_F(CaseXmlReaderTest, ReadBusbarOrder2Case)
+{
     CaseDefinition caseDef;
-    
+
     ASSERT_NO_THROW({
         CaseXmlReader::readFromFile(dataPath("cases/busbar_steady_order2/case.xml"), caseDef);
     });
@@ -108,20 +125,21 @@ TEST_F(CaseXmlReaderTest, ReadBusbarOrder2Case) {
     }
 }
 
-TEST_F(CaseXmlReaderTest, VariableLookup) {
+TEST_F(CaseXmlReaderTest, VariableLookup)
+{
     CaseDefinition caseDef;
     CaseXmlReader::readFromFile(dataPath("cases/busbar_steady/case.xml"), caseDef);
 
-    EXPECT_TRUE(caseDef.hasVariable("Vtot"));
-    EXPECT_TRUE(caseDef.hasVariable("L"));
-    EXPECT_TRUE(caseDef.hasVariable("htc"));
+    EXPECT_EQ(caseDef.getVariableExpression("Vtot"), "20[mV]");
+    EXPECT_EQ(caseDef.getVariableExpression("L"), "9[cm]");
+    EXPECT_EQ(caseDef.getVariableExpression("htc"), "5[W/m^2/K]");
 
-    EXPECT_DOUBLE_EQ(caseDef.getVariable("Vtot"), 0.02);
-    EXPECT_DOUBLE_EQ(caseDef.getVariable("L"), 0.09);
-    EXPECT_DOUBLE_EQ(caseDef.getVariable("htc"), 5.0);
+    // Non-existent variable returns empty string
+    EXPECT_EQ(caseDef.getVariableExpression("nonexistent"), "");
 }
 
-TEST_F(CaseXmlReaderTest, BoundaryConditionParsing) {
+TEST_F(CaseXmlReaderTest, BoundaryConditionParsing)
+{
     CaseDefinition caseDef;
     CaseXmlReader::readFromFile(dataPath("cases/busbar_steady/case.xml"), caseDef);
 
@@ -130,17 +148,17 @@ TEST_F(CaseXmlReaderTest, BoundaryConditionParsing) {
         const auto& physics = caseDef.physics.at("electrostatics");
         bool foundVoltage43 = false;
         for (const auto& bc : physics.boundaries) {
-            if (const auto* voltage = std::get_if<VoltageBoundaryCondition>(&bc);
-                voltage && voltage->ids.count(43) > 0) {
+            if (bc.type == "Voltage" && bc.ids.count(43) > 0) {
                 foundVoltage43 = true;
-                EXPECT_FALSE(voltage->value.empty());
+                EXPECT_FALSE(bc.parameters.at("value").empty());
             }
         }
         EXPECT_TRUE(foundVoltage43);
     }
 }
 
-TEST_F(CaseXmlReaderTest, MaterialAssignmentParsing) {
+TEST_F(CaseXmlReaderTest, MaterialAssignmentParsing)
+{
     CaseDefinition caseDef;
     CaseXmlReader::readFromFile(dataPath("cases/busbar_steady/case.xml"), caseDef);
 

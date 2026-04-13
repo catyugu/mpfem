@@ -1,7 +1,7 @@
 #ifndef MPFEM_MATERIAL_XML_READER_HPP
 #define MPFEM_MATERIAL_XML_READER_HPP
 
-#include "model/material_database.hpp"
+#include "io/material_database.hpp"
 #include <string>
 
 namespace mpfem {

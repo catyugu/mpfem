@@ -4,7 +4,7 @@
 
 ### 运行方式
 
-`.\build-llvm\examples\busbar_example.exe .\cases\busbar_steady`
+`.\build-msvc\examples\Release\busbar_example.exe .\cases\busbar_steady`
 `python .\scripts\compare_steady_results.py .\results\mpfem_result.txt .\cases\busbar_steady\result.txt`
 
 ### 参考结果
@@ -18,7 +18,7 @@ disp    2.420344e-11    4.662133e-11    9.686668e-07    8.734340e-07
 
 ## 2阶稳态
 
-`.\build-llvm\examples\busbar_example.exe .\cases\busbar_steady_order2`
+`.\build-msvc\examples\Release\busbar_example.exe .\cases\busbar_steady_order2`
 `python .\scripts\compare_steady_results.py .\results\mpfem_result.txt .\cases\busbar_steady_order2\result.txt`
 
 ### 参考结果
@@ -31,7 +31,7 @@ disp    5.568379e-09    1.841973e-08    5.390639e-03    2.097754e-04
 
 ## 1阶瞬态
 
-`./build-llvm/examples/busbar_example .\cases\busbar_transient`
+`.\build-msvc\examples\Release\busbar_example .\cases\busbar_transient`
 `python .\scripts\compare_transient_results.py .\results\mpfem_result.txt .\cases\busbar_transient\result.txt`
 
 ### 参考结果
@@ -39,17 +39,16 @@ disp    5.568379e-09    1.841973e-08    5.390639e-03    2.097754e-04
 ```
 Time Step       V L2            V L2 Rel        T L2            T L2 Rel        Disp L2         Disp L2 Rel     Status
 ----------------------------------------------------------------------------------------------------
-t=0             1.46e-12                2.01e-10                3.64e-05                1.24e-07                1.16e-11           0.00e+00         PASS
-t=10            2.38e-08                3.28e-06                8.48e-02                2.89e-04                2.08e-08           1.02e-01         FAIL
-t=20            1.98e-08                2.73e-06                5.54e-02                1.89e-04                1.32e-08           3.71e-02         FAIL
-t=30            1.01e-08                1.39e-06                2.39e-02                8.14e-05                5.77e-09           1.15e-02         FAIL
-t=40            4.82e-09                6.62e-07                1.05e-02                3.58e-05                2.62e-09           4.01e-03         PASS
-t=50            5.76e-10                7.92e-08                4.85e-03                1.65e-05                1.47e-09           1.81e-03         PASS
-t=60            7.47e-10                1.03e-07                2.46e-03                8.36e-06                7.87e-10           8.10e-04         PASS
-t=70            6.88e-10                9.45e-08                1.50e-03                5.08e-06                5.57e-10           4.92e-04         PASS
-t=80            7.95e-10                1.09e-07                1.13e-03                3.82e-06                5.65e-10           4.36e-04         PASS
-t=90            1.05e-09                1.45e-07                1.07e-03                3.61e-06                6.67e-10           4.56e-04         PASS
-t=100           2.27e-09                3.12e-07                1.51e-03                5.12e-06                9.81e-10           6.04e-04         PASS
+t=10            9.22e-09                1.27e-06                3.02e-02             1.03e-04         7.33e-09                3.25e-02                FAIL
+t=20            2.53e-09                3.48e-07                6.57e-03             2.24e-05         1.58e-09                4.37e-03                PASS
+t=30            1.14e-09                1.57e-07                2.90e-03             9.87e-06         7.32e-10                1.46e-03                PASS
+t=40            2.17e-10                2.98e-08                1.33e-03             4.53e-06         3.57e-10                5.45e-04                PASS
+t=50            2.51e-09                3.45e-07                6.95e-04             2.36e-06         4.01e-10                4.95e-04                PASS
+t=60            1.66e-09                2.28e-07                4.53e-04             1.54e-06         2.59e-10                2.67e-04                PASS
+t=70            9.04e-10                1.24e-07                3.80e-04             1.29e-06         2.44e-10                2.15e-04                PASS
+t=80            6.15e-10                8.45e-08                3.73e-04             1.26e-06         2.88e-10                2.22e-04                PASS
+t=90            5.77e-10                7.94e-08                4.65e-04             1.58e-06         3.75e-10                2.57e-04                PASS
+t=100           1.58e-09                2.17e-07                9.76e-04             3.31e-06         6.70e-10                4.12e-04                PASS
 ----------------------------------------------------------------------------------------------------
 
 ```

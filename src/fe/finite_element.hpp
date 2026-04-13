@@ -1,0 +1,87 @@
+#ifndef MPFEM_FINITE_ELEMENT_HPP
+#define MPFEM_FINITE_ELEMENT_HPP
+
+#include "core/geometry.hpp"
+#include "core/types.hpp"
+#include <memory>
+#include <span>
+#include <vector>
+
+namespace mpfem {
+
+    enum class BasisType {
+        H1,
+        L2,
+        ND,
+        RT
+    };
+
+    enum class MapType {
+        VALUE,
+        COVARIANT_PIOLA,
+        CONTRAVARIANT_PIOLA
+    };
+
+    struct DofLayout {
+        int numVertexDofs = 0;
+        int numEdgeDofs = 0;
+        int numFaceDofs = 0;
+        int numVolumeDofs = 0;
+    };
+
+    class FiniteElement {
+    public:
+        virtual ~FiniteElement() = default;
+
+        virtual BasisType basisType() const = 0;
+        virtual MapType mapType() const = 0;
+        virtual Geometry geometry() const = 0;
+        virtual int order() const = 0;
+        virtual int numDofs() const = 0;
+        virtual int vdim() const = 0;
+        virtual DofLayout dofLayout() const = 0;
+
+        virtual void evalShape(const Vector3& xi, ShapeMatrix& shape) const = 0;
+        virtual void evalDerivatives(const Vector3& xi, DerivMatrix& derivatives) const = 0;
+
+        virtual std::vector<Vector3> interpolationPoints() const = 0;
+        virtual std::vector<int> vertexDofs(int vertexIdx) const
+        {
+            (void)vertexIdx;
+            return {};
+        }
+        virtual std::vector<int> edgeDofs(int edgeIdx) const
+        {
+            (void)edgeIdx;
+            return {};
+        }
+        virtual std::vector<int> faceDofs(int faceIdx) const = 0;
+        virtual std::vector<int> cellDofs(int cellIdx) const
+        {
+            (void)cellIdx;
+            return {};
+        }
+
+        virtual std::vector<int> facetDofs(int facetIdx) const
+        {
+            const int d = dim();
+            if (d == 1) {
+                return vertexDofs(facetIdx);
+            }
+            if (d == 2) {
+                return edgeDofs(facetIdx);
+            }
+            if (d == 3) {
+                return faceDofs(facetIdx);
+            }
+            return {};
+        }
+
+        int dim() const { return geom::dim(geometry()); }
+
+        static std::unique_ptr<FiniteElement> create(BasisType type, Geometry geom, int order, int vdim = 1);
+    };
+
+} // namespace mpfem
+
+#endif // MPFEM_FINITE_ELEMENT_HPP

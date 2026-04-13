@@ -1,8 +1,6 @@
 # =============================================================================
-# Targets.cmake - Library target definitions
+# Targets.cmake - Library target definitions (Optimized for Build Speed)
 # =============================================================================
-
-include(CompilerOptions)
 
 # =============================================================================
 # Helper function for creating mpfem library targets
@@ -22,7 +20,6 @@ function(mpfem_add_library name)
                 $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
                 $<INSTALL_INTERFACE:include>
         )
-        # For INTERFACE libraries, use INTERFACE keyword for link libraries
         if(ARG_PUBLIC_LINK)
             target_link_libraries(${name} INTERFACE ${ARG_PUBLIC_LINK})
         endif()
@@ -36,8 +33,6 @@ function(mpfem_add_library name)
                 $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
                 $<INSTALL_INTERFACE:include>
         )
-        mpfem_set_default_compiler_options(${name})
-        # For regular libraries, use PUBLIC/PRIVATE keywords
         if(ARG_PUBLIC_LINK)
             target_link_libraries(${name} PUBLIC ${ARG_PUBLIC_LINK})
         endif()
@@ -51,15 +46,12 @@ function(mpfem_add_library name)
     endif()
 endfunction()
 
-# =============================================================================
-# Create simple aliases for all libraries
-# =============================================================================
 macro(mpfem_create_alias name)
     add_library(mpfem::${name} ALIAS mpfem_${name})
 endmacro()
 
 # =============================================================================
-# Core library
+# 1. Core library (Bottom of the dependency tree)
 # =============================================================================
 
 mpfem_add_library(mpfem_core
@@ -69,186 +61,115 @@ mpfem_add_library(mpfem_core
         Eigen3::Eigen
 )
 
-# --- MKL support (PARDISO solver + optional BLAS acceleration) ---
 if(MPFEM_MKL_FOUND)
     target_compile_definitions(mpfem_core PUBLIC MPFEM_USE_MKL)
     target_link_libraries(mpfem_core PUBLIC MKL::MKL)
     message(STATUS "MKL enabled for PARDISO solver")
 endif()
 
-# --- OpenBLAS support (BLAS acceleration for Eigen) ---
-if(MPFEM_OPENBLAS_FOUND)
-    target_compile_definitions(mpfem_core PUBLIC MPFEM_USE_OPENBLAS)
-    target_compile_definitions(mpfem_core PUBLIC EIGEN_USE_BLAS)
-    if(TARGET OpenBLAS::OpenBLAS)
-        target_link_libraries(mpfem_core PUBLIC OpenBLAS::OpenBLAS)
-    elseif(TARGET PkgConfig::OpenBLAS)
-        target_link_libraries(mpfem_core PUBLIC PkgConfig::OpenBLAS)
-    else()
-        target_include_directories(mpfem_core PUBLIC ${OpenBLAS_INCLUDE_DIRS})
-        target_link_libraries(mpfem_core PUBLIC ${OpenBLAS_LIBRARIES})
-    endif()
-    message(STATUS "OpenBLAS acceleration enabled for Eigen")
-endif()
-
-# --- SuiteSparse support (UMFPACK solver) ---
-if(MPFEM_SUITESPARSE_FOUND)
-    target_compile_definitions(mpfem_core PUBLIC MPFEM_USE_SUITESPARSE)
+if(MPFEM_UMFPACK_FOUND)
+    target_compile_definitions(mpfem_core PUBLIC MPFEM_USE_UMFPACK)
     if(TARGET SuiteSparse::UMFPACK)
         target_link_libraries(mpfem_core PUBLIC SuiteSparse::UMFPACK)
-    elseif(TARGET UMFPACK::UMFPACK)
-        target_link_libraries(mpfem_core PUBLIC UMFPACK::UMFPACK)
     else()
         target_link_libraries(mpfem_core PUBLIC ${UMFPACK_LIBRARIES})
     endif()
-    message(STATUS "SuiteSparse/UMFPACK solver enabled")
+    message(STATUS "SuiteSparse::UMFPACK solver enabled")
 endif()
 
-# --- OpenMP support ---
 if(MPFEM_OPENMP_FOUND)
     target_link_libraries(mpfem_core PUBLIC OpenMP::OpenMP_CXX)
 endif()
 
-# =============================================================================
-# Model library (header-only)
-# =============================================================================
-
-mpfem_add_library(mpfem_model
-    HEADER_ONLY
-    PUBLIC_LINK
-        Eigen3::Eigen
-        mpfem_core
+target_precompile_headers(mpfem_core PUBLIC
+    <vector>
+    <memory>
+    <string>
+    <Eigen/Core>
+    <Eigen/SparseCore>
 )
 
 # =============================================================================
-# Mesh library
+# 2. Base Modules (Depend only on Core)
 # =============================================================================
 
 mpfem_add_library(mpfem_mesh
     SOURCES
         src/mesh/mesh.cpp
     PUBLIC_LINK
-        Eigen3::Eigen
         mpfem_core
 )
-
-# =============================================================================
-# Expression runtime library
-# =============================================================================
 
 mpfem_add_library(mpfem_expr
     SOURCES
         src/expr/unit_parser.cpp
         src/expr/expression_parser.cpp
-        src/expr/symbol_scanner.cpp
-        src/expr/runtime_program.cpp
+        src/expr/variable_graph.cpp
     PUBLIC_LINK
-        Eigen3::Eigen
         mpfem_core
 )
 
-# Add ExprTk include directory (local header in external/exprtk)
-target_include_directories(mpfem_expr PUBLIC ${CMAKE_SOURCE_DIR}/external/exprtk)
+mpfem_add_library(mpfem_solver
+    SOURCES
+        src/solver/linear_operator.cpp
+        src/solver/eigen_solver.cpp
+        src/solver/pardiso_solver.cpp
+        src/solver/umfpack_solver.cpp
+        src/solver/solver_factory.cpp
+    PUBLIC_LINK
+        mpfem_core
+)
 
 # =============================================================================
-# IO library
+# 3. Intermediate Modules
 # =============================================================================
 
 mpfem_add_library(mpfem_io
     SOURCES
         src/io/case_xml_reader.cpp
         src/io/material_xml_reader.cpp
-        src/model/material_database.cpp
+        src/io/material_database.cpp
         src/io/problem_input_loader.cpp
         src/io/result_exporter.cpp
         src/io/mphtxt_reader.cpp
     PUBLIC_LINK
-        Eigen3::Eigen
-        mpfem_core
         mpfem_expr
-        mpfem_model
         tinyxml2::tinyxml2
+    PRIVATE_LINK
+        mpfem_mesh # IO needs mesh internally to read/write formats
 )
-
-# =============================================================================
-# FE library
-# =============================================================================
 
 mpfem_add_library(mpfem_fe
     SOURCES
         src/fe/quadrature.cpp
         src/fe/element_transform.cpp
-        src/fe/facet_element_transform.cpp
-        src/fe/grid_function.cpp
-        src/fe/shape_function.cpp
-        src/fe/fe_space.cpp
+        src/fe/finite_element.cpp
+        src/fe/geometry_mapping.cpp
+        src/fe/h1.cpp
+        src/fe/nd.cpp
     PUBLIC_LINK
-        Eigen3::Eigen
-        mpfem_core
         mpfem_mesh
-        mpfem_model
 )
 
-# =============================================================================
-# Solver library (header-only)
-# =============================================================================
-
-mpfem_add_library(mpfem_solver
-    HEADER_ONLY
+mpfem_add_library(mpfem_field
+    SOURCES
+        src/field/fe_space.cpp
+        src/field/grid_function.cpp
     PUBLIC_LINK
-        Eigen3::Eigen
-        mpfem_core
+        mpfem_fe
+        mpfem_mesh
 )
-
-# =============================================================================
-# Assembly library
-# =============================================================================
 
 mpfem_add_library(mpfem_assembly
     SOURCES
         src/assembly/assembler.cpp
         src/assembly/integrators.cpp
     PUBLIC_LINK
-        Eigen3::Eigen
-        mpfem_core
-        mpfem_mesh
-        mpfem_fe
-        mpfem_solver
+        mpfem_field
 )
 
 # =============================================================================
-# Coupling library (header-only)
-# =============================================================================
-
-mpfem_add_library(mpfem_coupling
-    HEADER_ONLY
-    PUBLIC_LINK
-        Eigen3::Eigen
-        mpfem_core
-        mpfem_fe
-)
-
-# =============================================================================
-# Problem library (header-only) - 纯数据基类
-# =============================================================================
-
-mpfem_add_library(mpfem_problem
-    SOURCES
-        src/problem/problem.cpp
-        src/problem/expression_coefficient_factory.cpp
-        src/problem/physics_problem_builder.cpp
-    PUBLIC_LINK
-        Eigen3::Eigen
-        mpfem_core
-        mpfem_expr
-        mpfem_mesh
-        mpfem_fe
-        mpfem_io
-        mpfem_model
-)
-
-# =============================================================================
-# Physics library
+# 4. High-Level Modules (Physics & Problem)
 # =============================================================================
 
 mpfem_add_library(mpfem_physics
@@ -256,35 +177,37 @@ mpfem_add_library(mpfem_physics
         src/physics/electrostatics_solver.cpp
         src/physics/heat_transfer_solver.cpp
         src/physics/structural_solver.cpp
-        src/problem/transient_problem.cpp
-        src/time/time_integrator.cpp
-        src/time/bdf1_integrator.cpp
-        src/time/bdf2_integrator.cpp
     PUBLIC_LINK
-        Eigen3::Eigen
-        mpfem_core
-        mpfem_mesh
-        mpfem_fe
         mpfem_assembly
         mpfem_solver
-        mpfem_coupling
-        mpfem_io
-        mpfem_model
-        mpfem_problem
+)
+
+mpfem_add_library(mpfem_problem
+    SOURCES
+        src/problem/problem.cpp
+        src/problem/transient_problem.cpp
+        src/problem/physics_problem_builder.cpp
+        src/problem/time/time_integrator.cpp
+        src/problem/time/bdf1_integrator.cpp
+        src/problem/time/bdf2_integrator.cpp
+    PUBLIC_LINK
+        mpfem_physics
+    PRIVATE_LINK
+        mpfem_io 
+        mpfem_expr
 )
 
 # =============================================================================
-# Create simple aliases (mpfem::core, mpfem::mesh, etc.)
+# Create simple aliases
 # =============================================================================
 
 mpfem_create_alias(core)
 mpfem_create_alias(expr)
-mpfem_create_alias(model)
 mpfem_create_alias(mesh)
 mpfem_create_alias(io)
 mpfem_create_alias(fe)
+mpfem_create_alias(field)
 mpfem_create_alias(assembly)
 mpfem_create_alias(solver)
-mpfem_create_alias(coupling)
-mpfem_create_alias(problem)
 mpfem_create_alias(physics)
+mpfem_create_alias(problem)

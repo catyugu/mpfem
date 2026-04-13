@@ -1,10 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <case name="busbar">
-  <paths
-    mesh="mesh.mphtxt"
-    materials="material.xml"
-    comsol_result="result.txt"
-  />
+  <paths mesh="mesh.mphtxt" materials="material.xml" comsol_result="result.txt" />
 
   <study type="steady" />
 
@@ -24,7 +20,16 @@
   </materials>
 
   <physics kind="electrostatics" order="1">
-    <solver type="eigen.cg_jacobi" max_iter="1000" tolerance="1e-10" print_level="0"/>
+    <SolverConfiguration>
+      <LinearSolver type="CG">
+        <Parameters>
+          <Tolerance>1e-10</Tolerance>
+          <MaxIterations>1000</MaxIterations>
+          <PrintLevel>0</PrintLevel>
+        </Parameters>
+        <Preconditioner type="Diagonal"/>
+      </LinearSolver>
+    </SolverConfiguration>
     <!-- Split voltage boundaries to test new structure -->
     <boundary kind="voltage" ids="43">
       <param name="value" value="Vtot"/>
@@ -39,7 +44,21 @@
   </physics>
 
   <physics kind="heat_transfer" order="1">
-    <solver type="eigen.cg_jacobi" max_iter="1000" tolerance="1e-10" print_level="0"/>
+    <SolverConfiguration>
+      <LinearSolver type="CG">
+        <Parameters>
+          <Tolerance>1e-10</Tolerance>
+          <MaxIterations>1000</MaxIterations>
+          <PrintLevel>0</PrintLevel>
+        </Parameters>
+        <Preconditioner type="AdditiveSchwarz">
+          <Parameters>
+            <Overlap>1</Overlap>
+          </Parameters>
+          <LocalSolver type="Diagonal"/>
+        </Preconditioner>
+      </LinearSolver>
+    </SolverConfiguration>
     <!-- Split convection into multiple groups to test new structure -->
     <boundary kind="convection" ids="1-7">
       <param name="h" value="htc"/>
@@ -62,7 +81,15 @@
   </physics>
 
   <physics kind="solid_mechanics" order="1">
-    <solver type="umfpack.lu" max_iter="1000" tolerance="1e-10" print_level="0"/>
+    <SolverConfiguration>
+      <LinearSolver type="Pardiso">
+        <Parameters>
+          <Tolerance>1e-10</Tolerance>
+          <MaxIterations>1000</MaxIterations>
+          <PrintLevel>0</PrintLevel>
+        </Parameters>
+      </LinearSolver>
+    </SolverConfiguration>
     <!-- Split fixed constraints to test new structure -->
     <boundary kind="fixed_constraint" ids="8" />
     <boundary kind="fixed_constraint" ids="15" />

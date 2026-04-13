@@ -1,113 +1,107 @@
 #ifndef MPFEM_FE_COLLECTION_HPP
 #define MPFEM_FE_COLLECTION_HPP
 
-#include "mesh/geometry.hpp"
-#include "reference_element.hpp"
 #include "core/exception.hpp"
+#include "core/geometry.hpp"
+#include "reference_element.hpp"
 #include <memory>
+#include <string>
 #include <unordered_map>
 
 namespace mpfem {
 
-/**
- * @brief Finite element collection managing reference elements for all geometry types.
- * 
- * A FECollection provides ReferenceElement objects for different geometry types
- * with a common polynomial order.
- * 
- * This is inspired by MFEM's FiniteElementCollection design.
- */
-class FECollection {
-public:
-    /// FE type enumeration
-    enum class Type {
-        H1,     ///< Continuous Lagrange elements
-        L2,     ///< Discontinuous elements (TODO)
-        ND,     ///< Nedelec edge elements (TODO)
-        RT      ///< Raviart-Thomas elements (TODO)
-    };
-    
-    /// Default constructor
-    FECollection() = default;
-    
-    /// Construct H1 collection with given order
-    explicit FECollection(int order, Type type = Type::H1);
-    
-    // -------------------------------------------------------------------------
-    // Access
-    // -------------------------------------------------------------------------
-    
-    /// Get polynomial order
-    int order() const { return order_; }
-    
-    /// Get FE type
-    Type type() const { return type_; }
-    
-    /// Get reference element for a geometry type
-    const ReferenceElement* get(Geometry geom) const {
-        auto it = elements_.find(geom);
-        return it != elements_.end() ? it->second.get() : nullptr;
-    }
-    
-    /// Get number of dofs for a geometry type
-    int numDofs(Geometry geom) const {
-        auto* elem = get(geom);
-        return elem ? elem->numDofs() : 0;
-    }
-    
-    /// Check if collection has element for geometry
-    bool hasGeometry(Geometry geom) const {
-        return elements_.find(geom) != elements_.end();
-    }
-    
-    // -------------------------------------------------------------------------
-    // Factory methods
-    // -------------------------------------------------------------------------
-    
-    /// Create H1 collection
-    static std::unique_ptr<FECollection> createH1(int order) {
-        return std::make_unique<FECollection>(order, Type::H1);
-    }
-    
-private:
-    void initialize();
-    
-    int order_ = 1;
-    Type type_ = Type::H1;
-    std::unordered_map<Geometry, std::unique_ptr<ReferenceElement>> elements_;
-};
+    /**
+     * @brief Finite element collection managing reference elements for all geometry types.
+     *
+     * A FECollection provides ReferenceElement objects for different geometry types
+     * with a common polynomial order.
+     *
+     * This is inspired by MFEM's FiniteElementCollection design.
+     */
+    class FECollection {
+    public:
+        virtual ~FECollection() = default;
 
-// =============================================================================
-// Inline implementations
-// =============================================================================
+        virtual const ReferenceElement* get(Geometry geom) const = 0;
+        virtual int order() const = 0;
+        virtual int vdim() const = 0;
+        virtual std::string name() const = 0;
 
-inline FECollection::FECollection(int order, Type type)
-    : order_(order), type_(type) {
-    initialize();
-}
+        int numDofs(Geometry geom) const
+        {
+            const auto* elem = get(geom);
+            return elem ? elem->numDofs() : 0;
+        }
 
-inline void FECollection::initialize() {
-    elements_.clear();
-
-    const auto addH1Elements = [this]() {
-        elements_[Geometry::Segment] = std::make_unique<ReferenceElement>(Geometry::Segment, order_);
-        elements_[Geometry::Triangle] = std::make_unique<ReferenceElement>(Geometry::Triangle, order_);
-        elements_[Geometry::Square] = std::make_unique<ReferenceElement>(Geometry::Square, order_);
-        elements_[Geometry::Tetrahedron] = std::make_unique<ReferenceElement>(Geometry::Tetrahedron, order_);
-        elements_[Geometry::Cube] = std::make_unique<ReferenceElement>(Geometry::Cube, order_);
+        bool hasGeometry(Geometry geom) const
+        {
+            return get(geom) != nullptr;
+        }
     };
 
-    switch (type_) {
-    case Type::H1:
-        addH1Elements();
-        return;
-    case Type::L2:
-    case Type::ND:
-    case Type::RT:
-        MPFEM_THROW(NotImplementedException, "FECollection type");
-    }
-}
+    class H1Collection final : public FECollection {
+    public:
+        H1Collection(int order, int vdim = 1)
+            : order_(order), vdim_(vdim)
+        {
+            if (order_ < 1 || order_ > 2) {
+                MPFEM_THROW(ArgumentException, "H1Collection supports order 1 and 2 only");
+            }
+            if (vdim_ < 1) {
+                MPFEM_THROW(ArgumentException, "H1Collection requires vdim >= 1");
+            }
 
-}  // namespace mpfem
+            elements_[Geometry::Segment] = std::make_unique<ReferenceElement>(Geometry::Segment, order_, BasisType::H1);
+            elements_[Geometry::Triangle] = std::make_unique<ReferenceElement>(Geometry::Triangle, order_, BasisType::H1);
+            elements_[Geometry::Square] = std::make_unique<ReferenceElement>(Geometry::Square, order_, BasisType::H1);
+            elements_[Geometry::Tetrahedron] = std::make_unique<ReferenceElement>(Geometry::Tetrahedron, order_, BasisType::H1);
+            elements_[Geometry::Cube] = std::make_unique<ReferenceElement>(Geometry::Cube, order_, BasisType::H1);
+        }
 
-#endif  // MPFEM_FE_COLLECTION_HPP
+        const ReferenceElement* get(Geometry geom) const override
+        {
+            auto it = elements_.find(geom);
+            return it != elements_.end() ? it->second.get() : nullptr;
+        }
+
+        int order() const override { return order_; }
+        int vdim() const override { return vdim_; }
+        std::string name() const override { return "H1"; }
+
+    private:
+        int order_ = 1;
+        int vdim_ = 1;
+        std::unordered_map<Geometry, std::unique_ptr<ReferenceElement>> elements_;
+    };
+
+    class NDCollection final : public FECollection {
+    public:
+        explicit NDCollection(int order)
+            : order_(order)
+        {
+            if (order_ < 1 || order_ > 2) {
+                MPFEM_THROW(ArgumentException, "NDCollection supports order 1 and 2 only");
+            }
+
+            elements_[Geometry::Triangle] = std::make_unique<ReferenceElement>(Geometry::Triangle, order_, BasisType::ND);
+            elements_[Geometry::Tetrahedron] = std::make_unique<ReferenceElement>(Geometry::Tetrahedron, order_, BasisType::ND);
+        }
+
+        const ReferenceElement* get(Geometry geom) const override
+        {
+            auto it = elements_.find(geom);
+            return it != elements_.end() ? it->second.get() : nullptr;
+        }
+
+        int order() const override { return order_; }
+        int vdim() const override { return 1; }
+        std::string name() const override { return "ND"; }
+
+    private:
+        int order_ = 1;
+        std::unordered_map<Geometry, std::unique_ptr<ReferenceElement>> elements_;
+    };
+
+} // namespace mpfem
+
+#endif // MPFEM_FE_COLLECTION_HPP

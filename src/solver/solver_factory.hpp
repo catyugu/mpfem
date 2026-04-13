@@ -1,101 +1,45 @@
 #ifndef MPFEM_SOLVER_FACTORY_HPP
 #define MPFEM_SOLVER_FACTORY_HPP
 
-#include "solver_config.hpp"
-#include "linear_solver.hpp"
-#include "eigen_solver.hpp"
-#include "pardiso_solver.hpp"
-#include "umfpack_solver.hpp"
 #include "core/logger.hpp"
+#include "eigen_solver.hpp"
+#include "linear_operator.hpp"
+#include "pardiso_solver.hpp"
+#include "solver_config.hpp"
+#include "umfpack_solver.hpp"
 #include <memory>
+#include <stdexcept>
+#include <string>
+#include <string_view>
 
 namespace mpfem {
 
-// =============================================================================
-// Solver Factory
-// =============================================================================
+    // =============================================================================
+    // Operator Factory
+    // =============================================================================
 
-/**
- * @brief Factory for creating linear solvers.
- * 
- * Design principles:
- * - No fallback logic - if solver is not available, throw exception
- * - Single entry point: create(const SolverConfig&)
- * - Configuration must specify an explicit solver type
- */
-class SolverFactory {
-public:
     /**
-     * @brief Create a solver from configuration.
-     * @param config Solver configuration with explicit type
-     * @throws std::runtime_error if solver is not available
+     * @brief Factory for creating LinearOperator instances from configuration.
+     *
+     * Recursively parses LinearOperatorConfig tree and instantiates operators,
+     * wiring nested preconditioners via set_preconditioner().
+     *
+     * Design principles:
+     * - No fallback logic - if operator is not available, throw exception
+     * - Recursive construction for nested preconditioners
+     * - All operators inherit from LinearOperator base class
      */
-    static std::unique_ptr<LinearSolver> create(const SolverConfig& config) {
-        const SolverType type = config.type;
-        
-        // Check availability
-        const auto& meta = getSolverMeta(type);
-        if (!meta.isAvailable) {
-            throw std::runtime_error(
-                "Solver '" + std::string(meta.name) + "' is not available. "
-                "Available solvers: " + joinSolverNames());
-        }
-        
-        LOG_DEBUG << "Creating solver: " << meta.name;
-        
-        // Create solver instance
-        auto solver = createByType(type);
-        
-        // Apply configuration
-        solver->setMaxIterations(config.maxIterations);
-        solver->setTolerance(config.relativeTolerance);
-        solver->setPrintLevel(config.printLevel);
-        
-        // Apply solver-specific configuration
-        solver->applyConfig(config);
-        
-        return solver;
-    }
+    class OperatorFactory {
+    public:
+        /**
+         * @brief Create a LinearOperator from configuration.
+         */
+        static std::unique_ptr<LinearOperator> create(const LinearOperatorConfig& config);
 
-private:
-    static std::unique_ptr<LinearSolver> createByType(SolverType type) {
-        switch (type) {
-            // Eigen solvers (always available)
-            case SolverType::Eigen_SparseLU:
-                return std::make_unique<EigenSparseLUSolver>();
-            case SolverType::Eigen_CG_Jacobi:
-                return std::make_unique<EigenCGJacobiSolver>();
-            case SolverType::Eigen_CG_ICC:
-                return std::make_unique<EigenCGICCSolver>();
-            case SolverType::Eigen_CG_ILU:
-                return std::make_unique<EigenCGILUSolver>();
-            case SolverType::Eigen_DGMRES_ILU:
-                return std::make_unique<EigenDGMRESILUSolver>();
+        /// Create operator by type
+        static std::unique_ptr<LinearOperator> createByType(OperatorType type);
+    };
 
-            // MKL PARDISO
-            case SolverType::MKL_Pardiso:
-                return std::make_unique<PardisoSolver>();
+} // namespace mpfem
 
-            // SuiteSparse UMFPACK
-            case SolverType::UMFPACK_LU:
-                return std::make_unique<UmfpackSolver>();
-
-            default:
-                throw std::runtime_error("Unsupported solver type");
-        }
-    }
-    
-    static std::string joinSolverNames() {
-        auto names = availableSolverNames();
-        std::string result;
-        for (size_t i = 0; i < names.size(); ++i) {
-            if (i > 0) result += ", ";
-            result += names[i];
-        }
-        return result;
-    }
-};
-
-}  // namespace mpfem
-
-#endif  // MPFEM_SOLVER_FACTORY_HPP
+#endif // MPFEM_SOLVER_FACTORY_HPP
