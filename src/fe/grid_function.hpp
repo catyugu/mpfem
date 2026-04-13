@@ -2,11 +2,13 @@
 #define MPFEM_GRID_FUNCTION_HPP
 
 #include "fe/fe_space.hpp"
-#include "mesh/mesh.hpp"
 #include <Eigen/Dense>
 #include <cstdint>
+#include <span>
 
 namespace mpfem {
+
+    class ElementTransform;
 
     /**
      * @brief 场函数 - 最小化设计
@@ -14,13 +16,15 @@ namespace mpfem {
     class GridFunction {
     public:
         GridFunction() = default;
-        explicit GridFunction(const FESpace* fes) : fes_(fes)
+        explicit GridFunction(const FESpace* fes)
+            : fes_(fes)
         {
             if (fes_)
                 values_.resize(fes_->numDofs());
         }
 
-        GridFunction(const FESpace* fes, Real initVal) : fes_(fes)
+        GridFunction(const FESpace* fes, Real initVal)
+            : fes_(fes)
         {
             if (fes_) {
                 values_.resize(fes_->numDofs());
@@ -61,21 +65,10 @@ namespace mpfem {
         Real minValue() const { return values_.minCoeff(); }
         Real maxValue() const { return values_.maxCoeff(); }
 
-        Eigen::VectorXd getElementValues(Index elem) const
-        {
-            if (!fes_)
-                return Eigen::VectorXd();
-            const int totalDofs = fes_->numElementDofs(elem);
-            std::vector<Index> dofs(totalDofs);
-            fes_->getElementDofs(elem, std::span<Index> {dofs.data(), static_cast<size_t>(totalDofs)});
-            Eigen::VectorXd result(dofs.size());
-            for (size_t i = 0; i < dofs.size(); ++i)
-                result[i] = values_[dofs[i]];
-            return result;
-        }
+        void getElementValues(Index elem, std::span<Real> outValues) const;
 
-        Real eval(Index elem, const Vector3& xi) const;
-        Vector3 gradient(Index elem, const Vector3& xi, const Matrix3& invJacobianTranspose) const;
+        Real eval(Index elem, const ElementTransform& trans) const;
+        Vector3 gradient(Index elem, const ElementTransform& trans) const;
 
     private:
         const FESpace* fes_ = nullptr;

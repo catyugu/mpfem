@@ -112,7 +112,8 @@ namespace mpfem {
         // =====================================================================
         class GridFunctionValueProvider final : public VariableNode {
         public:
-            explicit GridFunctionValueProvider(const GridFunction* field) : field_(field) { }
+            explicit GridFunctionValueProvider(const GridFunction* field)
+                : field_(field) { }
 
             void evaluateBatch(const EvaluationContext& ctx, std::span<Tensor> dest) const override
             {
@@ -122,11 +123,11 @@ namespace mpfem {
                 }
 
                 for (size_t i = 0; i < dest.size(); ++i) {
-                    if (i >= ctx.referencePoints.size()) {
-                        MPFEM_THROW(ArgumentException, "GridFunctionValueProvider requires referencePoints in EvaluationContext.");
+                    if (i >= ctx.transforms.size() || !ctx.transforms[i]) {
+                        MPFEM_THROW(ArgumentException,
+                            "GridFunctionValueProvider requires transforms in EvaluationContext.");
                     }
-                    const Vector3& xi = ctx.referencePoints[i];
-                    dest[i] = Tensor::scalar(field_->eval(ctx.elementId, xi));
+                    dest[i] = Tensor::scalar(field_->eval(ctx.elementId, *ctx.transforms[i]));
                 }
             }
 
@@ -144,7 +145,8 @@ namespace mpfem {
         // =====================================================================
         class GridFunctionGradientProvider final : public VariableNode {
         public:
-            explicit GridFunctionGradientProvider(const GridFunction* field) : field_(field) { }
+            explicit GridFunctionGradientProvider(const GridFunction* field)
+                : field_(field) { }
 
             void evaluateBatch(const EvaluationContext& ctx, std::span<Tensor> dest) const override
             {
@@ -164,9 +166,7 @@ namespace mpfem {
                         MPFEM_THROW(ArgumentException,
                             "GridFunctionGradientProvider received null transform in EvaluationContext.");
                     }
-                    const Vector3& xi = ctx.referencePoints[i];
-                    Matrix3 invJT = trans->invJacobianT();
-                    Vector3 g = field_->gradient(ctx.elementId, xi, invJT);
+                    Vector3 g = field_->gradient(ctx.elementId, *trans);
                     dest[i] = Tensor::vector(g);
                 }
             }

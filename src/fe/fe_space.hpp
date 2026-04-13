@@ -4,7 +4,6 @@
 #include "core/exception.hpp"
 #include "core/types.hpp"
 #include "fe_collection.hpp"
-#include "mesh/mesh.hpp"
 #include <algorithm>
 #include <memory>
 #include <numeric>
@@ -17,18 +16,20 @@ namespace mpfem {
      *
      * **Geometric Order vs Field Order**:
      * - Geometric order: From mesh element, used for coordinate transformation (ElementTransform)
-    * - Field order: From FECollection, used for FiniteElement basis and DOF management
+     * - Field order: From FECollection, used for FiniteElement basis and DOF management
      *
      * **Isoparametric, Subparametric, Superparametric**:
      * - Isoparametric: geo_order == field_order
      * - Subparametric: geo_order < field_order (linear mesh, quadratic field)
      * - Superparametric: geo_order > field_order (curved mesh, linear field)
      *
-    * **DOF Mapping**:
-    * - DOFs are attached to topology entities (vertex/edge/face/cell)
-    * - Global numbering is contiguous by entity dimension
-    * - Element local-to-global mapping is generated from mesh topology
+     * **DOF Mapping**:
+     * - DOFs are attached to topology entities (vertex/edge/face/cell)
+     * - Global numbering is contiguous by entity dimension
+     * - Element local-to-global mapping is generated from mesh topology
      */
+    class Mesh;
+
     class FESpace {
     public:
         FESpace() = default;
@@ -47,16 +48,10 @@ namespace mpfem {
         const FECollection* fec() const { return fec_.get(); }
         int order() const { return fec_ ? fec_->order() : 0; }
         int vdim() const { return vdim_; }
-        int dim() const { return mesh_ ? mesh_->dim() : 0; }
+        int dim() const;
 
-        bool isExternalBoundary(Index bdrElemIdx) const
-        {
-            return mesh_ ? mesh_->isExternalBoundary(bdrElemIdx) : true;
-        }
-        bool isExternalBoundaryId(Index bdrId) const
-        {
-            return mesh_ ? mesh_->isExternalBoundaryId(bdrId) : true;
-        }
+        bool isExternalBoundary(Index bdrElemIdx) const;
+        bool isExternalBoundaryId(Index bdrId) const;
 
         // -------------------------------------------------------------------------
         // DOF access
@@ -74,44 +69,19 @@ namespace mpfem {
         // Reference element access
         // -------------------------------------------------------------------------
 
-        const ReferenceElement* refElement(Geometry geom) const
-        {
-            return fec_ ? fec_->get(geom) : nullptr;
-        }
-
-        const ReferenceElement* elementRefElement(Index elemIdx) const
-        {
-            if (!mesh_)
-                MPFEM_THROW(Exception, "mesh not set");
-            if (elemIdx >= mesh_->numElements())
-                MPFEM_THROW(RangeException, "invalid element index");
-            return refElement(mesh_->element(elemIdx).geometry);
-        }
-
-        const ReferenceElement* bdrElementRefElement(Index bdrIdx) const
-        {
-            if (!mesh_)
-                MPFEM_THROW(Exception, "mesh not set");
-            if (bdrIdx >= mesh_->numBdrElements())
-                MPFEM_THROW(RangeException, "invalid boundary element index");
-            return refElement(mesh_->bdrElement(bdrIdx).geometry);
-        }
+        const ReferenceElement* refElement(Geometry geom) const;
+        const ReferenceElement* elementRefElement(Index elemIdx) const;
+        const ReferenceElement* bdrElementRefElement(Index bdrIdx) const;
 
         // -------------------------------------------------------------------------
         // Geometric order queries
         // -------------------------------------------------------------------------
 
         /// Get geometric order of an element
-        int elementGeoOrder(Index elemIdx) const
-        {
-            return mesh_ ? mesh_->element(elemIdx).order : 1;
-        }
+        int elementGeoOrder(Index elemIdx) const;
 
         /// Get geometric order of a boundary element
-        int bdrElementGeoOrder(Index bdrIdx) const
-        {
-            return mesh_ ? mesh_->bdrElement(bdrIdx).order : 1;
-        }
+        int bdrElementGeoOrder(Index bdrIdx) const;
 
         // -------------------------------------------------------------------------
         // Subparametric/Superparametric classification
@@ -145,76 +115,6 @@ namespace mpfem {
         int maxDofsPerElem_ = 0;
         int maxDofsPerBdrElem_ = 0;
     };
-
-    // =============================================================================
-    // Inline implementations
-    // =============================================================================
-
-    inline void FESpace::getElementDofs(Index elemIdx, std::span<Index> dofs) const
-    {
-        if (!mesh_ || !fec_ || elemIdx >= mesh_->numElements())
-            return;
-
-        const Element elem = mesh_->element(elemIdx);
-        const ReferenceElement* refElem = fec_->get(elem.geometry);
-        if (!refElem)
-            return;
-
-        const int nd = refElem->numDofs();
-        const int totalDofs = nd * vdim_;
-        if (static_cast<int>(dofs.size()) < totalDofs)
-            return;
-
-        const Index base = elemIdx * maxDofsPerElem_;
-        for (int i = 0; i < nd; ++i) {
-            Index globalDof = elemDofs_[base + i];
-            for (int c = 0; c < vdim_; ++c) {
-                dofs[i * vdim_ + c] = globalDof * vdim_ + c;
-            }
-        }
-    }
-
-    inline void FESpace::getBdrElementDofs(Index bdrIdx, std::span<Index> dofs) const
-    {
-        if (!mesh_ || !fec_ || bdrIdx >= mesh_->numBdrElements())
-            return;
-
-        const Element bdrElem = mesh_->bdrElement(bdrIdx);
-        const ReferenceElement* refElem = fec_->get(bdrElem.geometry);
-        if (!refElem)
-            return;
-
-        const int nd = refElem->numDofs();
-        const int totalDofs = nd * vdim_;
-        if (static_cast<int>(dofs.size()) < totalDofs)
-            return;
-
-        const Index base = bdrIdx * maxDofsPerBdrElem_;
-        for (int i = 0; i < nd; ++i) {
-            Index globalDof = bdrElemDofs_[base + i];
-            for (int c = 0; c < vdim_; ++c) {
-                dofs[i * vdim_ + c] = globalDof * vdim_ + c;
-            }
-        }
-    }
-
-    inline int FESpace::numElementDofs(Index elemIdx) const
-    {
-        if (!mesh_ || !fec_ || elemIdx >= mesh_->numElements())
-            return 0;
-        const Element elem = mesh_->element(elemIdx);
-        const ReferenceElement* refElem = fec_->get(elem.geometry);
-        return refElem ? refElem->numDofs() * vdim_ : 0;
-    }
-
-    inline int FESpace::numBdrElementDofs(Index bdrIdx) const
-    {
-        if (!mesh_ || !fec_ || bdrIdx >= mesh_->numBdrElements())
-            return 0;
-        const Element bdrElem = mesh_->bdrElement(bdrIdx);
-        const ReferenceElement* refElem = fec_->get(bdrElem.geometry);
-        return refElem ? refElem->numDofs() * vdim_ : 0;
-    }
 
 } // namespace mpfem
 

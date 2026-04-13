@@ -1,9 +1,12 @@
+#include "assembly/element_binding.hpp"
 #include "core/logger.hpp"
+#include "fe/element_transform.hpp"
 #include "fe/fe_collection.hpp"
 #include "fe/fe_space.hpp"
 #include "fe/grid_function.hpp"
 #include "mesh/mesh.hpp"
 #include <gtest/gtest.h>
+
 
 using namespace mpfem;
 
@@ -89,7 +92,10 @@ TEST_F(GridFunctionTest, InterpolationLinear)
     // Expected value: 0.25*0 + 0.25*1 + 0.25*2 + 0.25*3 = 1.5
     Real xi[] = {0.25, 0.25, 0.25}; // Barycentric coords (xi1, xi2, xi3)
     Vector3 xi_vec(xi[0], xi[1], xi[2]);
-    Real value = gf.eval(0, xi_vec);
+    ElementTransform trans;
+    bindElementToTransform(trans, mesh, 0);
+    trans.setIntegrationPoint(xi_vec);
+    Real value = gf.eval(0, trans);
 
     // For reference tet, the barycentric coords are:
     // lambda0 = 1 - xi1 - xi2 - xi3
@@ -110,8 +116,8 @@ TEST_F(GridFunctionTest, ElementValues)
     gf.setConstant(1.0);
 
     // Get element values
-    Eigen::VectorXd elemVals = gf.getElementValues(0);
-    EXPECT_EQ(elemVals.size(), 4);
+    std::array<Real, MaxDofsPerElement> elemVals {};
+    gf.getElementValues(0, std::span<Real>(elemVals.data(), 4));
 
     for (int i = 0; i < 4; ++i) {
         EXPECT_DOUBLE_EQ(elemVals[i], 1.0);

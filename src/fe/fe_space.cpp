@@ -1,9 +1,123 @@
 #include "fe/fe_space.hpp"
-#include "mesh/element.hpp"
+#include "mesh/mesh.hpp"
 
 #include <algorithm>
 
 namespace mpfem {
+
+    int FESpace::dim() const
+    {
+        return mesh_ ? mesh_->dim() : 0;
+    }
+
+    bool FESpace::isExternalBoundary(Index bdrElemIdx) const
+    {
+        return mesh_ ? mesh_->isExternalBoundary(bdrElemIdx) : true;
+    }
+
+    bool FESpace::isExternalBoundaryId(Index bdrId) const
+    {
+        return mesh_ ? mesh_->isExternalBoundaryId(bdrId) : true;
+    }
+
+    const ReferenceElement* FESpace::refElement(Geometry geom) const
+    {
+        return fec_ ? fec_->get(geom) : nullptr;
+    }
+
+    const ReferenceElement* FESpace::elementRefElement(Index elemIdx) const
+    {
+        if (!mesh_)
+            MPFEM_THROW(Exception, "mesh not set");
+        if (elemIdx >= mesh_->numElements())
+            MPFEM_THROW(RangeException, "invalid element index");
+        return refElement(mesh_->element(elemIdx).geometry);
+    }
+
+    const ReferenceElement* FESpace::bdrElementRefElement(Index bdrIdx) const
+    {
+        if (!mesh_)
+            MPFEM_THROW(Exception, "mesh not set");
+        if (bdrIdx >= mesh_->numBdrElements())
+            MPFEM_THROW(RangeException, "invalid boundary element index");
+        return refElement(mesh_->bdrElement(bdrIdx).geometry);
+    }
+
+    int FESpace::elementGeoOrder(Index elemIdx) const
+    {
+        return mesh_ ? mesh_->element(elemIdx).order : 1;
+    }
+
+    int FESpace::bdrElementGeoOrder(Index bdrIdx) const
+    {
+        return mesh_ ? mesh_->bdrElement(bdrIdx).order : 1;
+    }
+
+    void FESpace::getElementDofs(Index elemIdx, std::span<Index> dofs) const
+    {
+        if (!mesh_ || !fec_ || elemIdx >= mesh_->numElements())
+            return;
+
+        const Element elem = mesh_->element(elemIdx);
+        const ReferenceElement* refElem = fec_->get(elem.geometry);
+        if (!refElem)
+            return;
+
+        const int nd = refElem->numDofs();
+        const int totalDofs = nd * vdim_;
+        if (static_cast<int>(dofs.size()) < totalDofs)
+            return;
+
+        const Index base = elemIdx * maxDofsPerElem_;
+        for (int i = 0; i < nd; ++i) {
+            Index globalDof = elemDofs_[base + i];
+            for (int c = 0; c < vdim_; ++c) {
+                dofs[i * vdim_ + c] = globalDof * vdim_ + c;
+            }
+        }
+    }
+
+    void FESpace::getBdrElementDofs(Index bdrIdx, std::span<Index> dofs) const
+    {
+        if (!mesh_ || !fec_ || bdrIdx >= mesh_->numBdrElements())
+            return;
+
+        const Element bdrElem = mesh_->bdrElement(bdrIdx);
+        const ReferenceElement* refElem = fec_->get(bdrElem.geometry);
+        if (!refElem)
+            return;
+
+        const int nd = refElem->numDofs();
+        const int totalDofs = nd * vdim_;
+        if (static_cast<int>(dofs.size()) < totalDofs)
+            return;
+
+        const Index base = bdrIdx * maxDofsPerBdrElem_;
+        for (int i = 0; i < nd; ++i) {
+            Index globalDof = bdrElemDofs_[base + i];
+            for (int c = 0; c < vdim_; ++c) {
+                dofs[i * vdim_ + c] = globalDof * vdim_ + c;
+            }
+        }
+    }
+
+    int FESpace::numElementDofs(Index elemIdx) const
+    {
+        if (!mesh_ || !fec_ || elemIdx >= mesh_->numElements())
+            return 0;
+        const Element elem = mesh_->element(elemIdx);
+        const ReferenceElement* refElem = fec_->get(elem.geometry);
+        return refElem ? refElem->numDofs() * vdim_ : 0;
+    }
+
+    int FESpace::numBdrElementDofs(Index bdrIdx) const
+    {
+        if (!mesh_ || !fec_ || bdrIdx >= mesh_->numBdrElements())
+            return 0;
+        const Element bdrElem = mesh_->bdrElement(bdrIdx);
+        const ReferenceElement* refElem = fec_->get(bdrElem.geometry);
+        return refElem ? refElem->numDofs() * vdim_ : 0;
+    }
 
     void FESpace::buildDofTable()
     {

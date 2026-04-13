@@ -187,7 +187,7 @@ namespace mpfem {
 
         // Data - all time steps per row
         for (Index j = 0; j < numExportPoints; ++j) {
-            const Vertex& v = mesh.vertex(cornerIndices[j]);
+            const Vector3& v = mesh.vertex(cornerIndices[j]);
             file << v.x() << "       " << v.y() << "       " << v.z();
 
             for (size_t idx = 0; idx < snapshots.size(); ++idx) {
@@ -264,7 +264,7 @@ namespace mpfem {
 
         // Data
         for (Index i = 0; i < numExportPoints; ++i) {
-            const Vertex& v = mesh.vertex(cornerIndices[i]);
+            const Vector3& v = mesh.vertex(cornerIndices[i]);
             file << v.x() << "       " << v.y() << "       " << v.z();
 
             if (V) {
@@ -397,7 +397,7 @@ namespace mpfem {
         file << "<Points>\n";
         file << "<DataArray type=\"Float64\" NumberOfComponents=\"3\" format=\"ascii\">\n";
         for (Index i = 0; i < numExportPoints; ++i) {
-            const Vertex& v = mesh.vertex(cornerIndices[i]);
+            const Vector3& v = mesh.vertex(cornerIndices[i]);
             file << v.x() << " " << v.y() << " " << v.z() << "\n";
         }
         file << "</DataArray>\n";

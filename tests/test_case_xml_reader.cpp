@@ -100,7 +100,7 @@ TEST_F(CaseXmlReaderTest, ReadBusbarCase)
     const auto& solidMechanics = caseDef.physics.at("solid_mechanics");
     EXPECT_EQ(solidMechanics.order, 1);
     ASSERT_NE(solidMechanics.solver, nullptr);
-    EXPECT_EQ(solidMechanics.solver->type, OperatorType::Umfpack);
+    EXPECT_EQ(solidMechanics.solver->type, OperatorType::Pardiso);
     EXPECT_EQ(solidMechanics.solver->preconditioner, nullptr);
     EXPECT_GE(solidMechanics.boundaries.size(), 1); // At least fixed constraint
 

@@ -6,6 +6,7 @@
 #include "fe/geometry_mapping.hpp"
 #include "fe/quadrature.hpp"
 #include "mesh/geometry.hpp"
+#include <Eigen/Geometry>
 #include <array>
 #include <span>
 

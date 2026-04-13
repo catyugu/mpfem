@@ -6,6 +6,9 @@
 #include <cmath>
 #include <unordered_map>
 #include <unordered_set>
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 namespace {
 
@@ -48,6 +51,24 @@ namespace {
     {
         return std::abs(v) > kTripletDropTol;
     }
+
+    struct alignas(64) ThreadBuffer {
+        Eigen::Matrix<mpfem::Real, mpfem::MaxDofsPerElement, mpfem::MaxDofsPerElement, Eigen::RowMajor> elmatVector;
+        Eigen::Matrix<mpfem::Real, mpfem::MaxDofsPerElement, 1> elvecVector;
+        std::array<mpfem::Index, mpfem::MaxDofsPerElement> dofs;
+        mpfem::Index numDofs = 0;
+        mpfem::Matrix dynMatrix;
+        mpfem::Vector dynVector;
+        std::array<int, mpfem::MaxDofsPerElement> validDofs;
+        int numValidDofs = 0;
+
+        void ensureDynMatrixSize(int maxTotalDofs)
+        {
+            if (dynMatrix.rows() < maxTotalDofs || dynMatrix.cols() < maxTotalDofs) {
+                dynMatrix.resize(maxTotalDofs, maxTotalDofs);
+            }
+        }
+    };
 
 } // namespace
 

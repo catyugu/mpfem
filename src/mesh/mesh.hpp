@@ -5,14 +5,12 @@
 #include "core/types.hpp"
 #include "element.hpp"
 #include "geometry.hpp"
-#include "vertex.hpp"
 #include <cstdint>
 #include <memory>
 #include <set>
 #include <span>
 #include <unordered_map>
 #include <vector>
-
 
 namespace mpfem {
 
@@ -99,16 +97,16 @@ namespace mpfem {
         // -------------------------------------------------------------------------
 
         /// Get vertex by index
-        const Vertex& vertex(Index i) const { return vertices_[i]; }
-        Vertex& vertex(Index i) { return vertices_[i]; }
+        const Vector3& vertex(Index i) const { return vertices_[i]; }
+        Vector3& vertex(Index i) { return vertices_[i]; }
 
         /// Get all vertices
-        const std::vector<Vertex>& vertices() const { return vertices_; }
-        std::vector<Vertex>& vertices() { return vertices_; }
+        const std::vector<Vector3>& vertices() const { return vertices_; }
+        std::vector<Vector3>& vertices() { return vertices_; }
 
         /// Add a vertex
-        void addVertex(const Vertex& v);
-        void addVertex(Vertex&& v);
+        void addVertex(const Vector3& v);
+        void addVertex(Vector3&& v);
 
         /// Add a vertex from coordinates
         Index addVertex(Real x, Real y = 0.0, Real z = 0.0);
@@ -265,8 +263,8 @@ namespace mpfem {
         void buildBoundaryElementMapping();
 
         int dim_ = 3;
-        std::vector<Vertex> vertices_;
-        
+        std::vector<Vector3> vertices_;
+
         // Flattened volume element storage
         std::vector<Geometry> elementGeoms_;
         std::vector<Index> elementAttributes_;
@@ -285,14 +283,14 @@ namespace mpfem {
         bool topologyBuilt_ = false;
         std::vector<EdgeInfo> edgeInfoList_;
         std::unordered_map<std::uint64_t, Index> edgeKeyToIndex_;
-        
+
         // CSR storage for element-to-edge
         std::vector<Index> elemEdgeOffsets_;
         std::vector<Index> elemEdgeData_;
-        
+
         std::vector<FaceInfo> faceInfoList_;
         std::unordered_map<FaceKey, Index, FaceKeyHash> faceKeyToIndex_;
-        
+
         // CSR storage for element-to-face
         std::vector<Index> elemFaceOffsets_;
         std::vector<Index> elemFaceData_;

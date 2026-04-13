@@ -5,7 +5,8 @@
 #include "eigen_preconditioner_adapter.hpp"
 #include "linear_operator.hpp"
 #include <Eigen/IterativeLinearSolvers>
-#include <Eigen/Sparse>
+#include <Eigen/SparseCore>
+#include <Eigen/SparseLU>
 #include <unsupported/Eigen/IterativeSolvers>
 
 namespace mpfem {

@@ -1,12 +1,14 @@
 #ifndef MPFEM_LINEAR_OPERATOR_HPP
 #define MPFEM_LINEAR_OPERATOR_HPP
 
+#include "core/sparse_matrix.hpp"
 #include "core/types.hpp"
 #include "solver/solver_config.hpp"
-#include "core/sparse_matrix.hpp"
+#include <Eigen/IterativeLinearSolvers>
 #include <memory>
 #include <string>
 #include <string_view>
+
 
 namespace mpfem {
 
