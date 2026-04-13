@@ -9,7 +9,6 @@
 #include <string>
 #include <string_view>
 
-
 namespace mpfem {
 
     // =============================================================================
@@ -132,30 +131,8 @@ namespace mpfem {
     public:
         std::string_view name() const override { return "Diagonal"; }
 
-        void setup(const SparseMatrix* A) override
-        {
-            if (!A) {
-                throw std::runtime_error("DiagonalOperator: null matrix in setup");
-            }
-            const Index n = A->rows();
-            invDiag_.resize(n);
-            for (Index i = 0; i < n; ++i) {
-                const Real diag = A->coeff(i, i);
-                if (std::abs(diag) < 1e-14) {
-                    invDiag_(i) = 0.0;
-                }
-                else {
-                    invDiag_(i) = 1.0 / diag;
-                }
-            }
-            set_matrix(A);
-            mark_setup();
-        }
-
-        void apply(const Vector& b, Vector& x) override
-        {
-            x = invDiag_.cwiseProduct(b);
-        }
+        void setup(const SparseMatrix* A) override;
+        void apply(const Vector& b, Vector& x) override;
 
         int iterations() const override { return 1; }
         Real residual() const override { return Real {0}; }
@@ -178,31 +155,13 @@ namespace mpfem {
     public:
         std::string_view name() const override { return "ICC"; }
 
-        void setup(const SparseMatrix* A) override
-        {
-            if (!A) {
-                throw std::runtime_error("IccOperator: null matrix in setup");
-            }
-            solver_.setInitialShift(shift_);
-            solver_.compute(A->eigen());
-            set_matrix(A);
-            mark_setup();
-        }
+        void setup(const SparseMatrix* A) override;
+        void apply(const Vector& b, Vector& x) override;
 
-        void apply(const Vector& b, Vector& x) override
-        {
-            x = solver_.solve(b);
-        }
-
-        void set_shift(Real shift) { shift_ = shift; }
+        void set_shift(Real shift);
         Real shift() const { return shift_; }
 
-        void configure(const LinearOperatorConfig& config) override
-        {
-            if (auto it = config.parameters.find("Shift"); it != config.parameters.end()) {
-                set_shift(it->second);
-            }
-        }
+        void configure(const LinearOperatorConfig& config) override;
 
         int iterations() const override { return 1; }
         Real residual() const override { return Real {0}; }
@@ -226,20 +185,8 @@ namespace mpfem {
     public:
         std::string_view name() const override { return "ILU"; }
 
-        void setup(const SparseMatrix* A) override
-        {
-            if (!A) {
-                throw std::runtime_error("IluOperator: null matrix in setup");
-            }
-            solver_.compute(A->eigen());
-            set_matrix(A);
-            mark_setup();
-        }
-
-        void apply(const Vector& b, Vector& x) override
-        {
-            x = solver_.solve(b);
-        }
+        void setup(const SparseMatrix* A) override;
+        void apply(const Vector& b, Vector& x) override;
 
         int iterations() const override { return 1; }
         Real residual() const override { return Real {0}; }
@@ -262,17 +209,8 @@ namespace mpfem {
     public:
         std::string_view name() const override { return "AdditiveSchwarz"; }
 
-        void setup(const SparseMatrix* A) override
-        {
-            set_matrix(A);
-            mark_setup();
-        }
-
-        void apply(const Vector& b, Vector& x) override
-        {
-            // TODO: Implement domain decomposition with overlap
-            x = b; // Fallback: identity
-        }
+        void setup(const SparseMatrix* A) override;
+        void apply(const Vector& b, Vector& x) override;
 
         int iterations() const override { return 1; }
         Real residual() const override { return Real {0}; }

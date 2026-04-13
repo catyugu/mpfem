@@ -102,25 +102,8 @@ namespace mpfem {
     public:
         std::string_view name() const override { return "SparseLU"; }
 
-        void setup(const SparseMatrix* A) override
-        {
-            if (!A)
-                throw std::runtime_error("EigenSparseLUOperator: null matrix in setup");
-            solver_.compute(A->eigen());
-            if (solver_.info() != Eigen::Success) {
-                throw std::runtime_error("EigenSparseLUOperator: factorization failed");
-            }
-            set_matrix(A);
-            mark_setup();
-        }
-
-        void apply(const Vector& b, Vector& x) override
-        {
-            x = solver_.solve(b);
-            if (solver_.info() != Eigen::Success) {
-                throw std::runtime_error("EigenSparseLUOperator: solve failed");
-            }
-        }
+        void setup(const SparseMatrix* A) override;
+        void apply(const Vector& b, Vector& x) override;
 
         int iterations() const override { return 1; }
         Real residual() const override { return Real {0}; }

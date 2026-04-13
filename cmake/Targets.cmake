@@ -110,7 +110,12 @@ mpfem_add_library(mpfem_expr
 )
 
 mpfem_add_library(mpfem_solver
-    HEADER_ONLY
+    SOURCES
+        src/solver/linear_operator.cpp
+        src/solver/eigen_solver.cpp
+        src/solver/pardiso_solver.cpp
+        src/solver/umfpack_solver.cpp
+        src/solver/solver_factory.cpp
     PUBLIC_LINK
         mpfem_core
 )
@@ -174,6 +179,7 @@ mpfem_add_library(mpfem_physics
         src/physics/structural_solver.cpp
     PUBLIC_LINK
         mpfem_assembly
+        mpfem_solver
 )
 
 mpfem_add_library(mpfem_problem

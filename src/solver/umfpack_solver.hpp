@@ -25,47 +25,14 @@ namespace mpfem {
     public:
         UmfpackSolver() = default;
 
-        std::string_view name() const override { return "UMFPACK"; }
+        std::string_view name() const override;
 
-        void setup(const SparseMatrix* A) override
-        {
-            if (!A) {
-                throw std::runtime_error("UmfpackSolver: null matrix in setup");
-            }
+        void setup(const SparseMatrix* A) override;
 
-            solver_.analyzePattern(A->eigen());
-            if (solver_.info() != Eigen::Success) {
-                throw std::runtime_error("UmfpackSolver: symbolic analysis failed");
-            }
+        void apply(const Vector& b, Vector& x) override;
 
-            solver_.factorize(A->eigen());
-
-            if (solver_.info() != Eigen::Success) {
-                throw std::runtime_error("UmfpackSolver: factorization failed");
-            }
-
-            set_matrix(A);
-            mark_setup();
-        }
-
-        void apply(const Vector& b, Vector& x) override
-        {
-            if (!is_setup()) {
-                throw std::runtime_error("UmfpackSolver: not setup");
-            }
-
-            x = solver_.solve(b);
-
-            if (solver_.info() != Eigen::Success) {
-                throw std::runtime_error("UmfpackSolver: solve failed");
-            }
-
-            iterations_ = 1;
-            residual_ = 0.0;
-        }
-
-        int iterations() const override { return iterations_; }
-        Real residual() const override { return residual_; }
+        int iterations() const override;
+        Real residual() const override;
 
     private:
         Eigen::UmfPackLU<SparseMatrix::Storage> solver_;
