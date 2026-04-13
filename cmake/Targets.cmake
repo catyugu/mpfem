@@ -182,13 +182,37 @@ mpfem_add_library(mpfem_assembly
 )
 
 # =============================================================================
-# Problem library (header-only) - 纯数据基类
+# Physics library
+# =============================================================================
+
+mpfem_add_library(mpfem_physics
+    SOURCES
+        src/physics/electrostatics_solver.cpp
+        src/physics/heat_transfer_solver.cpp
+        src/physics/structural_solver.cpp
+
+    PUBLIC_LINK
+        Eigen3::Eigen
+        mpfem_core
+        mpfem_mesh
+        mpfem_fe
+        mpfem_assembly
+        mpfem_solver
+        mpfem_io
+)
+
+# =============================================================================
+# Problem library
 # =============================================================================
 
 mpfem_add_library(mpfem_problem
     SOURCES
         src/problem/problem.cpp
+        src/problem/transient_problem.cpp
         src/problem/physics_problem_builder.cpp
+        src/problem/time/time_integrator.cpp
+        src/problem/time/bdf1_integrator.cpp
+        src/problem/time/bdf2_integrator.cpp
     PUBLIC_LINK
         Eigen3::Eigen
         mpfem_core
@@ -200,28 +224,7 @@ mpfem_add_library(mpfem_problem
         mpfem_physics
 )
 
-# =============================================================================
-# Physics library
-# =============================================================================
 
-mpfem_add_library(mpfem_physics
-    SOURCES
-        src/physics/electrostatics_solver.cpp
-        src/physics/heat_transfer_solver.cpp
-        src/physics/structural_solver.cpp
-        src/problem/transient_problem.cpp
-        src/time/time_integrator.cpp
-        src/time/bdf1_integrator.cpp
-        src/time/bdf2_integrator.cpp
-    PUBLIC_LINK
-        Eigen3::Eigen
-        mpfem_core
-        mpfem_mesh
-        mpfem_fe
-        mpfem_assembly
-        mpfem_solver
-        mpfem_io
-)
 
 # =============================================================================
 # Create simple aliases (mpfem::core, mpfem::mesh, etc.)
@@ -234,5 +237,5 @@ mpfem_create_alias(io)
 mpfem_create_alias(fe)
 mpfem_create_alias(assembly)
 mpfem_create_alias(solver)
-mpfem_create_alias(problem)
 mpfem_create_alias(physics)
+mpfem_create_alias(problem)
