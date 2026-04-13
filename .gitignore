@@ -1,4 +1,5 @@
 build*
+external
 .vscode
 results
 __pycache__
