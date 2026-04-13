@@ -219,8 +219,9 @@ namespace mpfem {
         if (!topologyBuilt_ || elemIdx >= numElements()) {
             return {};
         }
-        return {&elemEdgeData_[elemEdgeOffsets_[elemIdx]],
-            &elemEdgeData_[elemEdgeOffsets_[elemIdx + 1]]};
+        const Index start = elemEdgeOffsets_[elemIdx];
+        const Index end = elemEdgeOffsets_[elemIdx + 1];
+        return {elemEdgeData_.data() + start, elemEdgeData_.data() + end};
     }
 
     std::span<const Index> Mesh::getElementFaces(Index elemIdx) const
@@ -228,8 +229,9 @@ namespace mpfem {
         if (!topologyBuilt_ || elemIdx >= numElements()) {
             return {};
         }
-        return {&elemFaceData_[elemFaceOffsets_[elemIdx]],
-            &elemFaceData_[elemFaceOffsets_[elemIdx + 1]]};
+        const Index start = elemFaceOffsets_[elemIdx];
+        const Index end = elemFaceOffsets_[elemIdx + 1];
+        return {elemFaceData_.data() + start, elemFaceData_.data() + end};
     }
 
     Index Mesh::edgeIndex(Index a, Index b) const
