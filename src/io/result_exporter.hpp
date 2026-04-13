@@ -2,7 +2,7 @@
 #define MPFEM_RESULT_EXPORTER_HPP
 
 #include "core/types.hpp"
-#include "physics/field_values.hpp"
+#include "field/field_values.hpp"
 
 #include <string>
 #include <vector>
