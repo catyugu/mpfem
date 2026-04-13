@@ -20,11 +20,11 @@ namespace mpfem {
     {
         const Element elem = isBoundary ? mesh.bdrElement(elemIdx) : mesh.element(elemIdx);
         std::array<Vector3, MaxNodesPerElement> nodeCoords;
-        for (size_t i = 0; i < elem.vertices.size(); ++i) {
-            nodeCoords[i] = mesh.vertex(elem.vertices[i]);
+        for (size_t i = 0; i < elem.nodes.size(); ++i) {
+            nodeCoords[i] = mesh.node(elem.nodes[i]);
         }
         trans.bindElement(elem.geometry, elem.order, elem.attribute, elemIdx,
-            std::span<const Vector3>(nodeCoords.data(), elem.vertices.size()));
+            std::span<const Vector3>(nodeCoords.data(), elem.nodes.size()));
     }
 
 } // namespace mpfem

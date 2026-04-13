@@ -68,10 +68,10 @@ protected:
         Logger::setLevel(LogLevel::Warning);
 
         mesh_.setDim(3);
-        mesh_.addVertex(0.0, 0.0, 0.0);
-        mesh_.addVertex(1.0, 0.0, 0.0);
-        mesh_.addVertex(0.0, 1.0, 0.0);
-        mesh_.addVertex(0.0, 0.0, 1.0);
+        mesh_.addNode(0.0, 0.0, 0.0);
+        mesh_.addNode(1.0, 0.0, 0.0);
+        mesh_.addNode(0.0, 1.0, 0.0);
+        mesh_.addNode(0.0, 0.0, 1.0);
         mesh_.addElement(Geometry::Tetrahedron, {0, 1, 2, 3}, 1, 1);
         mesh_.buildTopology();
 

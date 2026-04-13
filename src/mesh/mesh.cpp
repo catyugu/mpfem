@@ -15,7 +15,7 @@ namespace mpfem {
         : dim_(dim)
     {
         if (numVertices > 0)
-            vertices_.reserve(numVertices);
+            nodes_.reserve(numVertices);
         if (numElements > 0)
             reserveElements(numElements);
         if (numBdrElements > 0)
@@ -28,53 +28,55 @@ namespace mpfem {
         LOG_DEBUG << "Mesh dimension set to " << dim;
     }
 
-    void Mesh::addVertex(const Vector3& v)
+    void Mesh::addNode(const Vector3& v)
     {
-        vertices_.push_back(v);
+        nodes_.push_back(v);
     }
 
-    void Mesh::addVertex(Vector3&& v)
+    void Mesh::addNode(Vector3&& v)
     {
-        vertices_.push_back(std::move(v));
+        nodes_.push_back(std::move(v));
     }
 
-    Index Mesh::addVertex(Real x, Real y, Real z)
+    Index Mesh::addNode(Real x, Real y, Real z)
     {
-        vertices_.emplace_back(x, y, z);
-        return static_cast<Index>(vertices_.size() - 1);
+        nodes_.emplace_back(x, y, z);
+        return static_cast<Index>(nodes_.size() - 1);
     }
 
-    void Mesh::reserveVertices(Index n)
+    void Mesh::reserveNodes(Index n)
     {
-        vertices_.reserve(n);
+        nodes_.reserve(n);
     }
 
     Element Mesh::element(Index i) const
     {
         const Index start = elementOffsets_[i];
         const Index end = elementOffsets_[i + 1];
+        const Index vertexCount = static_cast<Index>(geom::numVertices(elementGeoms_[i]));
         return Element {
             elementGeoms_[i],
-            {&elementVertices_[start], static_cast<size_t>(end - start)},
+            {&elementNodes_[start], static_cast<size_t>(vertexCount)},
+            {&elementNodes_[start], static_cast<size_t>(end - start)},
             elementAttributes_[i],
             elementOrders_[i]};
     }
 
-    Index Mesh::addElement(Geometry geom, std::span<const Index> vertices, Index attr, int order)
+    Index Mesh::addElement(Geometry geom, std::span<const Index> nodes, Index attr, int order)
     {
         if (elementOffsets_.empty())
             elementOffsets_.push_back(0);
         elementGeoms_.push_back(geom);
         elementAttributes_.push_back(attr);
         elementOrders_.push_back(order);
-        elementVertices_.insert(elementVertices_.end(), vertices.begin(), vertices.end());
-        elementOffsets_.push_back(static_cast<Index>(elementVertices_.size()));
+        elementNodes_.insert(elementNodes_.end(), nodes.begin(), nodes.end());
+        elementOffsets_.push_back(static_cast<Index>(elementNodes_.size()));
         return static_cast<Index>(elementGeoms_.size() - 1);
     }
 
-    Index Mesh::addElement(Geometry geom, const std::vector<Index>& vertices, Index attr, int order)
+    Index Mesh::addElement(Geometry geom, const std::vector<Index>& nodes, Index attr, int order)
     {
-        return addElement(geom, std::span<const Index>(vertices), attr, order);
+        return addElement(geom, std::span<const Index>(nodes), attr, order);
     }
 
     void Mesh::reserveElements(Index n)
@@ -83,35 +85,37 @@ namespace mpfem {
         elementAttributes_.reserve(n);
         elementOrders_.reserve(n);
         elementOffsets_.reserve(n + 1);
-        elementVertices_.reserve(n * 8); // Estimate
+        elementNodes_.reserve(n * 8); // Estimate
     }
 
     Element Mesh::bdrElement(Index i) const
     {
         const Index start = bdrElementOffsets_[i];
         const Index end = bdrElementOffsets_[i + 1];
+        const Index vertexCount = static_cast<Index>(geom::numVertices(bdrElementGeoms_[i]));
         return Element {
             bdrElementGeoms_[i],
-            {&bdrElementVertices_[start], static_cast<size_t>(end - start)},
+            {&bdrElementNodes_[start], static_cast<size_t>(vertexCount)},
+            {&bdrElementNodes_[start], static_cast<size_t>(end - start)},
             bdrElementAttributes_[i],
             bdrElementOrders_[i]};
     }
 
-    Index Mesh::addBdrElement(Geometry geom, std::span<const Index> vertices, Index attr, int order)
+    Index Mesh::addBdrElement(Geometry geom, std::span<const Index> nodes, Index attr, int order)
     {
         if (bdrElementOffsets_.empty())
             bdrElementOffsets_.push_back(0);
         bdrElementGeoms_.push_back(geom);
         bdrElementAttributes_.push_back(attr);
         bdrElementOrders_.push_back(order);
-        bdrElementVertices_.insert(bdrElementVertices_.end(), vertices.begin(), vertices.end());
-        bdrElementOffsets_.push_back(static_cast<Index>(bdrElementVertices_.size()));
+        bdrElementNodes_.insert(bdrElementNodes_.end(), nodes.begin(), nodes.end());
+        bdrElementOffsets_.push_back(static_cast<Index>(bdrElementNodes_.size()));
         return static_cast<Index>(bdrElementGeoms_.size() - 1);
     }
 
-    Index Mesh::addBdrElement(Geometry geom, const std::vector<Index>& vertices, Index attr, int order)
+    Index Mesh::addBdrElement(Geometry geom, const std::vector<Index>& nodes, Index attr, int order)
     {
-        return addBdrElement(geom, std::span<const Index>(vertices), attr, order);
+        return addBdrElement(geom, std::span<const Index>(nodes), attr, order);
     }
 
     void Mesh::reserveBdrElements(Index n)
@@ -120,7 +124,7 @@ namespace mpfem {
         bdrElementAttributes_.reserve(n);
         bdrElementOrders_.reserve(n);
         bdrElementOffsets_.reserve(n + 1);
-        bdrElementVertices_.reserve(n * 4); // Estimate
+        bdrElementNodes_.reserve(n * 4); // Estimate
     }
 
     std::set<Index> Mesh::domainIds() const
@@ -167,17 +171,17 @@ namespace mpfem {
 
     void Mesh::clear()
     {
-        vertices_.clear();
+        nodes_.clear();
         elementGeoms_.clear();
         elementAttributes_.clear();
         elementOrders_.clear();
         elementOffsets_.clear();
-        elementVertices_.clear();
+        elementNodes_.clear();
         bdrElementGeoms_.clear();
         bdrElementAttributes_.clear();
         bdrElementOrders_.clear();
         bdrElementOffsets_.clear();
-        bdrElementVertices_.clear();
+        bdrElementNodes_.clear();
         dim_ = 3;
         topologyBuilt_ = false;
         edgeInfoList_.clear();
@@ -192,8 +196,6 @@ namespace mpfem {
         interiorFaceIndices_.clear();
         bdrElementToFace_.clear();
         bdrIdExternalCache_.clear();
-        cornerVertexIndices_.clear();
-        cornerVertexMap_.clear();
     }
 
     std::vector<Index> Mesh::getElementVertices(Index elemIdx) const
@@ -203,7 +205,7 @@ namespace mpfem {
         }
 
         const Element elem = element(elemIdx);
-        const int corners = elem.numCorners();
+        const int corners = elem.numVertices();
         std::vector<Index> out;
         out.reserve(static_cast<size_t>(corners));
         for (int i = 0; i < corners; ++i) {
@@ -217,8 +219,9 @@ namespace mpfem {
         if (!topologyBuilt_ || elemIdx >= numElements()) {
             return {};
         }
-        return {&elemEdgeData_[elemEdgeOffsets_[elemIdx]],
-            &elemEdgeData_[elemEdgeOffsets_[elemIdx + 1]]};
+        const Index start = elemEdgeOffsets_[elemIdx];
+        const Index end = elemEdgeOffsets_[elemIdx + 1];
+        return {elemEdgeData_.data() + start, elemEdgeData_.data() + end};
     }
 
     std::span<const Index> Mesh::getElementFaces(Index elemIdx) const
@@ -226,8 +229,9 @@ namespace mpfem {
         if (!topologyBuilt_ || elemIdx >= numElements()) {
             return {};
         }
-        return {&elemFaceData_[elemFaceOffsets_[elemIdx]],
-            &elemFaceData_[elemFaceOffsets_[elemIdx + 1]]};
+        const Index start = elemFaceOffsets_[elemIdx];
+        const Index end = elemFaceOffsets_[elemIdx + 1];
+        return {elemFaceData_.data() + start, elemFaceData_.data() + end};
     }
 
     Index Mesh::edgeIndex(Index a, Index b) const
@@ -238,41 +242,19 @@ namespace mpfem {
 
     std::pair<Vector3, Vector3> Mesh::getBoundingBox() const
     {
-        if (vertices_.empty()) {
+        if (nodes_.empty()) {
             return {Vector3::Zero(), Vector3::Zero()};
         }
 
-        Vector3 minCoord = vertices_[0];
+        Vector3 minCoord = nodes_[0];
         Vector3 maxCoord = minCoord;
 
-        for (const auto& v : vertices_) {
+        for (const auto& v : nodes_) {
             minCoord = minCoord.cwiseMin(v);
             maxCoord = maxCoord.cwiseMax(v);
         }
 
         return {minCoord, maxCoord};
-    }
-
-    // =============================================================================
-    // Corner vertices (topological vertices)
-    // =============================================================================
-
-    Index Mesh::numCornerVertices() const
-    {
-        return static_cast<Index>(cornerVertexIndices_.size());
-    }
-
-    const std::vector<Index>& Mesh::cornerVertexIndices() const
-    {
-        return cornerVertexIndices_;
-    }
-
-    Index Mesh::vertexToCornerIndex(Index vertexIdx) const
-    {
-        if (vertexIdx >= static_cast<Index>(cornerVertexMap_.size())) {
-            return InvalidIndex;
-        }
-        return cornerVertexMap_[vertexIdx];
     }
 
     // =============================================================================
@@ -314,39 +296,12 @@ namespace mpfem {
         // Build boundary element mapping
         buildBoundaryElementMapping();
 
-        // Build corner vertex map (eagerly, for high-order meshes)
-        // Collect all corner vertices from all volume elements
-        std::set<Index> cornerSet;
-        for (Index i = 0; i < numElements(); ++i) {
-            const Element e = element(i);
-            int nc = e.numCorners();
-            for (int j = 0; j < nc; ++j) {
-                cornerSet.insert(e.vertex(j));
-            }
-        }
-
-        // Build sorted list of corner vertex indices
-        cornerVertexIndices_.clear();
-        cornerVertexIndices_.reserve(cornerSet.size());
-        for (Index v : cornerSet) {
-            cornerVertexIndices_.push_back(v);
-        }
-        std::sort(cornerVertexIndices_.begin(), cornerVertexIndices_.end());
-
-        // Build reverse mapping: full vertex index -> corner vertex index (or InvalidIndex)
-        cornerVertexMap_.clear();
-        cornerVertexMap_.resize(numVertices(), InvalidIndex);
-        for (Index i = 0; i < static_cast<Index>(cornerVertexIndices_.size()); ++i) {
-            cornerVertexMap_[cornerVertexIndices_[i]] = i;
-        }
-
         topologyBuilt_ = true;
 
         LOG_DEBUG << "Topology built: " << boundaryFaceIndices_.size() << " boundary faces, "
                   << interiorFaceIndices_.size() << " interior faces, "
                   << edgeInfoList_.size() << " edges, "
-                  << bdrElementToFace_.size() << " boundary elements mapped, "
-                  << cornerVertexIndices_.size() << " corner vertices";
+                  << bdrElementToFace_.size() << " boundary elements mapped";
     }
 
     void Mesh::buildEdgeToElementMap()
@@ -491,9 +446,9 @@ namespace mpfem {
 
             // Get sorted vertex key for boundary element - ONLY CORNER NODES
             FaceKey key;
-            int numCorners = bdrElem.numCorners();
-            key.count = numCorners;
-            for (int i = 0; i < numCorners; ++i) {
+            int numVertices = bdrElem.numVertices();
+            key.count = numVertices;
+            for (int i = 0; i < numVertices; ++i) {
                 key.nodes[i] = bdrElem.vertex(i);
             }
             std::sort(key.nodes, key.nodes + key.count);

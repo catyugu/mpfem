@@ -90,21 +90,6 @@ namespace mpfem {
         Vector3 transform(const Vector3& xi) const;
         Vector3 transform(const IntegrationPoint& ip) const { return transform(ip.getXi()); }
 
-        /**
-         * @brief Transform gradient from reference to physical space.
-         * physGrad = invJacobianT * refGrad
-         */
-        inline Vector3 transformGradient(const Vector3& refGrad) const
-        {
-            Vector3 physGrad = Vector3::Zero();
-            for (int d = 0; d < 3; ++d) {
-                for (int k = 0; k < dim_; ++k) {
-                    physGrad[d] += invJacobianT_(d, k) * refGrad[k];
-                }
-            }
-            return physGrad;
-        }
-
         // -------------------------------------------------------------------------
         // Properties
         // -------------------------------------------------------------------------

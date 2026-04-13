@@ -7,7 +7,6 @@
 #include <unordered_map>
 #include <unordered_set>
 
-
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -256,8 +255,7 @@ namespace mpfem {
                 for (size_t k = 0; k < bdrIntegs_.size(); ++k) {
                     if (bdrIds_[k] >= 0 && bdrIds_[k] != attr)
                         continue;
-                    bbuf.dynMatrix.resize(0, 0);
-                    bdrIntegs_[k]->assembleFaceMatrix(*ref, btrans, bbuf.dynMatrix);
+                    bdrIntegs_[k]->assembleFacetMatrix(*ref, btrans, bbuf.dynMatrix);
 
                     if (bbuf.dynMatrix.rows() != totalDofs || bbuf.dynMatrix.cols() != totalDofs) {
                         MPFEM_THROW(ArgumentException, "Boundary bilinear integrator returned matrix with unexpected size");
@@ -459,8 +457,7 @@ namespace mpfem {
                 for (size_t k = 0; k < bdrIntegs_.size(); ++k) {
                     if (bdrIds_[k] >= 0 && bdrIds_[k] != attr)
                         continue;
-                    bbuf.dynVector.resize(0);
-                    bdrIntegs_[k]->assembleFaceVector(*ref, btrans, bbuf.dynVector);
+                    bdrIntegs_[k]->assembleFacetVector(*ref, btrans, bbuf.dynVector);
 
                     if (bbuf.dynVector.size() != totalDofs) {
                         MPFEM_THROW(ArgumentException, "Boundary linear integrator returned vector with unexpected size");

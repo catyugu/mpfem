@@ -100,16 +100,31 @@ namespace mpfem {
         /// Get number of faces
         int numFaces() const { return geom::numFaces(geometry_); }
 
+        /// Get number of facets (dim-1 entities)
+        int numFacets() const { return geom::numFacets(geometry_); }
+
         /// Get geometry type of a face
         Geometry faceGeometry(int faceIdx) const
         {
             return geom::faceGeometry(geometry_, faceIdx);
         }
 
+        /// Get geometry type of a facet
+        Geometry facetGeometry(int facetIdx) const
+        {
+            return geom::facetGeometry(geometry_, facetIdx);
+        }
+
         /// Get local dof indices for a face
         std::vector<int> faceDofs(int faceIdx) const
         {
             return basis_->faceDofs(faceIdx);
+        }
+
+        /// Get local dof indices for a facet
+        std::vector<int> facetDofs(int facetIdx) const
+        {
+            return basis_->facetDofs(facetIdx);
         }
 
         // -------------------------------------------------------------------------

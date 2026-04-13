@@ -24,10 +24,10 @@ protected:
         mesh.setDim(3);
 
         // Add 4 vertices forming a tetrahedron
-        mesh.addVertex(0.0, 0.0, 0.0); // Vertex 0
-        mesh.addVertex(1.0, 0.0, 0.0); // Vertex 1
-        mesh.addVertex(0.0, 1.0, 0.0); // Vertex 2
-        mesh.addVertex(0.0, 0.0, 1.0); // Vertex 3
+        mesh.addNode(0.0, 0.0, 0.0); // Vertex 0
+        mesh.addNode(1.0, 0.0, 0.0); // Vertex 1
+        mesh.addNode(0.0, 1.0, 0.0); // Vertex 2
+        mesh.addNode(0.0, 0.0, 1.0); // Vertex 3
 
         // Add 1 tetrahedron
         mesh.addElement(Geometry::Tetrahedron, {0, 1, 2, 3}, 1);

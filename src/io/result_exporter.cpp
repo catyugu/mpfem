@@ -3,6 +3,7 @@
 #include "core/logger.hpp"
 #include "mesh/mesh.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <ctime>
 #include <fstream>
@@ -17,8 +18,28 @@ namespace mpfem {
 
         using VertexComponentDofMap = std::unordered_map<Index, std::vector<Index>>;
 
-        VertexComponentDofMap buildCornerVertexComponentDofs(const GridFunction& gf,
-            const std::vector<Index>& cornerIndices)
+        std::vector<Index> collectTopologyVertices(const Mesh& mesh)
+        {
+            std::vector<Index> vertices;
+            vertices.reserve(static_cast<size_t>(mesh.numElements() * 4 + mesh.numBdrElements() * 4));
+
+            for (Index elemIdx = 0; elemIdx < mesh.numElements(); ++elemIdx) {
+                const Element elem = mesh.element(elemIdx);
+                vertices.insert(vertices.end(), elem.vertices.begin(), elem.vertices.end());
+            }
+
+            for (Index bdrIdx = 0; bdrIdx < mesh.numBdrElements(); ++bdrIdx) {
+                const Element elem = mesh.bdrElement(bdrIdx);
+                vertices.insert(vertices.end(), elem.vertices.begin(), elem.vertices.end());
+            }
+
+            std::sort(vertices.begin(), vertices.end());
+            vertices.erase(std::unique(vertices.begin(), vertices.end()), vertices.end());
+            return vertices;
+        }
+
+        VertexComponentDofMap buildVertexComponentDofs(const GridFunction& gf,
+            const std::vector<Index>& vertexIndices)
         {
             VertexComponentDofMap dofMap;
 
@@ -28,8 +49,8 @@ namespace mpfem {
             }
 
             const Mesh* mesh = fes->mesh();
-            std::unordered_set<Index> pending(cornerIndices.begin(), cornerIndices.end());
-            dofMap.reserve(cornerIndices.size());
+            std::unordered_set<Index> pending(vertexIndices.begin(), vertexIndices.end());
+            dofMap.reserve(vertexIndices.size());
 
             for (Index elemIdx = 0; elemIdx < mesh->numElements() && !pending.empty(); ++elemIdx) {
                 const ReferenceElement* refElem = fes->elementRefElement(elemIdx);
@@ -42,12 +63,12 @@ namespace mpfem {
                     continue;
                 }
 
-                const std::vector<Index> elemVertices = mesh->getElementVertices(elemIdx);
                 std::vector<Index> elemDofs(refElem->numDofs() * fes->vdim(), InvalidIndex);
                 fes->getElementDofs(elemIdx, elemDofs);
 
-                for (int localVertex = 0; localVertex < static_cast<int>(elemVertices.size()); ++localVertex) {
-                    const Index vertexIdx = elemVertices[localVertex];
+                const Element elem = mesh->element(elemIdx);
+                for (int localVertex = 0; localVertex < static_cast<int>(elem.vertices.size()); ++localVertex) {
+                    const Index vertexIdx = elem.vertices[static_cast<size_t>(localVertex)];
                     if (!pending.contains(vertexIdx)) {
                         continue;
                     }
@@ -140,8 +161,13 @@ namespace mpfem {
             throw FileException("Cannot open file for writing: " + filename);
         }
 
-        Index numExportPoints = mesh.numCornerVertices();
-        const auto& cornerIndices = mesh.cornerVertexIndices();
+        const std::vector<Index> topologyVertices = collectTopologyVertices(mesh);
+        Index numExportPoints = static_cast<Index>(topologyVertices.size());
+        std::unordered_map<Index, Index> pointIndexByVertex;
+        pointIndexByVertex.reserve(topologyVertices.size());
+        for (Index i = 0; i < numExportPoints; ++i) {
+            pointIndexByVertex[topologyVertices[static_cast<size_t>(i)]] = i;
+        }
 
         file << std::setprecision(16);
 
@@ -174,40 +200,40 @@ namespace mpfem {
             const auto& fields = snapshots[i];
             if (fields.hasField("V")) {
                 vFields[i] = &fields.current("V");
-                vDofMaps[i] = buildCornerVertexComponentDofs(*vFields[i], cornerIndices);
+                vDofMaps[i] = buildVertexComponentDofs(*vFields[i], topologyVertices);
             }
             if (fields.hasField("T")) {
                 tFields[i] = &fields.current("T");
-                tDofMaps[i] = buildCornerVertexComponentDofs(*tFields[i], cornerIndices);
+                tDofMaps[i] = buildVertexComponentDofs(*tFields[i], topologyVertices);
             }
             if (fields.hasField("u")) {
                 uFields[i] = &fields.current("u");
-                uDofMaps[i] = buildCornerVertexComponentDofs(*uFields[i], cornerIndices);
+                uDofMaps[i] = buildVertexComponentDofs(*uFields[i], topologyVertices);
             }
         }
 
         // Data - all time steps per row
         for (Index j = 0; j < numExportPoints; ++j) {
-            const Vector3& v = mesh.vertex(cornerIndices[j]);
+            const Vector3& v = mesh.node(topologyVertices[static_cast<size_t>(j)]);
             file << v.x() << "       " << v.y() << "       " << v.z();
 
             for (size_t idx = 0; idx < snapshots.size(); ++idx) {
                 if (vFields[idx]) {
-                    file << "       " << scalarAtVertex(*vFields[idx], vDofMaps[idx], cornerIndices[j]);
+                    file << "       " << scalarAtVertex(*vFields[idx], vDofMaps[idx], topologyVertices[static_cast<size_t>(j)]);
                 }
                 else {
                     file << "       0.0";
                 }
 
                 if (tFields[idx]) {
-                    file << "       " << scalarAtVertex(*tFields[idx], tDofMaps[idx], cornerIndices[j]);
+                    file << "       " << scalarAtVertex(*tFields[idx], tDofMaps[idx], topologyVertices[static_cast<size_t>(j)]);
                 }
                 else {
                     file << "       0.0";
                 }
 
                 if (uFields[idx]) {
-                    const Real mag = vectorMagnitudeAtVertex(*uFields[idx], uDofMaps[idx], cornerIndices[j]);
+                    const Real mag = vectorMagnitudeAtVertex(*uFields[idx], uDofMaps[idx], topologyVertices[static_cast<size_t>(j)]);
                     file << "       " << mag;
                 }
                 else {
@@ -229,8 +255,13 @@ namespace mpfem {
             throw FileException("Cannot open file for writing: " + filename);
         }
 
-        Index numExportPoints = mesh.numCornerVertices();
-        const auto& cornerIndices = mesh.cornerVertexIndices();
+        const std::vector<Index> topologyVertices = collectTopologyVertices(mesh);
+        Index numExportPoints = static_cast<Index>(topologyVertices.size());
+        std::unordered_map<Index, Index> pointIndexByVertex;
+        pointIndexByVertex.reserve(topologyVertices.size());
+        for (Index i = 0; i < numExportPoints; ++i) {
+            pointIndexByVertex[topologyVertices[static_cast<size_t>(i)]] = i;
+        }
 
         file << std::setprecision(16);
 
@@ -259,31 +290,31 @@ namespace mpfem {
             ? &fields.current("u")
             : nullptr;
 
-        const VertexComponentDofMap vDofMap = V ? buildCornerVertexComponentDofs(*V, cornerIndices) : VertexComponentDofMap {};
-        const VertexComponentDofMap tDofMap = T ? buildCornerVertexComponentDofs(*T, cornerIndices) : VertexComponentDofMap {};
-        const VertexComponentDofMap uDofMap = u ? buildCornerVertexComponentDofs(*u, cornerIndices) : VertexComponentDofMap {};
+        const VertexComponentDofMap vDofMap = V ? buildVertexComponentDofs(*V, topologyVertices) : VertexComponentDofMap {};
+        const VertexComponentDofMap tDofMap = T ? buildVertexComponentDofs(*T, topologyVertices) : VertexComponentDofMap {};
+        const VertexComponentDofMap uDofMap = u ? buildVertexComponentDofs(*u, topologyVertices) : VertexComponentDofMap {};
 
         // Data
         for (Index i = 0; i < numExportPoints; ++i) {
-            const Vector3& v = mesh.vertex(cornerIndices[i]);
+            const Vector3& v = mesh.node(topologyVertices[static_cast<size_t>(i)]);
             file << v.x() << "       " << v.y() << "       " << v.z();
 
             if (V) {
-                file << "       " << scalarAtVertex(*V, vDofMap, cornerIndices[i]);
+                file << "       " << scalarAtVertex(*V, vDofMap, topologyVertices[static_cast<size_t>(i)]);
             }
             else {
                 file << "       0.0";
             }
 
             if (T) {
-                file << "       " << scalarAtVertex(*T, tDofMap, cornerIndices[i]);
+                file << "       " << scalarAtVertex(*T, tDofMap, topologyVertices[static_cast<size_t>(i)]);
             }
             else {
                 file << "       0.0";
             }
 
             if (u) {
-                const Real mag = vectorMagnitudeAtVertex(*u, uDofMap, cornerIndices[i]);
+                const Real mag = vectorMagnitudeAtVertex(*u, uDofMap, topologyVertices[static_cast<size_t>(i)]);
                 file << "       " << mag;
             }
             else {
@@ -327,8 +358,13 @@ namespace mpfem {
 
         file << std::scientific << std::setprecision(10);
 
-        Index numExportPoints = mesh.numCornerVertices();
-        const auto& cornerIndices = mesh.cornerVertexIndices();
+        const std::vector<Index> topologyVertices = collectTopologyVertices(mesh);
+        Index numExportPoints = static_cast<Index>(topologyVertices.size());
+        std::unordered_map<Index, Index> pointIndexByVertex;
+        pointIndexByVertex.reserve(topologyVertices.size());
+        for (Index i = 0; i < numExportPoints; ++i) {
+            pointIndexByVertex[topologyVertices[static_cast<size_t>(i)]] = i;
+        }
 
         // XML header
         file << "<?xml version=\"1.0\"?>\n";
@@ -347,9 +383,9 @@ namespace mpfem {
             ? &fields.current("u")
             : nullptr;
 
-        const VertexComponentDofMap vDofMap = V ? buildCornerVertexComponentDofs(*V, cornerIndices) : VertexComponentDofMap {};
-        const VertexComponentDofMap tDofMap = T ? buildCornerVertexComponentDofs(*T, cornerIndices) : VertexComponentDofMap {};
-        const VertexComponentDofMap uDofMap = u ? buildCornerVertexComponentDofs(*u, cornerIndices) : VertexComponentDofMap {};
+        const VertexComponentDofMap vDofMap = V ? buildVertexComponentDofs(*V, topologyVertices) : VertexComponentDofMap {};
+        const VertexComponentDofMap tDofMap = T ? buildVertexComponentDofs(*T, topologyVertices) : VertexComponentDofMap {};
+        const VertexComponentDofMap uDofMap = u ? buildVertexComponentDofs(*u, topologyVertices) : VertexComponentDofMap {};
 
         // Point data - scalar fields
         file << "<PointData>\n";
@@ -357,7 +393,7 @@ namespace mpfem {
         if (V) {
             file << "<DataArray type=\"Float64\" Name=\"V\" format=\"ascii\">\n";
             for (Index i = 0; i < numExportPoints; ++i) {
-                file << scalarAtVertex(*V, vDofMap, cornerIndices[i]) << "\n";
+                file << scalarAtVertex(*V, vDofMap, topologyVertices[static_cast<size_t>(i)]) << "\n";
             }
             file << "</DataArray>\n";
         }
@@ -365,7 +401,7 @@ namespace mpfem {
         if (T) {
             file << "<DataArray type=\"Float64\" Name=\"T\" format=\"ascii\">\n";
             for (Index i = 0; i < numExportPoints; ++i) {
-                file << scalarAtVertex(*T, tDofMap, cornerIndices[i]) << "\n";
+                file << scalarAtVertex(*T, tDofMap, topologyVertices[static_cast<size_t>(i)]) << "\n";
             }
             file << "</DataArray>\n";
         }
@@ -373,7 +409,7 @@ namespace mpfem {
         if (u) {
             file << "<DataArray type=\"Float64\" Name=\"displacement\" NumberOfComponents=\"3\" format=\"ascii\">\n";
             for (Index i = 0; i < numExportPoints; ++i) {
-                const auto it = uDofMap.find(cornerIndices[i]);
+                const auto it = uDofMap.find(topologyVertices[static_cast<size_t>(i)]);
                 const Index dxDof = (it == uDofMap.end() || it->second.size() < 1) ? InvalidIndex : it->second[0];
                 const Index dyDof = (it == uDofMap.end() || it->second.size() < 2) ? InvalidIndex : it->second[1];
                 const Index dzDof = (it == uDofMap.end() || it->second.size() < 3) ? InvalidIndex : it->second[2];
@@ -387,7 +423,7 @@ namespace mpfem {
             // displacement magnitude
             file << "<DataArray type=\"Float64\" Name=\"disp_magnitude\" format=\"ascii\">\n";
             for (Index i = 0; i < numExportPoints; ++i) {
-                file << vectorMagnitudeAtVertex(*u, uDofMap, cornerIndices[i]) << "\n";
+                file << vectorMagnitudeAtVertex(*u, uDofMap, topologyVertices[static_cast<size_t>(i)]) << "\n";
             }
             file << "</DataArray>\n";
         }
@@ -398,7 +434,7 @@ namespace mpfem {
         file << "<Points>\n";
         file << "<DataArray type=\"Float64\" NumberOfComponents=\"3\" format=\"ascii\">\n";
         for (Index i = 0; i < numExportPoints; ++i) {
-            const Vector3& v = mesh.vertex(cornerIndices[i]);
+            const Vector3& v = mesh.node(topologyVertices[static_cast<size_t>(i)]);
             file << v.x() << " " << v.y() << " " << v.z() << "\n";
         }
         file << "</DataArray>\n";
@@ -407,18 +443,14 @@ namespace mpfem {
         // Cells
         file << "<Cells>\n";
 
-        // Connectivity - remap vertex indices to corner indices
+        // Connectivity - remap topology vertex ids to point indices
         file << "<DataArray type=\"Int64\" Name=\"connectivity\" format=\"ascii\">\n";
-        std::unordered_map<Index, Index> vertexToCorner;
-        for (Index i = 0; i < numExportPoints; ++i) {
-            vertexToCorner[cornerIndices[i]] = i;
-        }
         for (Index i = 0; i < mesh.numElements(); ++i) {
             const Element elem = mesh.element(i);
-            for (int j = 0; j < elem.numCorners(); ++j) {
+            for (int j = 0; j < elem.numVertices(); ++j) {
                 if (j > 0)
                     file << " ";
-                file << vertexToCorner[elem.vertex(j)];
+                file << pointIndexByVertex[elem.vertex(j)];
             }
             file << "\n";
         }
@@ -428,7 +460,7 @@ namespace mpfem {
         file << "<DataArray type=\"Int64\" Name=\"offsets\" format=\"ascii\">\n";
         Index offset = 0;
         for (Index i = 0; i < mesh.numElements(); ++i) {
-            offset += mesh.element(i).numCorners();
+            offset += mesh.element(i).numVertices();
             file << offset << " ";
         }
         file << "\n</DataArray>\n";

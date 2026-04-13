@@ -22,14 +22,14 @@ Mesh createCurvedTriangleMesh()
     mesh.setDim(3); // 3D coordinates but 2D element
 
     // Corner vertices: right triangle
-    mesh.addVertex(0.0, 0.0, 0.0); // 0
-    mesh.addVertex(1.0, 0.0, 0.0); // 1
-    mesh.addVertex(0.0, 1.0, 0.0); // 2
+    mesh.addNode(0.0, 0.0, 0.0); // 0
+    mesh.addNode(1.0, 0.0, 0.0); // 1
+    mesh.addNode(0.0, 1.0, 0.0); // 2
 
     // Edge midpoint nodes
-    mesh.addVertex(0.6, 0.2, 0.0); // 3: midpoint of edge 0-1 (curved outward)
-    mesh.addVertex(0.5, 0.5, 0.0); // 4: midpoint of edge 1-2
-    mesh.addVertex(0.2, 0.6, 0.0); // 5: midpoint of edge 2-0
+    mesh.addNode(0.6, 0.2, 0.0); // 3: midpoint of edge 0-1 (curved outward)
+    mesh.addNode(0.5, 0.5, 0.0); // 4: midpoint of edge 1-2
+    mesh.addNode(0.2, 0.6, 0.0); // 5: midpoint of edge 2-0
 
     // Triangle2: 3 corners + 3 edge midpoints
     // Node ordering: V0, V1, V2, E01, E12, E20
@@ -45,18 +45,18 @@ Mesh createCurvedTetrahedronMesh()
     mesh.setDim(3);
 
     // Corner vertices: unit tetrahedron
-    mesh.addVertex(0.0, 0.0, 0.0); // 0
-    mesh.addVertex(1.0, 0.0, 0.0); // 1
-    mesh.addVertex(0.0, 1.0, 0.0); // 2
-    mesh.addVertex(0.0, 0.0, 1.0); // 3
+    mesh.addNode(0.0, 0.0, 0.0); // 0
+    mesh.addNode(1.0, 0.0, 0.0); // 1
+    mesh.addNode(0.0, 1.0, 0.0); // 2
+    mesh.addNode(0.0, 0.0, 1.0); // 3
 
     // Edge midpoint nodes (slightly perturbed for curved edges)
-    mesh.addVertex(0.55, 0.05, 0.0); // 4: edge 0-1
-    mesh.addVertex(0.55, 0.55, 0.0); // 5: edge 1-2
-    mesh.addVertex(0.05, 0.55, 0.0); // 6: edge 2-0
-    mesh.addVertex(0.05, 0.0, 0.55); // 7: edge 0-3
-    mesh.addVertex(0.55, 0.0, 0.55); // 8: edge 1-3
-    mesh.addVertex(0.0, 0.55, 0.55); // 9: edge 2-3
+    mesh.addNode(0.55, 0.05, 0.0); // 4: edge 0-1
+    mesh.addNode(0.55, 0.55, 0.0); // 5: edge 1-2
+    mesh.addNode(0.05, 0.55, 0.0); // 6: edge 2-0
+    mesh.addNode(0.05, 0.0, 0.55); // 7: edge 0-3
+    mesh.addNode(0.55, 0.0, 0.55); // 8: edge 1-3
+    mesh.addNode(0.0, 0.55, 0.55); // 9: edge 2-3
 
     // Tetrahedron2: 4 corners + 6 edge midpoints
     // Node ordering: V0, V1, V2, V3, E01, E02, E03, E12, E13, E23
@@ -75,19 +75,19 @@ Mesh createCurvedSquareMesh()
     mesh.setDim(3);
 
     // Corner vertices
-    mesh.addVertex(0.0, 0.0, 0.0); // 0
-    mesh.addVertex(1.0, 0.0, 0.0); // 1
-    mesh.addVertex(1.0, 1.0, 0.0); // 2
-    mesh.addVertex(0.0, 1.0, 0.0); // 3
+    mesh.addNode(0.0, 0.0, 0.0); // 0
+    mesh.addNode(1.0, 0.0, 0.0); // 1
+    mesh.addNode(1.0, 1.0, 0.0); // 2
+    mesh.addNode(0.0, 1.0, 0.0); // 3
 
     // Edge midpoint nodes (curved edges)
-    mesh.addVertex(0.55, -0.05, 0.0); // 4: edge 0-1 (curved downward)
-    mesh.addVertex(1.05, 0.55, 0.0); // 5: edge 1-2 (curved right)
-    mesh.addVertex(0.45, 1.05, 0.0); // 6: edge 2-3 (curved upward)
-    mesh.addVertex(-0.05, 0.45, 0.0); // 7: edge 3-0 (curved left)
+    mesh.addNode(0.55, -0.05, 0.0); // 4: edge 0-1 (curved downward)
+    mesh.addNode(1.05, 0.55, 0.0); // 5: edge 1-2 (curved right)
+    mesh.addNode(0.45, 1.05, 0.0); // 6: edge 2-3 (curved upward)
+    mesh.addNode(-0.05, 0.45, 0.0); // 7: edge 3-0 (curved left)
 
     // Center node
-    mesh.addVertex(0.5, 0.5, 0.0); // 8: center
+    mesh.addNode(0.5, 0.5, 0.0); // 8: center
 
     // Square2: 4 corners + 4 edges + 1 center = 9 nodes
     mesh.addElement(Geometry::Square, {0, 1, 2, 3, 4, 5, 6, 7, 8}, 1, 2);
@@ -102,39 +102,39 @@ Mesh createCurvedHexahedronMesh()
     mesh.setDim(3);
 
     // Corner vertices (unit cube)
-    mesh.addVertex(0.0, 0.0, 0.0); // 0
-    mesh.addVertex(1.0, 0.0, 0.0); // 1
-    mesh.addVertex(1.0, 1.0, 0.0); // 2
-    mesh.addVertex(0.0, 1.0, 0.0); // 3
-    mesh.addVertex(0.0, 0.0, 1.0); // 4
-    mesh.addVertex(1.0, 0.0, 1.0); // 5
-    mesh.addVertex(1.0, 1.0, 1.0); // 6
-    mesh.addVertex(0.0, 1.0, 1.0); // 7
+    mesh.addNode(0.0, 0.0, 0.0); // 0
+    mesh.addNode(1.0, 0.0, 0.0); // 1
+    mesh.addNode(1.0, 1.0, 0.0); // 2
+    mesh.addNode(0.0, 1.0, 0.0); // 3
+    mesh.addNode(0.0, 0.0, 1.0); // 4
+    mesh.addNode(1.0, 0.0, 1.0); // 5
+    mesh.addNode(1.0, 1.0, 1.0); // 6
+    mesh.addNode(0.0, 1.0, 1.0); // 7
 
     // Edge midpoint nodes (12 edges, slightly perturbed)
-    mesh.addVertex(0.55, 0.0, 0.0); // 8:  edge 0-1
-    mesh.addVertex(1.0, 0.55, 0.0); // 9:  edge 1-2
-    mesh.addVertex(0.45, 1.0, 0.0); // 10: edge 2-3
-    mesh.addVertex(0.0, 0.45, 0.0); // 11: edge 3-0
-    mesh.addVertex(0.55, 0.0, 1.0); // 12: edge 4-5
-    mesh.addVertex(1.0, 0.55, 1.0); // 13: edge 5-6
-    mesh.addVertex(0.45, 1.0, 1.0); // 14: edge 6-7
-    mesh.addVertex(0.0, 0.45, 1.0); // 15: edge 7-4
-    mesh.addVertex(0.0, 0.0, 0.55); // 16: edge 0-4
-    mesh.addVertex(1.0, 0.0, 0.55); // 17: edge 1-5
-    mesh.addVertex(1.0, 1.0, 0.55); // 18: edge 2-6
-    mesh.addVertex(0.0, 1.0, 0.55); // 19: edge 3-7
+    mesh.addNode(0.55, 0.0, 0.0); // 8:  edge 0-1
+    mesh.addNode(1.0, 0.55, 0.0); // 9:  edge 1-2
+    mesh.addNode(0.45, 1.0, 0.0); // 10: edge 2-3
+    mesh.addNode(0.0, 0.45, 0.0); // 11: edge 3-0
+    mesh.addNode(0.55, 0.0, 1.0); // 12: edge 4-5
+    mesh.addNode(1.0, 0.55, 1.0); // 13: edge 5-6
+    mesh.addNode(0.45, 1.0, 1.0); // 14: edge 6-7
+    mesh.addNode(0.0, 0.45, 1.0); // 15: edge 7-4
+    mesh.addNode(0.0, 0.0, 0.55); // 16: edge 0-4
+    mesh.addNode(1.0, 0.0, 0.55); // 17: edge 1-5
+    mesh.addNode(1.0, 1.0, 0.55); // 18: edge 2-6
+    mesh.addNode(0.0, 1.0, 0.55); // 19: edge 3-7
 
     // Face center nodes (6 faces)
-    mesh.addVertex(0.5, 0.5, 0.0); // 20: face 0 (bottom -z)
-    mesh.addVertex(0.5, 0.5, 1.0); // 21: face 1 (top +z)
-    mesh.addVertex(0.5, 0.0, 0.5); // 22: face 2 (front -y)
-    mesh.addVertex(0.5, 1.0, 0.5); // 23: face 3 (back +y)
-    mesh.addVertex(0.0, 0.5, 0.5); // 24: face 4 (left -x)
-    mesh.addVertex(1.0, 0.5, 0.5); // 25: face 5 (right +x)
+    mesh.addNode(0.5, 0.5, 0.0); // 20: face 0 (bottom -z)
+    mesh.addNode(0.5, 0.5, 1.0); // 21: face 1 (top +z)
+    mesh.addNode(0.5, 0.0, 0.5); // 22: face 2 (front -y)
+    mesh.addNode(0.5, 1.0, 0.5); // 23: face 3 (back +y)
+    mesh.addNode(0.0, 0.5, 0.5); // 24: face 4 (left -x)
+    mesh.addNode(1.0, 0.5, 0.5); // 25: face 5 (right +x)
 
     // Volume center node
-    mesh.addVertex(0.5, 0.5, 0.5); // 26: center
+    mesh.addNode(0.5, 0.5, 0.5); // 26: center
 
     // Hexahedron2: 8 corners + 12 edges + 6 faces + 1 center = 27 nodes
     std::vector<Index> nodes = {0, 1, 2, 3, 4, 5, 6, 7, // corners
@@ -628,9 +628,9 @@ TEST(ElementComparisonTest, LinearVsQuadraticTriangle)
     // Linear triangle
     Mesh linearMesh;
     linearMesh.setDim(3);
-    linearMesh.addVertex(0.0, 0.0, 0.0);
-    linearMesh.addVertex(1.0, 0.0, 0.0);
-    linearMesh.addVertex(0.0, 1.0, 0.0);
+    linearMesh.addNode(0.0, 0.0, 0.0);
+    linearMesh.addNode(1.0, 0.0, 0.0);
+    linearMesh.addNode(0.0, 1.0, 0.0);
     linearMesh.addElement(Geometry::Triangle, {0, 1, 2}, 1, 1);
 
     // Quadratic triangle with curved edge

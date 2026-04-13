@@ -10,6 +10,7 @@ namespace mpfem {
         NDFiniteElement(Geometry geom, int order);
 
         BasisType basisType() const override { return BasisType::ND; }
+        MapType mapType() const override { return MapType::COVARIANT_PIOLA; }
         Geometry geometry() const override { return geom_; }
         int order() const override { return order_; }
         int numDofs() const override { return numDofs_; }
@@ -19,6 +20,7 @@ namespace mpfem {
         void evalShape(const Vector3& xi, ShapeMatrix& shape) const override;
         void evalDerivatives(const Vector3& xi, DerivMatrix& derivatives) const override;
         std::vector<Vector3> interpolationPoints() const override;
+        std::vector<int> edgeDofs(int edgeIdx) const override;
         std::vector<int> faceDofs(int faceIdx) const override;
 
     private:

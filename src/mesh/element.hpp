@@ -14,20 +14,27 @@ namespace mpfem {
     struct Element {
         Geometry geometry = Geometry::Invalid;
         std::span<const Index> vertices;
+        std::span<const Index> nodes;
         Index attribute = 0;
         int order = 1;
 
         /// Get spatial dimension of the element
         int dim() const { return geom::dim(geometry); }
 
-        /// Get number of vertices
+        /// Get number of topological vertices
         int numVertices() const { return static_cast<int>(vertices.size()); }
+
+        /// Get number of interpolation nodes
+        int numNodes() const { return static_cast<int>(nodes.size()); }
 
         /// Get number of edges (from geometry)
         int numEdges() const { return geom::numEdges(geometry); }
 
         /// Get number of faces (from geometry)
         int numFaces() const { return geom::numFaces(geometry); }
+
+        /// Get number of facets (from geometry)
+        int numFacets() const { return geom::numFacets(geometry); }
 
         /// Check if element is a volume element
         bool isVolume() const { return geom::isVolume(geometry); }
@@ -37,9 +44,6 @@ namespace mpfem {
 
         /// Get vertex index
         Index vertex(int i) const { return vertices[i]; }
-
-        /// Get number of corner vertices (first-order nodes)
-        int numCorners() const { return geom::numCorners(geometry); }
 
         /// Get global vertex indices for an edge
         std::pair<Index, Index> edgeVertices(int edgeIdx) const
@@ -60,10 +64,27 @@ namespace mpfem {
             return result;
         }
 
+        /// Get global vertex indices for a facet
+        std::vector<Index> facetVertices(int facetIdx) const
+        {
+            std::vector<Index> result;
+            auto localVerts = geom::facetVertices(geometry, facetIdx);
+            result.reserve(localVerts.size());
+            for (int lv : localVerts) {
+                result.push_back(vertices[lv]);
+            }
+            return result;
+        }
+
         /// Get the geometry type of a face
         Geometry faceGeometry(int faceIdx) const
         {
             return geom::faceGeometry(geometry, faceIdx);
+        }
+
+        Geometry facetGeometry(int facetIdx) const
+        {
+            return geom::facetGeometry(geometry, facetIdx);
         }
     };
 
