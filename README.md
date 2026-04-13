@@ -18,7 +18,7 @@ cmake --build build-msvc --parallel --config=Release
 build-msvc\examples\Release\busbar_example.exe
 ```
 
-或者
+或者一次性地
 
 ```cmd
 cmd /c "call E:\env\cpp\VS14\Common7\Tools\VsDevCmd.bat & cmake -S . -B build-msvc & cmake --build build-msvc --parallel --config=Release"
@@ -40,8 +40,8 @@ cmake --build build-llvm --parallel
 build-llvm\examples\busbar_example.exe
 ```
 
-或者
+或者一次性地
 
 ```cmd
-cmd /c "call E:\env\cpp\msys2\msys2_shell.cmd -defterm -here -no-start -clang64 & cmake -S . -B build-llvm & cmake --build build-llvm --parallel"
+cmd /c "E:\env\cpp\msys2\msys2_shell.cmd -defterm -here -no-start -clang64 -c 'cmake -S . -B build-llvm ; cmake --build build-llvm --parallel'"
 ```
