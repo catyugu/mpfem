@@ -10,20 +10,38 @@
 
 ### 使用MSVC风格编译器
 
-```bash
+```cmd
 E:\env\cpp\VS14\Common7\Tools\VsDevCmd.bat
 cmake -S . -B build-msvc
 cmake --build build-msvc --parallel --config=Release
 # 运行示例
-build-llvm\examples\busbar_example.exe
+build-msvc\examples\Release\busbar_example.exe
+```
+
+或者
+
+```cmd
+cmd /c "call E:\env\cpp\VS14\Common7\Tools\VsDevCmd.bat & cmake -S . -B build-msvc & cmake --build build-msvc --parallel --config=Release"
+```
+
+```bash
+bash -c "call E:\env\cpp\VS14\Common7\Tools\VsDevCmd.bat & cmake -S . -B build-msvc & cmake --build build-msvc --parallel --config=Release"
 ```
 
 ### 使用LLVM风格编译器
 
-```bash
+```cmd
+# 使用Windows MSYS2
 E:\env\cpp\msys2\msys2_shell.cmd -defterm -here -no-start -clang64
+
 cmake -S . -B build-llvm
 cmake --build build-llvm --parallel
 # 运行示例
-build-msvc\examples\Release\busbar_example.exe
+build-llvm\examples\busbar_example.exe
+```
+
+或者
+
+```cmd
+cmd /c "call E:\env\cpp\msys2\msys2_shell.cmd -defterm -here -no-start -clang64 & cmake -S . -B build-llvm & cmake --build build-llvm --parallel"
 ```

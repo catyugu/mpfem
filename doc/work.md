@@ -21,197 +21,51 @@
 
 ## 具体工作任务
 
-这段代码在设计上确实存在几个明显的反模式（Anti-patterns）、冗余（Verbosity）和设计缺陷，特别是在你提到的“预条件子写死”问题上。
+针对该代码库，核心的痛点在于**违反了C++高性能计算的“零成本抽象”原则**以及**存在严重的头文件依赖地狱 (Header Dependency Hell)**。
 
-### 1. 识别出的设计反模式与问题
+以下是针对“编译依赖地狱”、“Vertex类冗余”、“设计反模式（高频动态分配）”等问题的步骤化重构方案：
 
-1. **依赖倒置原则破坏（算子固化）**：
-   在 `eigen_solver.hpp` 中，`Eigen::ConjugateGradient` 和 `Eigen::DGMRES` 的第三个模板参数被强编码为了 `Eigen::DiagonalPreconditioner<Real>`。这导致基类 `LinearOperator` 提供的 `set_preconditioner()` 和配置系统的嵌套预条件机制完全失效。这阻止了真正的算子化组合（如使用 ILU 或 Additive Schwarz 作为 CG 的预条件子）。
-2. **极度冗长且违反 DRY（Don't Repeat Yourself）原则**：
-   `CgOperator` 和 `GmresOperator` 除了成员 `solver_` 的类型不同之外，从 `setup`、`apply`、`configure` 到内部状态变量的定义完全是复制粘贴的。
-3. **缺少 Const 正确性与数学抽象**：
-   `LinearOperator::apply(const Vector& b, Vector& x)` 是非 const 的，但在数学上，算子的应用 ($x = A^{-1}b$) 本质上是一个不改变算子自身（只改变输出向量）的操作。虽然需要记录迭代次数（iterations），但应该使用 `mutable` 修饰符，从而使接口更加统一。
+### 步骤 1：根治编译依赖地狱与链接冗余 (Dependency Hell)
+**症状**：`core/types.hpp` 是整个项目的基础头文件，但它却包含了 `<Eigen/Dense>` 和 `<Eigen/Sparse>`。这意味着项目中的**每一个文件**都会解析数十万行的Eigen高级求解器、LU分解等重型代码。此外，日志与组装器的头文件也泄露了重型依赖。
+**重构动作**：
+1. **替换基础线性代数依赖**：
+   * 在 `core/types.hpp` 中，将 `#include <Eigen/Dense>` 替换为 `#include <Eigen/Core>`。
+   * 将 `#include <Eigen/Sparse>` 替换为 `#include <Eigen/SparseCore>`。
+   * 对于真正需要求解器的地方（如 `eigen_solver.hpp` 和 `sparse_matrix.hpp` 中特定的直接求解器调用），只在对应的 `.cpp` 文件中 `#include <Eigen/SparseLU>` 等。
+2. **剥离 `Logger` 的 IO 依赖**：
+   * `core/logger.hpp` 包含了 `<iostream>` 和 `<sstream>`（流式日志的典型反模式）。将 `LogMessage` 模板类的实现剥离到 `logger.cpp`，头文件中仅保留声明，彻底移除 IO 头文件。
+3. **移除头文件中的 OpenMP 暴露**：
+   * `assembly/assembler.hpp` 在头文件中包含了 `<omp.h>`。移除它。线程本地缓冲区（`ThreadBuffer`）的管理应该对外部透明，将其隐藏在 `assembler.cpp` 中（可以使用 Pimpl 惯用法或通过 `std::vector<ThreadBuffer>` 的内部初始化来规避在头文件中引入 `omp.h`）。
+4. **清理循环依赖和不必要的包含**：
+   * `fe/fe_space.hpp` 不应 `#include "mesh/mesh.hpp"`，只需前向声明 `class Mesh;`。
+   * `expr/evaluation_context.hpp` 不应包含多余的完整定义，只需前向声明。
 
----
+### 步骤 2：彻底消灭 `Vertex` 类的冗余 (Data Oriented Design)
+**症状**：`mesh/vertex.hpp` 定义了 `Vertex` 类，内部不仅包装了 `std::array<Real, 3>`，还**每个顶点存储了一个 `int dim_`**，并提供 `toVector()` 方法。物理空间维度是整个 `Mesh` 统一的属性，逐个顶点存储维度不仅浪费 25% 以上的内存（考虑内存对齐），还导致缓存命中率下降，且引入了无意义的类型转换开销。
+**重构动作**：
+1. **删除 `mesh/vertex.hpp`**。
+2. **统一使用 `Vector3`**：在 `Mesh` 类中，将 `std::vector<Vertex> vertices_;` 直接替换为 `std::vector<Vector3> vertices_;`。
+3. **移除维度冗余**：消除对点维度的独立检查，空间维度统一通过 `Mesh::dim()` 访问。这消除了 `Vertex::toVector()` 的高频调用开销，实现真正的数据驱动（Data-Oriented）。
 
-### 2. 步骤化的重构方案（无向后兼容负担）
+### 步骤 3：消除热点路径上的内存分配反模式 (Hot-path Heap Allocation)
+**症状**：大量应在栈上或预分配内存中完成的操作，频繁返回按值拷贝的 `std::vector` 和 `Eigen::VectorXd`，导致堆内存分配器 (Heap Allocator) 成为性能瓶颈。
+**重构动作**：
+1. **重构 `GridFunction::getElementValues`**：
+   * 当前实现：`Eigen::VectorXd getElementValues(Index elem) const`，内部创建了 `std::vector<Index>` 和 `Eigen::VectorXd` 并按值返回。
+   * 修改为：`void getElementValues(Index elem, std::span<Real> outValues) const`，让调用者（如组装器）利用 `ThreadBuffer` 上的静态内存（如 `std::array`）传递缓冲，实现**零内存分配 (Zero-allocation)**。
 
-为了实现**极致简洁**、**内存高效**和**真正的算子化组合**，我们可以分为三步重构。
+### 步骤 4：移除 SparseMatrix 的隐式临时对象风险（向后兼容/过度设计）
+**症状**：`core/sparse_matrix.hpp` 为了使用方便，重载了 `SparseMatrix operator+(const SparseMatrix& B) const` 等按值返回新矩阵的算术运算符。在 FEM 中，组装后的全局稀疏矩阵极大，意外触发一次 `A = B + C` 会瞬间产生 G 级别的内存峰值（OOM风险）。
+**重构动作**：
+1. 删除 `SparseMatrix operator+`，`operator-` 和 `operator*` (两矩阵相乘) 的重载。
+2. 强制剥夺这种向后兼容的“语法糖”，强制开发者使用 `addScaled`、`+=` 或者 `setFromTriplets` 等就地修改 (In-place mutation) 函数，从而从编译器层面杜绝大规模临时矩阵的拷贝。
 
-#### 步骤 1：开发统一的 Eigen 预条件子适配器 (Adapter Pattern)
-
-为了让 Eigen 接受我们自定义的 `LinearOperator` 作为预条件子，我们需要编写一个符合 Eigen Preconditioner 概念的 Wrapper 类。当未配置预条件子时，它默认作为单位矩阵。
-
-在 `linear_operator.hpp` 的合适位置（或者专门的 `eigen_adapter.hpp`）中添加：
-
-```cpp
-#ifndef MPFEM_EIGEN_PRECONDITIONER_ADAPTER_HPP
-#define MPFEM_EIGEN_PRECONDITIONER_ADAPTER_HPP
-
-#include "solver/linear_operator.hpp"
-
-namespace mpfem {
-
-/**
- * @brief 桥接 Eigen 求解器和我们的 LinearOperator
- * 使得任何 LinearOperator 都可以作为 Eigen IterativeSolvers 的预条件子。
- */
-class EigenPreconditionerAdapter {
-public:
-    using MatrixType = Eigen::SparseMatrix<Real>;
-
-    EigenPreconditionerAdapter() : op_(nullptr) {}
-
-    // Eigen 要求的接口
-    EigenPreconditionerAdapter& analyzePattern(const MatrixType&) { return *this; }
-    EigenPreconditionerAdapter& factorize(const MatrixType&) { return *this; }
-    EigenPreconditionerAdapter& compute(const MatrixType&) { return *this; }
-    Eigen::ComputationInfo info() { return Eigen::Success; }
-
-    void set_operator(const LinearOperator* op) { op_ = op; }
-
-    // Eigen 的 solve 方法返回一个可运算的对象或直接修改
-    // 现代 Eigen 支持直接模板 solve 方法返回内部的 Solve 表达式
-    template <typename Rhs, typename Dest>
-    void _solve_impl(const Rhs& b, Dest& x) const {
-        if (op_) {
-            Vector b_vec = b;
-            Vector x_vec(b.rows());
-            // 由于算子可能是非const的，强制转换（如果你将 apply 改为 const 则不需要 const_cast）
-            const_cast<LinearOperator*>(op_)->apply(b_vec, x_vec);
-            x = x_vec;
-        } else {
-            x = b; // 无预条件子时回退为 Identity
-        }
-    }
-
-    template <typename Rhs>
-    inline const Eigen::Solve<EigenPreconditionerAdapter, Rhs>
-    solve(const Eigen::MatrixBase<Rhs>& b) const {
-        return Eigen::Solve<EigenPreconditionerAdapter, Rhs>(*this, b.derived());
-    }
-
-private:
-    const LinearOperator* op_;
-};
-
-} // namespace mpfem
-
-// 注入 Eigen 的 Evaluator 机制
-namespace Eigen {
-namespace internal {
-template<typename Rhs>
-struct evaluator<Solve<mpfem::EigenPreconditionerAdapter, Rhs>>
-    : evaluator<typename Rhs::PlainObject>
-{
-    using PlainObject = typename Rhs::PlainObject;
-    using Base = evaluator<PlainObject>;
-
-    evaluator(const Solve<mpfem::EigenPreconditionerAdapter, Rhs>& solve)
-        : m_result(solve.rows(), solve.cols())
-    {
-        solve.dec()._solve_impl(solve.rhs(), m_result);
-        ::new (static_cast<Base*>(this)) Base(m_result);
-    }
-protected:
-    PlainObject m_result;
-};
-}
-}
-#endif
-```
-
-#### 步骤 2：消除模板代码冗余（泛型封装）
-
-将原先成百行重复的 `CgOperator` 和 `GmresOperator` 抽象为一个通用的模板类 `EigenIterativeOperator`。
-
-修改 `eigen_solver.hpp`：
-
-```cpp
-#ifndef MPFEM_EIGEN_SOLVER_HPP
-#define MPFEM_EIGEN_SOLVER_HPP
-
-#include "core/logger.hpp"
-#include "linear_operator.hpp"
-#include "eigen_preconditioner_adapter.hpp"
-#include <Eigen/IterativeLinearSolvers>
-#include <unsupported/Eigen/IterativeSolvers>
-
-namespace mpfem {
-
-// =============================================================================
-// 统一的 Eigen 迭代算子基底 (Dry 原则)
-// =============================================================================
-template <typename EigenSolverType, const char* SolverName>
-class EigenIterativeOperator : public LinearOperator {
-public:
-    std::string_view name() const override { return SolverName; }
-
-    void setup(const SparseMatrix* A) override {
-        if (!A) throw std::runtime_error(std::string(SolverName) + ": null matrix in setup");
-        
-        solver_.setMaxIterations(maxIterations_);
-        solver_.setTolerance(tolerance_);
-        solver_.compute(A->eigen());
-        
-        // 关键修复：动态挂载我们配置好的嵌套预条件子！
-        if (preconditioner()) {
-            solver_.preconditioner().set_operator(preconditioner());
-        }
-        
-        set_matrix(A);
-        mark_setup();
-    }
-
-    void apply(const Vector& b, Vector& x) override {
-        x = solver_.solveWithGuess(b, x);
-        iterations_ = static_cast<int>(solver_.iterations());
-        residual_ = solver_.error();
-    }
-
-    void configure(const LinearOperatorConfig& config) override {
-        if (auto it = config.parameters.find("MaxIterations"); it != config.parameters.end()) {
-            maxIterations_ = static_cast<int>(it->second);
-        }
-        if (auto it = config.parameters.find("Tolerance"); it != config.parameters.end()) {
-            tolerance_ = it->second;
-        }
-    }
-
-    int iterations() const override { return iterations_; }
-    Real residual() const override { return residual_; }
-
-private:
-    int maxIterations_ = 1000;
-    Real tolerance_ = 1e-10;
-    int iterations_ = 0;
-    Real residual_ = 0.0;
-    EigenSolverType solver_;
-};
-
-// =============================================================================
-// 真正被算子化且极其简洁的 CG 与 DGMRES 定义
-// =============================================================================
-
-// 定义静态名字
-inline constexpr char CgName[] = "CG";
-inline constexpr char GmresName[] = "DGMRES";
-
-// 使用适配器替换写死的 DiagonalPreconditioner
-using CgOperator = EigenIterativeOperator<
-    Eigen::ConjugateGradient<Eigen::SparseMatrix<Real>, Eigen::Lower | Eigen::Upper, EigenPreconditionerAdapter>, 
-    CgName>;
-
-using GmresOperator = EigenIterativeOperator<
-    Eigen::DGMRES<Eigen::SparseMatrix<Real>, EigenPreconditionerAdapter>, 
-    GmresName>;
-
-// (SparseLU 不需要适配器，可以保持原样或者做类似泛化)
-// ...
-}
-```
-
-### 3. 重构带来的性能与架构红利
-1. **真正的嵌套算子化**：你现在可以在外部 XML/JSON 配置中直接为 CG 传递 ILU、Diagonal 甚至是 Additive Schwarz 作为预条件子，底层的 `solver_.preconditioner().set_operator(preconditioner())` 会自动将多态的算子挂接到 Eigen 引擎中，而无任何运行时内存拷贝开销。
-2. **代码量骤减 70%**：删除了上百行的无用复制粘贴代码。
-3. **接口统一与无侵入性**：在未来的开发中，如果需要引入 BiCGSTAB 或 MINRES，只需添加两行 `using` 别名定义即可，无需编写任何新的成员函数。
+### 步骤 5：消除 `GridFunction` 的非对称接口
+**症状**：`fe/grid_function.hpp` 中的 `gradient` 签名：
+`Vector3 gradient(Index elem, const Vector3& xi, const Matrix3& invJacobianTranspose) const;`
+它强制调用方提前计算雅可比矩阵逆转置，但 `eval` 方法却不需要。这导致调用方逻辑割裂且冗长。
+**重构动作**：
+将其统一修改为接收 `ElementTransform` 的引用：
+`Vector3 gradient(Index elem, const ElementTransform& trans) const;`
+`Real eval(Index elem, const ElementTransform& trans) const;`
+因为 `ElementTransform` 内部已经通过惰性求值/预计算维护了当前积分点的 `invJacobianT()`，这样既统一了接口，又避免了反复的矩阵传参和冗余计算。

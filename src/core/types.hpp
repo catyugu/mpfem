@@ -1,8 +1,8 @@
 #ifndef MPFEM_TYPES_HPP
 #define MPFEM_TYPES_HPP
 
-#include <Eigen/Dense>
-#include <Eigen/Sparse>
+#include <Eigen/Core>
+#include <Eigen/SparseCore>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -103,9 +103,12 @@ namespace mpfem {
         Real weight = 0.0; ///< Quadrature weight
 
         IntegrationPoint() = default;
-        IntegrationPoint(Real x, Real w) : xi(x), weight(w) { }
-        IntegrationPoint(Real x, Real y, Real w) : xi(x), eta(y), weight(w) { }
-        IntegrationPoint(Real x, Real y, Real z, Real w) : xi(x), eta(y), zeta(z), weight(w) { }
+        IntegrationPoint(Real x, Real w)
+            : xi(x), weight(w) { }
+        IntegrationPoint(Real x, Real y, Real w)
+            : xi(x), eta(y), weight(w) { }
+        IntegrationPoint(Real x, Real y, Real z, Real w)
+            : xi(x), eta(y), zeta(z), weight(w) { }
 
         /// Get reference coordinates as Vector3
         Vector3 getXi() const { return Vector3(xi, eta, zeta); }
