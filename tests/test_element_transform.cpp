@@ -170,19 +170,12 @@ TEST_F(TetrahedronTransformTest, JacobianDeterminant)
 
 TEST_F(TetrahedronTransformTest, GradientTransformation)
 {
-    // Test gradient transformation
-    // For linear element, gradient in physical coords should be exact
-
     Vector3 xi(0.2, 0.3, 0.1);
     transform_->setIntegrationPoint(xi);
 
-    // Reference gradient of first H1 basis function phi0 = 1 - xi - eta - zeta
     Vector3 refGrad(-1.0, -1.0, -1.0);
-    Vector3 physGrad;
-    physGrad = transform_->transformGradient(refGrad);
+    Vector3 physGrad = transform_->invJacobianT() * refGrad;
 
-    // For unit tetrahedron, J is identity, so J^{-T} = I
-    // physGrad should equal refGrad
     EXPECT_NEAR(physGrad.x(), -1.0, 1e-12);
     EXPECT_NEAR(physGrad.y(), -1.0, 1e-12);
     EXPECT_NEAR(physGrad.z(), -1.0, 1e-12);

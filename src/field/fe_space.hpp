@@ -35,6 +35,7 @@ namespace mpfem {
         Index numDofs() const { return numDofs_; }
 
         void getElementDofs(Index elemIdx, std::span<Index> dofs) const;
+        std::span<const int> getElementOrientations(Index elemIdx) const;
         void getBdrElementDofs(Index bdrIdx, std::span<Index> dofs) const;
         int numElementDofs(Index elemIdx) const;
         int numBdrElementDofs(Index bdrIdx) const;
@@ -55,6 +56,7 @@ namespace mpfem {
         Index numDofs_ = 0;
 
         std::vector<Index> elemDofs_;
+        std::vector<int> elemOrientations_;
         std::vector<Index> bdrElemDofs_;
         int maxDofsPerElem_ = 0;
         int maxDofsPerBdrElem_ = 0;

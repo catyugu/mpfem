@@ -74,6 +74,19 @@ namespace mpfem {
         }
     }
 
+    std::span<const int> FESpace::getElementOrientations(Index elemIdx) const
+    {
+        if (!mesh_ || !fec_ || elemIdx >= mesh_->numElements()) {
+            return {};
+        }
+        const int ndofs = numElementDofs(elemIdx);
+        if (ndofs <= 0) {
+            return {};
+        }
+        const Index base = elemIdx * maxDofsPerElem_;
+        return std::span<const int> {&elemOrientations_[base], static_cast<size_t>(ndofs)};
+    }
+
     void FESpace::getBdrElementDofs(Index bdrIdx, std::span<Index> dofs) const
     {
         if (!mesh_ || !fec_ || bdrIdx >= mesh_->numBdrElements())
@@ -257,6 +270,7 @@ namespace mpfem {
         numDofs_ = offset;
 
         elemDofs_.assign(mesh_->numElements() * maxDofsPerElem_, InvalidIndex);
+        elemOrientations_.assign(mesh_->numElements() * maxDofsPerElem_, 1);
         bdrElemDofs_.assign(mesh_->numBdrElements() * maxDofsPerBdrElem_, InvalidIndex);
 
         const auto mapVertexDof = [&](Index vertexId, int k) -> Index {
@@ -304,6 +318,7 @@ namespace mpfem {
         for (Index elemIdx = 0; elemIdx < mesh_->numElements(); ++elemIdx) {
             const Element elem = mesh_->element(elemIdx);
             const ReferenceElement* refElem = fec_->get(elem.geometry);
+            const bool useNdOrientation = refElem->basisType() == BasisType::ND;
             DofLayout layout = refElem->basis().dofLayout();
             layout.numVertexDofs *= fieldVdim;
             layout.numEdgeDofs *= fieldVdim;
@@ -325,13 +340,20 @@ namespace mpfem {
             }
 
             const auto elemEdges = mesh_->getElementEdges(elemIdx);
-            for (Index edgeId : elemEdges) {
+            for (int localEdge = 0; localEdge < static_cast<int>(elemEdges.size()); ++localEdge) {
+                const Index edgeId = elemEdges[localEdge];
+                int sign = 1;
+                if (useNdOrientation) {
+                    const auto [lv0, lv1] = elem.edgeVertices(localEdge);
+                    sign = (lv0 < lv1) ? 1 : -1;
+                }
                 for (int k = 0; k < layout.numEdgeDofs; ++k) {
                     const Index gdof = mapEdgeDof(edgeId, k);
                     if (gdof == InvalidIndex) {
                         MPFEM_THROW(Exception, "FESpace::buildDofTable invalid edge DOF mapping");
                     }
                     elemDofs_[base + localDof++] = gdof;
+                    elemOrientations_[base + localDof - 1] = sign;
                 }
             }
 

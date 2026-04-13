@@ -16,6 +16,12 @@ namespace mpfem {
         RT
     };
 
+    enum class MapType {
+        VALUE,
+        COVARIANT_PIOLA,
+        CONTRAVARIANT_PIOLA
+    };
+
     struct DofLayout {
         int numVertexDofs = 0;
         int numEdgeDofs = 0;
@@ -28,6 +34,7 @@ namespace mpfem {
         virtual ~FiniteElement() = default;
 
         virtual BasisType basisType() const = 0;
+        virtual MapType mapType() const = 0;
         virtual Geometry geometry() const = 0;
         virtual int order() const = 0;
         virtual int numDofs() const = 0;

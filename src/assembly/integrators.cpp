@@ -1,4 +1,5 @@
 #include "integrators.hpp"
+#include "fe/shape_evaluator.hpp"
 
 #include <array>
 
@@ -81,12 +82,9 @@ namespace mpfem {
             const Matrix3 D = evalMatrixNode(coef_, trans);
 
             const Matrix& refGrads = ref.shapeDerivativesAtQuad(q);
-
-            for (int i = 0; i < nd; ++i) {
-                const Vector3 refGrad(refGrads(i, 0), refGrads(i, 1), refGrads(i, 2));
-                const Vector3 physGrad = trans.transformGradient(refGrad);
-                gradMat.row(i) = physGrad;
-            }
+            DerivMatrix physGrads;
+            ShapeEvaluator::evalPhysDerivatives(ref.basis(), trans, refGrads, physGrads);
+            gradMat = physGrads.topRows(nd);
 
             dGradMat.noalias() = gradMat * D;
             elmat.noalias() += w * (gradMat * dGradMat.transpose());
@@ -241,9 +239,10 @@ namespace mpfem {
             int q)
         {
             const Matrix& refGrads = ref.shapeDerivativesAtQuad(q);
+            DerivMatrix physGrads;
+            ShapeEvaluator::evalPhysDerivatives(ref.basis(), trans, refGrads, physGrads);
             for (int a = 0; a < nd; ++a) {
-                const Vector3 refGrad(refGrads(a, 0), refGrads(a, 1), refGrads(a, 2));
-                const Vector3 physGrad = trans.transformGradient(refGrad);
+                const Vector3 physGrad(physGrads(a, 0), physGrads(a, 1), physGrads(a, 2));
                 int col = a * vdim;
                 B(0, col + 0) = physGrad[0];
                 B(1, col + 1) = physGrad[1];
