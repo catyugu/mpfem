@@ -166,6 +166,7 @@ mpfem_add_library(mpfem_assembly
         src/assembly/integrators.cpp
     PUBLIC_LINK
         mpfem_field
+        mpfem_expr
 )
 
 # =============================================================================
@@ -180,6 +181,7 @@ mpfem_add_library(mpfem_physics
     PUBLIC_LINK
         mpfem_assembly
         mpfem_solver
+        mpfem_expr
 )
 
 mpfem_add_library(mpfem_problem

@@ -31,16 +31,12 @@ if(MSVC)
         /wd4819  # 文件含不能在代码页936表示的字符（UTF-8问题）
         /wd4324  # 结构因对齐被填充（无害）
     )
-
-# 全局加给所有目标
+    # 全局加给所有目标
+    add_definitions(-D_CRT_SECURE_NO_WARNINGS)
     add_compile_options(${MSVC_IGNORE_WARNINGS})
-    add_compile_options(/W4 /permissive- /utf-8 /bigobj /MP /INCREMENTAL)
+    add_compile_options(/WX /W4 /permissive- /utf-8 /bigobj /INCREMENTAL)
 else()
-    add_compile_options(-Wall -Wextra -Wpedantic)
-endif()
-
-if(MINGW)
-    add_compile_options(-Wa,-mbig-obj)
+    add_compile_options(-Werror -Wall -Wextra -Wpedantic -Wa,-mbig-obj)
 endif()
 
 # =============================================================================

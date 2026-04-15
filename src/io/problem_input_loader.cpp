@@ -20,11 +20,7 @@ namespace mpfem {
                 CaseXmlReader::readFromFile(casePath, input.caseDefinition);
 
                 const std::string meshPath = caseDir + "/" + input.caseDefinition.meshPath;
-                LOG_INFO << "Reading mesh from " << meshPath;
                 input.mesh = std::make_unique<Mesh>(MphtxtReader::read(meshPath));
-                LOG_INFO << "Mesh loaded: " << input.mesh->numNodes() << " nodes, "
-                         << input.mesh->numElements() << " elements";
-
                 const std::string materialPath = caseDir + "/" + input.caseDefinition.materialsPath;
                 LOG_INFO << "Reading materials from " << materialPath;
                 MaterialXmlReader::readFromFile(materialPath, input.materials);

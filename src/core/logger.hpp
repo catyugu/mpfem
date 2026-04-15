@@ -3,11 +3,10 @@
 
 #include <chrono>
 #include <cstdlib>
+#include <iostream>
 #include <mutex>
+#include <sstream>
 #include <string>
-#include <string_view>
-#include <type_traits>
-
 
 namespace mpfem {
 
@@ -114,50 +113,41 @@ namespace mpfem {
      */
     class LogMessage {
     public:
-        explicit LogMessage(LogLevel level);
+        explicit LogMessage(LogLevel level)
+            : level_(level) { }
 
         // Non-copyable
         LogMessage(const LogMessage&) = delete;
         LogMessage& operator=(const LogMessage&) = delete;
 
         // Movable (allows LOG_INFO << ... to work)
-        LogMessage(LogMessage&& other) noexcept;
+        LogMessage(LogMessage&& other) noexcept
+            : level_(other.level_), oss_(std::move(other.oss_)) { }
 
-        ~LogMessage();
-
-        LogMessage& operator<<(std::string_view value);
-        LogMessage& operator<<(const std::string& value) { return (*this) << std::string_view(value); }
-        LogMessage& operator<<(const char* value);
-        LogMessage& operator<<(char value);
+        ~LogMessage()
+        {
+            if (!oss_.str().empty() || level_ == LogLevel::Error) {
+                Logger::instance().log(level_, oss_.str());
+            }
+        }
 
         template <typename T>
         LogMessage& operator<<(const T& value)
         {
-            if constexpr (std::is_enum_v<T>) {
-                using U = std::underlying_type_t<T>;
-                return (*this) << static_cast<U>(value);
-            }
-            else if constexpr (std::is_same_v<T, bool>) {
-                buffer_ += value ? "true" : "false";
-            }
-            else if constexpr (std::is_integral_v<T> && std::is_signed_v<T>) {
-                buffer_ += std::to_string(static_cast<long long>(value));
-            }
-            else if constexpr (std::is_integral_v<T> && std::is_unsigned_v<T>) {
-                buffer_ += std::to_string(static_cast<unsigned long long>(value));
-            }
-            else if constexpr (std::is_floating_point_v<T>) {
-                buffer_ += std::to_string(static_cast<long double>(value));
-            }
-            else {
-                static_assert(!sizeof(T), "Unsupported type for LogMessage stream operator");
-            }
+            oss_ << value;
+            return *this;
+        }
+
+        // Support std::endl and other manipulators
+        LogMessage& operator<<(std::ostream& (*manip)(std::ostream&))
+        {
+            oss_ << manip;
             return *this;
         }
 
     private:
         LogLevel level_;
-        std::string buffer_;
+        std::ostringstream oss_;
     };
 
     // =============================================================================

@@ -4,47 +4,6 @@
 
 namespace mpfem {
 
-    LogMessage::LogMessage(LogLevel level)
-        : level_(level)
-    {
-    }
-
-    LogMessage::LogMessage(LogMessage&& other) noexcept
-        : level_(other.level_)
-        , buffer_(std::move(other.buffer_))
-    {
-    }
-
-    LogMessage::~LogMessage()
-    {
-        if (!buffer_.empty() || level_ == LogLevel::Error) {
-            Logger::instance().log(level_, buffer_);
-        }
-    }
-
-    LogMessage& LogMessage::operator<<(std::string_view value)
-    {
-        buffer_.append(value.data(), value.size());
-        return *this;
-    }
-
-    LogMessage& LogMessage::operator<<(const char* value)
-    {
-        if (value) {
-            buffer_ += value;
-        }
-        else {
-            buffer_ += "(null)";
-        }
-        return *this;
-    }
-
-    LogMessage& LogMessage::operator<<(char value)
-    {
-        buffer_.push_back(value);
-        return *this;
-    }
-
     // =============================================================================
     // Logger implementation
     // =============================================================================
