@@ -31,7 +31,6 @@ option(MPFEM_USE_MKL "Use Intel MKL for BLAS/LAPACK and PARDISO solver" ON)
 if(MPFEM_USE_MKL)
     set(MKL_LINK "static")          # 静态链接
     set(MKL_INTERFACE "lp64")       # 默认整数接口（最通用）
-    set(MKL_THREADING "sequential") # 单线程（无 OpenMP 依赖，最稳定）
 
     if(DEFINED ENV{MKLROOT})
         set(MKL_ROOT "$ENV{MKLROOT}")
@@ -122,8 +121,13 @@ if(MPFEM_BUILD_TESTS)
             "BUILD_GMOCK OFF"
             "INSTALL_GTEST OFF"
     )
-    target_compile_options(gtest PRIVATE -Wno-character-conversion)
-    target_compile_options(gtest_main PRIVATE -Wno-character-conversion)
+    if (MSVC AND NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(gtest PRIVATE /wd4828)
+        target_compile_options(gtest_main PRIVATE /wd4828)
+    else()
+        target_compile_options(gtest PRIVATE -Wno-character-conversion)
+        target_compile_options(gtest_main PRIVATE -Wno-character-conversion)
+    endif()
 endif()
 
 # =============================================================================
