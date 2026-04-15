@@ -28,11 +28,6 @@ find_package(Eigen3 CONFIG REQUIRED)
 
 # --- Intel MKL ---
 option(MPFEM_USE_MKL "Use Intel MKL for BLAS/LAPACK and PARDISO solver" ON)
-# If using LLVM style compiler, abandon MKL since it may not be compatible
-if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|AppleClang")
-    message(WARNING "Intel MKL may not be compatible with Clang/AppleClang. Disabling MKL support.")
-    set(MPFEM_USE_MKL OFF)
-endif()
 if(MPFEM_USE_MKL)
     set(MKL_LINK "static")          # 静态链接
     set(MKL_INTERFACE "lp64")       # 默认整数接口（最通用）
@@ -122,11 +117,13 @@ if(MPFEM_BUILD_TESTS)
     CPMAddPackage(
         NAME googletest
         GITHUB_REPOSITORY google/googletest
-        GIT_TAG v1.14.0
+        GIT_TAG v1.15.2
         OPTIONS
             "BUILD_GMOCK OFF"
             "INSTALL_GTEST OFF"
     )
+    target_compile_options(gtest PRIVATE -Wno-character-conversion)
+    target_compile_options(gtest_main PRIVATE -Wno-character-conversion)
 endif()
 
 # =============================================================================
