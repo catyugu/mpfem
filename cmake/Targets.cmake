@@ -116,6 +116,7 @@ mpfem_add_library(mpfem_solver
         src/solver/pardiso_solver.cpp
         src/solver/umfpack_solver.cpp
         src/solver/solver_factory.cpp
+        src/solver/solver_config.cpp
     PUBLIC_LINK
         mpfem_core
 )
