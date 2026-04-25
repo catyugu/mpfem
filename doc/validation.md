@@ -1,5 +1,9 @@
 # 验证准则
 
+## 回归测试
+
+`cmd /c "call E:\env\cpp\VS14\Common7\Tools\VsDevCmd.bat & ctest --test-dir .\build-msvc -C Release --output-on-failure"`
+
 ## 1阶稳态
 
 ### 运行方式
