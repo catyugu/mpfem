@@ -157,22 +157,6 @@ namespace mpfem {
         void reserveBdrElements(Index n);
 
         // -------------------------------------------------------------------------
-        // Domain and boundary attribute queries
-        // -------------------------------------------------------------------------
-
-        /// Get all unique domain IDs
-        std::set<Index> domainIds() const;
-
-        /// Get all unique boundary IDs
-        std::set<Index> boundaryIds() const;
-
-        /// Get elements in a specific domain
-        std::vector<Index> elementsForDomain(Index domainId) const;
-
-        /// Get boundary elements with a specific boundary ID
-        std::vector<Index> bdrElementsForBoundary(Index boundaryId) const;
-
-        // -------------------------------------------------------------------------
         // Topology queries (for internal/external boundary detection)
         // -------------------------------------------------------------------------
 
@@ -207,9 +191,11 @@ namespace mpfem {
         /// Get total number of unique faces
         Index numFaces() const { return static_cast<Index>(faceOffsets_.size()) - 1; }
 
-        /// Face queries (CSR F2N)
+        /// Number of nodes for a face
         Index numFaceNodes(Index faceIdx) const { return faceOffsets_[faceIdx + 1] - faceOffsets_[faceIdx]; }
-        std::span<const Index> getFaceNodes(Index faceIdx) const
+
+        /// Face nodes (CSR F2N)
+        std::span<const Index> faceNodes(Index faceIdx) const
         {
             return {&faceNodes_[faceOffsets_[faceIdx]], static_cast<size_t>(numFaceNodes(faceIdx))};
         }
@@ -219,14 +205,11 @@ namespace mpfem {
         int faceLocalIndex2(Index faceIdx) const { return faceLocal2_[faceIdx]; }
         bool faceIsBoundary(Index faceIdx) const { return faceBoundary_[faceIdx] != 0; }
 
-        /// Get global topology vertices used by an element
-        std::vector<Index> getElementVertices(Index elemIdx) const;
-
         /// Get global topology edge indices used by an element (local edge order)
-        std::span<const Index> getElementEdges(Index elemIdx) const;
+        std::span<const Index> elementEdges(Index elemIdx) const;
 
         /// Get global topology face indices used by an element (local face order)
-        std::span<const Index> getElementFaces(Index elemIdx) const;
+        std::span<const Index> elementFaces(Index elemIdx) const;
 
         /// Get global topology edge index by two endpoint vertices
         Index edgeIndex(Index a, Index b) const;

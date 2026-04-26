@@ -112,48 +112,6 @@ namespace mpfem {
         bdrElementNodes_.reserve(n * 4); // Estimate
     }
 
-    std::set<Index> Mesh::domainIds() const
-    {
-        std::set<Index> ids;
-        for (Index i = 0; i < numElements(); ++i) {
-            if (elementGeoms_[i] == Geometry::Tetrahedron || elementGeoms_[i] == Geometry::Cube) {
-                ids.insert(elementAttributes_[i]);
-            }
-        }
-        return ids;
-    }
-
-    std::set<Index> Mesh::boundaryIds() const
-    {
-        std::set<Index> ids;
-        for (Index i = 0; i < numBdrElements(); ++i) {
-            ids.insert(bdrElementAttributes_[i]);
-        }
-        return ids;
-    }
-
-    std::vector<Index> Mesh::elementsForDomain(Index domainId) const
-    {
-        std::vector<Index> result;
-        for (Index i = 0; i < numElements(); ++i) {
-            if ((elementGeoms_[i] == Geometry::Tetrahedron || elementGeoms_[i] == Geometry::Cube) && elementAttributes_[i] == domainId) {
-                result.push_back(i);
-            }
-        }
-        return result;
-    }
-
-    std::vector<Index> Mesh::bdrElementsForBoundary(Index boundaryId) const
-    {
-        std::vector<Index> result;
-        for (Index i = 0; i < numBdrElements(); ++i) {
-            if (bdrElementAttributes_[i] == boundaryId) {
-                result.push_back(i);
-            }
-        }
-        return result;
-    }
-
     void Mesh::clear()
     {
         coords_.clear();
@@ -188,23 +146,7 @@ namespace mpfem {
         sortedFaceKeys_.clear();
     }
 
-    std::vector<Index> Mesh::getElementVertices(Index elemIdx) const
-    {
-        if (elemIdx >= numElements()) {
-            return {};
-        }
-
-        const Element elem = element(elemIdx);
-        const int corners = elem.numVertices();
-        std::vector<Index> out;
-        out.reserve(static_cast<size_t>(corners));
-        for (int i = 0; i < corners; ++i) {
-            out.push_back(elem.vertex(i));
-        }
-        return out;
-    }
-
-    std::span<const Index> Mesh::getElementEdges(Index elemIdx) const
+    std::span<const Index> Mesh::elementEdges(Index elemIdx) const
     {
         if (!topologyBuilt_ || elemIdx >= numElements()) {
             return {};
@@ -214,7 +156,7 @@ namespace mpfem {
         return {elemEdgeData_.data() + start, elemEdgeData_.data() + end};
     }
 
-    std::span<const Index> Mesh::getElementFaces(Index elemIdx) const
+    std::span<const Index> Mesh::elementFaces(Index elemIdx) const
     {
         if (!topologyBuilt_ || elemIdx >= numElements()) {
             return {};

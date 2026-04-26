@@ -41,7 +41,7 @@ static Index getVertexDof(const FESpace& fes, Index vertexIdx)
     }
 
     for (Index elemIdx = 0; elemIdx < mesh->numElements(); ++elemIdx) {
-        const auto elemVertices = mesh->getElementVertices(elemIdx);
+        const auto elemVertices = mesh->element(elemIdx).vertices;
         const auto it = std::find(elemVertices.begin(), elemVertices.end(), vertexIdx);
         if (it == elemVertices.end()) {
             continue;
