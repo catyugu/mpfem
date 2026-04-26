@@ -3,7 +3,10 @@
 #include <algorithm>
 #include <basix/cell.h>
 #include <basix/finite-element.h>
+#include <map>
+#include <mutex>
 #include <set>
+#include <tuple>
 
 namespace mpfem {
 
@@ -58,6 +61,27 @@ namespace mpfem {
                 MPFEM_THROW(Exception, "Unsupported geometry for permutation");
             }
         }
+    }
+
+    // =======================================================================
+    // Thread-Safe Global Flyweight Cache
+    // =======================================================================
+    const ReferenceElement* ReferenceElement::get(Geometry geom, int order, BasisType basisType, int vdim)
+    {
+        using Key = std::tuple<Geometry, int, BasisType, int>;
+        static std::map<Key, std::unique_ptr<ReferenceElement>> cache;
+        static std::mutex cache_mutex;
+
+        Key key {geom, order, basisType, vdim};
+        std::lock_guard<std::mutex> lock(cache_mutex);
+
+        auto it = cache.find(key);
+        if (it == cache.end()) {
+            auto ptr = std::unique_ptr<ReferenceElement>(
+                new ReferenceElement(geom, order, basisType, vdim));
+            it = cache.emplace(key, std::move(ptr)).first;
+        }
+        return it->second.get();
     }
 
     ReferenceElement::ReferenceElement(Geometry geom, int order, BasisType basisType, int vdim)

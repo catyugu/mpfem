@@ -51,17 +51,17 @@ namespace mpfem {
                 MPFEM_THROW(ArgumentException, "H1Collection requires vdim >= 1");
             }
 
-            elements_[Geometry::Segment] = std::make_unique<ReferenceElement>(Geometry::Segment, order_, BasisType::H1);
-            elements_[Geometry::Triangle] = std::make_unique<ReferenceElement>(Geometry::Triangle, order_, BasisType::H1);
-            elements_[Geometry::Square] = std::make_unique<ReferenceElement>(Geometry::Square, order_, BasisType::H1);
-            elements_[Geometry::Tetrahedron] = std::make_unique<ReferenceElement>(Geometry::Tetrahedron, order_, BasisType::H1);
-            elements_[Geometry::Cube] = std::make_unique<ReferenceElement>(Geometry::Cube, order_, BasisType::H1);
+            elements_[Geometry::Segment] = ReferenceElement::get(Geometry::Segment, order_, BasisType::H1);
+            elements_[Geometry::Triangle] = ReferenceElement::get(Geometry::Triangle, order_, BasisType::H1);
+            elements_[Geometry::Square] = ReferenceElement::get(Geometry::Square, order_, BasisType::H1);
+            elements_[Geometry::Tetrahedron] = ReferenceElement::get(Geometry::Tetrahedron, order_, BasisType::H1);
+            elements_[Geometry::Cube] = ReferenceElement::get(Geometry::Cube, order_, BasisType::H1);
         }
 
         const ReferenceElement* get(Geometry geom) const override
         {
             auto it = elements_.find(geom);
-            return it != elements_.end() ? it->second.get() : nullptr;
+            return it != elements_.end() ? it->second : nullptr;
         }
 
         int order() const override { return order_; }
@@ -71,7 +71,7 @@ namespace mpfem {
     private:
         int order_ = 1;
         int vdim_ = 1;
-        std::unordered_map<Geometry, std::unique_ptr<ReferenceElement>> elements_;
+        std::unordered_map<Geometry, const ReferenceElement*> elements_;
     };
 
 } // namespace mpfem
