@@ -138,6 +138,7 @@ mpfem_add_library(mpfem_io
     src/io/mphtxt_reader.cpp
     PUBLIC_LINK
     mpfem_expr
+    mpfem_fe
     tinyxml2::tinyxml2
     PRIVATE_LINK
     mpfem_mesh # IO needs mesh internally to read/write formats
@@ -147,12 +148,10 @@ mpfem_add_library(mpfem_fe
     SOURCES
     src/fe/quadrature.cpp
     src/fe/element_transform.cpp
-    src/fe/finite_element.cpp
     src/fe/geometry_mapping.cpp
-    src/fe/h1.cpp
+    src/fe/reference_element.cpp
     PUBLIC_LINK
     mpfem_mesh
-    PRIVATE_LINK
     basix
 )
 

@@ -58,7 +58,7 @@ namespace mpfem {
                     continue;
                 }
 
-                const DofLayout layout = refElem->basis().dofLayout();
+                const DofLayout layout = refElem->dofLayout();
                 if (layout.numVertexDofs <= 0) {
                     continue;
                 }

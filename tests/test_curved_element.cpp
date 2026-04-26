@@ -2,8 +2,8 @@
 #include "core/geometry.hpp"
 #include "core/types.hpp"
 #include "fe/element_transform.hpp"
-#include "fe/h1.hpp"
 #include "fe/quadrature.hpp"
+#include "fe/reference_element.hpp"
 #include "mesh/mesh.hpp"
 #include <cmath>
 #include <gtest/gtest.h>
@@ -154,10 +154,10 @@ class QuadraticH1FiniteElementTest : public ::testing::Test {
 protected:
     void SetUp() override
     {
-        tri2_ = std::make_unique<H1FiniteElement>(Geometry::Triangle, 2);
-        tet2_ = std::make_unique<H1FiniteElement>(Geometry::Tetrahedron, 2);
-        square2_ = std::make_unique<H1FiniteElement>(Geometry::Square, 2);
-        cube2_ = std::make_unique<H1FiniteElement>(Geometry::Cube, 2);
+        tri2_ = std::make_unique<ReferenceElement>(Geometry::Triangle, 2, BasisType::H1, 1);
+        tet2_ = std::make_unique<ReferenceElement>(Geometry::Tetrahedron, 2, BasisType::H1, 1);
+        square2_ = std::make_unique<ReferenceElement>(Geometry::Square, 2, BasisType::H1, 1);
+        cube2_ = std::make_unique<ReferenceElement>(Geometry::Cube, 2, BasisType::H1, 1);
     }
 
     struct EvalData {
@@ -165,7 +165,7 @@ protected:
         DerivMatrix derivatives;
     };
 
-    EvalData evalShape(const FiniteElement* shape, const Vector3& xi) const
+    EvalData evalShape(const ReferenceElement* shape, const Vector3& xi) const
     {
         EvalData sv;
         shape->evalShape(xi, sv.values);
@@ -173,10 +173,10 @@ protected:
         return sv;
     }
 
-    std::unique_ptr<FiniteElement> tri2_;
-    std::unique_ptr<FiniteElement> tet2_;
-    std::unique_ptr<FiniteElement> square2_;
-    std::unique_ptr<FiniteElement> cube2_;
+    std::unique_ptr<ReferenceElement> tri2_;
+    std::unique_ptr<ReferenceElement> tet2_;
+    std::unique_ptr<ReferenceElement> square2_;
+    std::unique_ptr<ReferenceElement> cube2_;
 };
 
 TEST_F(QuadraticH1FiniteElementTest, Triangle2PartitionOfUnity)
