@@ -2,7 +2,6 @@
 
 #include "core/exception.hpp"
 #include "h1.hpp"
-#include "nd.hpp"
 
 namespace mpfem {
 
@@ -12,7 +11,6 @@ namespace mpfem {
         case BasisType::H1:
             return std::make_unique<H1FiniteElement>(geom, order, vdim);
         case BasisType::ND:
-            return std::make_unique<NDFiniteElement>(geom, order);
         case BasisType::L2:
         case BasisType::RT:
             MPFEM_THROW(NotImplementedException, "Finite element basis type is not implemented");

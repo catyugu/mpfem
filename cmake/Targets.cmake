@@ -150,7 +150,6 @@ mpfem_add_library(mpfem_fe
     src/fe/finite_element.cpp
     src/fe/geometry_mapping.cpp
     src/fe/h1.cpp
-    src/fe/nd.cpp
     PUBLIC_LINK
     mpfem_mesh
     PRIVATE_LINK
