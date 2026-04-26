@@ -14,242 +14,136 @@
 
 ## 任务
 
-将底层的有限元基函数生成替换为 **BASIX** 是一个非常明智且面向未来的决定，它能极大增强你的有限元库（支持任意高阶、各种张量积单元、Hdiv/Hcurl空间等）。
+这是一个在计算几何和数值模拟（如有限元分析、CFD）中非常经典且让人头疼的问题。面向对象（OOP）的数据结构（例如设计精美的 `Node` 和 `Element` 类）在人类阅读和编写业务逻辑时很直观，但在对接绝大多数高性能第三方库（如 METIS, ParMETIS, PETSc, Eigen）时，往往会遭遇严重的“阻抗失配”。
 
-你目前遇到的“二阶案例失败”和“边节点置换有问题”是引入第三方有限元库时最经典的陷阱：**拓扑实体排序（Topological Ordering）冲突**。
+因为这些底层库大多数是纯 C 或 Fortran 编写的，它们为了追求极致的缓存命中率和性能，**通常只认一种数据结构：扁平的一维连续数组（特别是 CSR 格式）**。
 
-### 一、 二阶测试失败的根本原因
+为了原生适配 METIS 和其他区域分解库，以下是我对 C++ 网格数据结构设计的核心建议：
 
-你目前的实现存在两个致命的假设错误：
-1. **张量积单元高阶未置换**：代码里写了 `// For now, use identity for non-vertices`。二阶时边上存在内部节点，如果不置换边，FESpace 在组装时就会将错位的自由度拼在一起。
-2. **单纯形（Simplex）不代表不需要置换**：你假设了 `if (geom::isSimplex(geometry_))` 就直接返回 identity（恒等映射）。**这是错误的！** FEniCS/BASIX 遵循 **UFC 规范**，其单纯形的边/面排序与你们的 CCW（逆时针）排序截然不同。
-   * **mpfem (CCW) 三角形边排序**：`0:(0,1)`，`1:(1,2)`，`2:(2,0)`
-   * **BASIX (UFC) 三角形边排序**：`0:(1,2)`，`1:(0,2)`，`2:(0,1)`
+### 1. 拥抱 CSR（压缩稀疏行）格式
+对于网格连接关系，尽量抛弃 `std::vector<std::vector<int>>` 或 `Element` 对象内嵌 `std::vector<Node*>` 的做法。METIS 处理网格划分最常用的接口是 `METIS_PartMeshDual` 或 `METIS_PartMeshNodal`，它们需要传入的是类似 CSR 格式的两个一维数组：通常命名为 `eptr` 和 `eind`。
 
-由于边拓扑被彻底打乱，`FESpace` 在向相邻单元询问 `edgeDofs(0)` 时，拿到了错误的几何边上的自由度，导致系统矩阵组装混乱。
+* **`eind` (Element Indices):** 一个扁平的一维数组，连续存储所有单元包含的节点 ID。
+* **`eptr` (Element Pointers):** 一个一维数组，存储每个单元的节点在 `eind` 数组中的起始位置。
 
----
-
-### 二、 彻底重构指南：通用实体映射 (Entity Mapping)
-
-与其针对不同阶数（`order_ == 1, 2...`）硬编码 DOF 置换，我们应该**基于拓扑实体（顶点、边、面）**来建立映射。一旦建立了实体映射，无论多高阶的单元，DOF 映射都可以**自动生成**。
-
-#### 1. 在 `ReferenceElement` 中引入实体映射表
-
-修改 `src/fe/reference_element.hpp`，新增实体映射数组，并抛弃老旧的 `FiniteElement` 接口暴露：
+**为什么这样设计？**
+因为你可以直接使用 `.data()` 将底层的原始指针零拷贝（Zero-copy）地传递给 C 接口。
 
 ```cpp
-// 在 ReferenceElement private 成员中添加：
-std::vector<int> vertexCcwToBasix_;
-std::vector<int> edgeCcwToBasix_;
-std::vector<int> faceCcwToBasix_;
+#include <vector>
+#include <metis.h>
 
-// 新增公开方法，用于获取插值点（用于测试迁移）
-std::vector<Vector3> interpolationPoints() const;
+// 假设你有 2 个四边形单元，共享 2 个节点
+// 单元 0: 节点 0, 1, 2, 3
+// 单元 1: 节点 1, 4, 5, 2
+
+// 推荐的存储结构：
+std::vector<idx_t> eptr = {0, 4, 8}; // 单元0从索引0开始，单元1从索引4开始，总长度8
+std::vector<idx_t> eind = {0, 1, 2, 3,  // 单元0的节点
+                           1, 4, 5, 2}; // 单元1的节点
+
+// 原生调用 METIS 接口 (零拷贝)
+idx_t ne = 2; // 单元数量
+idx_t nn = 6; // 节点数量
+idx_t nparts = 2; 
+idx_t objval;
+std::vector<idx_t> epart(ne);
+std::vector<idx_t> npart(nn);
+
+// 直接传递底层指针
+METIS_PartMeshDual(&ne, &nn, eptr.data(), eind.data(), 
+                   NULL, NULL, &nparts, NULL, NULL, &objval, 
+                   epart.data(), npart.data());
 ```
 
-#### 2. 重写 `buildPermutation()`：一劳永逸的自动映射
+### 2. 采用“双阶段”架构 (Builder Pattern)
+在实际工程中，网格的生成或读取阶段通常是动态的（可能需要增删节点或单元），直接维护 `eptr` 和 `eind` 会非常痛苦。业界成熟的有限元/CFD 软件（如 MOOSE, OpenFOAM）通常采用两阶段处理：
 
-在 `src/fe/reference_element.cpp` 中重写此方法。先硬编码拓扑实体的映射，然后**自动生成** `basixToCcw_` 和 `ccwToBasix_` 自由度映射。
+* **阶段一：动态构建阶段 (Dynamic)**。读取外部文件时，可以使用 `std::vector<std::vector<int>>` 甚至链表等灵活的数据结构来拼装网格。
+* **阶段二：冻结阶段 (Freeze/Finalize)**。网格读取完毕后，执行一个 `finalize()` 函数，将动态结构“压平（Flatten）”成 CSR 格式的一维连续内存数组（即上述的 `eptr` 和 `eind`），随后销毁动态数据结构以释放内存。
+
+### 3. 数据结构解耦：SoA vs AoS
+* **AoS (Array of Structures):** `std::vector<Element>`。这对于单一对象的业务逻辑很好，但对 METIS 无用。
+* **SoA (Structure of Arrays):** 强烈推荐。将网格对象设计为一个宏观的 `Mesh` 类，内部管理多个一维向量。
 
 ```cpp
-void ReferenceElement::buildPermutation()
-{
-    // 1. 初始化实体映射 (Entity Map: CCW index -> Basix index)
-    if (geometry_ == Geometry::Triangle) {
-        vertexCcwToBasix_ = {0, 1, 2};
-        edgeCcwToBasix_   = {2, 0, 1}; // CCW 0(0,1)->B2; CCW 1(1,2)->B0; CCW 2(2,0)->B1
-        faceCcwToBasix_   = {0};
-    }
-    else if (geometry_ == Geometry::Tetrahedron) {
-        vertexCcwToBasix_ = {0, 1, 2, 3};
-        // mpfem CCW: 0:(0,1), 1:(1,2), 2:(2,0), 3:(0,3), 4:(1,3), 5:(2,3)
-        // Basix    : 0:(2,3), 1:(1,3), 2:(1,2), 3:(0,3), 4:(0,2), 5:(0,1)
-        edgeCcwToBasix_   = {5, 2, 4, 3, 1, 0}; 
-        faceCcwToBasix_   = {0, 1, 2, 3}; // 假定面定义一致，若不一致需对照修改
-    }
-    else if (geometry_ == Geometry::Square) {
-        vertexCcwToBasix_ = {0, 1, 3, 2}; // 交换 2, 3
-        // CCW: 0(0-1), 1(1-2), 2(2-3), 3(3-0)
-        // B: 0(0-1), 1(0-2), 2(1-3), 3(2-3)
-        // 映射基于 CCW顶点映射后的连线
-        edgeCcwToBasix_   = {0, 2, 3, 1}; 
-        faceCcwToBasix_   = {0};
-    }
-    else if (geometry_ == Geometry::Cube) {
-        vertexCcwToBasix_ = {0, 1, 3, 2, 4, 5, 7, 6};
-        // 你需要根据 mpfem 的六面体边/面定义与 BASIX 匹配，这里暂给示例
-        // 建议根据 geom::edgeVertices 打印坐标并与 basix 的 cell 比较
-        edgeCcwToBasix_.resize(12); std::iota(edgeCcwToBasix_.begin(), edgeCcwToBasix_.end(), 0);
-        faceCcwToBasix_.resize(6);  std::iota(faceCcwToBasix_.begin(), faceCcwToBasix_.end(), 0);
-    }
-    else if (geometry_ == Geometry::Segment) {
-        vertexCcwToBasix_ = {0, 1};
-        edgeCcwToBasix_   = {0};
-    }
-
-    // --- 提取 DOF Layout ---
-    const auto& entity_dofs = basixElement_->entity_dofs();
-    dofLayout_ = DofLayout {};
-    if (entity_dofs.size() > 0 && !entity_dofs[0].empty()) dofLayout_.numVertexDofs = entity_dofs[0][0].size();
-    if (entity_dofs.size() > 1 && !entity_dofs[1].empty()) dofLayout_.numEdgeDofs = entity_dofs[1][0].size();
-    if (entity_dofs.size() > 2 && !entity_dofs[2].empty()) dofLayout_.numFaceDofs = entity_dofs[2][0].size();
-    if (entity_dofs.size() > 3 && !entity_dofs[3].empty()) dofLayout_.numVolumeDofs = entity_dofs[3][0].size();
-
-    // 2. 自动生成自由度映射 (自动兼容任意高阶！)
-    int ndofs = basixElement_->dim();
-    ccwToBasix_.assign(ndofs, -1);
-    basixToCcw_.assign(ndofs, -1);
-
-    int current_ccw_dof = 0;
+class Mesh {
+public:
+    // 网格连接关系 (用于 METIS 和 求解器)
+    std::vector<idx_t> eptr;
+    std::vector<idx_t> eind;
     
-    // FESpace 期望的 DOF 顺序：所有顶点 -> 所有边 -> 所有面 -> 体
-    auto map_entity_dofs = [&](int dim, const std::vector<int>& entity_map) {
-        if (entity_dofs.size() <= dim) return;
-        for (int ccw_idx = 0; ccw_idx < entity_map.size(); ++ccw_idx) {
-            int basix_idx = entity_map[ccw_idx];
-            for (int b_dof : entity_dofs[dim][basix_idx]) {
-                basixToCcw_[b_dof] = current_ccw_dof;
-                ccwToBasix_[current_ccw_dof] = b_dof;
-                current_ccw_dof++;
-            }
-        }
-    };
+    // 节点坐标分离存储，便于进行矩阵运算或传递给其他库
+    std::vector<double> x;
+    std::vector<double> y;
+    std::vector<double> z;
 
-    map_entity_dofs(0, vertexCcwToBasix_);
-    map_entity_dofs(1, edgeCcwToBasix_);
-    map_entity_dofs(2, faceCcwToBasix_);
-    // 体自由度（无需拓扑映射，只有一个体）
-    if (entity_dofs.size() > 3 && !entity_dofs[3].empty()) {
-        for (int b_dof : entity_dofs[3][0]) {
-            basixToCcw_[b_dof] = current_ccw_dof;
-            ccwToBasix_[current_ccw_dof] = b_dof;
-            current_ccw_dof++;
-        }
-    }
-}
+    // 分区结果
+    std::vector<idx_t> element_partitions;
+};
 ```
+这种 SoA 的设计不仅完美契合 METIS，在后续你计算刚度矩阵并组装成整体稀疏矩阵时，也天然契合 PETSc 或 Eigen 等代数库的 CSR 矩阵输入格式。
 
-#### 3. 修复实体 DOF 获取方法
+在扁平化的 CSR（`eptr`/`eind`）结构下，处理面（Face）和边（Edge）的存储与访问是高性能仿真软件的核心课题。
 
-由于现在我们已经把实体的映射记录下来了，当调用 `edgeDofs` 时，必须使用**正确的 BASIX 边索引**：
+在 3D 仿真中，我们通常不会像处理单元（Element）那样直接手写所有的面和边信息，而是采用**“派生与索引”**的策略。
+
+### 1. 核心思路：从“单元-节点”派生
+在 METIS 所需的 `eptr/eind`（Element-to-Node, **E2N**）关系确定后，面和边实际上是隐含在其中的。
+
+* **边的表示**：由两个节点 ID 组成的有序/无序对，如 `(u, v)`，且满足 `u < v`（归一化）。
+* **面的表示**：由 3 个（三角形面）或 4 个（四边形面）节点 ID 组成的集合。
+
+### 2. 存储方案：扁平化索引表
+为了保持与第三方库的兼容性，我们依然使用扁平数组，但需要建立几张“映射表”：
+
+1.  **Face-to-Node (F2N)**: 类似 CSR。一个一维数组存储所有面的节点，另一个数组存储偏移量。
+2.  **Element-to-Face (E2F)**: 记录每个单元由哪几个面组成。
+3.  **Face-to-Element (F2E)**: **这是区域分解和通量计算的核心**。每个面通常连接两个单元（内部面）或一个单元（边界面）。
+
+### 3. 如何高效构建（唯一化过程）
+这是最关键的一步。由于多个单元共享同一个面或边，我们需要一种算法来“去重”并建立索引。
+
+**算法流程：**
+1.  **遍历所有单元**，按照单元类型（如四面体有 4 个面、6 条边）提取出所有的“候选面/边”。
+2.  **归一化（Canonical Form）**：将每个面的节点 ID 进行升序排列。例如，面 `{5, 2, 9}` 统一记作 `{2, 5, 9}`。
+3.  **哈希或排序去重**：
+    * 使用 `std::unordered_map<FaceNodes, FaceID>` 记录。
+    * 或者将所有候选面放入一个大数组，进行 `std::sort`，相同的面会排在一起。
+4.  **生成索引**：给每个唯一的面分配一个全局连续的 ID。
+
+### 4. 具体的 C++ 数据结构建议
+
+在 C++ 中，为了追求性能，你可以定义一个轻量级的 `struct` 来表示面/边，但仅用于**构建阶段**：
 
 ```cpp
-std::vector<int> ReferenceElement::edgeDofs(int edgeIdx) const
-{
-    const auto& entity_dofs = basixElement_->entity_dofs();
-    if (entity_dofs.size() <= 1) return {};
+// 仅用于构建时的临时结构
+struct Face {
+    std::vector<uint32_t> nodes;
+    void normalize() { std::sort(nodes.begin(), nodes.end()); }
     
-    // 关键修正：将 CCW 索引转换为 Basix 索引
-    int basixEdgeIdx = edgeCcwToBasix_[edgeIdx]; 
-    const auto& b_dofs = entity_dofs[1][basixEdgeIdx];
+    // 必须定义比较运算符或 Hash 函数，以便放入 map 或进行 sort
+    bool operator<(const Face& other) const { return nodes < other.nodes; }
+};
 
-    std::vector<int> result(b_dofs.size());
-    for (size_t i = 0; i < b_dofs.size(); ++i) {
-        result[i] = basixToCcw_[b_dofs[i]];
-    }
-    return result;
-}
+// 最终存储在 Mesh 类中的扁平结构
+class Mesh {
+    // 单元-节点 (E2N) - METIS 原生支持
+    std::vector<int> eptr;
+    std::vector<int> eind;
 
-std::vector<int> ReferenceElement::faceDofs(int faceIdx) const
-{
-    const auto& entity_dofs = basixElement_->entity_dofs();
-    if (entity_dofs.size() <= 2) return {};
-    
-    int basixFaceIdx = faceCcwToBasix_[faceIdx]; 
-    const auto& b_dofs = entity_dofs[2][basixFaceIdx];
+    // 面-单元 (F2E) - 每个面连接的两个单元 ID (如果是边界，第二个填 -1)
+    // 数组大小为 [num_faces * 2]
+    std::vector<int> face_to_elem;
 
-    std::vector<int> result(b_dofs.size());
-    for (size_t i = 0; i < b_dofs.size(); ++i) {
-        result[i] = basixToCcw_[b_dofs[i]];
-    }
-    return result;
-}
+    // 单元-面 (E2F) - 每个单元包含的面 ID
+    // 数组大小为 [num_elements * faces_per_element]
+    std::vector<int> elem_to_face;
+};
 ```
 
-#### 4. 实现 `interpolationPoints()` 帮助迁移测试
+### 5. 总结建议
 
-Basix 原生提供插值点坐标，我们只需要提取并应用置换映射：
-
-```cpp
-std::vector<Vector3> ReferenceElement::interpolationPoints() const
-{
-    auto [pts_data, shape] = basixElement_->interpolation_points();
-    int num_pts = shape[0];
-    int d = shape[1];
-    
-    std::vector<Vector3> ccw_points(num_pts);
-    for (int b_dof = 0; b_dof < num_pts; ++b_dof) {
-        int ccw_dof = basixToCcw_[b_dof];
-        double x = pts_data[b_dof * d + 0];
-        double y = (d > 1) ? pts_data[b_dof * d + 1] : 0.0;
-        double z = (d > 2) ? pts_data[b_dof * d + 2] : 0.0;
-        ccw_points[ccw_dof] = Vector3(x, y, z);
-    }
-    return ccw_points;
-}
-```
-
----
-
-### 三、 历史包袱清理与测试迁移指南
-
-#### 1. 迁移 `tests/test_fe_space_quadratic.cpp`
-
-由于去掉了 `FiniteElement` 基类，历史测试中调用 `.basis()` 的地方需要删除：
-
-**修改 `getVertexDof`：**
-```cpp
-// 旧: const int vertexDofsPerCorner = refElem->basis().dofLayout().numVertexDofs;
-// 新:
-const int vertexDofsPerCorner = refElem->dofLayout().numVertexDofs;
-```
-
-**修改 `FiniteElementKroneckerDelta` 测试：**
-```cpp
-// 旧代码：
-// const FiniteElement& h1Element = refElem->basis();
-// auto dofCoords = h1Element.interpolationPoints();
-// h1Element.evalShape(dofCoords[i], values);
-
-// 新代码：
-auto dofCoords = refElem->interpolationPoints();
-ShapeMatrix values;
-
-for (int i = 0; i < static_cast<int>(dofCoords.size()); ++i) {
-    refElem->evalShape(dofCoords[i], values); // 直接用 refElem
-
-    for (int j = 0; j < values.rows(); ++j) {
-        if (i == j) {
-            EXPECT_NEAR(values(j, 0), 1.0, tol);
-        } else {
-            EXPECT_NEAR(values(j, 0), 0.0, tol);
-        }
-    }
-}
-```
-
-#### 2. `FESpace::buildDofTable()` 中的冗余清理
-
-在你的 `src/field/fe_space.cpp` 中，当前由于 `ReferenceElement` 会接管 DOF 布局，你可以简化 `FESpace`：
-
-目前的做法：
-```cpp
-DofLayout layout = refElem->dofLayout();
-```
-配合上文的**自动置换机制**，`FESpace` **完全不需要修改**，因为它继续按照 `[所有顶点] -> [所有CCW边] -> [所有CCW面]` 的固定逻辑分配全局 ID，而内部向 `refElem->evalShape()` 和 `refElem->edgeDofs()` 请求时，置换表已经在 `ReferenceElement` 内部黑盒处理好了。
-
-**唯一的注意点：Hcurl/Hdiv 的边方向（Orientation）**
-在 `FESpace::buildDofTable` 中：
-```cpp
-if (useNdOrientation) {
-    const auto [lv0, lv1] = elem.edgeVertices(localEdge);
-    sign = (lv0 < lv1) ? 1 : -1;
-}
-```
-当你在后续引入 ND / RT 等 Nedelec (Hcurl) 元素时，请注意 Basix 的边方向可能与 `(lv0 < lv1)` 不一致。在 Lagrange（H1）空间下 `sign` 不改变基函数符号，目前的逻辑可以暂时保留，但当你深度使用高阶 ND 时，可能需要利用 basix 提供的拉回（Piola Transform）矩阵来处理符号，而不是手动打 sign。
-
-### 总结
-
-核心就是：**不要仅在评估（eval）时做数组位置置换，要在拓扑级别（实体）就建立 CCW 到 Basix 的桥梁**。
-应用上述 `buildPermutation()` 的实体映射自动生成逻辑后，你的二阶（甚至三阶、四阶）张量积和单纯形单元的问题都将彻底解决，且没有任何冗余判断。
+1.  **不要为每个面/边创建指针或对象**：那会造成严重的内存碎片。
+2.  **一次性构建**：一次全局扫描构建出 `F2E` 和 `F2N` 表。
+3.  **拓扑一致性**：在进行区域分解（Metis Partitioning）后，跨进程的“幽灵单元（Ghost Cells）”同步通常就是基于这些 `F2E` 扁平索引表来快速定位需要交换的数据。
