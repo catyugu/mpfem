@@ -15,17 +15,61 @@
 namespace mpfem {
 
     /**
+     * @brief Stack-allocated face key for topology building.
+     *
+     * Used during buildFaceToElementMap() to avoid millions of heap allocations
+     * when using std::vector<Index>. Face node count is bounded (max 4 for quad),
+     * so this fixed-size array is always sufficient.
+     */
+    struct FaceKey {
+        static constexpr int MAX_FACE_NODES = 4;
+        Index nodes[MAX_FACE_NODES]; // Sorted node indices
+        int count;
+
+        FaceKey() : count(0) { }
+
+        /// Initialize from sorted node span
+        void set(std::span<const Index> sorted_nodes)
+        {
+            count = sorted_nodes.size();
+            for (int i = 0; i < count; ++i)
+                nodes[i] = sorted_nodes[i];
+        }
+
+        /// Lexicographic comparison for sorting
+        bool operator<(const FaceKey& o) const
+        {
+            if (count != o.count)
+                return count < o.count;
+            for (int i = 0; i < count; ++i) {
+                if (nodes[i] != o.nodes[i])
+                    return nodes[i] < o.nodes[i];
+            }
+            return false;
+        }
+        bool operator==(const FaceKey& o) const
+        {
+            if (count != o.count)
+                return false;
+            for (int i = 0; i < count; ++i)
+                if (nodes[i] != o.nodes[i])
+                    return false;
+            return true;
+        }
+    };
+
+    /**
      * @brief Mesh class storing nodes, elements, and topology.
      *
      * This class manages:
-     * - Vertex coordinates (Structure of Arrays for METIS compatibility)
+     * - Vertex coordinates (interleaved [x,y,z,x,y,z...] for C API zero-copy)
      * - Volume elements (tetrahedra, hexahedra)
      * - Boundary elements (triangles, quads)
      * - Domain and boundary attributes
      * - Mesh topology for internal/external boundary detection
      *
      * Data Layout:
-     * - Nodes: SoA with separate x_, y_, z_ arrays (METIS-compatible)
+     * - Nodes: interleaved coords_[dim * nodeIdx + d] (C API zero-copy)
      * - Elements: CSR with elementOffsets_ + elementNodes_
      * - Faces: CSR with faceOffsets_ + faceNodes_
      * - Edges: sorted edgeInfoList_ for binary search
@@ -55,13 +99,13 @@ namespace mpfem {
         void setDim(int dim);
 
         /// Get number of nodes
-        Index numNodes() const { return static_cast<Index>(x_.size()); }
+        Index numNodes() const { return static_cast<Index>(coords_.size()) / dim_; }
 
         /// Get total number of unique topology edges
         Index numEdges() const { return static_cast<Index>(edgeInfoList_.size()); }
 
         // -------------------------------------------------------------------------
-        // Vertex access (SoA for METIS compatibility)
+        // Vertex access (interleaved [x,y,z,...] for C API zero-copy)
         // -------------------------------------------------------------------------
 
         /// Add a node from coordinates
@@ -70,10 +114,13 @@ namespace mpfem {
         /// Reserve space for nodes
         void reserveNodes(Index n);
 
-        /// Node coordinate accessors (METIS-compatible separate arrays)
-        Real nodeX(Index i) const { return x_[i]; }
-        Real nodeY(Index i) const { return y_[i]; }
-        Real nodeZ(Index i) const { return z_[i]; }
+        /// Node coordinate accessors - interleaved storage for zero-copy C API
+        Real nodeX(Index i) const { return coords_[i * dim_]; }
+        Real nodeY(Index i) const { return coords_[i * dim_ + 1]; }
+        Real nodeZ(Index i) const { return coords_[i * dim_ + 2]; }
+
+        /// Get raw coords pointer for zero-copy C API (e.g., VTK, CGNS)
+        const Real* nodeCoordsData() const { return coords_.data(); }
 
         // -------------------------------------------------------------------------
         // Volume element access
@@ -172,11 +219,6 @@ namespace mpfem {
         int faceLocalIndex2(Index faceIdx) const { return faceLocal2_[faceIdx]; }
         bool faceIsBoundary(Index faceIdx) const { return faceBoundary_[faceIdx] != 0; }
 
-        /// For topology building - set face data during buildTopology
-        void setFaceData(Index faceIdx, Index elem1, Index elem2, int local1, int local2, bool isBdr,
-            const std::vector<Index>& nodes);
-        void appendFace(const std::vector<Index>& nodes, Index elem1, Index elem2, int local1, int local2, bool isBdr);
-
         /// Get global topology vertices used by an element
         std::vector<Index> getElementVertices(Index elemIdx) const;
 
@@ -209,9 +251,6 @@ namespace mpfem {
         /// Clear all data
         void clear();
 
-        /// Get bounding box (min, max)
-        std::pair<Vector3, Vector3> getBoundingBox() const;
-
         // -------------------------------------------------------------------------
         // Corner vertices (topological vertices for high-order meshes)
         // -------------------------------------------------------------------------
@@ -226,10 +265,8 @@ namespace mpfem {
         // Mesh dimension
         int dim_ = 3;
 
-        // Structure of Arrays for nodes (METIS-compatible)
-        std::vector<Real> x_; // Node x coordinates
-        std::vector<Real> y_; // Node y coordinates
-        std::vector<Real> z_; // Node z coordinates
+        // Interleaved node coordinates [x0,y0,z0,x1,y1,z1,...] for zero-copy C API
+        std::vector<Real> coords_;
 
         // Flattened volume element storage
         std::vector<Geometry> elementGeoms_;
@@ -271,9 +308,8 @@ namespace mpfem {
         std::vector<char> faceBoundary_; // char (0=interior, 1=boundary)
 
         // Sorted face keys for binary search in boundary element matching
-        // FaceKey: pair of (sorted node indices, faceIdx)
-        using FaceKeyType = std::vector<Index>;
-        std::vector<std::pair<FaceKeyType, Index>> sortedFaceKeys_; // Sorted by node vector for binary search
+        // Uses stack-allocated FaceKey to avoid heap allocation during topology building
+        std::vector<std::pair<FaceKey, Index>> sortedFaceKeys_; // Sorted by FaceKey for binary search
     };
 
 } // namespace mpfem

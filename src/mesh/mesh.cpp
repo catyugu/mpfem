@@ -23,17 +23,15 @@ namespace mpfem {
 
     Index Mesh::addNode(Real x, Real y, Real z)
     {
-        x_.push_back(x);
-        y_.push_back(y);
-        z_.push_back(z);
-        return static_cast<Index>(x_.size() - 1);
+        coords_.push_back(x);
+        coords_.push_back(y);
+        coords_.push_back(z);
+        return static_cast<Index>(coords_.size() / dim_ - 1);
     }
 
     void Mesh::reserveNodes(Index n)
     {
-        x_.reserve(n);
-        y_.reserve(n);
-        z_.reserve(n);
+        coords_.reserve(n * dim_);
     }
 
     Element Mesh::element(Index i) const
@@ -158,9 +156,7 @@ namespace mpfem {
 
     void Mesh::clear()
     {
-        x_.clear();
-        y_.clear();
-        z_.clear();
+        coords_.clear();
         elementGeoms_.clear();
         elementAttributes_.clear();
         elementOrders_.clear();
@@ -244,23 +240,6 @@ namespace mpfem {
             return static_cast<Index>(it - edgeInfoList_.begin());
         }
         return InvalidIndex;
-    }
-
-    std::pair<Vector3, Vector3> Mesh::getBoundingBox() const
-    {
-        if (x_.empty()) {
-            return {Vector3::Zero(), Vector3::Zero()};
-        }
-
-        Vector3 minCoord(x_[0], y_[0], z_[0]);
-        Vector3 maxCoord = minCoord;
-
-        for (Index i = 1; i < numNodes(); ++i) {
-            minCoord = minCoord.cwiseMin(Vector3(x_[i], y_[i], z_[i]));
-            maxCoord = maxCoord.cwiseMax(Vector3(x_[i], y_[i], z_[i]));
-        }
-
-        return {minCoord, maxCoord};
     }
 
     // =============================================================================
@@ -372,13 +351,14 @@ namespace mpfem {
 
     void Mesh::buildFaceToElementMap()
     {
-        // Collect all candidate faces with their data
-        struct FaceCandidate {
-            std::vector<Index> nodes; // Sorted
+        // Stack-allocated face candidate to avoid heap allocation
+        struct FaceEntry {
+            FaceKey key; // Stack-allocated sorted node indices
             Index elemIdx;
             int localFace;
         };
-        std::vector<FaceCandidate> candidates;
+        std::vector<FaceEntry> candidates;
+        candidates.reserve(numElements() * 4); // Pre-reserve for typical mesh
 
         // Process each element
         for (Index elemIdx = 0; elemIdx < numElements(); ++elemIdx) {
@@ -386,18 +366,20 @@ namespace mpfem {
 
             for (int f = 0; f < elem.numFaces(); ++f) {
                 auto faceVerts = elem.faceVertices(f);
-                FaceCandidate cand;
-                cand.elemIdx = elemIdx;
-                cand.localFace = f;
-                cand.nodes.assign(faceVerts.begin(), faceVerts.end());
-                std::sort(cand.nodes.begin(), cand.nodes.end());
-                candidates.push_back(std::move(cand));
+                FaceEntry entry;
+                entry.elemIdx = elemIdx;
+                entry.localFace = f;
+                // Sort nodes during insertion
+                std::vector<Index> sorted(faceVerts.begin(), faceVerts.end());
+                std::sort(sorted.begin(), sorted.end());
+                entry.key.set(sorted);
+                candidates.push_back(entry);
             }
         }
 
-        // Sort by node indices for deduplication
-        std::sort(candidates.begin(), candidates.end(), [](const FaceCandidate& a, const FaceCandidate& b) {
-            return a.nodes < b.nodes;
+        // Sort by FaceKey for deduplication
+        std::sort(candidates.begin(), candidates.end(), [](const FaceEntry& a, const FaceEntry& b) {
+            return a.key < b.key;
         });
 
         // Deduplicate and build CSR face storage
@@ -413,27 +395,29 @@ namespace mpfem {
         Index currentFaceIdx = 0;
 
         for (size_t i = 0; i < candidates.size();) {
-            // Find all candidates with the same face (same sorted nodes)
+            // Find all candidates with the same face
             size_t j = i;
-            while (j < candidates.size() && candidates[j].nodes == candidates[i].nodes) {
+            while (j < candidates.size() && candidates[j].key == candidates[i].key) {
                 ++j;
             }
 
             // First occurrence = elem1, second = elem2
-            const FaceCandidate& first = candidates[i];
+            const FaceEntry& first = candidates[i];
             Index e1 = first.elemIdx;
             Index e2 = InvalidIndex;
             int l1 = first.localFace;
             int l2 = -1;
 
             if (j - i > 1) {
-                const FaceCandidate& second = candidates[i + 1];
+                const FaceEntry& second = candidates[i + 1];
                 e2 = second.elemIdx;
                 l2 = second.localFace;
             }
 
             // Append face nodes to CSR storage
-            faceNodes_.insert(faceNodes_.end(), candidates[i].nodes.begin(), candidates[i].nodes.end());
+            for (int n = 0; n < first.key.count; ++n) {
+                faceNodes_.push_back(first.key.nodes[n]);
+            }
             faceOffsets_.push_back(static_cast<Index>(faceNodes_.size()));
 
             faceElem1_.push_back(e1);
@@ -449,11 +433,10 @@ namespace mpfem {
         // Build sortedFaceKeys_ for binary search in boundary element matching
         sortedFaceKeys_.clear();
         for (Index faceIdx = 0; faceIdx < static_cast<Index>(faceElem1_.size()); ++faceIdx) {
-            FaceKeyType key;
-            for (Index i = faceOffsets_[faceIdx]; i < faceOffsets_[faceIdx + 1]; ++i) {
-                key.push_back(faceNodes_[i]);
-            }
-            std::sort(key.begin(), key.end());
+            FaceKey key;
+            std::span<const Index> nodes(&faceNodes_[faceOffsets_[faceIdx]],
+                faceOffsets_[faceIdx + 1] - faceOffsets_[faceIdx]);
+            key.set(nodes);
             sortedFaceKeys_.push_back({key, faceIdx});
         }
         // Sort by node vector for binary search
@@ -509,17 +492,18 @@ namespace mpfem {
             Index bdrId = bdrElem.attribute;
 
             // Get sorted vertex key for boundary element - ONLY CORNER NODES
-            FaceKeyType key;
+            // Build node array manually since FaceKey uses fixed array, not vector
+            FaceKey key;
             int numVertices = bdrElem.numVertices();
-            key.reserve(numVertices);
+            key.count = numVertices;
             for (int i = 0; i < numVertices; ++i) {
-                key.push_back(bdrElem.vertex(i));
+                key.nodes[i] = bdrElem.vertex(i);
             }
-            std::sort(key.begin(), key.end());
+            // FaceKey's operator< handles lexicographic comparison (count first, then nodes)
 
             // Binary search in sortedFaceKeys_
             auto it = std::lower_bound(sortedFaceKeys_.begin(), sortedFaceKeys_.end(), key,
-                [](const auto& pair, const FaceKeyType& k) { return pair.first < k; });
+                [](const auto& pair, const FaceKey& k) { return pair.first < k; });
             if (it != sortedFaceKeys_.end() && it->first == key) {
                 Index faceIdx = it->second;
                 bdrElementToFace_[bdrIdx] = faceIdx;
