@@ -5,7 +5,10 @@
 #include "core/geometry.hpp"
 #include "quadrature.hpp"
 #include <basix/finite-element.h>
+#include <map>
 #include <memory>
+#include <mutex>
+#include <tuple>
 #include <vector>
 
 namespace mpfem {
@@ -33,14 +36,22 @@ namespace mpfem {
     /**
      * @brief Reference element combining geometry, BASIX FiniteElement basis, and quadrature.
      *
+     * Uses the Flyweight pattern - instances are globally cached and shared to avoid
+     * the heavy cost of repeatedly tabulating shape functions and inferring topological
+     * permutations. Access via static get() factory method.
+     *
      * Completely delegates standard basis polynomial evaluation to BASIX.
      * Manages topological permutation to interface BASIX's UFC/tensor ordering
      * with the library's CCW ordering standard.
      */
     class ReferenceElement {
     public:
-        ReferenceElement() = default;
-        ReferenceElement(Geometry geom, int order, BasisType basisType = BasisType::H1, int vdim = 1);
+        // --- Flyweight Factory (thread-safe global cache) ---
+        static const ReferenceElement* get(Geometry geom, int order, BasisType basisType = BasisType::H1, int vdim = 1);
+
+        // Delete copy and move to enforce singleton behavior via cache
+        ReferenceElement(const ReferenceElement&) = delete;
+        ReferenceElement& operator=(const ReferenceElement&) = delete;
 
         Geometry geometry() const { return geometry_; }
         int dim() const { return geom::dim(geometry_); }
@@ -75,6 +86,9 @@ namespace mpfem {
         std::vector<int> edgeDofs(int edgeIdx) const;
 
     private:
+        // Private constructor - only callable via get() factory
+        ReferenceElement(Geometry geom, int order, BasisType basisType, int vdim);
+
         void initialize();
         void buildPermutation();
         void precomputeShapeValues();

@@ -154,10 +154,10 @@ class QuadraticH1FiniteElementTest : public ::testing::Test {
 protected:
     void SetUp() override
     {
-        tri2_ = std::make_unique<ReferenceElement>(Geometry::Triangle, 2, BasisType::H1, 1);
-        tet2_ = std::make_unique<ReferenceElement>(Geometry::Tetrahedron, 2, BasisType::H1, 1);
-        square2_ = std::make_unique<ReferenceElement>(Geometry::Square, 2, BasisType::H1, 1);
-        cube2_ = std::make_unique<ReferenceElement>(Geometry::Cube, 2, BasisType::H1, 1);
+        tri2_ = ReferenceElement::get(Geometry::Triangle, 2, BasisType::H1, 1);
+        tet2_ = ReferenceElement::get(Geometry::Tetrahedron, 2, BasisType::H1, 1);
+        square2_ = ReferenceElement::get(Geometry::Square, 2, BasisType::H1, 1);
+        cube2_ = ReferenceElement::get(Geometry::Cube, 2, BasisType::H1, 1);
     }
 
     struct EvalData {
@@ -173,17 +173,17 @@ protected:
         return sv;
     }
 
-    std::unique_ptr<ReferenceElement> tri2_;
-    std::unique_ptr<ReferenceElement> tet2_;
-    std::unique_ptr<ReferenceElement> square2_;
-    std::unique_ptr<ReferenceElement> cube2_;
+    const ReferenceElement* tri2_;
+    const ReferenceElement* tet2_;
+    const ReferenceElement* square2_;
+    const ReferenceElement* cube2_;
 };
 
 TEST_F(QuadraticH1FiniteElementTest, Triangle2PartitionOfUnity)
 {
     // Sum of H1 basis functions should be 1 at any point
     Vector3 xi(0.3, 0.2, 0.0);
-    auto sv = evalShape(tri2_.get(), xi);
+    auto sv = evalShape(tri2_, xi);
 
     Real sum = 0.0;
     for (int i = 0; i < tri2_->numDofs(); ++i) {
@@ -198,7 +198,7 @@ TEST_F(QuadraticH1FiniteElementTest, Triangle2KroneckerDelta)
     auto coords = tri2_->interpolationPoints();
 
     for (int i = 0; i < tri2_->numDofs(); ++i) {
-        auto sv = evalShape(tri2_.get(), coords[i]);
+        auto sv = evalShape(tri2_, coords[i]);
 
         for (int j = 0; j < tri2_->numDofs(); ++j) {
             if (i == j) {
@@ -214,7 +214,7 @@ TEST_F(QuadraticH1FiniteElementTest, Triangle2KroneckerDelta)
 TEST_F(QuadraticH1FiniteElementTest, Tetrahedron2PartitionOfUnity)
 {
     Vector3 xi(0.2, 0.3, 0.1);
-    auto sv = evalShape(tet2_.get(), xi);
+    auto sv = evalShape(tet2_, xi);
 
     Real sum = 0.0;
     for (int i = 0; i < tet2_->numDofs(); ++i) {
@@ -228,7 +228,7 @@ TEST_F(QuadraticH1FiniteElementTest, Tetrahedron2KroneckerDelta)
     auto coords = tet2_->interpolationPoints();
 
     for (int i = 0; i < tet2_->numDofs(); ++i) {
-        auto sv = evalShape(tet2_.get(), coords[i]);
+        auto sv = evalShape(tet2_, coords[i]);
 
         for (int j = 0; j < tet2_->numDofs(); ++j) {
             if (i == j) {
@@ -244,7 +244,7 @@ TEST_F(QuadraticH1FiniteElementTest, Tetrahedron2KroneckerDelta)
 TEST_F(QuadraticH1FiniteElementTest, Square2PartitionOfUnity)
 {
     Vector3 xi(0.3, -0.2, 0.0);
-    auto sv = evalShape(square2_.get(), xi);
+    auto sv = evalShape(square2_, xi);
 
     Real sum = 0.0;
     for (int i = 0; i < square2_->numDofs(); ++i) {
@@ -258,7 +258,7 @@ TEST_F(QuadraticH1FiniteElementTest, Square2KroneckerDelta)
     auto coords = square2_->interpolationPoints();
 
     for (int i = 0; i < square2_->numDofs(); ++i) {
-        auto sv = evalShape(square2_.get(), coords[i]);
+        auto sv = evalShape(square2_, coords[i]);
 
         for (int j = 0; j < square2_->numDofs(); ++j) {
             if (i == j) {
@@ -274,7 +274,7 @@ TEST_F(QuadraticH1FiniteElementTest, Square2KroneckerDelta)
 TEST_F(QuadraticH1FiniteElementTest, Cube2PartitionOfUnity)
 {
     Vector3 xi(0.3, -0.2, 0.1);
-    auto sv = evalShape(cube2_.get(), xi);
+    auto sv = evalShape(cube2_, xi);
 
     Real sum = 0.0;
     for (int i = 0; i < cube2_->numDofs(); ++i) {
@@ -288,7 +288,7 @@ TEST_F(QuadraticH1FiniteElementTest, Cube2KroneckerDelta)
     auto coords = cube2_->interpolationPoints();
 
     for (int i = 0; i < cube2_->numDofs(); ++i) {
-        auto sv = evalShape(cube2_.get(), coords[i]);
+        auto sv = evalShape(cube2_, coords[i]);
 
         for (int j = 0; j < cube2_->numDofs(); ++j) {
             if (i == j) {
