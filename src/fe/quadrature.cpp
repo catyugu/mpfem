@@ -53,7 +53,7 @@ namespace mpfem {
             }
             auto cell = toBasixCell(geom);
             auto result = basix::quadrature::make_quadrature<double>(
-                basix::quadrature::type::gauss_jacobi, cell, basix::polyset::type::standard, order);
+                basix::quadrature::type::Default, cell, basix::polyset::type::standard, order);
 
             return makeRule(result[0], result[1], geom::dim(geom));
         }
