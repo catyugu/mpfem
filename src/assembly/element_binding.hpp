@@ -21,7 +21,8 @@ namespace mpfem {
         const Element elem = isBoundary ? mesh.bdrElement(elemIdx) : mesh.element(elemIdx);
         std::array<Vector3, MaxNodesPerElement> nodeCoords;
         for (size_t i = 0; i < elem.nodes.size(); ++i) {
-            nodeCoords[i] = mesh.node(elem.nodes[i]);
+            Index nodeIdx = elem.nodes[i];
+            nodeCoords[i] = Vector3 {mesh.nodeX(nodeIdx), mesh.nodeY(nodeIdx), mesh.nodeZ(nodeIdx)};
         }
         trans.bindElement(elem.geometry, elem.order, elem.attribute, elemIdx,
             std::span<const Vector3>(nodeCoords.data(), elem.nodes.size()));

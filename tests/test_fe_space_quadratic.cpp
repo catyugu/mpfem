@@ -258,16 +258,14 @@ TEST_F(QuadraticGridFunctionTest, InterpolateLinearFunction)
         if (d == InvalidIndex) {
             continue;
         }
-        const Vector3& vert = mesh_.node(v);
-        (*gf_)(d) = vert.x();
+        (*gf_)(d) = mesh_.nodeX(v);
     }
 
     // Check corner-vertex DOFs.
     for (Index v = 0; v < 4; ++v) { // Only check corner vertices
         Index d = getVertexDof(*fes_, v);
         ASSERT_NE(d, InvalidIndex);
-        const Vector3& vert = mesh_.node(v);
-        EXPECT_NEAR((*gf_)(d), vert.x(), 1e-12);
+        EXPECT_NEAR((*gf_)(d), mesh_.nodeX(v), 1e-12);
     }
 }
 
@@ -296,8 +294,9 @@ TEST_F(QuadraticGridFunctionTest, EvalQuadraticFunction)
         if (d == InvalidIndex) {
             continue;
         }
-        const Vector3& p = mesh_.node(v);
-        (*gf_)(d) = p.x() * p.x() + p.y() * p.y();
+        Real px = mesh_.nodeX(v);
+        Real py = mesh_.nodeY(v);
+        (*gf_)(d) = px * px + py * py;
     }
 
     // Check value at vertex 1: (1,0) -> 1.0
@@ -540,19 +539,19 @@ TEST_F(COMSOLMeshTest, Tetrahedron2EdgeMidpoints)
         ASSERT_EQ(nodes.size(), 10) << "Tetrahedron2 should have 10 nodes";
 
         // Corner vertices
-        auto v0 = mesh.node(nodes[0]);
-        auto v1 = mesh.node(nodes[1]);
-        auto v2 = mesh.node(nodes[2]);
-        auto v3 = mesh.node(nodes[3]);
+        Vector3 v0 {mesh.nodeX(nodes[0]), mesh.nodeY(nodes[0]), mesh.nodeZ(nodes[0])};
+        Vector3 v1 {mesh.nodeX(nodes[1]), mesh.nodeY(nodes[1]), mesh.nodeZ(nodes[1])};
+        Vector3 v2 {mesh.nodeX(nodes[2]), mesh.nodeY(nodes[2]), mesh.nodeZ(nodes[2])};
+        Vector3 v3 {mesh.nodeX(nodes[3]), mesh.nodeY(nodes[3]), mesh.nodeZ(nodes[3])};
 
         // Edge midpoints in COMSOL ordering:
         // dof 4: E01, dof 5: E02, dof 6: E12, dof 7: E03, dof 8: E13, dof 9: E23
-        auto e01 = mesh.node(nodes[4]); // Edge 0-1
-        auto e02 = mesh.node(nodes[5]); // Edge 0-2
-        auto e12 = mesh.node(nodes[6]); // Edge 1-2
-        auto e03 = mesh.node(nodes[7]); // Edge 0-3
-        auto e13 = mesh.node(nodes[8]); // Edge 1-3
-        auto e23 = mesh.node(nodes[9]); // Edge 2-3
+        Vector3 e01 {mesh.nodeX(nodes[4]), mesh.nodeY(nodes[4]), mesh.nodeZ(nodes[4])}; // Edge 0-1
+        Vector3 e02 {mesh.nodeX(nodes[5]), mesh.nodeY(nodes[5]), mesh.nodeZ(nodes[5])}; // Edge 0-2
+        Vector3 e12 {mesh.nodeX(nodes[6]), mesh.nodeY(nodes[6]), mesh.nodeZ(nodes[6])}; // Edge 1-2
+        Vector3 e03 {mesh.nodeX(nodes[7]), mesh.nodeY(nodes[7]), mesh.nodeZ(nodes[7])}; // Edge 0-3
+        Vector3 e13 {mesh.nodeX(nodes[8]), mesh.nodeY(nodes[8]), mesh.nodeZ(nodes[8])}; // Edge 1-3
+        Vector3 e23 {mesh.nodeX(nodes[9]), mesh.nodeY(nodes[9]), mesh.nodeZ(nodes[9])}; // Edge 2-3
 
         // Verify edge midpoints are at the correct positions
         auto checkMidpoint = [&](const Vector3& mid, const Vector3& a, const Vector3& b,

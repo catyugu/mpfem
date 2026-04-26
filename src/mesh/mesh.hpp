@@ -18,53 +18,21 @@ namespace mpfem {
      * @brief Mesh class storing nodes, elements, and topology.
      *
      * This class manages:
-     * - Vertex coordinates
+     * - Vertex coordinates (Structure of Arrays for METIS compatibility)
      * - Volume elements (tetrahedra, hexahedra)
      * - Boundary elements (triangles, quads)
      * - Domain and boundary attributes
      * - Mesh topology for internal/external boundary detection
+     *
+     * Data Layout:
+     * - Nodes: SoA with separate x_, y_, z_ arrays (METIS-compatible)
+     * - Elements: CSR with elementOffsets_ + elementNodes_
+     * - Faces: CSR with faceOffsets_ + faceNodes_
+     * - Edges: sorted edgeInfoList_ for binary search
      */
     class Mesh {
     public:
-        /// Face identifier (sorted vertex indices)
-        struct FaceKey {
-            int nodes[4]; // 假设最多四边形面
-            int count;
-
-            // 必须自己实现 == 和固定的 hash 函数 (如 MurmurHash 或简单按位异或)
-            bool operator==(const FaceKey& other) const
-            {
-                if (count != other.count)
-                    return false;
-                for (int i = 0; i < count; ++i)
-                    if (nodes[i] != other.nodes[i])
-                        return false;
-                return true;
-            }
-        };
-
-        // 哈希函数规避堆分配
-        struct FaceKeyHash {
-            std::size_t operator()(const FaceKey& k) const
-            {
-                std::size_t h = 0;
-                for (int i = 0; i < k.count; ++i) {
-                    h ^= std::hash<int> {}(k.nodes[i]) + 0x9e3779b9 + (h << 6) + (h >> 2);
-                }
-                return h;
-            }
-        };
-
-        /// Information about a face's adjacent elements
-        struct FaceInfo {
-            Index elem1 = InvalidIndex; ///< First adjacent element
-            Index elem2 = InvalidIndex; ///< Second adjacent element (-1 for external boundary)
-            int localFace1 = -1; ///< Local face index in elem1
-            int localFace2 = -1; ///< Local face index in elem2
-            bool isBoundary = true; ///< True if external boundary face
-            std::vector<Index> vertices; ///< Face vertices (sorted)
-        };
-
+        /// Edge information
         struct EdgeInfo {
             Index v0 = InvalidIndex;
             Index v1 = InvalidIndex;
@@ -87,32 +55,25 @@ namespace mpfem {
         void setDim(int dim);
 
         /// Get number of nodes
-        Index numNodes() const { return static_cast<Index>(nodes_.size()); }
+        Index numNodes() const { return static_cast<Index>(x_.size()); }
 
         /// Get total number of unique topology edges
         Index numEdges() const { return static_cast<Index>(edgeInfoList_.size()); }
 
         // -------------------------------------------------------------------------
-        // Vertex access
+        // Vertex access (SoA for METIS compatibility)
         // -------------------------------------------------------------------------
-
-        /// Get node by index
-        const Vector3& node(Index i) const { return nodes_[i]; }
-        Vector3& node(Index i) { return nodes_[i]; }
-
-        /// Get all nodes
-        const std::vector<Vector3>& nodes() const { return nodes_; }
-        std::vector<Vector3>& nodes() { return nodes_; }
-
-        /// Add a node
-        void addNode(const Vector3& v);
-        void addNode(Vector3&& v);
 
         /// Add a node from coordinates
         Index addNode(Real x, Real y = 0.0, Real z = 0.0);
 
         /// Reserve space for nodes
         void reserveNodes(Index n);
+
+        /// Node coordinate accessors (METIS-compatible separate arrays)
+        Real nodeX(Index i) const { return x_[i]; }
+        Real nodeY(Index i) const { return y_[i]; }
+        Real nodeZ(Index i) const { return z_[i]; }
 
         // -------------------------------------------------------------------------
         // Volume element access
@@ -183,7 +144,7 @@ namespace mpfem {
             auto it = bdrElementToFace_.find(bdrElemIdx);
             if (it == bdrElementToFace_.end())
                 return true;
-            return faceInfoList_[it->second].isBoundary;
+            return faceIsBoundary(it->second);
         }
 
         /// Check if a boundary ID (attribute) is an external boundary
@@ -196,11 +157,25 @@ namespace mpfem {
             return (it != bdrIdExternalCache_.end()) ? it->second : true;
         }
 
-        /// Get face info by index
-        const FaceInfo& getFaceInfo(Index faceIdx) const { return faceInfoList_[faceIdx]; }
-
         /// Get total number of unique faces
-        Index numFaces() const { return static_cast<Index>(faceInfoList_.size()); }
+        Index numFaces() const { return static_cast<Index>(faceOffsets_.size()) - 1; }
+
+        /// Face queries (CSR F2N)
+        Index numFaceNodes(Index faceIdx) const { return faceOffsets_[faceIdx + 1] - faceOffsets_[faceIdx]; }
+        std::span<const Index> getFaceNodes(Index faceIdx) const
+        {
+            return {&faceNodes_[faceOffsets_[faceIdx]], static_cast<size_t>(numFaceNodes(faceIdx))};
+        }
+        Index faceNeighborElem1(Index faceIdx) const { return faceElem1_[faceIdx]; }
+        Index faceNeighborElem2(Index faceIdx) const { return faceElem2_[faceIdx]; }
+        int faceLocalIndex1(Index faceIdx) const { return faceLocal1_[faceIdx]; }
+        int faceLocalIndex2(Index faceIdx) const { return faceLocal2_[faceIdx]; }
+        bool faceIsBoundary(Index faceIdx) const { return faceBoundary_[faceIdx] != 0; }
+
+        /// For topology building - set face data during buildTopology
+        void setFaceData(Index faceIdx, Index elem1, Index elem2, int local1, int local2, bool isBdr,
+            const std::vector<Index>& nodes);
+        void appendFace(const std::vector<Index>& nodes, Index elem1, Index elem2, int local1, int local2, bool isBdr);
 
         /// Get global topology vertices used by an element
         std::vector<Index> getElementVertices(Index elemIdx) const;
@@ -242,15 +217,19 @@ namespace mpfem {
         // -------------------------------------------------------------------------
 
     private:
-        static std::uint64_t edgeKey(Index a, Index b);
         void buildEdgeToElementMap();
         void buildFaceToElementMap();
         void buildElementToFaceMap();
         void identifyBoundaryFaces();
         void buildBoundaryElementMapping();
 
+        // Mesh dimension
         int dim_ = 3;
-        std::vector<Vector3> nodes_;
+
+        // Structure of Arrays for nodes (METIS-compatible)
+        std::vector<Real> x_; // Node x coordinates
+        std::vector<Real> y_; // Node y coordinates
+        std::vector<Real> z_; // Node z coordinates
 
         // Flattened volume element storage
         std::vector<Geometry> elementGeoms_;
@@ -268,15 +247,11 @@ namespace mpfem {
 
         // Topology data
         bool topologyBuilt_ = false;
-        std::vector<EdgeInfo> edgeInfoList_;
-        std::unordered_map<std::uint64_t, Index> edgeKeyToIndex_;
+        std::vector<EdgeInfo> edgeInfoList_; // Sorted by (v0, v1) for binary search
 
         // CSR storage for element-to-edge
         std::vector<Index> elemEdgeOffsets_;
         std::vector<Index> elemEdgeData_;
-
-        std::vector<FaceInfo> faceInfoList_;
-        std::unordered_map<FaceKey, Index, FaceKeyHash> faceKeyToIndex_;
 
         // CSR storage for element-to-face
         std::vector<Index> elemFaceOffsets_;
@@ -285,6 +260,20 @@ namespace mpfem {
         std::vector<Index> interiorFaceIndices_;
         std::unordered_map<Index, Index> bdrElementToFace_;
         std::unordered_map<Index, bool> bdrIdExternalCache_; ///< Cache: boundary ID -> isExternal
+
+        // CSR storage for faces (F2N) - METIS compatible
+        std::vector<Index> faceOffsets_; // CSR row pointers (numFaces+1)
+        std::vector<Index> faceNodes_; // Flattened face node indices
+        std::vector<Index> faceElem1_; // First adjacent element
+        std::vector<Index> faceElem2_; // Second adjacent element (InvalidIndex for boundary)
+        std::vector<int> faceLocal1_; // Local face index in elem1
+        std::vector<int> faceLocal2_; // Local face index in elem2
+        std::vector<char> faceBoundary_; // char (0=interior, 1=boundary)
+
+        // Sorted face keys for binary search in boundary element matching
+        // FaceKey: pair of (sorted node indices, faceIdx)
+        using FaceKeyType = std::vector<Index>;
+        std::vector<std::pair<FaceKeyType, Index>> sortedFaceKeys_; // Sorted by node vector for binary search
     };
 
 } // namespace mpfem

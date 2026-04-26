@@ -4,18 +4,11 @@
 
 namespace mpfem {
 
-    std::uint64_t Mesh::edgeKey(Index a, Index b)
-    {
-        const Index lo = std::min(a, b);
-        const Index hi = std::max(a, b);
-        return (static_cast<std::uint64_t>(lo) << 32) | static_cast<std::uint64_t>(hi);
-    }
-
     Mesh::Mesh(int dim, Index numVertices, Index numElements, Index numBdrElements)
         : dim_(dim)
     {
         if (numVertices > 0)
-            nodes_.reserve(numVertices);
+            reserveNodes(numVertices);
         if (numElements > 0)
             reserveElements(numElements);
         if (numBdrElements > 0)
@@ -28,25 +21,19 @@ namespace mpfem {
         LOG_DEBUG << "Mesh dimension set to " << dim;
     }
 
-    void Mesh::addNode(const Vector3& v)
-    {
-        nodes_.push_back(v);
-    }
-
-    void Mesh::addNode(Vector3&& v)
-    {
-        nodes_.push_back(std::move(v));
-    }
-
     Index Mesh::addNode(Real x, Real y, Real z)
     {
-        nodes_.emplace_back(x, y, z);
-        return static_cast<Index>(nodes_.size() - 1);
+        x_.push_back(x);
+        y_.push_back(y);
+        z_.push_back(z);
+        return static_cast<Index>(x_.size() - 1);
     }
 
     void Mesh::reserveNodes(Index n)
     {
-        nodes_.reserve(n);
+        x_.reserve(n);
+        y_.reserve(n);
+        z_.reserve(n);
     }
 
     Element Mesh::element(Index i) const
@@ -171,7 +158,9 @@ namespace mpfem {
 
     void Mesh::clear()
     {
-        nodes_.clear();
+        x_.clear();
+        y_.clear();
+        z_.clear();
         elementGeoms_.clear();
         elementAttributes_.clear();
         elementOrders_.clear();
@@ -185,17 +174,22 @@ namespace mpfem {
         dim_ = 3;
         topologyBuilt_ = false;
         edgeInfoList_.clear();
-        edgeKeyToIndex_.clear();
         elemEdgeOffsets_.clear();
         elemEdgeData_.clear();
-        faceInfoList_.clear();
-        faceKeyToIndex_.clear();
+        faceOffsets_.clear();
+        faceNodes_.clear();
+        faceElem1_.clear();
+        faceElem2_.clear();
+        faceLocal1_.clear();
+        faceLocal2_.clear();
+        faceBoundary_.clear();
         elemFaceOffsets_.clear();
         elemFaceData_.clear();
         boundaryFaceIndices_.clear();
         interiorFaceIndices_.clear();
         bdrElementToFace_.clear();
         bdrIdExternalCache_.clear();
+        sortedFaceKeys_.clear();
     }
 
     std::vector<Index> Mesh::getElementVertices(Index elemIdx) const
@@ -236,22 +230,34 @@ namespace mpfem {
 
     Index Mesh::edgeIndex(Index a, Index b) const
     {
-        const auto it = edgeKeyToIndex_.find(edgeKey(a, b));
-        return (it == edgeKeyToIndex_.end()) ? InvalidIndex : it->second;
+        // Binary search on sorted edgeInfoList_
+        const Index lo = std::min(a, b);
+        const Index hi = std::max(a, b);
+        auto it = std::lower_bound(edgeInfoList_.begin(), edgeInfoList_.end(),
+            EdgeInfo {lo, hi},
+            [](const EdgeInfo& e1, const EdgeInfo& e2) {
+                if (e1.v0 != e2.v0)
+                    return e1.v0 < e2.v0;
+                return e1.v1 < e2.v1;
+            });
+        if (it != edgeInfoList_.end() && it->v0 == lo && it->v1 == hi) {
+            return static_cast<Index>(it - edgeInfoList_.begin());
+        }
+        return InvalidIndex;
     }
 
     std::pair<Vector3, Vector3> Mesh::getBoundingBox() const
     {
-        if (nodes_.empty()) {
+        if (x_.empty()) {
             return {Vector3::Zero(), Vector3::Zero()};
         }
 
-        Vector3 minCoord = nodes_[0];
+        Vector3 minCoord(x_[0], y_[0], z_[0]);
         Vector3 maxCoord = minCoord;
 
-        for (const auto& v : nodes_) {
-            minCoord = minCoord.cwiseMin(v);
-            maxCoord = maxCoord.cwiseMax(v);
+        for (Index i = 1; i < numNodes(); ++i) {
+            minCoord = minCoord.cwiseMin(Vector3(x_[i], y_[i], z_[i]));
+            maxCoord = maxCoord.cwiseMax(Vector3(x_[i], y_[i], z_[i]));
         }
 
         return {minCoord, maxCoord};
@@ -270,16 +276,21 @@ namespace mpfem {
 
         // Clear previous data
         edgeInfoList_.clear();
-        edgeKeyToIndex_.clear();
         elemEdgeOffsets_.clear();
         elemEdgeData_.clear();
-        faceInfoList_.clear();
-        faceKeyToIndex_.clear();
+        faceOffsets_.clear();
+        faceNodes_.clear();
+        faceElem1_.clear();
+        faceElem2_.clear();
+        faceLocal1_.clear();
+        faceLocal2_.clear();
+        faceBoundary_.clear();
         elemFaceOffsets_.clear();
         elemFaceData_.clear();
         boundaryFaceIndices_.clear();
         interiorFaceIndices_.clear();
         bdrElementToFace_.clear();
+        sortedFaceKeys_.clear();
 
         // Build edge -> element mapping
         buildEdgeToElementMap();
@@ -306,90 +317,148 @@ namespace mpfem {
 
     void Mesh::buildEdgeToElementMap()
     {
+        // First pass: collect all edges as (EdgeInfo, elemIdx, localEdge) tuples
+        struct EdgeEntry {
+            EdgeInfo edge;
+            Index elemIdx;
+            int localEdge;
+        };
+        std::vector<EdgeEntry> allEdges;
+
+        for (Index elemIdx = 0; elemIdx < numElements(); ++elemIdx) {
+            const Element elem = element(elemIdx);
+            const int nEdges = elem.numEdges();
+            for (int localEdge = 0; localEdge < nEdges; ++localEdge) {
+                const auto [v0, v1] = elem.edgeVertices(localEdge);
+                allEdges.push_back(EdgeEntry {{std::min(v0, v1), std::max(v0, v1)}, elemIdx, localEdge});
+            }
+        }
+
+        // Sort edges by (v0, v1)
+        std::sort(allEdges.begin(), allEdges.end(), [](const EdgeEntry& a, const EdgeEntry& b) {
+            if (a.edge.v0 != b.edge.v0)
+                return a.edge.v0 < b.edge.v0;
+            return a.edge.v1 < b.edge.v1;
+        });
+
+        // Deduplicate edges, building edgeInfoList_
+        edgeInfoList_.clear();
+        for (const auto& entry : allEdges) {
+            if (edgeInfoList_.empty() || edgeInfoList_.back().v0 != entry.edge.v0 || edgeInfoList_.back().v1 != entry.edge.v1) {
+                edgeInfoList_.push_back(entry.edge);
+            }
+        }
+
+        // Build elemEdgeOffsets_
         elemEdgeOffsets_.clear();
         elemEdgeOffsets_.resize(numElements() + 1, 0);
-
         for (Index i = 0; i < numElements(); ++i) {
             elemEdgeOffsets_[i + 1] = elemEdgeOffsets_[i] + element(i).numEdges();
         }
         elemEdgeData_.resize(elemEdgeOffsets_.back());
 
-        for (Index elemIdx = 0; elemIdx < numElements(); ++elemIdx) {
-            const Element elem = element(elemIdx);
-            const int nEdges = elem.numEdges();
-            const Index base = elemEdgeOffsets_[elemIdx];
-
-            for (int localEdge = 0; localEdge < nEdges; ++localEdge) {
-                const auto [v0, v1] = elem.edgeVertices(localEdge);
-                const std::uint64_t key = edgeKey(v0, v1);
-
-                auto it = edgeKeyToIndex_.find(key);
-                Index edgeIdx = InvalidIndex;
-                if (it == edgeKeyToIndex_.end()) {
-                    edgeIdx = static_cast<Index>(edgeInfoList_.size());
-                    edgeInfoList_.push_back(EdgeInfo {std::min(v0, v1), std::max(v0, v1)});
-                    edgeKeyToIndex_[key] = edgeIdx;
-                }
-                else {
-                    edgeIdx = it->second;
-                }
-
-                elemEdgeData_[base + localEdge] = edgeIdx;
-            }
+        // Second pass: assign edge indices using binary search
+        for (const auto& entry : allEdges) {
+            auto it = std::lower_bound(edgeInfoList_.begin(), edgeInfoList_.end(), entry.edge,
+                [](const EdgeInfo& e1, const EdgeInfo& e2) {
+                    if (e1.v0 != e2.v0)
+                        return e1.v0 < e2.v0;
+                    return e1.v1 < e2.v1;
+                });
+            Index edgeIdx = static_cast<Index>(it - edgeInfoList_.begin());
+            elemEdgeData_[elemEdgeOffsets_[entry.elemIdx] + entry.localEdge] = edgeIdx;
         }
     }
 
     void Mesh::buildFaceToElementMap()
     {
-        // Temporary map for building
-        std::unordered_map<FaceKey, FaceInfo, FaceKeyHash> faceMap;
+        // Collect all candidate faces with their data
+        struct FaceCandidate {
+            std::vector<Index> nodes; // Sorted
+            Index elemIdx;
+            int localFace;
+        };
+        std::vector<FaceCandidate> candidates;
 
         // Process each element
         for (Index elemIdx = 0; elemIdx < numElements(); ++elemIdx) {
             const Element elem = element(elemIdx);
 
-            // Get all faces of this element
             for (int f = 0; f < elem.numFaces(); ++f) {
                 auto faceVerts = elem.faceVertices(f);
-
-                // Create a sorted key for the face
-                FaceKey key;
-                key.count = 0;
-                for (Index v : faceVerts) {
-                    key.nodes[key.count++] = v;
-                }
-                std::sort(key.nodes, key.nodes + key.count);
-
-                // Check if face already exists
-                auto it = faceMap.find(key);
-                if (it == faceMap.end()) {
-                    // New face
-                    FaceInfo info;
-                    info.elem1 = elemIdx;
-                    info.elem2 = InvalidIndex;
-                    info.localFace1 = f;
-                    info.localFace2 = -1;
-                    info.isBoundary = true;
-                    info.vertices = faceVerts;
-
-                    faceMap[key] = std::move(info);
-                }
-                else {
-                    // Face already exists - this is an interior face
-                    it->second.elem2 = elemIdx;
-                    it->second.localFace2 = f;
-                    it->second.isBoundary = false;
-                }
+                FaceCandidate cand;
+                cand.elemIdx = elemIdx;
+                cand.localFace = f;
+                cand.nodes.assign(faceVerts.begin(), faceVerts.end());
+                std::sort(cand.nodes.begin(), cand.nodes.end());
+                candidates.push_back(std::move(cand));
             }
         }
 
-        // Transfer to vector for O(1) access
-        faceInfoList_.reserve(faceMap.size());
-        Index faceIdx = 0;
-        for (auto& [key, info] : faceMap) {
-            faceInfoList_.push_back(std::move(info));
-            faceKeyToIndex_[key] = faceIdx++;
+        // Sort by node indices for deduplication
+        std::sort(candidates.begin(), candidates.end(), [](const FaceCandidate& a, const FaceCandidate& b) {
+            return a.nodes < b.nodes;
+        });
+
+        // Deduplicate and build CSR face storage
+        faceOffsets_.clear();
+        faceOffsets_.push_back(0);
+        faceElem1_.clear();
+        faceElem2_.clear();
+        faceLocal1_.clear();
+        faceLocal2_.clear();
+        faceBoundary_.clear();
+        faceNodes_.clear();
+
+        Index currentFaceIdx = 0;
+
+        for (size_t i = 0; i < candidates.size();) {
+            // Find all candidates with the same face (same sorted nodes)
+            size_t j = i;
+            while (j < candidates.size() && candidates[j].nodes == candidates[i].nodes) {
+                ++j;
+            }
+
+            // First occurrence = elem1, second = elem2
+            const FaceCandidate& first = candidates[i];
+            Index e1 = first.elemIdx;
+            Index e2 = InvalidIndex;
+            int l1 = first.localFace;
+            int l2 = -1;
+
+            if (j - i > 1) {
+                const FaceCandidate& second = candidates[i + 1];
+                e2 = second.elemIdx;
+                l2 = second.localFace;
+            }
+
+            // Append face nodes to CSR storage
+            faceNodes_.insert(faceNodes_.end(), candidates[i].nodes.begin(), candidates[i].nodes.end());
+            faceOffsets_.push_back(static_cast<Index>(faceNodes_.size()));
+
+            faceElem1_.push_back(e1);
+            faceElem2_.push_back(e2);
+            faceLocal1_.push_back(l1);
+            faceLocal2_.push_back(l2);
+            faceBoundary_.push_back(e2 == InvalidIndex ? 1 : 0);
+
+            currentFaceIdx++;
+            i = j;
         }
+
+        // Build sortedFaceKeys_ for binary search in boundary element matching
+        sortedFaceKeys_.clear();
+        for (Index faceIdx = 0; faceIdx < static_cast<Index>(faceElem1_.size()); ++faceIdx) {
+            FaceKeyType key;
+            for (Index i = faceOffsets_[faceIdx]; i < faceOffsets_[faceIdx + 1]; ++i) {
+                key.push_back(faceNodes_[i]);
+            }
+            std::sort(key.begin(), key.end());
+            sortedFaceKeys_.push_back({key, faceIdx});
+        }
+        // Sort by node vector for binary search
+        std::sort(sortedFaceKeys_.begin(), sortedFaceKeys_.end(),
+            [](const auto& a, const auto& b) { return a.first < b.first; });
     }
 
     void Mesh::buildElementToFaceMap()
@@ -402,15 +471,13 @@ namespace mpfem {
         }
         elemFaceData_.assign(elemFaceOffsets_.back(), InvalidIndex);
 
-        for (Index faceIdx = 0; faceIdx < static_cast<Index>(faceInfoList_.size()); ++faceIdx) {
-            const auto& info = faceInfoList_[faceIdx];
-
-            if (info.elem1 != InvalidIndex) {
-                elemFaceData_[elemFaceOffsets_[info.elem1] + info.localFace1] = faceIdx;
+        for (Index faceIdx = 0; faceIdx < static_cast<Index>(faceElem1_.size()); ++faceIdx) {
+            if (faceElem1_[faceIdx] != InvalidIndex) {
+                elemFaceData_[elemFaceOffsets_[faceElem1_[faceIdx]] + faceLocal1_[faceIdx]] = faceIdx;
             }
 
-            if (info.elem2 != InvalidIndex) {
-                elemFaceData_[elemFaceOffsets_[info.elem2] + info.localFace2] = faceIdx;
+            if (faceElem2_[faceIdx] != InvalidIndex) {
+                elemFaceData_[elemFaceOffsets_[faceElem2_[faceIdx]] + faceLocal2_[faceIdx]] = faceIdx;
             }
         }
     }
@@ -420,8 +487,8 @@ namespace mpfem {
         boundaryFaceIndices_.clear();
         interiorFaceIndices_.clear();
 
-        for (Index faceIdx = 0; faceIdx < static_cast<Index>(faceInfoList_.size()); ++faceIdx) {
-            if (faceInfoList_[faceIdx].isBoundary) {
+        for (Index faceIdx = 0; faceIdx < static_cast<Index>(faceElem1_.size()); ++faceIdx) {
+            if (faceBoundary_[faceIdx] != 0) {
                 boundaryFaceIndices_.push_back(faceIdx);
             }
             else {
@@ -433,9 +500,6 @@ namespace mpfem {
     void Mesh::buildBoundaryElementMapping()
     {
         // Match boundary elements to topology faces
-        // A boundary element should match a boundary face by its CORNER vertices only
-        // (not including edge midpoints for quadratic elements)
-
         Index externalCount = 0;
         Index internalCount = 0;
         bdrIdExternalCache_.clear();
@@ -445,23 +509,23 @@ namespace mpfem {
             Index bdrId = bdrElem.attribute;
 
             // Get sorted vertex key for boundary element - ONLY CORNER NODES
-            FaceKey key;
+            FaceKeyType key;
             int numVertices = bdrElem.numVertices();
-            key.count = numVertices;
+            key.reserve(numVertices);
             for (int i = 0; i < numVertices; ++i) {
-                key.nodes[i] = bdrElem.vertex(i);
+                key.push_back(bdrElem.vertex(i));
             }
-            std::sort(key.nodes, key.nodes + key.count);
+            std::sort(key.begin(), key.end());
 
-            // Find matching face
-            auto it = faceKeyToIndex_.find(key);
-            if (it != faceKeyToIndex_.end()) {
+            // Binary search in sortedFaceKeys_
+            auto it = std::lower_bound(sortedFaceKeys_.begin(), sortedFaceKeys_.end(), key,
+                [](const auto& pair, const FaceKeyType& k) { return pair.first < k; });
+            if (it != sortedFaceKeys_.end() && it->first == key) {
                 Index faceIdx = it->second;
                 bdrElementToFace_[bdrIdx] = faceIdx;
 
-                bool isExternal = faceInfoList_[faceIdx].isBoundary;
+                bool isExternal = faceBoundary_[faceIdx] != 0;
 
-                // Count external vs internal boundaries
                 if (isExternal) {
                     externalCount++;
                 }
