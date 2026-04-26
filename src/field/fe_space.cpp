@@ -170,7 +170,7 @@ namespace mpfem {
         for (Index elemIdx = 0; elemIdx < mesh_->numElements(); ++elemIdx) {
             const Element elem = mesh_->element(elemIdx);
             const ReferenceElement* refElem = fec_->get(elem.geometry);
-            DofLayout layout = refElem->basis().dofLayout();
+            DofLayout layout = refElem->dofLayout();
             layout.numVertexDofs *= fieldVdim;
             layout.numEdgeDofs *= fieldVdim;
             layout.numFaceDofs *= fieldVdim;
@@ -201,7 +201,7 @@ namespace mpfem {
         for (Index bdrIdx = 0; bdrIdx < mesh_->numBdrElements(); ++bdrIdx) {
             const Element elem = mesh_->bdrElement(bdrIdx);
             const ReferenceElement* refElem = fec_->get(elem.geometry);
-            DofLayout layout = refElem->basis().dofLayout();
+            DofLayout layout = refElem->dofLayout();
             layout.numVertexDofs *= fieldVdim;
             layout.numEdgeDofs *= fieldVdim;
             layout.numFaceDofs *= fieldVdim;
@@ -296,7 +296,7 @@ namespace mpfem {
             const Element elem = mesh_->element(elemIdx);
             const ReferenceElement* refElem = fec_->get(elem.geometry);
             const bool useNdOrientation = refElem->basisType() == BasisType::ND;
-            DofLayout layout = refElem->basis().dofLayout();
+            DofLayout layout = refElem->dofLayout();
             layout.numVertexDofs *= fieldVdim;
             layout.numEdgeDofs *= fieldVdim;
             layout.numFaceDofs *= fieldVdim;
@@ -374,7 +374,7 @@ namespace mpfem {
         for (Index bdrIdx = 0; bdrIdx < mesh_->numBdrElements(); ++bdrIdx) {
             const Element elem = mesh_->bdrElement(bdrIdx);
             const ReferenceElement* refElem = fec_->get(elem.geometry);
-            DofLayout layout = refElem->basis().dofLayout();
+            DofLayout layout = refElem->dofLayout();
             layout.numVertexDofs *= fieldVdim;
             layout.numEdgeDofs *= fieldVdim;
             layout.numFaceDofs *= fieldVdim;

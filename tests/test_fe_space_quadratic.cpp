@@ -51,7 +51,7 @@ static Index getVertexDof(const FESpace& fes, Index vertexIdx)
         if (!refElem) {
             continue;
         }
-        const int vertexDofsPerCorner = refElem->basis().dofLayout().numVertexDofs;
+        const int vertexDofsPerCorner = refElem->dofLayout().numVertexDofs;
         if (vertexDofsPerCorner <= 0) {
             continue;
         }
@@ -667,15 +667,14 @@ TEST_F(COMSOLMeshTest, FiniteElementKroneckerDelta)
         bindElementToTransform(trans, mesh, e);
 
         auto refElem = fes.elementRefElement(e);
-        const FiniteElement& h1Element = refElem->basis();
-        auto dofCoords = h1Element.interpolationPoints();
+        auto dofCoords = refElem->interpolationPoints();
 
         // Pre-allocate storage
         ShapeMatrix values;
 
         // At each node position, only the corresponding H1 basis function should be 1.
         for (int i = 0; i < static_cast<int>(dofCoords.size()); ++i) {
-            h1Element.evalShape(dofCoords[i], values);
+            refElem->evalShape(dofCoords[i], values);
 
             for (int j = 0; j < values.rows(); ++j) {
                 if (i == j) {

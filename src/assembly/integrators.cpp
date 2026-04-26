@@ -83,7 +83,7 @@ namespace mpfem {
 
             const Matrix& refGrads = ref.shapeDerivativesAtQuad(q);
             DerivMatrix physGrads;
-            ShapeEvaluator::evalPhysDerivatives(ref.basis(), trans, refGrads, physGrads);
+            ShapeEvaluator::evalPhysDerivatives(MapType::VALUE, trans, refGrads, physGrads);
             gradMat = physGrads.topRows(nd);
 
             dGradMat.noalias() = gradMat * D;
@@ -240,7 +240,7 @@ namespace mpfem {
         {
             const Matrix& refGrads = ref.shapeDerivativesAtQuad(q);
             DerivMatrix physGrads;
-            ShapeEvaluator::evalPhysDerivatives(ref.basis(), trans, refGrads, physGrads);
+            ShapeEvaluator::evalPhysDerivatives(MapType::VALUE, trans, refGrads, physGrads);
             for (int a = 0; a < nd; ++a) {
                 const Vector3 physGrad(physGrads(a, 0), physGrads(a, 1), physGrads(a, 2));
                 int col = a * vdim;

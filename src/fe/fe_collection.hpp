@@ -74,34 +74,6 @@ namespace mpfem {
         std::unordered_map<Geometry, std::unique_ptr<ReferenceElement>> elements_;
     };
 
-    class NDCollection final : public FECollection {
-    public:
-        explicit NDCollection(int order)
-            : order_(order)
-        {
-            if (order_ < 1 || order_ > 2) {
-                MPFEM_THROW(ArgumentException, "NDCollection supports order 1 and 2 only");
-            }
-
-            elements_[Geometry::Triangle] = std::make_unique<ReferenceElement>(Geometry::Triangle, order_, BasisType::ND);
-            elements_[Geometry::Tetrahedron] = std::make_unique<ReferenceElement>(Geometry::Tetrahedron, order_, BasisType::ND);
-        }
-
-        const ReferenceElement* get(Geometry geom) const override
-        {
-            auto it = elements_.find(geom);
-            return it != elements_.end() ? it->second.get() : nullptr;
-        }
-
-        int order() const override { return order_; }
-        int vdim() const override { return 1; }
-        std::string name() const override { return "ND"; }
-
-    private:
-        int order_ = 1;
-        std::unordered_map<Geometry, std::unique_ptr<ReferenceElement>> elements_;
-    };
-
 } // namespace mpfem
 
 #endif // MPFEM_FE_COLLECTION_HPP
