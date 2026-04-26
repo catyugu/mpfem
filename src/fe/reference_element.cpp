@@ -1,13 +1,13 @@
 #include "fe/reference_element.hpp"
 #include "core/exception.hpp"
+#include <algorithm>
 #include <basix/cell.h>
 #include <basix/finite-element.h>
-#include <iostream> // TODO: remove debug
+#include <set>
 
 namespace mpfem {
 
     namespace {
-
         basix::cell::type toBasixCell(Geometry geom)
         {
             switch (geom) {
@@ -39,16 +39,7 @@ namespace mpfem {
                 MPFEM_THROW(Exception, "Unsupported BasisType for ReferenceElement");
             }
         }
-
-    } // anonymous namespace
-
-    // =============================================================================
-    // DofLayout implementation
-    // =============================================================================
-
-    // =============================================================================
-    // ReferenceElement implementation
-    // =============================================================================
+    }
 
     ReferenceElement::ReferenceElement(Geometry geom, int order, BasisType basisType, int vdim)
         : geometry_(geom), order_(order), basisType_(basisType), vdim_(vdim)
@@ -63,143 +54,159 @@ namespace mpfem {
 
         basixElement_ = std::make_unique<basix::FiniteElement<double>>(
             basix::create_element<double>(
-                family,
-                cell,
-                order_,
+                family, cell, order_,
                 basix::element::lagrange_variant::equispaced,
                 basix::element::dpc_variant::unset,
                 false));
 
-        // Build permutation for tensor-product elements
         buildPermutation();
-
-        // Create quadrature rule with order 2*order for exact integration
         quadrature_ = quadrature::get(geometry_, std::max(1, 2 * order_));
-
-        // Precompute basis values and derivatives at all quadrature points
         precomputeShapeValues();
     }
 
     void ReferenceElement::buildPermutation()
     {
+        auto cell_type = basixElement_->cell_type();
+        auto topo = basix::cell::topology(cell_type);
         const auto& entity_dofs = basixElement_->entity_dofs();
 
-        // Extract DOF layout from entity_dofs (needed for ALL element types)
-        // entity_dofs is indexed as: entity_dofs[dim][entity_index][dof_index]
-        // dofLayout stores DOFs PER entity, not total DOFs
         dofLayout_ = DofLayout {};
-        if (entity_dofs.size() > 0 && !entity_dofs[0].empty()) {
-            // DOFs per vertex (not total vertex DOFs)
-            dofLayout_.numVertexDofs = static_cast<int>(entity_dofs[0][0].size());
+        if (entity_dofs.size() > 0 && !entity_dofs[0].empty())
+            dofLayout_.numVertexDofs = entity_dofs[0][0].size();
+        if (entity_dofs.size() > 1 && !entity_dofs[1].empty())
+            dofLayout_.numEdgeDofs = entity_dofs[1][0].size();
+        if (entity_dofs.size() > 2 && !entity_dofs[2].empty())
+            dofLayout_.numFaceDofs = entity_dofs[2][0].size();
+        if (entity_dofs.size() > 3 && !entity_dofs[3].empty())
+            dofLayout_.numVolumeDofs = entity_dofs[3][0].size();
+
+        int ndofs = basixElement_->dim();
+        ccwToBasix_.assign(ndofs, -1);
+        basixToCcw_.assign(ndofs, -1);
+
+        int current_ccw_dof = 0;
+
+        // =======================================================================
+        // Step 1: Base Vertex Mapping (CCW -> BASIX)
+        // =======================================================================
+        std::vector<int> v_map;
+        switch (geometry_) {
+        case Geometry::Segment:
+            v_map = {0, 1};
+            break;
+        case Geometry::Triangle:
+            v_map = {0, 1, 2};
+            break;
+        case Geometry::Tetrahedron:
+            v_map = {0, 1, 2, 3};
+            break;
+        case Geometry::Square:
+            v_map = {0, 1, 3, 2};
+            break; // Swap for tensor-product
+        case Geometry::Cube:
+            v_map = {0, 1, 3, 2, 4, 5, 7, 6};
+            break;
+        default:
+            MPFEM_THROW(Exception, "Unsupported geometry for Mapping");
         }
-        if (entity_dofs.size() > 1 && !entity_dofs[1].empty()) {
-            // DOFs per edge (not total edge DOFs)
-            dofLayout_.numEdgeDofs = static_cast<int>(entity_dofs[1][0].size());
+
+        // Map Vertex DOFs
+        int num_verts = geom::numVertices(geometry_);
+        for (int i = 0; i < num_verts; ++i) {
+            int b_v = v_map[i];
+            for (int b_dof : entity_dofs[0][b_v]) {
+                basixToCcw_[b_dof] = current_ccw_dof;
+                ccwToBasix_[current_ccw_dof++] = b_dof;
+            }
         }
-        if (entity_dofs.size() > 2 && !entity_dofs[2].empty()) {
-            // DOFs per face (not total face DOFs)
-            dofLayout_.numFaceDofs = static_cast<int>(entity_dofs[2][0].size());
+
+        // =======================================================================
+        // Step 2: Dynamically Map Edges & Handle Reverse Orientations
+        // =======================================================================
+        int num_edges = geom::numEdges(geometry_);
+        edgeDofs_.resize(num_edges);
+        if (entity_dofs.size() > 1) {
+            for (int e_ccw = 0; e_ccw < num_edges; ++e_ccw) {
+                auto [v0_ccw, v1_ccw] = geom::edgeVertices(geometry_, e_ccw);
+                int b_v0 = v_map[v0_ccw];
+                int b_v1 = v_map[v1_ccw];
+
+                int match_b = -1;
+                bool reversed = false;
+
+                // Search for matching edge in BASIX topology
+                for (size_t e_b = 0; e_b < topo[1].size(); ++e_b) {
+                    if (topo[1][e_b][0] == b_v0 && topo[1][e_b][1] == b_v1) {
+                        match_b = e_b;
+                        reversed = false;
+                        break;
+                    }
+                    if (topo[1][e_b][0] == b_v1 && topo[1][e_b][1] == b_v0) {
+                        match_b = e_b;
+                        reversed = true;
+                        break;
+                    }
+                }
+
+                if (match_b != -1) {
+                    const auto& edofs = entity_dofs[1][match_b];
+                    // CRITICAL FIX: Reverse high-order edge DOFs if edge traversal directions misalign
+                    if (reversed) {
+                        for (auto it = edofs.rbegin(); it != edofs.rend(); ++it) {
+                            basixToCcw_[*it] = current_ccw_dof;
+                            ccwToBasix_[current_ccw_dof] = *it;
+                            edgeDofs_[e_ccw].push_back(current_ccw_dof++);
+                        }
+                    }
+                    else {
+                        for (int d : edofs) {
+                            basixToCcw_[d] = current_ccw_dof;
+                            ccwToBasix_[current_ccw_dof] = d;
+                            edgeDofs_[e_ccw].push_back(current_ccw_dof++);
+                        }
+                    }
+                }
+            }
         }
+
+        // =======================================================================
+        // Step 3: Dynamically Map Faces
+        // =======================================================================
+        int num_faces = geom::numFaces(geometry_);
+        faceDofs_.resize(num_faces);
+        if (entity_dofs.size() > 2) {
+            for (int f_ccw = 0; f_ccw < num_faces; ++f_ccw) {
+                auto f_verts_ccw = geom::faceVertices(geometry_, f_ccw);
+                std::set<int> f_verts_b_set;
+                for (int v : f_verts_ccw)
+                    f_verts_b_set.insert(v_map[v]);
+
+                int match_b = -1;
+                for (size_t f_b = 0; f_b < topo[2].size(); ++f_b) {
+                    std::set<int> b_set(topo[2][f_b].begin(), topo[2][f_b].end());
+                    if (f_verts_b_set == b_set) {
+                        match_b = f_b;
+                        break;
+                    }
+                }
+
+                if (match_b != -1) {
+                    for (int d : entity_dofs[2][match_b]) {
+                        basixToCcw_[d] = current_ccw_dof;
+                        ccwToBasix_[current_ccw_dof] = d;
+                        faceDofs_[f_ccw].push_back(current_ccw_dof++);
+                    }
+                }
+            }
+        }
+
+        // =======================================================================
+        // Step 4: Map Volume DOFs
+        // =======================================================================
         if (entity_dofs.size() > 3 && !entity_dofs[3].empty()) {
-            // DOFs per cell (not total cell DOFs)
-            dofLayout_.numVolumeDofs = static_cast<int>(entity_dofs[3][0].size());
-        }
-
-        // Simplices use CCW ordering already (identity permutation)
-        if (geom::isSimplex(geometry_)) {
-            int ndofs = basixElement_->dim();
-            ccwToBasix_.resize(ndofs);
-            basixToCcw_.resize(ndofs);
-            for (int i = 0; i < ndofs; ++i) {
-                ccwToBasix_[i] = i;
-                basixToCcw_[i] = i;
-            }
-            return;
-        }
-
-        // For tensor-product elements, we need to map BASIX → CCW ordering
-        // Use entity_dofs to determine the mapping
-
-        if (geometry_ == Geometry::Square) {
-            // Square vertex ordering:
-            // CCW: 0(0,0), 1(1,0), 2(1,1), 3(0,1)
-            // BASIX: 0(0,0), 1(1,0), 2(0,1), 3(1,1)
-            // Permutation: BASIX[2] ↔ CCW[2], BASIX[3] ↔ CCW[3]
-
-            if (order_ == 1) {
-                // Only 4 vertex DOFs
-                basixToCcw_ = {0, 1, 3, 2}; // Swap indices 2 and 3
-                ccwToBasix_ = {0, 1, 3, 2};
-            }
-            else if (order_ == 2) {
-                // 9 DOFs: 4 vertices + 4 edge midpoints + 1 center
-                // Use identity for now
-                basixToCcw_.resize(9);
-                ccwToBasix_.resize(9);
-                for (int i = 0; i < 9; ++i) {
-                    basixToCcw_[i] = i;
-                    ccwToBasix_[i] = i;
-                }
-            }
-        }
-        else if (geometry_ == Geometry::Cube) {
-            // Cube vertex ordering:
-            // CCW (from geom.hpp):
-            //   0(0,0,0), 1(1,0,0), 2(1,1,0), 3(0,1,0), 4(0,0,1), 5(1,0,1), 6(1,1,1), 7(0,1,1)
-            // BASIX:
-            //   0(0,0,0), 1(1,0,0), 2(0,1,0), 3(1,1,0), 4(0,0,1), 5(1,0,1), 6(0,1,1), 7(1,1,1)
-            // Permutation: BASIX[2] ↔ CCW[2], BASIX[3] ↔ CCW[3], BASIX[6] ↔ CCW[6], BASIX[7] ↔ CCW[7]
-
-            if (order_ == 1) {
-                basixToCcw_ = {0, 1, 3, 2, 4, 5, 7, 6};
-                ccwToBasix_ = {0, 1, 3, 2, 4, 5, 7, 6};
-            }
-            else if (order_ == 2) {
-                // For order 2, we have 27 DOFs
-                // Vertices: 0-7 (permuted)
-                // Edges: 8-19 (12 edge midpoints)
-                // Faces: 20-25 (6 face centers)
-                // Cell: 26 (center)
-
-                // For now, use identity for non-vertices
-                int ndofs = basixElement_->dim();
-                basixToCcw_.resize(ndofs);
-                ccwToBasix_.resize(ndofs);
-                for (int i = 0; i < 8; ++i) {
-                    basixToCcw_[i] = i;
-                    ccwToBasix_[i] = i;
-                }
-                // Apply vertex permutation to first 8
-                basixToCcw_[0] = 0;
-                basixToCcw_[1] = 1;
-                basixToCcw_[2] = 3;
-                basixToCcw_[3] = 2;
-                basixToCcw_[4] = 4;
-                basixToCcw_[5] = 5;
-                basixToCcw_[6] = 7;
-                basixToCcw_[7] = 6;
-                ccwToBasix_[0] = 0;
-                ccwToBasix_[1] = 1;
-                ccwToBasix_[2] = 3;
-                ccwToBasix_[3] = 2;
-                ccwToBasix_[4] = 4;
-                ccwToBasix_[5] = 5;
-                ccwToBasix_[6] = 7;
-                ccwToBasix_[7] = 6;
-                for (int i = 8; i < ndofs; ++i) {
-                    basixToCcw_[i] = i;
-                    ccwToBasix_[i] = i;
-                }
-            }
-        }
-        else if (geometry_ == Geometry::Segment) {
-            // Segment: vertices are 0 and 1 in both orderings
-            int ndofs = basixElement_->dim();
-            basixToCcw_.resize(ndofs);
-            ccwToBasix_.resize(ndofs);
-            for (int i = 0; i < ndofs; ++i) {
-                basixToCcw_[i] = i;
-                ccwToBasix_[i] = i;
+            for (int d : entity_dofs[3][0]) {
+                basixToCcw_[d] = current_ccw_dof;
+                ccwToBasix_[current_ccw_dof++] = d;
             }
         }
     }
@@ -214,8 +221,7 @@ namespace mpfem {
         cachedShapeValues_.resize(nq);
         cachedDerivatives_.resize(nq);
 
-        // Extract quadrature points to flat array
-        std::vector<double> points_data(static_cast<std::size_t>(nq) * d);
+        std::vector<double> points_data(nq * d);
         for (int q = 0; q < nq; ++q) {
             auto xi = quadrature_[q].getXi();
             points_data[q * d + 0] = xi.x();
@@ -225,36 +231,26 @@ namespace mpfem {
                 points_data[q * d + 2] = xi.z();
         }
 
-        // BASIX tabulate: returns pair (data, shape)
-        auto [tab_data, tab_shape] = basixElement_->tabulate(
-            1, points_data, {static_cast<std::size_t>(nq), static_cast<std::size_t>(d)});
+        auto [tab_data, tab_shape] = basixElement_->tabulate(1, points_data, {static_cast<std::size_t>(nq), static_cast<std::size_t>(d)});
 
         int ndofs = basixElement_->dim();
-
-        // Compute value size from value_shape - scalar elements have empty shape (size 1)
         const auto& value_shape = basixElement_->value_shape();
         int vs = 1;
-        for (auto s : value_shape) {
+        for (auto s : value_shape)
             vs *= static_cast<int>(s);
-        }
-
-        // BASIX returns data in (deriv, pt, dof, val) order, flattened
-        // Deriv 0 = shape values, Deriv 1+ = derivatives in each dimension
 
         for (int q = 0; q < nq; ++q) {
             cachedShapeValues_[q].resize(ndofs, vs);
             cachedDerivatives_[q].resize(ndofs, d * vs);
 
             for (int b_dof = 0; b_dof < ndofs; ++b_dof) {
-                int ccw_dof = basixToCcw_[b_dof]; // Apply permutation!
+                int ccw_dof = basixToCcw_[b_dof];
 
-                // Shape values (deriv=0)
                 for (int v = 0; v < vs; ++v) {
                     std::size_t idx = 0 * nq * ndofs * vs + q * ndofs * vs + b_dof * vs + v;
                     cachedShapeValues_[q](ccw_dof, v) = tab_data[idx];
                 }
 
-                // Derivatives (deriv=1..d)
                 for (int deriv = 0; deriv < d; ++deriv) {
                     for (int v = 0; v < vs; ++v) {
                         std::size_t idx = (deriv + 1) * nq * ndofs * vs + q * ndofs * vs + b_dof * vs + v;
@@ -277,28 +273,16 @@ namespace mpfem {
 
     std::vector<int> ReferenceElement::faceDofs(int faceIdx) const
     {
-        const auto& entity_dofs = basixElement_->entity_dofs();
-        // entity_dofs[2] = face DOFs
-        if (entity_dofs.size() <= 2) {
+        if (faceIdx < 0 || faceIdx >= static_cast<int>(faceDofs_.size()))
             return {};
-        }
-        if (faceIdx < 0 || faceIdx >= static_cast<int>(entity_dofs[2].size())) {
-            return {};
-        }
-        const auto& b_dofs = entity_dofs[2][faceIdx];
-
-        std::vector<int> result(b_dofs.size());
-        for (size_t i = 0; i < b_dofs.size(); ++i) {
-            result[i] = basixToCcw_[b_dofs[i]];
-        }
-        return result;
+        return faceDofs_[faceIdx];
     }
 
     std::vector<int> ReferenceElement::facetDofs(int facetIdx) const
     {
         const int d = dim();
         if (d == 1)
-            return {facetIdx}; // Point
+            return {facetIdx};
         if (d == 2)
             return edgeDofs(facetIdx);
         if (d == 3)
@@ -308,21 +292,9 @@ namespace mpfem {
 
     std::vector<int> ReferenceElement::edgeDofs(int edgeIdx) const
     {
-        const auto& entity_dofs = basixElement_->entity_dofs();
-        // entity_dofs[1] = edge DOFs
-        if (entity_dofs.size() <= 1) {
+        if (edgeIdx < 0 || edgeIdx >= static_cast<int>(edgeDofs_.size()))
             return {};
-        }
-        if (edgeIdx < 0 || edgeIdx >= static_cast<int>(entity_dofs[1].size())) {
-            return {};
-        }
-        const auto& b_dofs = entity_dofs[1][edgeIdx];
-
-        std::vector<int> result(b_dofs.size());
-        for (size_t i = 0; i < b_dofs.size(); ++i) {
-            result[i] = basixToCcw_[b_dofs[i]];
-        }
-        return result;
+        return edgeDofs_[edgeIdx];
     }
 
     std::pair<int, int> ReferenceElement::edgeVertices(int edgeIdx) const
@@ -335,32 +307,24 @@ namespace mpfem {
         const int d = dim();
         const int nd = numDofs();
 
-        // Compute value size from value_shape - scalar elements have empty shape (size 1)
-        const auto& value_shape = basixElement_->value_shape();
         int vs = 1;
-        for (auto s : value_shape) {
+        for (auto s : basixElement_->value_shape())
             vs *= static_cast<int>(s);
-        }
 
-        // BASIX tabulate at single point
-        std::vector<double> point_data(static_cast<std::size_t>(d));
+        std::vector<double> point_data(d);
         point_data[0] = xi.x();
         if (d > 1)
             point_data[1] = xi.y();
         if (d > 2)
             point_data[2] = xi.z();
 
-        auto [tab_data, tab_shape] = basixElement_->tabulate(
-            0, point_data, {1, static_cast<std::size_t>(d)});
+        auto [tab_data, tab_shape] = basixElement_->tabulate(0, point_data, {1, static_cast<std::size_t>(d)});
 
         shape.resize(nd, vs);
-
-        // Apply permutation ccwToBasix_ and extract shape values
         for (int b_dof = 0; b_dof < nd; ++b_dof) {
-            int ccw_dof = ccwToBasix_[b_dof];
+            int ccw_dof = basixToCcw_[b_dof];
             for (int v = 0; v < vs; ++v) {
-                std::size_t idx = b_dof * vs + v;
-                shape(ccw_dof, v) = tab_data[idx];
+                shape(ccw_dof, v) = tab_data[b_dof * vs + v];
             }
         }
     }
@@ -370,30 +334,22 @@ namespace mpfem {
         const int d = dim();
         const int nd = numDofs();
 
-        // Compute value size from value_shape - scalar elements have empty shape (size 1)
-        const auto& value_shape = basixElement_->value_shape();
         int vs = 1;
-        for (auto s : value_shape) {
+        for (auto s : basixElement_->value_shape())
             vs *= static_cast<int>(s);
-        }
 
-        // BASIX tabulate at single point
-        std::vector<double> point_data(static_cast<std::size_t>(d));
+        std::vector<double> point_data(d);
         point_data[0] = xi.x();
         if (d > 1)
             point_data[1] = xi.y();
         if (d > 2)
             point_data[2] = xi.z();
 
-        auto [tab_data, tab_shape] = basixElement_->tabulate(
-            1, point_data, {1, static_cast<std::size_t>(d)});
+        auto [tab_data, tab_shape] = basixElement_->tabulate(1, point_data, {1, static_cast<std::size_t>(d)});
 
         derivatives.resize(nd, d * vs);
-
-        // BASIX returns data in (deriv, pt, dof, val) order, flattened
-        // Deriv 0 = shape values, Deriv 1+ = derivatives in each dimension
         for (int b_dof = 0; b_dof < nd; ++b_dof) {
-            int ccw_dof = ccwToBasix_[b_dof];
+            int ccw_dof = basixToCcw_[b_dof];
             for (int deriv = 0; deriv < d; ++deriv) {
                 for (int v = 0; v < vs; ++v) {
                     std::size_t idx = (deriv + 1) * nd * vs + b_dof * vs + v;
@@ -401,6 +357,25 @@ namespace mpfem {
                 }
             }
         }
+    }
+
+    std::vector<Vector3> ReferenceElement::interpolationPoints() const
+    {
+        // 彻底丢弃繁杂的几何硬编码点！直接委托给 BASIX 计算坐标，然后按CCW排列输出
+        auto [b_pts, b_shape] = basixElement_->points();
+
+        std::vector<Vector3> ccw_points(numDofs());
+        int d = dim();
+
+        for (int ccw_dof = 0; ccw_dof < numDofs(); ++ccw_dof) {
+            int b_dof = ccwToBasix_[ccw_dof];
+            double x = b_pts[b_dof * d + 0];
+            double y = (d > 1) ? b_pts[b_dof * d + 1] : 0.0;
+            double z = (d > 2) ? b_pts[b_dof * d + 2] : 0.0;
+            ccw_points[ccw_dof] = Vector3(x, y, z);
+        }
+
+        return ccw_points;
     }
 
 } // namespace mpfem
