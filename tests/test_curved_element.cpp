@@ -464,8 +464,8 @@ TEST_F(CurvedSquareTransformTest, TransformCorners)
 {
     Vector3 x;
 
-    // Corner (-1,-1) -> (0,0)
-    Vector3 xi(-1.0, -1.0, 0.0);
+    // Corner (0,0) -> (0,0)
+    Vector3 xi(0.0, 0.0, 0.0);
     x = transform_->transform(xi);
     EXPECT_NEAR(x.x(), 0.0, 1e-12);
     EXPECT_NEAR(x.y(), 0.0, 1e-12);
@@ -480,8 +480,9 @@ TEST_F(CurvedSquareTransformTest, TransformCorners)
 TEST_F(CurvedSquareTransformTest, TransformCenter)
 {
     // Center should map to (0.5, 0.5)
+    // Center of reference square [0,1]^2 is (0.5, 0.5)
     Vector3 x;
-    Vector3 xi(0.0, 0.0, 0.0); // Center in reference coords
+    Vector3 xi(0.5, 0.5, 0.0); // Center in reference coords [0,1]^2
     x = transform_->transform(xi);
 
     EXPECT_NEAR(x.x(), 0.5, 1e-12);
@@ -517,8 +518,8 @@ TEST_F(CurvedHexahedronTransformTest, TransformCorners)
 {
     Vector3 x;
 
-    // Corner (-1,-1,-1) -> (0,0,0)
-    Vector3 xi(-1.0, -1.0, -1.0);
+    // Corner (0,0,0) -> (0,0,0)
+    Vector3 xi(0.0, 0.0, 0.0);
     x = transform_->transform(xi);
     EXPECT_NEAR(x.x(), 0.0, 1e-12);
     EXPECT_NEAR(x.y(), 0.0, 1e-12);
@@ -535,8 +536,9 @@ TEST_F(CurvedHexahedronTransformTest, TransformCorners)
 TEST_F(CurvedHexahedronTransformTest, TransformCenter)
 {
     // Volume center should map to (0.5, 0.5, 0.5)
+    // Center of reference cube [0,1]^3 is (0.5, 0.5, 0.5)
     Vector3 x;
-    Vector3 xi(0.0, 0.0, 0.0); // Center in reference coords
+    Vector3 xi(0.5, 0.5, 0.5); // Center in reference coords [0,1]^3
     x = transform_->transform(xi);
 
     EXPECT_NEAR(x.x(), 0.5, 1e-12);
@@ -548,7 +550,7 @@ TEST_F(CurvedHexahedronTransformTest, TransformEdgeMidpoint)
 {
     // Edge 0 midpoint should map to (0.55, 0.0, 0.0)
     Vector3 x;
-    Vector3 xi(0.0, -1.0, -1.0); // Midpoint of edge 0 in reference coords
+    Vector3 xi(0.5, 0.0, 0.0); // Midpoint of edge 0 in reference coords [0,1]^3
     x = transform_->transform(xi);
 
     EXPECT_NEAR(x.x(), 0.55, 1e-12);
@@ -560,7 +562,7 @@ TEST_F(CurvedHexahedronTransformTest, TransformFaceCenter)
 {
     // Face center for bottom face should map to (0.5, 0.5, 0.0)
     Vector3 x;
-    Vector3 xi(0.0, 0.0, -1.0); // Center of bottom face in reference coords
+    Vector3 xi(0.5, 0.5, 0.0); // Center of bottom face in reference coords [0,1]^3
     x = transform_->transform(xi);
 
     EXPECT_NEAR(x.x(), 0.5, 1e-12);

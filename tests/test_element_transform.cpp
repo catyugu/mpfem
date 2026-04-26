@@ -217,10 +217,10 @@ TEST_F(HexahedronTransformTest, GeometryInfo)
 TEST_F(HexahedronTransformTest, TransformCorners)
 {
     // Test transformation of corners
-    // Reference cube: [-1, 1]^3
+    // Reference cube: [0, 1]^3
 
-    // Corner (-1, -1, -1) -> (0, 0, 0)
-    Vector3 xi(-1.0, -1.0, -1.0);
+    // Corner (0, 0, 0) -> (0, 0, 0)
+    Vector3 xi(0.0, 0.0, 0.0);
     Vector3 x;
     x = transform_->transform(xi);
     EXPECT_NEAR(x.x(), 0.0, 1e-12);
@@ -234,8 +234,8 @@ TEST_F(HexahedronTransformTest, TransformCorners)
     EXPECT_NEAR(x.y(), 1.0, 1e-12);
     EXPECT_NEAR(x.z(), 1.0, 1e-12);
 
-    // Center (0, 0, 0) -> (0.5, 0.5, 0.5)
-    xi << 0.0, 0.0, 0.0;
+    // Center (0.5, 0.5, 0.5) -> (0.5, 0.5, 0.5)
+    xi << 0.5, 0.5, 0.5;
     x = transform_->transform(xi);
     EXPECT_NEAR(x.x(), 0.5, 1e-12);
     EXPECT_NEAR(x.y(), 0.5, 1e-12);
@@ -244,14 +244,14 @@ TEST_F(HexahedronTransformTest, TransformCorners)
 
 TEST_F(HexahedronTransformTest, JacobianUnitCube)
 {
-    // Reference cube is [-1,1]^3 with volume = 8
+    // Reference cube is [0,1]^3 with volume = 1
     // Physical unit cube is [0,1]^3 with volume = 1
-    // Jacobian: dx/dxi = 0.5 for each component
-    // J = 0.5 * I, so detJ = 0.5^3 = 0.125
-    Vector3 xi(0.0, 0.0, 0.0);
+    // Jacobian: dx/dxi = 1 for each component (identity mapping)
+    // J = I, so detJ = 1
+    Vector3 xi(0.5, 0.5, 0.5);
     transform_->setIntegrationPoint(xi);
 
-    EXPECT_NEAR(transform_->detJ(), 0.125, 1e-12);
+    EXPECT_NEAR(transform_->detJ(), 1.0, 1e-12);
 }
 
 // =============================================================================
@@ -345,10 +345,10 @@ TEST_F(SquareFacetTransformTest, GeometryInfo)
 
 TEST_F(SquareFacetTransformTest, TransformCorners)
 {
-    // Reference square: [-1, 1]^2
+    // Reference square: [0, 1]^2
 
-    // Corner (-1, -1) -> (0, 0)
-    Vector3 xi(-1.0, -1.0, 0.0);
+    // Corner (0, 0) -> (0, 0)
+    Vector3 xi(0.0, 0.0, 0.0);
     Vector3 x;
     x = transform_->transform(xi);
     EXPECT_NEAR(x.x(), 0.0, 1e-12);

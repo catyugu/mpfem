@@ -17,7 +17,7 @@ namespace mpfem {
 
         // --- 拓扑映射表：将局部 DoF 索引映射到 1D 基底/重心坐标 的组合 ---
         namespace topo {
-            // 张量积节点映射 (基于 1D 节点的排列组合: 0=Left(-1), 1=Center(0), 2=Right(1))
+            // 张量积节点映射 (基于 1D 节点的排列组合: 0=Left(0), 1=Center(0.5), 2=Right(1))
             constexpr int Seg_O1[2][1] = {{0}, {1}};
             constexpr int Seg_O2[3][1] = {{0}, {1}, {2}}; // V0, Center, V1
 
@@ -60,18 +60,18 @@ namespace mpfem {
             Lagrange1D(int order, Real x)
             {
                 if (order == 1) {
-                    N[0] = 0.5 * (1.0 - x);
-                    dN[0] = -0.5;
-                    N[1] = 0.5 * (1.0 + x);
-                    dN[1] = 0.5;
+                    N[0] = 1.0 - x; // Node at x=0: =1 at x=0, =0 at x=1
+                    dN[0] = -1.0;
+                    N[1] = x; // Node at x=1: =0 at x=0, =1 at x=1
+                    dN[1] = 1.0;
                 }
                 else {
-                    N[0] = -0.5 * x * (1.0 - x);
-                    dN[0] = x - 0.5;
-                    N[1] = 1.0 - x * x;
-                    dN[1] = -2.0 * x;
-                    N[2] = 0.5 * x * (1.0 + x);
-                    dN[2] = x + 0.5;
+                    N[0] = (1.0 - x) * (1.0 - 2.0 * x); // Node at x=0
+                    dN[0] = 4.0 * x - 3.0;
+                    N[1] = 4.0 * x * (1.0 - x); // Node at x=0.5
+                    dN[1] = 4.0 - 8.0 * x;
+                    N[2] = x * (2.0 * x - 1.0); // Node at x=1
+                    dN[2] = 4.0 * x - 1.0;
                 }
             }
         };
@@ -169,7 +169,7 @@ namespace mpfem {
     {
         std::vector<Vector3> pts(numDofs_);
         if (isTensorProduct(geom_)) {
-            const Real v1[2] = {-1.0, 1.0}, v2[3] = {-1.0, 0.0, 1.0};
+            const Real v1[2] = {0.0, 1.0}, v2[3] = {0.0, 0.5, 1.0};
             const Real* v = (order_ == 1) ? v1 : v2;
             for (int i = 0; i < numDofs_; ++i) {
                 if (geom_ == Geometry::Segment) {
