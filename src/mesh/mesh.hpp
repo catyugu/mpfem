@@ -15,73 +15,24 @@
 namespace mpfem {
 
     /**
-     * @brief Stack-allocated face key for topology building.
+     * @brief Core mesh topology class
      *
-     * Used during buildFaceToElementMap() to avoid millions of heap allocations
-     * when using std::vector<Index>. Face node count is bounded (max 4 for quad),
-     * so this fixed-size array is always sufficient.
-     */
-    struct FaceKey {
-        static constexpr int MAX_FACE_NODES = 4;
-        Index nodes[MAX_FACE_NODES]; // Sorted node indices
-        int count;
-
-        FaceKey() : count(0) { }
-
-        /// Initialize from sorted node span
-        void set(std::span<const Index> sorted_nodes)
-        {
-            count = sorted_nodes.size();
-            for (int i = 0; i < count; ++i)
-                nodes[i] = sorted_nodes[i];
-        }
-
-        /// Lexicographic comparison for sorting
-        bool operator<(const FaceKey& o) const
-        {
-            if (count != o.count)
-                return count < o.count;
-            for (int i = 0; i < count; ++i) {
-                if (nodes[i] != o.nodes[i])
-                    return nodes[i] < o.nodes[i];
-            }
-            return false;
-        }
-        bool operator==(const FaceKey& o) const
-        {
-            if (count != o.count)
-                return false;
-            for (int i = 0; i < count; ++i)
-                if (nodes[i] != o.nodes[i])
-                    return false;
-            return true;
-        }
-    };
-
-    /**
-     * @brief Mesh class storing nodes, elements, and topology.
-     *
-     * This class manages:
+     * Manages:
      * - Vertex coordinates (interleaved [x,y,z,x,y,z...] for C API zero-copy)
      * - Volume elements (tetrahedra, hexahedra)
      * - Boundary elements (triangles, quads)
      * - Domain and boundary attributes
      * - Mesh topology for internal/external boundary detection
+     * - Edge and face orientations for H(curl) and H(div) spaces
      *
      * Data Layout:
      * - Nodes: interleaved coords_[dim * nodeIdx + d] (C API zero-copy)
      * - Elements: CSR with elementOffsets_ + elementNodes_
+     * - Edges: flat edgeVertices_ [v0, v1, v0, v1, ...] with v0 < v1
      * - Faces: CSR with faceOffsets_ + faceNodes_
-     * - Edges: sorted edgeInfoList_ for binary search
      */
     class Mesh {
     public:
-        /// Edge information
-        struct EdgeInfo {
-            Index v0 = InvalidIndex;
-            Index v1 = InvalidIndex;
-        };
-
         /// Default constructor
         Mesh() = default;
 
@@ -100,9 +51,6 @@ namespace mpfem {
 
         /// Get number of nodes
         Index numNodes() const { return static_cast<Index>(coords_.size()) / dim_; }
-
-        /// Get total number of unique topology edges
-        Index numEdges() const { return static_cast<Index>(edgeInfoList_.size()); }
 
         // -------------------------------------------------------------------------
         // Vertex access (interleaved [x,y,z,...] for C API zero-copy)
@@ -157,7 +105,7 @@ namespace mpfem {
         void reserveBdrElements(Index n);
 
         // -------------------------------------------------------------------------
-        // Topology queries (for internal/external boundary detection)
+        // Topology queries
         // -------------------------------------------------------------------------
 
         /// Build mesh topology (call after mesh is fully loaded)
@@ -165,6 +113,85 @@ namespace mpfem {
 
         /// Check if topology has been built
         bool hasTopology() const { return topologyBuilt_; }
+
+        /// Clear all data
+        void clear();
+
+        // -------------------------------------------------------------------------
+        // Edge topology and orientations
+        // -------------------------------------------------------------------------
+
+        /// Get total number of unique topology edges
+        Index numEdges() const { return static_cast<Index>(edgeVertices_.size()) / 2; }
+
+        /// Get edge vertices - returns span of 2 indices [v0, v1] with v0 < v1 (global positive direction)
+        std::span<const Index> edgeVertices(Index edgeIdx) const
+        {
+            return {&edgeVertices_[edgeIdx * 2], 2};
+        }
+
+        /// Get global topology edge index by two endpoint vertices
+        Index edgeIndex(Index a, Index b) const;
+
+        /// Get global topology edge indices used by an element (local edge order)
+        std::span<const Index> elementEdges(Index elemIdx) const;
+
+        /// Get edge orientations for an element: 1 = same direction as global edge, -1 = reversed
+        std::span<const int> elementEdgeOrientations(Index elemIdx) const;
+
+        // -------------------------------------------------------------------------
+        // Face topology and orientations
+        // -------------------------------------------------------------------------
+
+        /// Get total number of unique faces
+        Index numFaces() const { return static_cast<Index>(faceOffsets_.size()) - 1; }
+
+        /// Number of nodes for a face
+        Index numFaceNodes(Index faceIdx) const { return faceOffsets_[faceIdx + 1] - faceOffsets_[faceIdx]; }
+
+        /// Face nodes (CSR F2N)
+        std::span<const Index> faceNodes(Index faceIdx) const
+        {
+            return {&faceNodes_[faceOffsets_[faceIdx]], static_cast<size_t>(numFaceNodes(faceIdx))};
+        }
+
+        /// Get global topology face indices used by an element (local face order)
+        std::span<const Index> elementFaces(Index elemIdx) const;
+
+        /// Get face orientations for an element: 1 = face normal matches global, -1 = reversed
+        std::span<const int> elementFaceOrientations(Index elemIdx) const;
+
+        /// First adjacent element to a face (InvalidIndex for boundary faces)
+        Index faceNeighborElem1(Index faceIdx) const { return faceElem1_[faceIdx]; }
+
+        /// Second adjacent element to a face (InvalidIndex for boundary faces)
+        Index faceNeighborElem2(Index faceIdx) const { return faceElem2_[faceIdx]; }
+
+        /// Local face index in elem1
+        int faceLocalIndex1(Index faceIdx) const { return faceLocal1_[faceIdx]; }
+
+        /// Local face index in elem2
+        int faceLocalIndex2(Index faceIdx) const { return faceLocal2_[faceIdx]; }
+
+        /// Check if face is on external boundary
+        bool faceIsBoundary(Index faceIdx) const { return faceBoundary_[faceIdx] != 0; }
+
+        // -------------------------------------------------------------------------
+        // Boundary topology queries
+        // -------------------------------------------------------------------------
+
+        /// Get number of boundary faces (external)
+        Index numBoundaryFaces() const { return static_cast<Index>(boundaryFaceIndices_.size()); }
+
+        /// Get number of interior faces
+        Index numInteriorFaces() const { return static_cast<Index>(interiorFaceIndices_.size()); }
+
+        /// Get boundary face index by boundary element index
+        Index getBoundaryFaceIndex(Index bdrElemIdx) const
+        {
+            auto it = bdrElementToFace_.find(bdrElemIdx);
+            return (it != bdrElementToFace_.end()) ? it->second : InvalidIndex;
+        }
 
         /// Check if a boundary element is an external boundary (not internal interface)
         /// Returns true if on external boundary, false if internal interface
@@ -188,62 +215,9 @@ namespace mpfem {
             return (it != bdrIdExternalCache_.end()) ? it->second : true;
         }
 
-        /// Get total number of unique faces
-        Index numFaces() const { return static_cast<Index>(faceOffsets_.size()) - 1; }
-
-        /// Number of nodes for a face
-        Index numFaceNodes(Index faceIdx) const { return faceOffsets_[faceIdx + 1] - faceOffsets_[faceIdx]; }
-
-        /// Face nodes (CSR F2N)
-        std::span<const Index> faceNodes(Index faceIdx) const
-        {
-            return {&faceNodes_[faceOffsets_[faceIdx]], static_cast<size_t>(numFaceNodes(faceIdx))};
-        }
-        Index faceNeighborElem1(Index faceIdx) const { return faceElem1_[faceIdx]; }
-        Index faceNeighborElem2(Index faceIdx) const { return faceElem2_[faceIdx]; }
-        int faceLocalIndex1(Index faceIdx) const { return faceLocal1_[faceIdx]; }
-        int faceLocalIndex2(Index faceIdx) const { return faceLocal2_[faceIdx]; }
-        bool faceIsBoundary(Index faceIdx) const { return faceBoundary_[faceIdx] != 0; }
-
-        /// Get global topology edge indices used by an element (local edge order)
-        std::span<const Index> elementEdges(Index elemIdx) const;
-
-        /// Get global topology face indices used by an element (local face order)
-        std::span<const Index> elementFaces(Index elemIdx) const;
-
-        /// Get global topology edge index by two endpoint vertices
-        Index edgeIndex(Index a, Index b) const;
-
-        /// Get number of boundary faces (external)
-        Index numBoundaryFaces() const { return static_cast<Index>(boundaryFaceIndices_.size()); }
-
-        /// Get number of interior faces
-        Index numInteriorFaces() const { return static_cast<Index>(interiorFaceIndices_.size()); }
-
-        /// Get boundary face index by boundary element index
-        Index getBoundaryFaceIndex(Index bdrElemIdx) const
-        {
-            auto it = bdrElementToFace_.find(bdrElemIdx);
-            return (it != bdrElementToFace_.end()) ? it->second : InvalidIndex;
-        }
-
-        // -------------------------------------------------------------------------
-        // Utility
-        // -------------------------------------------------------------------------
-
-        /// Clear all data
-        void clear();
-
-        // -------------------------------------------------------------------------
-        // Corner vertices (topological vertices for high-order meshes)
-        // -------------------------------------------------------------------------
-
     private:
-        void buildEdgeToElementMap();
-        void buildFaceToElementMap();
-        void buildElementToFaceMap();
-        void identifyBoundaryFaces();
-        void buildBoundaryElementMapping();
+        void buildEdgeTopology();
+        void buildFaceTopology();
 
         // Mesh dimension
         int dim_ = 3;
@@ -267,19 +241,19 @@ namespace mpfem {
 
         // Topology data
         bool topologyBuilt_ = false;
-        std::vector<EdgeInfo> edgeInfoList_; // Sorted by (v0, v1) for binary search
+
+        // Edge topology: flat array [v0, v1, v0, v1, ...] with v0 < v1 (global positive direction)
+        std::vector<Index> edgeVertices_;
 
         // CSR storage for element-to-edge
         std::vector<Index> elemEdgeOffsets_;
         std::vector<Index> elemEdgeData_;
+        std::vector<int> elemEdgeOrientations_; // 1 = same direction, -1 = reversed
 
         // CSR storage for element-to-face
         std::vector<Index> elemFaceOffsets_;
         std::vector<Index> elemFaceData_;
-        std::vector<Index> boundaryFaceIndices_;
-        std::vector<Index> interiorFaceIndices_;
-        std::unordered_map<Index, Index> bdrElementToFace_;
-        std::unordered_map<Index, bool> bdrIdExternalCache_; ///< Cache: boundary ID -> isExternal
+        std::vector<int> elemFaceOrientations_; // 1 = normal matches, -1 = reversed
 
         // CSR storage for faces (F2N) - METIS compatible
         std::vector<Index> faceOffsets_; // CSR row pointers (numFaces+1)
@@ -290,9 +264,13 @@ namespace mpfem {
         std::vector<int> faceLocal2_; // Local face index in elem2
         std::vector<char> faceBoundary_; // char (0=interior, 1=boundary)
 
-        // Sorted face keys for binary search in boundary element matching
-        // Uses stack-allocated FaceKey to avoid heap allocation during topology building
-        std::vector<std::pair<FaceKey, Index>> sortedFaceKeys_; // Sorted by FaceKey for binary search
+        // Boundary face tracking
+        std::vector<Index> boundaryFaceIndices_;
+        std::vector<Index> interiorFaceIndices_;
+
+        // Boundary element to face mapping
+        std::unordered_map<Index, Index> bdrElementToFace_;
+        std::unordered_map<Index, bool> bdrIdExternalCache_; ///< Cache: boundary ID -> isExternal
     };
 
 } // namespace mpfem
