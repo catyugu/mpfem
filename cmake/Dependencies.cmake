@@ -136,14 +136,6 @@ if(MPFEM_BUILD_TESTS)
         " BUILD_GMOCK OFF "
         " INSTALL_GTEST OFF "
     )
-
-    if(MSVC AND NOT CMAKE_CXX_COMPILER_ID MATCHES " Clang ")
-        target_compile_options(gtest PRIVATE /wd4828)
-        target_compile_options(gtest_main PRIVATE /wd4828)
-    else()
-        target_compile_options(gtest PRIVATE -Wno-character-conversion)
-        target_compile_options(gtest_main PRIVATE -Wno-character-conversion)
-    endif()
 endif()
 
 # =============================================================================
@@ -164,9 +156,13 @@ message(STATUS " ")
 # Suppress warnings from external (CPM) packages
 # =============================================================================
 if(MSVC)
-    set(EXTERNAL_WARNING_FLAGS " /WX-" "/W0")
+    if(CMAKE_CXX_COMPILER_ID MATCHES Clang)
+        set(EXTERNAL_WARNING_FLAGS "-w")
+    else()
+        set(EXTERNAL_WARNING_FLAGS /WX- /W0)
+    endif()
 else()
-    set(EXTERNAL_WARNING_FLAGS " -w ")
+    set(EXTERNAL_WARNING_FLAGS "-w")
 endif()
 
 # Suppress warnings for known CPM targets
@@ -174,7 +170,7 @@ endif()
 set(CPM_KNOWN_TARGETS basix tinyxml2)
 
 if(MPFEM_BUILD_TESTS)
-    list(APPEND CPM_KNOWN_TARGETS gtest gtest_main)
+    list(APPEND CPM_KNOWN_TARGETS gtest gtest_main gmock gmock_main)
 endif()
 
 foreach(CPM_TARGET IN LISTS CPM_KNOWN_TARGETS)
