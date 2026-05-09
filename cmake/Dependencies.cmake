@@ -20,7 +20,7 @@ include(CPM)
 # =============================================================================
 
 # Eigen3 (required)
-find_package(Eigen3 CONFIG REQUIRED)
+find_package(Eigen3 REQUIRED)
 
 # =============================================================================
 # 2. Linear algebra backends (optional, priority: MKL > OpenBLAS)
@@ -39,13 +39,7 @@ if(MPFEM_USE_MKL)
         set(MKL_ROOT "$ENV{MKL_DIR}")
     endif()
 
-    # Prefer MKL CMake config if available
-    if(MKL_ROOT AND EXISTS "${MKL_ROOT}/lib/cmake/mkl/MKLConfig.cmake")
-        find_package(MKL CONFIG QUIET)
-    else()
-        # Try system-wide search
-        find_package(MKL QUIET)
-    endif()
+    find_package(MKL QUIET)
 
     if(MKL_FOUND)
         set(MPFEM_MKL_FOUND TRUE)
@@ -67,7 +61,7 @@ option(MPFEM_USE_UMFPACK "Use UMFPACK direct solver" ON)
 
 if(MPFEM_USE_UMFPACK)
     # Try to find SuiteSparse
-    find_package(UMFPACK CONFIG QUIET)
+    find_package(UMFPACK QUIET)
 
     if(UMFPACK_FOUND)
         set(MPFEM_UMFPACK_FOUND TRUE)

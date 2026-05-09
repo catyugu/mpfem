@@ -55,7 +55,6 @@ build/examples/busbar_example.exe ./cases/busbar_steady_order2
 ## BUILD CONFIG
 
 - C++20, MSVC `/W4 /WX /permissive- /utf-8 /bigobj`, Clang `-Werror -Wall -Wextra -Wpedantic`
-- VCPKG for dependency management (Eigen3, MKL, SuiteSparse, tinyxml2)
 - Precompiled headers: `<vector>`, `<memory>`, `<string>`, `Eigen/Core`, `Eigen/SparseCore`
 
 ## OTHER DOCUMENTS
