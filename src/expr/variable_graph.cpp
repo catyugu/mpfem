@@ -1,5 +1,4 @@
 #include "expr/variable_graph.hpp"
-
 #include "core/exception.hpp"
 #include "expr/expression_parser.hpp"
 

@@ -86,14 +86,6 @@ if(MPFEM_OPENMP_FOUND)
     target_link_libraries(mpfem_core PUBLIC OpenMP::OpenMP_CXX)
 endif()
 
-target_precompile_headers(mpfem_core PUBLIC
-    <vector>
-    <memory>
-    <string>
-    <Eigen/Core>
-    <Eigen/SparseCore>
-)
-
 # =============================================================================
 # 2. Base Modules (Depend only on Core)
 # =============================================================================

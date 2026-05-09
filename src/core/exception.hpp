@@ -86,11 +86,15 @@ namespace mpfem {
 
 #define MPFEM_THROW(type, msg) throw ::mpfem::type((msg), std::source_location::current())
 
-#define MPFEM_ASSERT(cond, msg)          \
-    do {                                 \
-        if (!(cond)) {                   \
-            MPFEM_THROW(Exception, msg); \
-        }                                \
-    } while (0)
+// Replace function-like macro with an inline function to satisfy
+// C++ Core Guidelines and tooling warnings.
+inline void MPFEM_ASSERT(bool cond,
+    const std::string& msg,
+    const std::source_location& loc = std::source_location::current())
+{
+    if (!cond) {
+        throw ::mpfem::Exception(msg, loc);
+    }
+}
 
 #endif // MPFEM_EXCEPTION_HPP

@@ -74,7 +74,7 @@ namespace mpfem {
         {
             MPFEM_ASSERT(vals.size() == static_cast<size_t>(r * c), "Matrix data size mismatch");
             TensorData m(static_cast<Index>(vals.size()));
-            auto it = vals.begin();
+            const auto* it = vals.begin();
             for (int i = 0; i < r; ++i) {
                 for (int j = 0; j < c; ++j) {
                     m[j * r + i] = *it++; // Row-major to Column-major
@@ -130,13 +130,13 @@ namespace mpfem {
         Tensor operator+(const Tensor& rhs) const
         {
             MPFEM_ASSERT(shape_ == rhs.shape_, "Tensor shape mismatch in add");
-            return Tensor(shape_, data_ + rhs.data_);
+            return {shape_, data_ + rhs.data_};
         }
 
         Tensor operator-(const Tensor& rhs) const
         {
             MPFEM_ASSERT(shape_ == rhs.shape_, "Tensor shape mismatch in sub");
-            return Tensor(shape_, data_ - rhs.data_);
+            return {shape_, data_ - rhs.data_};
         }
 
         Tensor operator-() const { return Tensor(shape_, -data_); }
@@ -152,7 +152,7 @@ namespace mpfem {
             if (shape_.isMatrix() && rhs.shape_.isVector()) {
                 MPFEM_ASSERT(shape_.cols() == rhs.shape_.rows(), "Mat*Vec dim mismatch");
                 Eigen::Map<const Eigen::Matrix<Real, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor>> mat(data_.data(), shape_.rows(), shape_.cols());
-                return Tensor(TensorShape::vector(shape_.rows()), mat * rhs.data_);
+                return {TensorShape::vector(shape_.rows()), mat * rhs.data_};
             }
             // 矩阵 * 矩阵
             if (shape_.isMatrix() && rhs.shape_.isMatrix()) {
@@ -160,8 +160,8 @@ namespace mpfem {
                 Eigen::Map<const Eigen::Matrix<Real, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor>> A(data_.data(), shape_.rows(), shape_.cols());
                 Eigen::Map<const Eigen::Matrix<Real, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor>> B(rhs.data_.data(), rhs.shape_.rows(), rhs.shape_.cols());
                 Eigen::Matrix<Real, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor> C = A * B;
-                return Tensor(TensorShape::matrix(shape_.rows(), rhs.shape_.cols()),
-                    Eigen::Map<TensorData>(C.data(), C.size()));
+                return {TensorShape::matrix(shape_.rows(), rhs.shape_.cols()),
+                    Eigen::Map<TensorData>(C.data(), C.size())};
             }
 
             MPFEM_THROW(ArgumentException, "Invalid tensor multiplication shapes");
@@ -207,7 +207,7 @@ namespace mpfem {
         MPFEM_ASSERT(m.shape_.isMatrix() && m.shape_.rows() == m.shape_.cols(), "Sym requires square matrix");
         Eigen::Map<const Eigen::Matrix<Real, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor>> mat(m.data_.data(), m.shape_.rows(), m.shape_.cols());
         Eigen::Matrix<Real, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor> res = 0.5 * (mat + mat.transpose());
-        return Tensor(m.shape_, Eigen::Map<TensorData>(res.data(), res.size()));
+        return {m.shape_, Eigen::Map<TensorData>(res.data(), res.size())};
     }
 
     inline Real norm(const Tensor& t)
