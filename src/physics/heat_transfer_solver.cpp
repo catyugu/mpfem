@@ -1,8 +1,6 @@
 #include "heat_transfer_solver.hpp"
 #include "assembly/dirichlet_bc.hpp"
 #include "assembly/integrators.hpp"
-#include "core/logger.hpp"
-#include "solver/solver_factory.hpp"
 
 namespace mpfem {
 

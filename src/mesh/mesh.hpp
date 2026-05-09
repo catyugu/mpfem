@@ -1,13 +1,9 @@
 #ifndef MPFEM_MESH_HPP
 #define MPFEM_MESH_HPP
 
-#include "core/exception.hpp"
 #include "core/geometry.hpp"
 #include "core/types.hpp"
 #include "element.hpp"
-#include <cstdint>
-#include <memory>
-#include <set>
 #include <span>
 #include <unordered_map>
 #include <vector>

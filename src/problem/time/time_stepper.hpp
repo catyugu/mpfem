@@ -4,7 +4,6 @@
 #include "problem/time/time_integrator.hpp"
 #include "problem/transient_problem.hpp"
 
-
 namespace mpfem {
 
     class TimeStepper {

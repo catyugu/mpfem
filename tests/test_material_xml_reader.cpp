@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
+#include "core/exception.hpp"
 #include "core/logger.hpp"
-#include "core/types.hpp"
 #include "io/material_xml_reader.hpp"
 
 using namespace mpfem;

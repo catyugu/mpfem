@@ -5,7 +5,6 @@
 #include "expr/variable_graph.hpp"
 #include "integrator.hpp"
 
-
 namespace mpfem {
 
     // =============================================================================

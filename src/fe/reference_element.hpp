@@ -1,14 +1,10 @@
 #ifndef MPFEM_REFERENCE_ELEMENT_HPP
 #define MPFEM_REFERENCE_ELEMENT_HPP
 
-#include "core/exception.hpp"
 #include "core/geometry.hpp"
 #include "quadrature.hpp"
 #include <basix/finite-element.h>
-#include <map>
 #include <memory>
-#include <mutex>
-#include <tuple>
 #include <vector>
 
 namespace mpfem {

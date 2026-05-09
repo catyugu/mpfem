@@ -2,11 +2,9 @@
 #include "core/exception.hpp"
 #include "core/logger.hpp"
 #include "core/string_utils.hpp"
-#include "solver/solver_factory.hpp"
 
 #include <tinyxml2.h>
 
-#include <cctype>
 #include <cstdlib>
 #include <sstream>
 

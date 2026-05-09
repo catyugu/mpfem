@@ -1,10 +1,8 @@
 #include "core/geometry.hpp"
 #include "fe/fe_collection.hpp"
-#include "fe/quadrature.hpp"
 #include "field/fe_space.hpp"
 #include "mesh/mesh.hpp"
 #include <gtest/gtest.h>
-
 
 using namespace mpfem;
 

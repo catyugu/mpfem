@@ -1,5 +1,4 @@
 #include "solver/pardiso_solver.hpp"
-#include "core/logger.hpp"
 #include <cstring>
 #include <stdexcept>
 #include <vector>
@@ -31,7 +30,8 @@ namespace mpfem {
         int iterations = 1;
         Real residual = 0.0;
 
-        void convertToCSR(const SparseMatrix::Storage& mat) {
+        void convertToCSR(const SparseMatrix::Storage& mat)
+        {
             const MKL_INT n_size = static_cast<MKL_INT>(mat.rows());
             const MKL_INT nnz = static_cast<MKL_INT>(mat.nonZeros());
 
@@ -64,7 +64,8 @@ namespace mpfem {
         }
     };
 
-    PardisoSolver::PardisoSolver() : impl_(std::make_unique<Impl>())
+    PardisoSolver::PardisoSolver()
+        : impl_(std::make_unique<Impl>())
     {
         std::memset(impl_->pt, 0, sizeof(impl_->pt));
         impl_->mtype = 11;
@@ -87,7 +88,8 @@ namespace mpfem {
 
     void PardisoSolver::setup(const SparseMatrix* A)
     {
-        if (!A) throw std::runtime_error("PardisoSolver: null matrix in setup");
+        if (!A)
+            throw std::runtime_error("PardisoSolver: null matrix in setup");
         const auto& mat = A->eigen();
         impl_->n = static_cast<MKL_INT>(mat.rows());
         impl_->convertToCSR(mat);
@@ -102,14 +104,16 @@ namespace mpfem {
             nullptr, &nrhs, impl_->iparm, &impl_->msglvl,
             temp.data(), temp.data(), &impl_->error);
 
-        if (impl_->error != 0) throw std::runtime_error("PardisoSolver: factorization failed");
+        if (impl_->error != 0)
+            throw std::runtime_error("PardisoSolver: factorization failed");
         set_matrix(A);
         mark_setup();
     }
 
     void PardisoSolver::apply(const Vector& b, Vector& x)
     {
-        if (!is_setup()) throw std::runtime_error("PardisoSolver: not setup");
+        if (!is_setup())
+            throw std::runtime_error("PardisoSolver: not setup");
         MKL_INT nrhs = 1;
         impl_->phase = 33;
         Vector b_copy = b;
@@ -119,7 +123,8 @@ namespace mpfem {
             nullptr, &nrhs, impl_->iparm, &impl_->msglvl,
             b_copy.data(), x.data(), &impl_->error);
 
-        if (impl_->error != 0) throw std::runtime_error("PardisoSolver: solve failed");
+        if (impl_->error != 0)
+            throw std::runtime_error("PardisoSolver: solve failed");
         impl_->iterations = 1;
         impl_->residual = 0.0;
     }
@@ -129,7 +134,7 @@ namespace mpfem {
 
 #else
 
-    struct PardisoSolver::Impl {};
+    struct PardisoSolver::Impl { };
     PardisoSolver::PardisoSolver() { throw std::runtime_error("PardisoSolver: MKL not available"); }
     PardisoSolver::~PardisoSolver() = default;
     void PardisoSolver::setup(const SparseMatrix*) { throw std::runtime_error("PardisoSolver: MKL not available"); }

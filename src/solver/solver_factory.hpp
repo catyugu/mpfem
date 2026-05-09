@@ -1,16 +1,9 @@
 #ifndef MPFEM_SOLVER_FACTORY_HPP
 #define MPFEM_SOLVER_FACTORY_HPP
 
-#include "core/logger.hpp"
-#include "eigen_solver.hpp"
 #include "linear_operator.hpp"
-#include "pardiso_solver.hpp"
 #include "solver_config.hpp"
-#include "umfpack_solver.hpp"
 #include <memory>
-#include <stdexcept>
-#include <string>
-#include <string_view>
 
 namespace mpfem {
 

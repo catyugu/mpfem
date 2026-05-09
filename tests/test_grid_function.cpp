@@ -7,7 +7,6 @@
 #include "mesh/mesh.hpp"
 #include <gtest/gtest.h>
 
-
 using namespace mpfem;
 
 class GridFunctionTest : public ::testing::Test {

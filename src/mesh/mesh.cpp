@@ -20,7 +20,8 @@ namespace mpfem {
             Index nodes[MAX_FACE_NODES];
             int count;
 
-            FaceKey() : count(0) { }
+            FaceKey()
+                : count(0) { }
 
             /// Initialize from sorted node span
             void set(std::span<const Index> sorted_nodes)

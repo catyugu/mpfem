@@ -1,5 +1,7 @@
 #include "problem/transient_problem.hpp"
 #include "core/logger.hpp"
+#include "physics/electrostatics_solver.hpp"
+#include "physics/structural_solver.hpp"
 #include "problem/time/adaptive_time_stepper.hpp"
 #include "problem/time/time_integrator.hpp"
 

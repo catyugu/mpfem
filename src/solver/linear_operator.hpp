@@ -5,7 +5,6 @@
 #include "core/types.hpp"
 #include "solver/solver_config.hpp"
 #include <memory>
-#include <string>
 #include <string_view>
 
 namespace mpfem {

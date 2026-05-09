@@ -15,12 +15,14 @@ namespace mpfem {
         Real residual = 0.0;
     };
 
-    UmfpackSolver::UmfpackSolver() : impl_(std::make_unique<Impl>()) { }
+    UmfpackSolver::UmfpackSolver()
+        : impl_(std::make_unique<Impl>()) { }
     UmfpackSolver::~UmfpackSolver() = default;
 
     void UmfpackSolver::setup(const SparseMatrix* A)
     {
-        if (!A) throw std::runtime_error("UmfpackSolver: null matrix in setup");
+        if (!A)
+            throw std::runtime_error("UmfpackSolver: null matrix in setup");
         impl_->solver.compute(A->eigen());
         if (impl_->solver.info() != Eigen::Success) {
             throw std::runtime_error("UmfpackSolver: factorization failed");
@@ -31,7 +33,8 @@ namespace mpfem {
 
     void UmfpackSolver::apply(const Vector& b, Vector& x)
     {
-        if (!is_setup()) throw std::runtime_error("UmfpackSolver: not setup");
+        if (!is_setup())
+            throw std::runtime_error("UmfpackSolver: not setup");
         x = impl_->solver.solve(b);
         if (impl_->solver.info() != Eigen::Success) {
             throw std::runtime_error("UmfpackSolver: solve failed");

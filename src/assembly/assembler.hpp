@@ -3,7 +3,6 @@
 
 #include "assembly/integrator.hpp"
 #include "core/sparse_matrix.hpp"
-#include <algorithm>
 #include <memory>
 #include <set>
 #include <vector>

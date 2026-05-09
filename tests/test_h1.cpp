@@ -1,6 +1,5 @@
 #include "fe/quadrature.hpp"
 #include "fe/reference_element.hpp"
-#include <cmath>
 #include <gtest/gtest.h>
 
 using namespace mpfem;

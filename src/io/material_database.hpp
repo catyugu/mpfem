@@ -1,8 +1,6 @@
 #ifndef MPFEM_MATERIAL_DATABASE_HPP
 #define MPFEM_MATERIAL_DATABASE_HPP
 
-#include "core/exception.hpp"
-#include "core/types.hpp"
 #include "io/case_definition.hpp"
 #include <map>
 #include <memory>
