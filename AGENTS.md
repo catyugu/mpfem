@@ -42,11 +42,14 @@ Multi-Physics Finite Element Method (MPFEM) library for electrostatics, heat tra
 ## COMMANDS
 
 ```bash
-# MSVC build
-cmd /c "call E:\env\cpp\VS14\Common7\Tools\VsDevCmd.bat & cmake -S . -B build-msvc & cmake --build build-msvc --parallel --config Release"
+# Build
+conda activate numerical
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --parallel
 
 # Run busbar example
-build-msvc/examples/Release/busbar_example.exe ./cases/busbar_steady_order2
+conda activate numerical
+build/examples/busbar_example.exe ./cases/busbar_steady_order2
 ```
 
 ## BUILD CONFIG

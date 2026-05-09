@@ -2,13 +2,13 @@
 
 ## 回归测试
 
-`cmd /c "call E:\env\cpp\VS14\Common7\Tools\VsDevCmd.bat & ctest --test-dir .\build-msvc -C Release --output-on-failure"`
+`ctest --test-dir build`
 
 ## 1阶稳态
 
 ### 运行方式
 
-`.\build-msvc\examples\Release\busbar_example.exe .\cases\busbar_steady`
+`.\build\examples\busbar_example.exe .\cases\busbar_steady`
 `python .\scripts\compare_steady_results.py .\results\mpfem_result.txt .\cases\busbar_steady\result.txt`
 
 ### 参考结果
@@ -22,7 +22,7 @@ disp    2.420344e-11    4.662133e-11    9.686668e-07    8.734340e-07
 
 ## 2阶稳态
 
-`.\build-msvc\examples\Release\busbar_example.exe .\cases\busbar_steady_order2`
+`.\build\examples\busbar_example.exe .\cases\busbar_steady_order2`
 `python .\scripts\compare_steady_results.py .\results\mpfem_result.txt .\cases\busbar_steady_order2\result.txt`
 
 ### 参考结果
@@ -35,7 +35,7 @@ disp    5.568379e-09    1.841973e-08    5.390639e-03    2.097754e-04
 
 ## 1阶瞬态
 
-`.\build-msvc\examples\Release\busbar_example .\cases\busbar_transient`
+`.\build\examples\Release\busbar_example .\cases\busbar_transient`
 `python .\scripts\compare_transient_results.py .\results\mpfem_result.txt .\cases\busbar_transient\result.txt`
 
 ### 参考结果

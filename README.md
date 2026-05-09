@@ -12,9 +12,9 @@
 # 使用conda虚拟环境，需已安装clang, cmake等
 conda activate numerical
 
-cmake -S . -B build-clang -DCMAKE_BUILD_TYPE=Release
-cmake --build build-clang --parallel
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --parallel
 
 # 运行示例
-build-clang/examples/busbar_example.exe ./cases/busbar_steady_order2
+build/examples/busbar_example.exe ./cases/busbar_steady_order2
 ```
