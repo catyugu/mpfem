@@ -1,16 +1,12 @@
 # PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-04-23
-**Commit:** ace1ef3 (refactor)
-**Branch:** refactor
-
 ## OVERVIEW
 
 Multi-Physics Finite Element Method (MPFEM) library for electrostatics, heat transfer, and structural mechanics. C++20 with Eigen for linear algebra. Supports steady/transient analysis with coupled physics (Joule heating, thermal expansion).
 
 ## STRUCTURE
 
-```
+```bash
 ./
 ├── src/
 │   ├── core/          # Logger, exceptions, types, tensor, sparse_matrix
@@ -32,10 +28,9 @@ Multi-Physics Finite Element Method (MPFEM) library for electrostatics, heat tra
 ## CONVENTIONS AND MANDATORY RULES
 
 - **Namespace**: `mpfem::`
-- **Class style**: Concrete implementations `final`, abstract bases with virtual destructors
-- **PIMPL pattern**: PIMPL is great for decoupling and for reducing compilation dependency.
-- **Conditional compilation**: `#ifdef MPFEM_USE_MKL`, `#ifdef MPFEM_USE_UMFPACK`
-- **No dynamic_cast**: Virtual `configure()` method for parameter injection
+- **Limited OOP**: No hierarchical inheritance. Use OOP features like inheritance and polymorphism only for sharing interface. Use DOP for most cases.
+- **PIMPL pattern**: PIMPL is considerable for decoupling and for reducing compilation dependency.
+- **No dynamic_cast**: Always use virtual `configure()` method for parameter injection
 - **No Backward Compatibility**: Strictly forbid anything remained for backward-compatibility.
 - **No Cross Dependency**: Any two files or modules/libs shall not rely on each other. Dependencies shall only happen on single direction.
 
@@ -55,7 +50,6 @@ build/examples/busbar_example.exe ./cases/busbar_steady_order2
 ## BUILD CONFIG
 
 - C++20, MSVC `/W4 /WX /permissive- /utf-8 /bigobj`, Clang `-Werror -Wall -Wextra -Wpedantic`
-- Precompiled headers: `<vector>`, `<memory>`, `<string>`, `Eigen/Core`, `Eigen/SparseCore`
 
 ## OTHER DOCUMENTS
 
