@@ -5,14 +5,13 @@
 * 变量表
 
 ```text
-L	9[cm]	0.09 m	Length
-rad_1	6[mm]	0.006 m	Bolt radius
-tbb	5[mm]	0.005 m	Thickness
-wbb	5[cm]	0.05 m	Width
-mh	3[mm]	0.003 m	Maximum element size
-htc	5[W/m^2/K]	5 W/(m²·K)	Heat transfer coefficient
-Vtot	20[mV]	0.02 V	Applied voltage
-
+L 9[cm] 0.09 m Length
+rad_1 6[mm] 0.006 m Bolt radius
+tbb 5[mm] 0.005 m Thickness
+wbb 5[cm] 0.05 m Width
+mh 3[mm] 0.003 m Maximum element size
+htc 5[W/m^2/K] 5 W/(m²·K) Heat transfer coefficient
+Vtot 20[mV] 0.02 V Applied voltage
 ```
 
 * 案例描述：一个母线板，上面有三个螺丝。求解稳态问题。
