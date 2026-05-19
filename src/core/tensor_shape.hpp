@@ -1,11 +1,9 @@
 #ifndef MPFEM_TENSOR_SHAPE_HPP
 #define MPFEM_TENSOR_SHAPE_HPP
 
-#include "core/types.hpp"
 #include <algorithm>
 #include <array>
 #include <cstddef>
-#include <vector>
 
 namespace mpfem {
 
@@ -19,7 +17,7 @@ namespace mpfem {
      * - 高阶张量: dims = {a, b, c, ...}
      */
     struct TensorShape {
-        std::array<int, 4> dims{0, 0, 0, 0};
+        std::array<int, 4> dims {0, 0, 0, 0};
         int num_dims = 0;
 
         TensorShape() = default;
@@ -29,7 +27,8 @@ namespace mpfem {
             num_dims = static_cast<int>(std::min<size_t>(d.size(), 4));
             int i = 0;
             for (auto val : d) {
-                if (i < 4) dims[i++] = val;
+                if (i < 4)
+                    dims[i++] = val;
             }
         }
 
@@ -73,9 +72,11 @@ namespace mpfem {
         // 比较运算符
         bool operator==(const TensorShape& other) const
         {
-            if (num_dims != other.num_dims) return false;
+            if (num_dims != other.num_dims)
+                return false;
             for (int i = 0; i < num_dims; ++i) {
-                if (dims[i] != other.dims[i]) return false;
+                if (dims[i] != other.dims[i])
+                    return false;
             }
             return true;
         }

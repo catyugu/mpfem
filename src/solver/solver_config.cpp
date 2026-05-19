@@ -1,6 +1,4 @@
 #include "solver/solver_config.hpp"
-#include <algorithm>
-#include <cctype>
 #include <stdexcept>
 
 namespace mpfem {
@@ -75,7 +73,8 @@ namespace mpfem {
     OperatorType operatorTypeFromName(std::string_view name)
     {
         auto iequals = [](std::string_view a, std::string_view b) {
-            if (a.size() != b.size()) return false;
+            if (a.size() != b.size())
+                return false;
             for (size_t i = 0; i < a.size(); ++i) {
                 if (std::tolower(static_cast<unsigned char>(a[i])) != std::tolower(static_cast<unsigned char>(b[i])))
                     return false;
@@ -94,15 +93,20 @@ namespace mpfem {
     LinearOperatorConfig::LinearOperatorConfig(const LinearOperatorConfig& other)
         : type(other.type), parameters(other.parameters)
     {
-        if (other.preconditioner) preconditioner = std::make_unique<LinearOperatorConfig>(*other.preconditioner);
-        if (other.localSolver) localSolver = std::make_unique<LinearOperatorConfig>(*other.localSolver);
-        if (other.coarseSolver) coarseSolver = std::make_unique<LinearOperatorConfig>(*other.coarseSolver);
-        if (other.smoother) smoother = std::make_unique<LinearOperatorConfig>(*other.smoother);
+        if (other.preconditioner)
+            preconditioner = std::make_unique<LinearOperatorConfig>(*other.preconditioner);
+        if (other.localSolver)
+            localSolver = std::make_unique<LinearOperatorConfig>(*other.localSolver);
+        if (other.coarseSolver)
+            coarseSolver = std::make_unique<LinearOperatorConfig>(*other.coarseSolver);
+        if (other.smoother)
+            smoother = std::make_unique<LinearOperatorConfig>(*other.smoother);
     }
 
     LinearOperatorConfig& LinearOperatorConfig::operator=(const LinearOperatorConfig& other)
     {
-        if (this == &other) return *this;
+        if (this == &other)
+            return *this;
         type = other.type;
         parameters = other.parameters;
         preconditioner = other.preconditioner ? std::make_unique<LinearOperatorConfig>(*other.preconditioner) : nullptr;

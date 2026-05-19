@@ -181,13 +181,13 @@ namespace mpfem {
                 vertexDofs[idx] = std::max(vertexDofs[idx], layout.numVertexDofs);
             }
 
-            const auto elemEdges = mesh_->getElementEdges(elemIdx);
+            const auto elemEdges = mesh_->elementEdges(elemIdx);
             for (Index edgeId : elemEdges) {
                 edgeDofs[static_cast<size_t>(edgeId)] = std::max(edgeDofs[static_cast<size_t>(edgeId)], layout.numEdgeDofs);
             }
 
             if (meshDim == 3) {
-                const auto elemFaces = mesh_->getElementFaces(elemIdx);
+                const auto elemFaces = mesh_->elementFaces(elemIdx);
                 for (Index faceId : elemFaces) {
                     faceDofs[static_cast<size_t>(faceId)] = std::max(faceDofs[static_cast<size_t>(faceId)], layout.numFaceDofs);
                 }
@@ -315,7 +315,7 @@ namespace mpfem {
                 }
             }
 
-            const auto elemEdges = mesh_->getElementEdges(elemIdx);
+            const auto elemEdges = mesh_->elementEdges(elemIdx);
             for (int localEdge = 0; localEdge < static_cast<int>(elemEdges.size()); ++localEdge) {
                 const Index edgeId = elemEdges[localEdge];
                 int sign = 1;
@@ -334,7 +334,7 @@ namespace mpfem {
             }
 
             if (meshDim == 3 && layout.numFaceDofs > 0) {
-                const auto elemFaces = mesh_->getElementFaces(elemIdx);
+                const auto elemFaces = mesh_->elementFaces(elemIdx);
                 for (Index faceId : elemFaces) {
                     for (int k = 0; k < layout.numFaceDofs; ++k) {
                         const Index gdof = mapFaceDof(faceId, k);

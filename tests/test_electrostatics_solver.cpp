@@ -1,9 +1,6 @@
 #include "core/logger.hpp"
-#include "mesh/mesh.hpp"
 #include "physics/electrostatics_solver.hpp"
 #include "problem/physics_problem_builder.hpp"
-#include <cmath>
-#include <fstream>
 #include <gtest/gtest.h>
 
 using namespace mpfem;

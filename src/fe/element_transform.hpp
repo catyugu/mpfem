@@ -3,7 +3,6 @@
 
 #include "core/geometry.hpp"
 #include "core/types.hpp"
-#include "fe/geometry_mapping.hpp"
 #include <Eigen/Geometry>
 #include <array>
 #include <span>

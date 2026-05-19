@@ -4,7 +4,6 @@
 #include "core/exception.hpp"
 #include "core/geometry.hpp"
 #include "reference_element.hpp"
-#include <memory>
 #include <string>
 #include <unordered_map>
 

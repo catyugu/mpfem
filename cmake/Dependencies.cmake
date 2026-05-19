@@ -20,7 +20,7 @@ include(CPM)
 # =============================================================================
 
 # Eigen3 (required)
-find_package(Eigen3 CONFIG REQUIRED)
+find_package(Eigen3 REQUIRED)
 
 # =============================================================================
 # 2. Linear algebra backends (optional, priority: MKL > OpenBLAS)
@@ -39,13 +39,7 @@ if(MPFEM_USE_MKL)
         set(MKL_ROOT "$ENV{MKL_DIR}")
     endif()
 
-    # Prefer MKL CMake config if available
-    if(MKL_ROOT AND EXISTS "${MKL_ROOT}/lib/cmake/mkl/MKLConfig.cmake")
-        find_package(MKL CONFIG QUIET)
-    else()
-        # Try system-wide search
-        find_package(MKL QUIET)
-    endif()
+    find_package(MKL QUIET)
 
     if(MKL_FOUND)
         set(MPFEM_MKL_FOUND TRUE)
@@ -67,7 +61,7 @@ option(MPFEM_USE_UMFPACK "Use UMFPACK direct solver" ON)
 
 if(MPFEM_USE_UMFPACK)
     # Try to find SuiteSparse
-    find_package(UMFPACK CONFIG QUIET)
+    find_package(UMFPACK QUIET)
 
     if(UMFPACK_FOUND)
         set(MPFEM_UMFPACK_FOUND TRUE)
@@ -136,14 +130,6 @@ if(MPFEM_BUILD_TESTS)
         " BUILD_GMOCK OFF "
         " INSTALL_GTEST OFF "
     )
-
-    if(MSVC AND NOT CMAKE_CXX_COMPILER_ID MATCHES " Clang ")
-        target_compile_options(gtest PRIVATE /wd4828)
-        target_compile_options(gtest_main PRIVATE /wd4828)
-    else()
-        target_compile_options(gtest PRIVATE -Wno-character-conversion)
-        target_compile_options(gtest_main PRIVATE -Wno-character-conversion)
-    endif()
 endif()
 
 # =============================================================================
@@ -164,9 +150,13 @@ message(STATUS " ")
 # Suppress warnings from external (CPM) packages
 # =============================================================================
 if(MSVC)
-    set(EXTERNAL_WARNING_FLAGS " /WX-" "/W0")
+    if(CMAKE_CXX_COMPILER_ID MATCHES Clang)
+        set(EXTERNAL_WARNING_FLAGS "-w")
+    else()
+        set(EXTERNAL_WARNING_FLAGS /WX- /W0)
+    endif()
 else()
-    set(EXTERNAL_WARNING_FLAGS " -w ")
+    set(EXTERNAL_WARNING_FLAGS "-w")
 endif()
 
 # Suppress warnings for known CPM targets
@@ -174,7 +164,7 @@ endif()
 set(CPM_KNOWN_TARGETS basix tinyxml2)
 
 if(MPFEM_BUILD_TESTS)
-    list(APPEND CPM_KNOWN_TARGETS gtest gtest_main)
+    list(APPEND CPM_KNOWN_TARGETS gtest gtest_main gmock gmock_main)
 endif()
 
 foreach(CPM_TARGET IN LISTS CPM_KNOWN_TARGETS)

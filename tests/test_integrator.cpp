@@ -7,12 +7,9 @@
 #include "expr/variable_graph.hpp"
 #include "fe/element_transform.hpp"
 #include "fe/fe_collection.hpp"
-#include "fe/quadrature.hpp"
 #include "field/fe_space.hpp"
-#include <cmath>
 #include <gtest/gtest.h>
 
-#include <array>
 #include <stdexcept>
 
 using namespace mpfem;

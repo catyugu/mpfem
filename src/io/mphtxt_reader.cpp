@@ -3,7 +3,6 @@
 #include "core/logger.hpp"
 #include "core/string_utils.hpp"
 
-#include <algorithm>
 #include <cctype>
 #include <sstream>
 
@@ -32,7 +31,7 @@ namespace mpfem {
         mesh.reserveNodes(static_cast<Index>(data.vertices.size()));
 
         for (const auto& v : data.vertices) {
-            mesh.addNode(Vector3(v[0], v[1], v[2]));
+            mesh.addNode(v[0], v[1], v[2]);
         }
 
         Index numVolumeElems = 0;

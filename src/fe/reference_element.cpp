@@ -159,7 +159,7 @@ namespace mpfem {
         // Uses set-intersection to guarantee shape matching regardless of vertex sequence.
         // Returns {matched_basix_index, needs_reverse_flag}
         auto match_entity = [&](int dim, const std::vector<int>& ccw_verts, std::vector<bool>& consumed) -> std::pair<int, bool> {
-            if (dim >= topo.size() || topo[dim].empty())
+            if (dim >= static_cast<int>(topo.size()) || topo[dim].empty())
                 return {-1, false};
 
             std::set<int> b_target;

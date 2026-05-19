@@ -90,7 +90,7 @@ namespace mpfem {
         LinearOperatorConfig() = default;
         explicit LinearOperatorConfig(OperatorType t)
             : type(t) { }
-        
+
         // Deep copy constructor needed because of unique_ptr
         LinearOperatorConfig(const LinearOperatorConfig& other);
         LinearOperatorConfig& operator=(const LinearOperatorConfig& other);

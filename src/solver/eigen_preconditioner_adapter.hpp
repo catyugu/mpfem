@@ -25,7 +25,8 @@ namespace mpfem {
             MaxRowsAtCompileTime = Eigen::Dynamic
         };
 
-        EigenPreconditionerAdapter() : op_(nullptr), dim_(0) { }
+        EigenPreconditionerAdapter()
+            : op_(nullptr), dim_(0) { }
 
         // Eigen Preconditioner Concept requirements
         EigenPreconditionerAdapter& analyzePattern(const MatrixType& A)

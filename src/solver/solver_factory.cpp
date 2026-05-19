@@ -1,4 +1,7 @@
 #include "solver_factory.hpp"
+#include "eigen_solver.hpp"
+#include "solver/pardiso_solver.hpp"
+#include "umfpack_solver.hpp"
 
 namespace mpfem {
 

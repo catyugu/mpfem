@@ -2,7 +2,6 @@
 #define MPFEM_LOGGER_HPP
 
 #include <chrono>
-#include <cstdlib>
 #include <iostream>
 #include <mutex>
 #include <sstream>

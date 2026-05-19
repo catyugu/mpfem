@@ -2,6 +2,9 @@
 #define MPFEM_ADAPTIVE_TIME_STEPPER_HPP
 
 #include "core/logger.hpp"
+#include "physics/electrostatics_solver.hpp"
+#include "physics/heat_transfer_solver.hpp"
+#include "physics/structural_solver.hpp"
 #include "problem/time/time_stepper.hpp"
 #include <algorithm>
 

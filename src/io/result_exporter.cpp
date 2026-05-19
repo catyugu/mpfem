@@ -214,8 +214,9 @@ namespace mpfem {
 
         // Data - all time steps per row
         for (Index j = 0; j < numExportPoints; ++j) {
-            const Vector3& v = mesh.node(topologyVertices[static_cast<size_t>(j)]);
-            file << v.x() << "       " << v.y() << "       " << v.z();
+            file << mesh.nodeX(topologyVertices[static_cast<size_t>(j)]) << "       "
+                 << mesh.nodeY(topologyVertices[static_cast<size_t>(j)]) << "       "
+                 << mesh.nodeZ(topologyVertices[static_cast<size_t>(j)]);
 
             for (size_t idx = 0; idx < snapshots.size(); ++idx) {
                 if (vFields[idx]) {
@@ -296,8 +297,9 @@ namespace mpfem {
 
         // Data
         for (Index i = 0; i < numExportPoints; ++i) {
-            const Vector3& v = mesh.node(topologyVertices[static_cast<size_t>(i)]);
-            file << v.x() << "       " << v.y() << "       " << v.z();
+            file << mesh.nodeX(topologyVertices[static_cast<size_t>(i)]) << "       "
+                 << mesh.nodeY(topologyVertices[static_cast<size_t>(i)]) << "       "
+                 << mesh.nodeZ(topologyVertices[static_cast<size_t>(i)]);
 
             if (V) {
                 file << "       " << scalarAtVertex(*V, vDofMap, topologyVertices[static_cast<size_t>(i)]);
@@ -434,8 +436,9 @@ namespace mpfem {
         file << "<Points>\n";
         file << "<DataArray type=\"Float64\" NumberOfComponents=\"3\" format=\"ascii\">\n";
         for (Index i = 0; i < numExportPoints; ++i) {
-            const Vector3& v = mesh.node(topologyVertices[static_cast<size_t>(i)]);
-            file << v.x() << " " << v.y() << " " << v.z() << "\n";
+            file << mesh.nodeX(topologyVertices[static_cast<size_t>(i)]) << " "
+                 << mesh.nodeY(topologyVertices[static_cast<size_t>(i)]) << " "
+                 << mesh.nodeZ(topologyVertices[static_cast<size_t>(i)]) << "\n";
         }
         file << "</DataArray>\n";
         file << "</Points>\n";
