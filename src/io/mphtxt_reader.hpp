@@ -5,7 +5,6 @@
 #include "core/types.hpp"
 #include "mesh/mesh.hpp"
 
-
 #include <array>
 #include <fstream>
 #include <string>

@@ -1,41 +1,39 @@
 #include "fe/quadrature.hpp"
-#include "fe/h1.hpp"
-#include <cmath>
+#include "fe/reference_element.hpp"
 #include <gtest/gtest.h>
 
 using namespace mpfem;
 
 namespace {
 
-void evalValues(const FiniteElement& shape, const Vector3& xi, std::vector<Real>& values)
-{
-    ShapeMatrix shapeValues;
-    shape.evalShape(xi, shapeValues);
-    values.resize(shapeValues.rows());
-    for (int i = 0; i < shapeValues.rows(); ++i) {
-        values[i] = shapeValues(i, 0);
+    void evalValues(const ReferenceElement& shape, const Vector3& xi, std::vector<Real>& values)
+    {
+        ShapeMatrix shapeValues;
+        shape.evalShape(xi, shapeValues);
+        values.resize(shapeValues.rows());
+        for (int i = 0; i < shapeValues.rows(); ++i) {
+            values[i] = shapeValues(i, 0);
+        }
     }
-}
 
-void evalGrads(const FiniteElement& shape, const Vector3& xi, std::vector<Vector3>& grads)
-{
-    DerivMatrix derivatives;
-    shape.evalDerivatives(xi, derivatives);
-    grads.resize(derivatives.rows());
-    int d = derivatives.cols();
-    for (int i = 0; i < derivatives.rows(); ++i) {
-        grads[i] = Vector3(
-            d > 0 ? derivatives(i, 0) : 0.0,
-            d > 1 ? derivatives(i, 1) : 0.0,
-            d > 2 ? derivatives(i, 2) : 0.0
-        );
+    void evalGrads(const ReferenceElement& shape, const Vector3& xi, std::vector<Vector3>& grads)
+    {
+        DerivMatrix derivatives;
+        shape.evalDerivatives(xi, derivatives);
+        grads.resize(derivatives.rows());
+        int d = derivatives.cols();
+        for (int i = 0; i < derivatives.rows(); ++i) {
+            grads[i] = Vector3(
+                d > 0 ? derivatives(i, 0) : 0.0,
+                d > 1 ? derivatives(i, 1) : 0.0,
+                d > 2 ? derivatives(i, 2) : 0.0);
+        }
     }
-}
 
 } // namespace
 
 // =============================================================================
-// Segment H1 FiniteElement Tests
+// Segment H1 ReferenceElement Tests
 // =============================================================================
 
 class SegmentShapeTest : public ::testing::TestWithParam<int> {
@@ -43,13 +41,13 @@ protected:
     void SetUp() override
     {
         order_ = GetParam();
-        shape_ = std::make_unique<H1FiniteElement>(Geometry::Segment, order_);
+        shape_ = ReferenceElement::get(Geometry::Segment, order_, BasisType::H1, 1);
         values_.resize(shape_->numDofs());
         grads_.resize(shape_->numDofs());
     }
 
     int order_;
-    std::unique_ptr<FiniteElement> shape_;
+    const ReferenceElement* shape_;
     std::vector<Real> values_;
     std::vector<Vector3> grads_;
 };
@@ -119,7 +117,7 @@ INSTANTIATE_TEST_SUITE_P(Orders, SegmentShapeTest,
     ::testing::Values(1, 2));
 
 // =============================================================================
-// Triangle H1 FiniteElement Tests
+// Triangle H1 ReferenceElement Tests
 // =============================================================================
 
 class TriangleShapeTest : public ::testing::TestWithParam<int> {
@@ -127,13 +125,13 @@ protected:
     void SetUp() override
     {
         order_ = GetParam();
-        shape_ = std::make_unique<H1FiniteElement>(Geometry::Triangle, order_);
+        shape_ = ReferenceElement::get(Geometry::Triangle, order_);
         values_.resize(shape_->numDofs());
         grads_.resize(shape_->numDofs());
     }
 
     int order_;
-    std::unique_ptr<FiniteElement> shape_;
+    const ReferenceElement* shape_;
     std::vector<Real> values_;
     std::vector<Vector3> grads_;
 };
@@ -220,7 +218,7 @@ INSTANTIATE_TEST_SUITE_P(Orders, TriangleShapeTest,
     ::testing::Values(1, 2));
 
 // =============================================================================
-// Square H1 FiniteElement Tests
+// Square H1 ReferenceElement Tests
 // =============================================================================
 
 class SquareShapeTest : public ::testing::TestWithParam<int> {
@@ -228,13 +226,13 @@ protected:
     void SetUp() override
     {
         order_ = GetParam();
-        shape_ = std::make_unique<H1FiniteElement>(Geometry::Square, order_);
+        shape_ = ReferenceElement::get(Geometry::Square, order_);
         values_.resize(shape_->numDofs());
         grads_.resize(shape_->numDofs());
     }
 
     int order_;
-    std::unique_ptr<FiniteElement> shape_;
+    const ReferenceElement* shape_;
     std::vector<Real> values_;
     std::vector<Vector3> grads_;
 };
@@ -272,7 +270,7 @@ TEST_P(SquareShapeTest, TensorProductStructure)
 {
     // Square H1 basis functions use geometric node ordering (counter-clockwise)
     // not pure tensor product ordering (j*n+i)
-    // For order 1: nodes are (-1,-1), (1,-1), (1,1), (-1,1)
+    // For order 1: nodes are (0,0), (1,0), (1,1), (0,1)
 
     if (order_ == 2) {
         // For order 2, test that H1 basis functions have correct values at nodes
@@ -294,21 +292,21 @@ TEST_P(SquareShapeTest, TensorProductStructure)
 
     // For order 1, verify each node has the correct H1 basis function value
     // based on geometric ordering
-    H1FiniteElement seg(Geometry::Segment, order_);
+    const ReferenceElement* seg = ReferenceElement::get(Geometry::Segment, order_);
     std::vector<Real> seg_x(order_ + 1), seg_y(order_ + 1);
 
-    Vector3 xi(0.3, -0.5, 0.0);
+    Vector3 xi(0.3, 0.5, 0.0);
     evalValues(*shape_, xi, values_);
-    evalValues(seg, Vector3(0.3, 0.0, 0.0), seg_x);
-    evalValues(seg, Vector3(-0.5, 0.0, 0.0), seg_y);
+    evalValues(*seg, Vector3(0.3, 0.0, 0.0), seg_x);
+    evalValues(*seg, Vector3(0.5, 0.0, 0.0), seg_y);
 
-    // Geometric ordering: (-1,-1), (1,-1), (1,1), (-1,1)
-    // seg_x[0] = phi at x=-1, seg_x[1] = phi at x=1
-    // seg_y[0] = phi at y=-1, seg_y[1] = phi at y=1
-    EXPECT_NEAR(values_[0], seg_x[0] * seg_y[0], 1e-12); // (-1,-1)
-    EXPECT_NEAR(values_[1], seg_x[1] * seg_y[0], 1e-12); // ( 1,-1)
-    EXPECT_NEAR(values_[2], seg_x[1] * seg_y[1], 1e-12); // ( 1, 1)
-    EXPECT_NEAR(values_[3], seg_x[0] * seg_y[1], 1e-12); // (-1, 1)
+    // Geometric ordering: (0,0), (1,0), (1,1), (0,1)
+    // seg_x[0] = phi at x=0, seg_x[1] = phi at x=1
+    // seg_y[0] = phi at y=0, seg_y[1] = phi at y=1
+    EXPECT_NEAR(values_[0], seg_x[0] * seg_y[0], 1e-12); // (0,0)
+    EXPECT_NEAR(values_[1], seg_x[1] * seg_y[0], 1e-12); // (1,0)
+    EXPECT_NEAR(values_[2], seg_x[1] * seg_y[1], 1e-12); // (1,1)
+    EXPECT_NEAR(values_[3], seg_x[0] * seg_y[1], 1e-12); // (0,1)
 }
 
 TEST_P(SquareShapeTest, KroneckerDeltaAtNodes)
@@ -332,7 +330,7 @@ INSTANTIATE_TEST_SUITE_P(Orders, SquareShapeTest,
     ::testing::Values(1, 2));
 
 // =============================================================================
-// Tetrahedron H1 FiniteElement Tests
+// Tetrahedron H1 ReferenceElement Tests
 // =============================================================================
 
 class TetrahedronShapeTest : public ::testing::TestWithParam<int> {
@@ -340,13 +338,13 @@ protected:
     void SetUp() override
     {
         order_ = GetParam();
-        shape_ = std::make_unique<H1FiniteElement>(Geometry::Tetrahedron, order_);
+        shape_ = ReferenceElement::get(Geometry::Tetrahedron, order_);
         values_.resize(shape_->numDofs());
         grads_.resize(shape_->numDofs());
     }
 
     int order_;
-    std::unique_ptr<FiniteElement> shape_;
+    const ReferenceElement* shape_;
     std::vector<Real> values_;
     std::vector<Vector3> grads_;
 };
@@ -425,7 +423,7 @@ INSTANTIATE_TEST_SUITE_P(Orders, TetrahedronShapeTest,
     ::testing::Values(1, 2));
 
 // =============================================================================
-// Cube H1 FiniteElement Tests
+// Cube H1 ReferenceElement Tests
 // =============================================================================
 
 class CubeShapeTest : public ::testing::TestWithParam<int> {
@@ -433,13 +431,13 @@ protected:
     void SetUp() override
     {
         order_ = GetParam();
-        shape_ = std::make_unique<H1FiniteElement>(Geometry::Cube, order_);
+        shape_ = ReferenceElement::get(Geometry::Cube, order_);
         values_.resize(shape_->numDofs());
         grads_.resize(shape_->numDofs());
     }
 
     int order_;
-    std::unique_ptr<FiniteElement> shape_;
+    const ReferenceElement* shape_;
     std::vector<Real> values_;
     std::vector<Vector3> grads_;
 };
@@ -498,27 +496,27 @@ TEST_P(CubeShapeTest, TensorProductStructure)
 
     // For order 1, verify the geometric node ordering is correct
     // Node ordering: corners in geometric order
-    // seg_x[0] = phi at x=-1, seg_x[1] = phi at x=1
-    H1FiniteElement seg(Geometry::Segment, order_);
+    // seg_x[0] = phi at x=0, seg_x[1] = phi at x=1
+    const ReferenceElement* seg = ReferenceElement::get(Geometry::Segment, order_);
     std::vector<Real> seg_x(order_ + 1), seg_y(order_ + 1), seg_z(order_ + 1);
 
-    Vector3 xi(0.2, -0.3, 0.4);
+    Vector3 xi(0.2, 0.3, 0.4);
     evalValues(*shape_, xi, values_);
-    evalValues(seg, Vector3(0.2, 0.0, 0.0), seg_x);
-    evalValues(seg, Vector3(-0.3, 0.0, 0.0), seg_y);
-    evalValues(seg, Vector3(0.4, 0.0, 0.0), seg_z);
+    evalValues(*seg, Vector3(0.2, 0.0, 0.0), seg_x);
+    evalValues(*seg, Vector3(0.3, 0.0, 0.0), seg_y);
+    evalValues(*seg, Vector3(0.4, 0.0, 0.0), seg_z);
 
     // Corner nodes (geometric ordering):
-    // z=-1 level: (-1,-1,-1), (1,-1,-1), (1,1,-1), (-1,1,-1) - counter-clockwise
-    // z=+1 level: (-1,-1,1), (1,-1,1), (1,1,1), (-1,1,1) - counter-clockwise
-    EXPECT_NEAR(values_[0], seg_x[0] * seg_y[0] * seg_z[0], 1e-12); // (-1,-1,-1)
-    EXPECT_NEAR(values_[1], seg_x[1] * seg_y[0] * seg_z[0], 1e-12); // ( 1,-1,-1)
-    EXPECT_NEAR(values_[2], seg_x[1] * seg_y[1] * seg_z[0], 1e-12); // ( 1, 1,-1)
-    EXPECT_NEAR(values_[3], seg_x[0] * seg_y[1] * seg_z[0], 1e-12); // (-1, 1,-1)
-    EXPECT_NEAR(values_[4], seg_x[0] * seg_y[0] * seg_z[1], 1e-12); // (-1,-1, 1)
-    EXPECT_NEAR(values_[5], seg_x[1] * seg_y[0] * seg_z[1], 1e-12); // ( 1,-1, 1)
-    EXPECT_NEAR(values_[6], seg_x[1] * seg_y[1] * seg_z[1], 1e-12); // ( 1, 1, 1)
-    EXPECT_NEAR(values_[7], seg_x[0] * seg_y[1] * seg_z[1], 1e-12); // (-1, 1, 1)
+    // z=0 level: (0,0,0), (1,0,0), (1,1,0), (0,1,0) - counter-clockwise
+    // z=1 level: (0,0,1), (1,0,1), (1,1,1), (0,1,1) - counter-clockwise
+    EXPECT_NEAR(values_[0], seg_x[0] * seg_y[0] * seg_z[0], 1e-12); // (0,0,0)
+    EXPECT_NEAR(values_[1], seg_x[1] * seg_y[0] * seg_z[0], 1e-12); // (1,0,0)
+    EXPECT_NEAR(values_[2], seg_x[1] * seg_y[1] * seg_z[0], 1e-12); // (1,1,0)
+    EXPECT_NEAR(values_[3], seg_x[0] * seg_y[1] * seg_z[0], 1e-12); // (0,1,0)
+    EXPECT_NEAR(values_[4], seg_x[0] * seg_y[0] * seg_z[1], 1e-12); // (0,0,1)
+    EXPECT_NEAR(values_[5], seg_x[1] * seg_y[0] * seg_z[1], 1e-12); // (1,0,1)
+    EXPECT_NEAR(values_[6], seg_x[1] * seg_y[1] * seg_z[1], 1e-12); // (1,1,1)
+    EXPECT_NEAR(values_[7], seg_x[0] * seg_y[1] * seg_z[1], 1e-12); // (0,1,1)
 }
 
 INSTANTIATE_TEST_SUITE_P(Orders, CubeShapeTest,
@@ -531,10 +529,10 @@ INSTANTIATE_TEST_SUITE_P(Orders, CubeShapeTest,
 TEST(LinearElementsTest, TriangleGradientAccuracy)
 {
     // For a linear triangle, gradients are constant and known
-    H1FiniteElement shape(Geometry::Triangle, 1);
+    const ReferenceElement* shape = ReferenceElement::get(Geometry::Triangle, 1);
 
     std::vector<Vector3> grads(3);
-    evalGrads(shape, Vector3(0.2, 0.3, 0.0), grads);
+    evalGrads(*shape, Vector3(0.2, 0.3, 0.0), grads);
 
     // φ0 = 1 - ξ - η, grad = (-1, -1)
     // φ1 = ξ, grad = (1, 0)
@@ -551,10 +549,10 @@ TEST(LinearElementsTest, TriangleGradientAccuracy)
 TEST(LinearElementsTest, TetrahedronGradientAccuracy)
 {
     // For a linear tetrahedron, gradients are constant
-    H1FiniteElement shape(Geometry::Tetrahedron, 1);
+    const ReferenceElement* shape = ReferenceElement::get(Geometry::Tetrahedron, 1);
 
     std::vector<Vector3> grads(4);
-    evalGrads(shape, Vector3(0.1, 0.2, 0.3), grads);
+    evalGrads(*shape, Vector3(0.1, 0.2, 0.3), grads);
 
     // φ0 = 1 - ξ - η - ζ, grad = (-1, -1, -1)
     // φ1 = ξ, grad = (1, 0, 0)
@@ -575,10 +573,10 @@ TEST(LinearElementsTest, TetrahedronGradientAccuracy)
 
 TEST(QuadraticElementsTest, TriangleQuadraticDofs)
 {
-    H1FiniteElement shape(Geometry::Triangle, 2);
-    EXPECT_EQ(shape.numDofs(), 6); // 3 vertices + 3 edges
+    const ReferenceElement* shape = ReferenceElement::get(Geometry::Triangle, 2);
+    EXPECT_EQ(shape->numDofs(), 6); // 3 vertices + 3 edges
 
-    auto coords = shape.interpolationPoints();
+    auto coords = shape->interpolationPoints();
 
     // Check vertex nodes
     EXPECT_NEAR(coords[0][0], 0.0, 1e-12);
@@ -599,10 +597,10 @@ TEST(QuadraticElementsTest, TriangleQuadraticDofs)
 
 TEST(QuadraticElementsTest, TetrahedronQuadraticDofs)
 {
-    H1FiniteElement shape(Geometry::Tetrahedron, 2);
-    EXPECT_EQ(shape.numDofs(), 10); // 4 vertices + 6 edges
+    const ReferenceElement* shape = ReferenceElement::get(Geometry::Tetrahedron, 2);
+    EXPECT_EQ(shape->numDofs(), 10); // 4 vertices + 6 edges
 
-    auto coords = shape.interpolationPoints();
+    auto coords = shape->interpolationPoints();
 
     // Check vertex nodes (reference tetrahedron)
     EXPECT_NEAR(coords[0][0], 0.0, 1e-12);
@@ -646,4 +644,3 @@ TEST(QuadraticElementsTest, TetrahedronQuadraticDofs)
     EXPECT_NEAR(coords[9][1], 0.5, 1e-12);
     EXPECT_NEAR(coords[9][2], 0.5, 1e-12);
 }
-

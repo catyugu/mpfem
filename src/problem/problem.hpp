@@ -3,20 +3,16 @@
 
 #include "core/types.hpp"
 #include "expr/variable_graph.hpp"
-#include "field/grid_function.hpp"
+#include "field/field_values.hpp"
 #include "io/case_definition.hpp"
 #include "io/material_database.hpp"
 #include "mesh/mesh.hpp"
-#include "physics/field_values.hpp"
+#include "physics/electrostatics_solver.hpp"
+#include "physics/heat_transfer_solver.hpp"
+#include "physics/structural_solver.hpp"
 #include <string>
-#include <string_view>
-
 
 namespace mpfem {
-
-    class ElectrostaticsSolver;
-    class HeatTransferSolver;
-    class StructuralSolver;
 
     class Problem {
     public:

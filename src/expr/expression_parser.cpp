@@ -4,7 +4,6 @@
 #include "expr/unit_parser.hpp"
 #include "expr/variable_graph.hpp"
 
-#include <charconv>
 #include <cmath>
 #include <vector>
 
@@ -243,7 +242,8 @@ namespace mpfem {
             size_t pos_ = 0;
 
         public:
-            explicit Lexer(std::string_view text) : text_(text) { }
+            explicit Lexer(std::string_view text)
+                : text_(text) { }
             Token next()
             {
                 while (pos_ < text_.size() && std::isspace(text_[pos_]))
@@ -569,7 +569,8 @@ namespace mpfem {
             }
 
         public:
-            explicit PrattParser(std::string_view text) : lexer_(text) { advance(); }
+            explicit PrattParser(std::string_view text)
+                : lexer_(text) { advance(); }
 
             std::unique_ptr<AstNode> parseExpression(int precedence = P_NONE)
             {

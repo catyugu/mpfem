@@ -19,14 +19,14 @@ namespace mpfem {
         case Geometry::Segment:
             if (order == 1) {
                 shape.setZero();
-                shape(0, 0) = 0.5 * (1.0 - x);
-                shape(1, 0) = 0.5 * (1.0 + x);
+                shape(0, 0) = 1.0 - x;
+                shape(1, 0) = x;
                 return;
             }
             shape.setZero();
-            shape(0, 0) = -0.5 * x * (1.0 - x);
-            shape(1, 0) = 1.0 - x * x;
-            shape(2, 0) = 0.5 * x * (1.0 + x);
+            shape(0, 0) = (1.0 - x) * (1.0 - 2.0 * x);
+            shape(1, 0) = 4.0 * x * (1.0 - x);
+            shape(2, 0) = x * (2.0 * x - 1.0);
             return;
 
         case Geometry::Triangle:
@@ -49,10 +49,10 @@ namespace mpfem {
         case Geometry::Square:
             if (order == 1) {
                 shape.setZero();
-                const Real phi0x = 0.5 * (1.0 - x);
-                const Real phi1x = 0.5 * (1.0 + x);
-                const Real phi0y = 0.5 * (1.0 - y);
-                const Real phi1y = 0.5 * (1.0 + y);
+                const Real phi0x = 1.0 - x;
+                const Real phi1x = x;
+                const Real phi0y = 1.0 - y;
+                const Real phi1y = y;
                 shape(0, 0) = phi0x * phi0y;
                 shape(1, 0) = phi1x * phi0y;
                 shape(2, 0) = phi1x * phi1y;
@@ -61,12 +61,12 @@ namespace mpfem {
             }
             shape.setZero();
             {
-                const Real px0 = -0.5 * x * (1.0 - x);
-                const Real px1 = 1.0 - x * x;
-                const Real px2 = 0.5 * x * (1.0 + x);
-                const Real py0 = -0.5 * y * (1.0 - y);
-                const Real py1 = 1.0 - y * y;
-                const Real py2 = 0.5 * y * (1.0 + y);
+                const Real px0 = (1.0 - x) * (1.0 - 2.0 * x);
+                const Real px1 = 4.0 * x * (1.0 - x);
+                const Real px2 = x * (2.0 * x - 1.0);
+                const Real py0 = (1.0 - y) * (1.0 - 2.0 * y);
+                const Real py1 = 4.0 * y * (1.0 - y);
+                const Real py2 = y * (2.0 * y - 1.0);
                 shape(0, 0) = px0 * py0;
                 shape(1, 0) = px2 * py0;
                 shape(2, 0) = px2 * py2;
@@ -104,12 +104,12 @@ namespace mpfem {
         case Geometry::Cube:
             if (order == 1) {
                 shape.setZero();
-                const Real phi0x = 0.5 * (1.0 - x);
-                const Real phi1x = 0.5 * (1.0 + x);
-                const Real phi0y = 0.5 * (1.0 - y);
-                const Real phi1y = 0.5 * (1.0 + y);
-                const Real phi0z = 0.5 * (1.0 - z);
-                const Real phi1z = 0.5 * (1.0 + z);
+                const Real phi0x = 1.0 - x;
+                const Real phi1x = x;
+                const Real phi0y = 1.0 - y;
+                const Real phi1y = y;
+                const Real phi0z = 1.0 - z;
+                const Real phi1z = z;
                 shape(0, 0) = phi0x * phi0y * phi0z;
                 shape(1, 0) = phi1x * phi0y * phi0z;
                 shape(2, 0) = phi1x * phi1y * phi0z;
@@ -122,15 +122,15 @@ namespace mpfem {
             }
             shape.setZero();
             {
-                const Real px0 = -0.5 * x * (1.0 - x);
-                const Real px1 = 1.0 - x * x;
-                const Real px2 = 0.5 * x * (1.0 + x);
-                const Real py0 = -0.5 * y * (1.0 - y);
-                const Real py1 = 1.0 - y * y;
-                const Real py2 = 0.5 * y * (1.0 + y);
-                const Real pz0 = -0.5 * z * (1.0 - z);
-                const Real pz1 = 1.0 - z * z;
-                const Real pz2 = 0.5 * z * (1.0 + z);
+                const Real px0 = (1.0 - x) * (1.0 - 2.0 * x);
+                const Real px1 = 4.0 * x * (1.0 - x);
+                const Real px2 = x * (2.0 * x - 1.0);
+                const Real py0 = (1.0 - y) * (1.0 - 2.0 * y);
+                const Real py1 = 4.0 * y * (1.0 - y);
+                const Real py2 = y * (2.0 * y - 1.0);
+                const Real pz0 = (1.0 - z) * (1.0 - 2.0 * z);
+                const Real pz1 = 4.0 * z * (1.0 - z);
+                const Real pz2 = z * (2.0 * z - 1.0);
 
                 shape(0, 0) = px0 * py0 * pz0;
                 shape(1, 0) = px2 * py0 * pz0;
@@ -184,14 +184,14 @@ namespace mpfem {
         case Geometry::Segment:
             if (order == 1) {
                 derivatives.setZero();
-                derivatives(0, 0) = -0.5;
-                derivatives(1, 0) = 0.5;
+                derivatives(0, 0) = -1.0;
+                derivatives(1, 0) = 1.0;
                 return;
             }
             derivatives.setZero();
-            derivatives(0, 0) = x - 0.5;
-            derivatives(1, 0) = -2.0 * x;
-            derivatives(2, 0) = x + 0.5;
+            derivatives(0, 0) = 4.0 * x - 3.0;
+            derivatives(1, 0) = 4.0 - 8.0 * x;
+            derivatives(2, 0) = 4.0 * x - 1.0;
             return;
 
         case Geometry::Triangle:
@@ -219,34 +219,34 @@ namespace mpfem {
         case Geometry::Square:
             if (order == 1) {
                 derivatives.setZero();
-                const Real phi0x = 0.5 * (1.0 - x);
-                const Real phi1x = 0.5 * (1.0 + x);
-                const Real phi0y = 0.5 * (1.0 - y);
-                const Real phi1y = 0.5 * (1.0 + y);
-                derivatives(0, 0) = -0.5 * phi0y;
-                derivatives(0, 1) = -0.5 * phi0x;
-                derivatives(1, 0) = 0.5 * phi0y;
-                derivatives(1, 1) = -0.5 * phi1x;
-                derivatives(2, 0) = 0.5 * phi1y;
-                derivatives(2, 1) = 0.5 * phi1x;
-                derivatives(3, 0) = -0.5 * phi1y;
-                derivatives(3, 1) = 0.5 * phi0x;
+                const Real phi0x = 1.0 - x;
+                const Real phi1x = x;
+                const Real phi0y = 1.0 - y;
+                const Real phi1y = y;
+                derivatives(0, 0) = -1.0 * phi0y;
+                derivatives(0, 1) = -1.0 * phi0x;
+                derivatives(1, 0) = 1.0 * phi0y;
+                derivatives(1, 1) = -1.0 * phi1x;
+                derivatives(2, 0) = 1.0 * phi1y;
+                derivatives(2, 1) = 1.0 * phi1x;
+                derivatives(3, 0) = -1.0 * phi1y;
+                derivatives(3, 1) = 1.0 * phi0x;
                 return;
             }
             derivatives.setZero();
             {
-                const Real px0 = -0.5 * x * (1.0 - x);
-                const Real px1 = 1.0 - x * x;
-                const Real px2 = 0.5 * x * (1.0 + x);
-                const Real py0 = -0.5 * y * (1.0 - y);
-                const Real py1 = 1.0 - y * y;
-                const Real py2 = 0.5 * y * (1.0 + y);
-                const Real dpx0 = x - 0.5;
-                const Real dpx1 = -2.0 * x;
-                const Real dpx2 = x + 0.5;
-                const Real dpy0 = y - 0.5;
-                const Real dpy1 = -2.0 * y;
-                const Real dpy2 = y + 0.5;
+                const Real px0 = (1.0 - x) * (1.0 - 2.0 * x);
+                const Real px1 = 4.0 * x * (1.0 - x);
+                const Real px2 = x * (2.0 * x - 1.0);
+                const Real py0 = (1.0 - y) * (1.0 - 2.0 * y);
+                const Real py1 = 4.0 * y * (1.0 - y);
+                const Real py2 = y * (2.0 * y - 1.0);
+                const Real dpx0 = 2.0 * x - 2.0;
+                const Real dpx1 = 4.0 - 8.0 * x;
+                const Real dpx2 = 4.0 * x - 1.0;
+                const Real dpy0 = 2.0 * y - 2.0;
+                const Real dpy1 = 4.0 - 8.0 * y;
+                const Real dpy2 = 4.0 * y - 1.0;
 
                 derivatives(0, 0) = dpx0 * py0;
                 derivatives(0, 1) = px0 * dpy0;
@@ -307,67 +307,67 @@ namespace mpfem {
         case Geometry::Cube:
             if (order == 1) {
                 derivatives.setZero();
-                const Real phi0x = 0.5 * (1.0 - x);
-                const Real phi1x = 0.5 * (1.0 + x);
-                const Real phi0y = 0.5 * (1.0 - y);
-                const Real phi1y = 0.5 * (1.0 + y);
-                const Real phi0z = 0.5 * (1.0 - z);
-                const Real phi1z = 0.5 * (1.0 + z);
+                const Real phi0x = 1.0 - x;
+                const Real phi1x = x;
+                const Real phi0y = 1.0 - y;
+                const Real phi1y = y;
+                const Real phi0z = 1.0 - z;
+                const Real phi1z = z;
 
-                derivatives(0, 0) = -0.5 * phi0y * phi0z;
-                derivatives(0, 1) = -0.5 * phi0x * phi0z;
-                derivatives(0, 2) = -0.5 * phi0x * phi0y;
+                derivatives(0, 0) = -1.0 * phi0y * phi0z;
+                derivatives(0, 1) = -1.0 * phi0x * phi0z;
+                derivatives(0, 2) = -1.0 * phi0x * phi0y;
 
-                derivatives(1, 0) = 0.5 * phi0y * phi0z;
-                derivatives(1, 1) = -0.5 * phi1x * phi0z;
-                derivatives(1, 2) = -0.5 * phi1x * phi0y;
+                derivatives(1, 0) = 1.0 * phi0y * phi0z;
+                derivatives(1, 1) = -1.0 * phi1x * phi0z;
+                derivatives(1, 2) = -1.0 * phi1x * phi0y;
 
-                derivatives(2, 0) = 0.5 * phi1y * phi0z;
-                derivatives(2, 1) = 0.5 * phi1x * phi0z;
-                derivatives(2, 2) = -0.5 * phi1x * phi1y;
+                derivatives(2, 0) = 1.0 * phi1y * phi0z;
+                derivatives(2, 1) = 1.0 * phi1x * phi0z;
+                derivatives(2, 2) = -1.0 * phi1x * phi1y;
 
-                derivatives(3, 0) = -0.5 * phi1y * phi0z;
-                derivatives(3, 1) = 0.5 * phi0x * phi0z;
-                derivatives(3, 2) = -0.5 * phi0x * phi1y;
+                derivatives(3, 0) = -1.0 * phi1y * phi0z;
+                derivatives(3, 1) = 1.0 * phi0x * phi0z;
+                derivatives(3, 2) = -1.0 * phi0x * phi1y;
 
-                derivatives(4, 0) = -0.5 * phi0y * phi1z;
-                derivatives(4, 1) = -0.5 * phi0x * phi1z;
-                derivatives(4, 2) = 0.5 * phi0x * phi0y;
+                derivatives(4, 0) = -1.0 * phi0y * phi1z;
+                derivatives(4, 1) = -1.0 * phi0x * phi1z;
+                derivatives(4, 2) = 1.0 * phi0x * phi0y;
 
-                derivatives(5, 0) = 0.5 * phi0y * phi1z;
-                derivatives(5, 1) = -0.5 * phi1x * phi1z;
-                derivatives(5, 2) = 0.5 * phi1x * phi0y;
+                derivatives(5, 0) = 1.0 * phi0y * phi1z;
+                derivatives(5, 1) = -1.0 * phi1x * phi1z;
+                derivatives(5, 2) = 1.0 * phi1x * phi0y;
 
-                derivatives(6, 0) = 0.5 * phi1y * phi1z;
-                derivatives(6, 1) = 0.5 * phi1x * phi1z;
-                derivatives(6, 2) = 0.5 * phi1x * phi1y;
+                derivatives(6, 0) = 1.0 * phi1y * phi1z;
+                derivatives(6, 1) = 1.0 * phi1x * phi1z;
+                derivatives(6, 2) = 1.0 * phi1x * phi1y;
 
-                derivatives(7, 0) = -0.5 * phi1y * phi1z;
-                derivatives(7, 1) = 0.5 * phi0x * phi1z;
-                derivatives(7, 2) = 0.5 * phi0x * phi1y;
+                derivatives(7, 0) = -1.0 * phi1y * phi1z;
+                derivatives(7, 1) = 1.0 * phi0x * phi1z;
+                derivatives(7, 2) = 1.0 * phi0x * phi1y;
                 return;
             }
             derivatives.setZero();
             {
-                const Real px0 = -0.5 * x * (1.0 - x);
-                const Real px1 = 1.0 - x * x;
-                const Real px2 = 0.5 * x * (1.0 + x);
-                const Real py0 = -0.5 * y * (1.0 - y);
-                const Real py1 = 1.0 - y * y;
-                const Real py2 = 0.5 * y * (1.0 + y);
-                const Real pz0 = -0.5 * z * (1.0 - z);
-                const Real pz1 = 1.0 - z * z;
-                const Real pz2 = 0.5 * z * (1.0 + z);
+                const Real px0 = (1.0 - x) * (1.0 - 2.0 * x);
+                const Real px1 = 4.0 * x * (1.0 - x);
+                const Real px2 = x * (2.0 * x - 1.0);
+                const Real py0 = (1.0 - y) * (1.0 - 2.0 * y);
+                const Real py1 = 4.0 * y * (1.0 - y);
+                const Real py2 = y * (2.0 * y - 1.0);
+                const Real pz0 = (1.0 - z) * (1.0 - 2.0 * z);
+                const Real pz1 = 4.0 * z * (1.0 - z);
+                const Real pz2 = z * (2.0 * z - 1.0);
 
-                const Real dpx0 = x - 0.5;
-                const Real dpx1 = -2.0 * x;
-                const Real dpx2 = x + 0.5;
-                const Real dpy0 = y - 0.5;
-                const Real dpy1 = -2.0 * y;
-                const Real dpy2 = y + 0.5;
-                const Real dpz0 = z - 0.5;
-                const Real dpz1 = -2.0 * z;
-                const Real dpz2 = z + 0.5;
+                const Real dpx0 = 2.0 * x - 2.0;
+                const Real dpx1 = 4.0 - 8.0 * x;
+                const Real dpx2 = 4.0 * x - 1.0;
+                const Real dpy0 = 2.0 * y - 2.0;
+                const Real dpy1 = 4.0 - 8.0 * y;
+                const Real dpy2 = 4.0 * y - 1.0;
+                const Real dpz0 = 2.0 * z - 2.0;
+                const Real dpz1 = 4.0 - 8.0 * z;
+                const Real dpz2 = 4.0 * z - 1.0;
 
                 derivatives(0, 0) = dpx0 * py0 * pz0;
                 derivatives(0, 1) = px0 * dpy0 * pz0;

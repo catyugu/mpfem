@@ -1,7 +1,6 @@
 #include "field/grid_function.hpp"
 #include "core/exception.hpp"
 #include "fe/element_transform.hpp"
-#include "fe/finite_element.hpp"
 
 #include <array>
 
@@ -36,8 +35,7 @@ namespace mpfem {
         if (!ref)
             return 0.0;
 
-        const FiniteElement& basis = ref->basis();
-        const int nd = basis.numDofs();
+        const int nd = ref->numDofs();
         const int vdim = fes_->vdim();
         const int totalDofs = fes_->numElementDofs(elem);
 
@@ -48,7 +46,7 @@ namespace mpfem {
         ShapeMatrix shapeBuf;
         std::array<Index, MaxDofsPerElement> dofsBuf {};
 
-        basis.evalShape(trans.ipXi(), shapeBuf);
+        ref->evalShape(trans.ipXi(), shapeBuf);
         fes_->getElementDofs(elem, std::span<Index> {dofsBuf.data(), static_cast<size_t>(totalDofs)});
 
         Real val = 0.0;
@@ -67,8 +65,7 @@ namespace mpfem {
         if (!ref)
             return Vector3::Zero();
 
-        const FiniteElement& basis = ref->basis();
-        const int nd = basis.numDofs();
+        const int nd = ref->numDofs();
         const int vdim = fes_->vdim();
         const int totalDofs = fes_->numElementDofs(elem);
 
@@ -79,7 +76,7 @@ namespace mpfem {
         DerivMatrix derivBuf;
         std::array<Index, MaxDofsPerElement> dofsBuf {};
 
-        basis.evalDerivatives(trans.ipXi(), derivBuf);
+        ref->evalDerivatives(trans.ipXi(), derivBuf);
         fes_->getElementDofs(elem, std::span<Index> {dofsBuf.data(), static_cast<size_t>(totalDofs)});
 
         Vector3 gRef = Vector3::Zero();

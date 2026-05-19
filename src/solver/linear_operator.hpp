@@ -4,9 +4,7 @@
 #include "core/sparse_matrix.hpp"
 #include "core/types.hpp"
 #include "solver/solver_config.hpp"
-#include <Eigen/IterativeLinearSolvers>
 #include <memory>
-#include <string>
 #include <string_view>
 
 namespace mpfem {
@@ -153,13 +151,16 @@ namespace mpfem {
      */
     class IccOperator : public LinearOperator {
     public:
+        IccOperator();
+        ~IccOperator() override;
+
         std::string_view name() const override { return "ICC"; }
 
         void setup(const SparseMatrix* A) override;
         void apply(const Vector& b, Vector& x) override;
 
         void set_shift(Real shift);
-        Real shift() const { return shift_; }
+        Real shift() const;
 
         void configure(const LinearOperatorConfig& config) override;
 
@@ -167,8 +168,8 @@ namespace mpfem {
         Real residual() const override { return Real {0}; }
 
     private:
-        Real shift_ = 1e-14;
-        Eigen::IncompleteCholesky<Real> solver_;
+        struct Impl;
+        std::unique_ptr<Impl> impl_;
     };
 
     // =============================================================================
@@ -183,6 +184,9 @@ namespace mpfem {
      */
     class IluOperator : public LinearOperator {
     public:
+        IluOperator();
+        ~IluOperator() override;
+
         std::string_view name() const override { return "ILU"; }
 
         void setup(const SparseMatrix* A) override;
@@ -192,7 +196,8 @@ namespace mpfem {
         Real residual() const override { return Real {0}; }
 
     private:
-        Eigen::IncompleteLUT<Real> solver_;
+        struct Impl;
+        std::unique_ptr<Impl> impl_;
     };
 
     // =============================================================================

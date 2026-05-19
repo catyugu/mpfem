@@ -1,5 +1,5 @@
 #include "fe/element_transform.hpp"
-#include "core/exception.hpp"
+#include "fe/geometry_mapping.hpp"
 #include <Eigen/Cholesky>
 #include <cmath>
 

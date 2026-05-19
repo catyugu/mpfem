@@ -1,15 +1,19 @@
 # 验证准则
 
+## 回归测试
+
+`ctest --test-dir build`
+
 ## 1阶稳态
 
 ### 运行方式
 
-`.\build-msvc\examples\Release\busbar_example.exe .\cases\busbar_steady`
+`.\build\examples\busbar_example.exe .\cases\busbar_steady`
 `python .\scripts\compare_steady_results.py .\results\mpfem_result.txt .\cases\busbar_steady\result.txt`
 
 ### 参考结果
 
-```
+```text
 field   L2      Linf    max_relative    L2_relative
 V       1.398699e-08    2.095434e-08    2.811702e-06    1.912433e-06
 T       2.553170e-05    2.817855e-05    8.711728e-08    7.883343e-08
@@ -18,12 +22,12 @@ disp    2.420344e-11    4.662133e-11    9.686668e-07    8.734340e-07
 
 ## 2阶稳态
 
-`.\build-msvc\examples\Release\busbar_example.exe .\cases\busbar_steady_order2`
+`.\build\examples\busbar_example.exe .\cases\busbar_steady_order2`
 `python .\scripts\compare_steady_results.py .\results\mpfem_result.txt .\cases\busbar_steady_order2\result.txt`
 
 ### 参考结果
 
-```
+```text
 V       1.236373e-08    1.847981e-08    2.489623e-06    1.694028e-06
 T       1.924976e-05    2.147747e-05    6.665505e-08    5.966417e-08
 disp    5.568379e-09    1.841973e-08    5.390639e-03    2.097754e-04
@@ -31,12 +35,12 @@ disp    5.568379e-09    1.841973e-08    5.390639e-03    2.097754e-04
 
 ## 1阶瞬态
 
-`.\build-msvc\examples\Release\busbar_example .\cases\busbar_transient`
+`.\build\examples\Release\busbar_example .\cases\busbar_transient`
 `python .\scripts\compare_transient_results.py .\results\mpfem_result.txt .\cases\busbar_transient\result.txt`
 
 ### 参考结果
 
-```
+```text
 Time Step       V L2            V L2 Rel        T L2            T L2 Rel        Disp L2         Disp L2 Rel     Status
 ----------------------------------------------------------------------------------------------------
 t=10            9.22e-09                1.27e-06                3.02e-02             1.03e-04         7.33e-09                3.25e-02                FAIL

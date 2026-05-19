@@ -1,4 +1,5 @@
 #include "solver/linear_operator.hpp"
+#include <Eigen/IterativeLinearSolvers>
 
 namespace mpfem {
 
@@ -35,25 +36,38 @@ namespace mpfem {
     // IccOperator (Incomplete Cholesky)
     // =============================================================================
 
+    struct IccOperator::Impl {
+        Real shift = 1e-14;
+        Eigen::IncompleteCholesky<Real> solver;
+    };
+
+    IccOperator::IccOperator() : impl_(std::make_unique<Impl>()) {}
+    IccOperator::~IccOperator() = default;
+
     void IccOperator::setup(const SparseMatrix* A)
     {
         if (!A) {
             throw std::runtime_error("IccOperator: null matrix in setup");
         }
-        solver_.setInitialShift(shift_);
-        solver_.compute(A->eigen());
+        impl_->solver.setInitialShift(impl_->shift);
+        impl_->solver.compute(A->eigen());
         set_matrix(A);
         mark_setup();
     }
 
     void IccOperator::apply(const Vector& b, Vector& x)
     {
-        x = solver_.solve(b);
+        x = impl_->solver.solve(b);
     }
 
     void IccOperator::set_shift(Real shift)
     {
-        shift_ = shift;
+        impl_->shift = shift;
+    }
+
+    Real IccOperator::shift() const
+    {
+        return impl_->shift;
     }
 
     void IccOperator::configure(const LinearOperatorConfig& config)
@@ -67,19 +81,26 @@ namespace mpfem {
     // IluOperator (Incomplete LU)
     // =============================================================================
 
+    struct IluOperator::Impl {
+        Eigen::IncompleteLUT<Real> solver;
+    };
+
+    IluOperator::IluOperator() : impl_(std::make_unique<Impl>()) {}
+    IluOperator::~IluOperator() = default;
+
     void IluOperator::setup(const SparseMatrix* A)
     {
         if (!A) {
             throw std::runtime_error("IluOperator: null matrix in setup");
         }
-        solver_.compute(A->eigen());
+        impl_->solver.compute(A->eigen());
         set_matrix(A);
         mark_setup();
     }
 
     void IluOperator::apply(const Vector& b, Vector& x)
     {
-        x = solver_.solve(b);
+        x = impl_->solver.solve(b);
     }
 
     // =============================================================================

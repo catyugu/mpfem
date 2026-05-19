@@ -170,7 +170,7 @@ namespace mpfem {
         for (Index elemIdx = 0; elemIdx < mesh_->numElements(); ++elemIdx) {
             const Element elem = mesh_->element(elemIdx);
             const ReferenceElement* refElem = fec_->get(elem.geometry);
-            DofLayout layout = refElem->basis().dofLayout();
+            DofLayout layout = refElem->dofLayout();
             layout.numVertexDofs *= fieldVdim;
             layout.numEdgeDofs *= fieldVdim;
             layout.numFaceDofs *= fieldVdim;
@@ -181,13 +181,13 @@ namespace mpfem {
                 vertexDofs[idx] = std::max(vertexDofs[idx], layout.numVertexDofs);
             }
 
-            const auto elemEdges = mesh_->getElementEdges(elemIdx);
+            const auto elemEdges = mesh_->elementEdges(elemIdx);
             for (Index edgeId : elemEdges) {
                 edgeDofs[static_cast<size_t>(edgeId)] = std::max(edgeDofs[static_cast<size_t>(edgeId)], layout.numEdgeDofs);
             }
 
             if (meshDim == 3) {
-                const auto elemFaces = mesh_->getElementFaces(elemIdx);
+                const auto elemFaces = mesh_->elementFaces(elemIdx);
                 for (Index faceId : elemFaces) {
                     faceDofs[static_cast<size_t>(faceId)] = std::max(faceDofs[static_cast<size_t>(faceId)], layout.numFaceDofs);
                 }
@@ -201,7 +201,7 @@ namespace mpfem {
         for (Index bdrIdx = 0; bdrIdx < mesh_->numBdrElements(); ++bdrIdx) {
             const Element elem = mesh_->bdrElement(bdrIdx);
             const ReferenceElement* refElem = fec_->get(elem.geometry);
-            DofLayout layout = refElem->basis().dofLayout();
+            DofLayout layout = refElem->dofLayout();
             layout.numVertexDofs *= fieldVdim;
             layout.numEdgeDofs *= fieldVdim;
             layout.numFaceDofs *= fieldVdim;
@@ -296,7 +296,7 @@ namespace mpfem {
             const Element elem = mesh_->element(elemIdx);
             const ReferenceElement* refElem = fec_->get(elem.geometry);
             const bool useNdOrientation = refElem->basisType() == BasisType::ND;
-            DofLayout layout = refElem->basis().dofLayout();
+            DofLayout layout = refElem->dofLayout();
             layout.numVertexDofs *= fieldVdim;
             layout.numEdgeDofs *= fieldVdim;
             layout.numFaceDofs *= fieldVdim;
@@ -315,7 +315,7 @@ namespace mpfem {
                 }
             }
 
-            const auto elemEdges = mesh_->getElementEdges(elemIdx);
+            const auto elemEdges = mesh_->elementEdges(elemIdx);
             for (int localEdge = 0; localEdge < static_cast<int>(elemEdges.size()); ++localEdge) {
                 const Index edgeId = elemEdges[localEdge];
                 int sign = 1;
@@ -334,7 +334,7 @@ namespace mpfem {
             }
 
             if (meshDim == 3 && layout.numFaceDofs > 0) {
-                const auto elemFaces = mesh_->getElementFaces(elemIdx);
+                const auto elemFaces = mesh_->elementFaces(elemIdx);
                 for (Index faceId : elemFaces) {
                     for (int k = 0; k < layout.numFaceDofs; ++k) {
                         const Index gdof = mapFaceDof(faceId, k);
@@ -374,7 +374,7 @@ namespace mpfem {
         for (Index bdrIdx = 0; bdrIdx < mesh_->numBdrElements(); ++bdrIdx) {
             const Element elem = mesh_->bdrElement(bdrIdx);
             const ReferenceElement* refElem = fec_->get(elem.geometry);
-            DofLayout layout = refElem->basis().dofLayout();
+            DofLayout layout = refElem->dofLayout();
             layout.numVertexDofs *= fieldVdim;
             layout.numEdgeDofs *= fieldVdim;
             layout.numFaceDofs *= fieldVdim;

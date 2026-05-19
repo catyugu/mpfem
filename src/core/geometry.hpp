@@ -268,20 +268,20 @@ namespace mpfem {
         /// Reference coordinates for each geometry type
         /// Note: These are defined for the standard reference elements
 
-        /// Reference vertex coordinates for Segment: [-1, 1]
-        inline constexpr std::array<std::array<Real, 1>, 2> refCoords_Segment = {{{{-1.0}}, {{1.0}}}};
+        /// Reference vertex coordinates for Segment: [0, 1]
+        inline constexpr std::array<std::array<Real, 1>, 2> refCoords_Segment = {{{{0.0}}, {{1.0}}}};
 
         /// Reference vertex coordinates for Triangle: (0,0), (1,0), (0,1)
         inline constexpr std::array<std::array<Real, 2>, 3> refCoords_Triangle = {{{{0.0, 0.0}}, {{1.0, 0.0}}, {{0.0, 1.0}}}};
 
-        /// Reference vertex coordinates for Square: [-1,1] x [-1,1]
-        inline constexpr std::array<std::array<Real, 2>, 4> refCoords_Square = {{{{-1.0, -1.0}}, {{1.0, -1.0}}, {{1.0, 1.0}}, {{-1.0, 1.0}}}};
+        /// Reference vertex coordinates for Square: [0,1] x [0,1]
+        inline constexpr std::array<std::array<Real, 2>, 4> refCoords_Square = {{{{0.0, 0.0}}, {{1.0, 0.0}}, {{1.0, 1.0}}, {{0.0, 1.0}}}};
 
         /// Reference vertex coordinates for Tetrahedron
         inline constexpr std::array<std::array<Real, 3>, 4> refCoords_Tetrahedron = {{{{0.0, 0.0, 0.0}}, {{1.0, 0.0, 0.0}}, {{0.0, 1.0, 0.0}}, {{0.0, 0.0, 1.0}}}};
 
-        /// Reference vertex coordinates for Cube: [-1,1]^3
-        inline constexpr std::array<std::array<Real, 3>, 8> refCoords_Cube = {{{{-1.0, -1.0, -1.0}}, {{1.0, -1.0, -1.0}}, {{1.0, 1.0, -1.0}}, {{-1.0, 1.0, -1.0}}, {{-1.0, -1.0, 1.0}}, {{1.0, -1.0, 1.0}}, {{1.0, 1.0, 1.0}}, {{-1.0, 1.0, 1.0}}}};
+        /// Reference vertex coordinates for Cube: [0,1]^3
+        inline constexpr std::array<std::array<Real, 3>, 8> refCoords_Cube = {{{{0.0, 0.0, 0.0}}, {{1.0, 0.0, 0.0}}, {{1.0, 1.0, 0.0}}, {{0.0, 1.0, 0.0}}, {{0.0, 0.0, 1.0}}, {{1.0, 0.0, 1.0}}, {{1.0, 1.0, 1.0}}, {{0.0, 1.0, 1.0}}}};
 
         // =============================================================================
         // Reference element topology tables
@@ -345,10 +345,10 @@ namespace mpfem {
         /// Edge midpoint reference coordinates for Square2
         /// Edge ordering matches edge_table::Square
         inline constexpr std::array<std::array<Real, 2>, 4> edgeMidpoint_Square = {{
-            {{0.0, -1.0}}, // Edge 0: bottom (vertices 0-1)
-            {{1.0, 0.0}}, // Edge 1: right (vertices 1-2)
-            {{0.0, 1.0}}, // Edge 2: top (vertices 2-3)
-            {{-1.0, 0.0}} // Edge 3: left (vertices 3-0)
+            {{0.0, 0.0}}, // Edge 0: bottom (vertices 0-1) - midpoint of bottom edge [0,1]x{0}
+            {{1.0, 0.5}}, // Edge 1: right (vertices 1-2) - midpoint of right edge {1}x[0,1]
+            {{0.0, 1.0}}, // Edge 2: top (vertices 2-3) - midpoint of top edge [0,1]x{1}
+            {{0.0, 0.5}} // Edge 3: left (vertices 3-0) - midpoint of left edge {0}x[0,1]
         }};
 
         /// Edge midpoint reference coordinates for Tetrahedron2
@@ -365,18 +365,18 @@ namespace mpfem {
         /// Edge midpoint reference coordinates for Cube2
         /// Edge ordering matches edge_table::Cube
         inline constexpr std::array<std::array<Real, 3>, 12> edgeMidpoint_Cube = {{
-            {{0.0, -1.0, -1.0}}, // Edge 0: bottom front
-            {{1.0, 0.0, -1.0}}, // Edge 1: bottom right
-            {{0.0, 1.0, -1.0}}, // Edge 2: bottom back
-            {{-1.0, 0.0, -1.0}}, // Edge 3: bottom left
-            {{0.0, -1.0, 1.0}}, // Edge 4: top front
-            {{1.0, 0.0, 1.0}}, // Edge 5: top right
-            {{0.0, 1.0, 1.0}}, // Edge 6: top back
-            {{-1.0, 0.0, 1.0}}, // Edge 7: top left
-            {{-1.0, -1.0, 0.0}}, // Edge 8: front left vertical
-            {{1.0, -1.0, 0.0}}, // Edge 9: front right vertical
-            {{1.0, 1.0, 0.0}}, // Edge 10: back right vertical
-            {{-1.0, 1.0, 0.0}} // Edge 11: back left vertical
+            {{0.0, 0.0, 0.0}}, // Edge 0: bottom front - between (0,0,0) and (1,0,0)
+            {{1.0, 0.0, 0.0}}, // Edge 1: bottom right - between (1,0,0) and (1,1,0)
+            {{0.5, 1.0, 0.0}}, // Edge 2: bottom back - between (1,1,0) and (0,1,0)
+            {{0.0, 0.5, 0.0}}, // Edge 3: bottom left - between (0,1,0) and (0,0,0)
+            {{0.0, 0.0, 1.0}}, // Edge 4: top front - between (0,0,1) and (1,0,1)
+            {{1.0, 0.0, 1.0}}, // Edge 5: top right - between (1,0,1) and (1,1,1)
+            {{0.5, 1.0, 1.0}}, // Edge 6: top back - between (1,1,1) and (0,1,1)
+            {{0.0, 0.5, 1.0}}, // Edge 7: top left - between (0,1,1) and (0,0,1)
+            {{0.0, 0.0, 0.5}}, // Edge 8: front left vertical - between (0,0,0) and (0,0,1)
+            {{1.0, 0.0, 0.5}}, // Edge 9: front right vertical - between (1,0,0) and (1,0,1)
+            {{1.0, 1.0, 0.5}}, // Edge 10: back right vertical - between (1,1,0) and (1,1,1)
+            {{0.0, 1.0, 0.5}} // Edge 11: back left vertical - between (0,1,0) and (0,1,1)
         }};
 
         // =============================================================================
@@ -384,18 +384,18 @@ namespace mpfem {
         // =============================================================================
 
         /// Face center reference coordinates for Square2 (single center point)
-        /// Center of the reference square [-1,1] x [-1,1]
+        /// Center of the reference square [0,1] x [0,1]
         inline constexpr std::array<Real, 2> faceCenter_Square = {{0.0, 0.0}};
 
         /// Face center reference coordinates for Cube2 (6 face centers)
         /// Face ordering matches face_table::Cube: -z, +z, -y, +y, -x, +x
         inline constexpr std::array<std::array<Real, 3>, 6> faceCenter_Cube = {{
-            {{0.0, 0.0, -1.0}}, // Face 0: bottom (-z)
-            {{0.0, 0.0, 1.0}}, // Face 1: top (+z)
-            {{0.0, -1.0, 0.0}}, // Face 2: front (-y)
-            {{0.0, 1.0, 0.0}}, // Face 3: back (+y)
-            {{-1.0, 0.0, 0.0}}, // Face 4: left (-x)
-            {{1.0, 0.0, 0.0}} // Face 5: right (+x)
+            {{0.5, 0.5, 0.0}}, // Face 0: bottom (z=0)
+            {{0.5, 0.5, 1.0}}, // Face 1: top (z=1)
+            {{0.5, 0.0, 0.5}}, // Face 2: front (y=0)
+            {{0.5, 1.0, 0.5}}, // Face 3: back (y=1)
+            {{0.0, 0.5, 0.5}}, // Face 4: left (x=0)
+            {{1.0, 0.5, 0.5}} // Face 5: right (x=1)
         }};
 
         // =============================================================================
@@ -403,7 +403,7 @@ namespace mpfem {
         // =============================================================================
 
         /// Volume center reference coordinates for Cube2 (single center point)
-        /// Center of the reference cube [-1,1]^3
+        /// Center of the reference cube [0,1]^3
         inline constexpr std::array<Real, 3> volumeCenter_Cube = {{0.0, 0.0, 0.0}};
 
         /// Square2: center of the element (same as face center for 2D)
@@ -566,7 +566,7 @@ namespace mpfem {
             // Add corner vertex coordinates
             switch (g) {
             case Geometry::Segment:
-                coords.push_back({-1.0});
+                coords.push_back({0.0});
                 coords.push_back({1.0});
                 break;
             case Geometry::Triangle:
@@ -575,10 +575,10 @@ namespace mpfem {
                 coords.push_back({0.0, 1.0});
                 break;
             case Geometry::Square:
-                coords.push_back({-1.0, -1.0});
-                coords.push_back({1.0, -1.0});
+                coords.push_back({0.0, 0.0});
+                coords.push_back({1.0, 0.0});
                 coords.push_back({1.0, 1.0});
-                coords.push_back({-1.0, 1.0});
+                coords.push_back({0.0, 1.0});
                 break;
             case Geometry::Tetrahedron:
                 coords.push_back({0.0, 0.0, 0.0});
@@ -587,14 +587,14 @@ namespace mpfem {
                 coords.push_back({0.0, 0.0, 1.0});
                 break;
             case Geometry::Cube:
-                coords.push_back({-1.0, -1.0, -1.0});
-                coords.push_back({1.0, -1.0, -1.0});
-                coords.push_back({1.0, 1.0, -1.0});
-                coords.push_back({-1.0, 1.0, -1.0});
-                coords.push_back({-1.0, -1.0, 1.0});
-                coords.push_back({1.0, -1.0, 1.0});
+                coords.push_back({0.0, 0.0, 0.0});
+                coords.push_back({1.0, 0.0, 0.0});
+                coords.push_back({1.0, 1.0, 0.0});
+                coords.push_back({0.0, 1.0, 0.0});
+                coords.push_back({0.0, 0.0, 1.0});
+                coords.push_back({1.0, 0.0, 1.0});
                 coords.push_back({1.0, 1.0, 1.0});
-                coords.push_back({-1.0, 1.0, 1.0});
+                coords.push_back({0.0, 1.0, 1.0});
                 break;
             default:
                 return coords;
@@ -769,148 +769,6 @@ namespace mpfem {
             }
 
             return {};
-        }
-
-        struct FaceToVolumeAffineMap {
-            Matrix3 A = Matrix3::Zero();
-            Vector3 b = Vector3::Zero();
-        };
-
-        inline bool getFaceToVolumeAffineMap(Geometry volumeGeom, int localFaceIdx, FaceToVolumeAffineMap& out)
-        {
-            out = FaceToVolumeAffineMap {};
-
-            if (volumeGeom == Geometry::Tetrahedron) {
-                switch (localFaceIdx) {
-                case 0:
-                    out.A << 1.0, 0.0, 0.0,
-                        0.0, 1.0, 0.0,
-                        -1.0, -1.0, 0.0;
-                    out.b << 0.0, 0.0, 1.0;
-                    return true;
-                case 1:
-                    out.A << 0.0, 0.0, 0.0,
-                        0.0, 1.0, 0.0,
-                        -1.0, -1.0, 0.0;
-                    out.b << 0.0, 0.0, 1.0;
-                    return true;
-                case 2:
-                    out.A << 1.0, 0.0, 0.0,
-                        0.0, 0.0, 0.0,
-                        -1.0, -1.0, 0.0;
-                    out.b << 0.0, 0.0, 1.0;
-                    return true;
-                case 3:
-                    out.A << 1.0, 0.0, 0.0,
-                        0.0, 1.0, 0.0,
-                        0.0, 0.0, 0.0;
-                    out.b << 0.0, 0.0, 0.0;
-                    return true;
-                default:
-                    return false;
-                }
-            }
-
-            if (volumeGeom == Geometry::Cube) {
-                switch (localFaceIdx) {
-                case 0:
-                    out.A << 1.0, 0.0, 0.0,
-                        0.0, 1.0, 0.0,
-                        0.0, 0.0, 0.0;
-                    out.b << 0.0, 0.0, -1.0;
-                    return true;
-                case 1:
-                    out.A << 1.0, 0.0, 0.0,
-                        0.0, 1.0, 0.0,
-                        0.0, 0.0, 0.0;
-                    out.b << 0.0, 0.0, 1.0;
-                    return true;
-                case 2:
-                    out.A << 1.0, 0.0, 0.0,
-                        0.0, 0.0, 0.0,
-                        0.0, 1.0, 0.0;
-                    out.b << 0.0, -1.0, 0.0;
-                    return true;
-                case 3:
-                    out.A << 1.0, 0.0, 0.0,
-                        0.0, 0.0, 0.0,
-                        0.0, 1.0, 0.0;
-                    out.b << 0.0, 1.0, 0.0;
-                    return true;
-                case 4:
-                    out.A << 0.0, 0.0, 0.0,
-                        1.0, 0.0, 0.0,
-                        0.0, 1.0, 0.0;
-                    out.b << -1.0, 0.0, 0.0;
-                    return true;
-                case 5:
-                    out.A << 0.0, 0.0, 0.0,
-                        1.0, 0.0, 0.0,
-                        0.0, 1.0, 0.0;
-                    out.b << 1.0, 0.0, 0.0;
-                    return true;
-                default:
-                    return false;
-                }
-            }
-
-            if (volumeGeom == Geometry::Triangle) {
-                switch (localFaceIdx) {
-                case 0:
-                    out.A << 1.0, 0.0, 0.0,
-                        -1.0, 0.0, 0.0,
-                        0.0, 0.0, 0.0;
-                    out.b << 0.0, 1.0, 0.0;
-                    return true;
-                case 1:
-                    out.A << 0.0, 0.0, 0.0,
-                        1.0, 0.0, 0.0,
-                        0.0, 0.0, 0.0;
-                    out.b << 0.0, 0.0, 0.0;
-                    return true;
-                case 2:
-                    out.A << 1.0, 0.0, 0.0,
-                        0.0, 0.0, 0.0,
-                        0.0, 0.0, 0.0;
-                    out.b << 0.0, 0.0, 0.0;
-                    return true;
-                default:
-                    return false;
-                }
-            }
-
-            if (volumeGeom == Geometry::Square) {
-                switch (localFaceIdx) {
-                case 0:
-                    out.A << 1.0, 0.0, 0.0,
-                        0.0, 0.0, 0.0,
-                        0.0, 0.0, 0.0;
-                    out.b << 0.0, -1.0, 0.0;
-                    return true;
-                case 1:
-                    out.A << 0.0, 0.0, 0.0,
-                        1.0, 0.0, 0.0,
-                        0.0, 0.0, 0.0;
-                    out.b << 1.0, 0.0, 0.0;
-                    return true;
-                case 2:
-                    out.A << 1.0, 0.0, 0.0,
-                        0.0, 0.0, 0.0,
-                        0.0, 0.0, 0.0;
-                    out.b << 0.0, 1.0, 0.0;
-                    return true;
-                case 3:
-                    out.A << 0.0, 0.0, 0.0,
-                        1.0, 0.0, 0.0,
-                        0.0, 0.0, 0.0;
-                    out.b << -1.0, 0.0, 0.0;
-                    return true;
-                default:
-                    return false;
-                }
-            }
-
-            return false;
         }
 
     } // namespace geom

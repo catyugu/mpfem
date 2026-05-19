@@ -1,10 +1,8 @@
 #ifndef MPFEM_FE_SPACE_HPP
 #define MPFEM_FE_SPACE_HPP
 
-#include "core/exception.hpp"
 #include "core/types.hpp"
 #include "fe/fe_collection.hpp"
-#include <algorithm>
 #include <memory>
 #include <span>
 #include <vector>

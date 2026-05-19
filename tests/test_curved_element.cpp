@@ -2,8 +2,8 @@
 #include "core/geometry.hpp"
 #include "core/types.hpp"
 #include "fe/element_transform.hpp"
-#include "fe/h1.hpp"
 #include "fe/quadrature.hpp"
+#include "fe/reference_element.hpp"
 #include "mesh/mesh.hpp"
 #include <cmath>
 #include <gtest/gtest.h>
@@ -154,10 +154,10 @@ class QuadraticH1FiniteElementTest : public ::testing::Test {
 protected:
     void SetUp() override
     {
-        tri2_ = std::make_unique<H1FiniteElement>(Geometry::Triangle, 2);
-        tet2_ = std::make_unique<H1FiniteElement>(Geometry::Tetrahedron, 2);
-        square2_ = std::make_unique<H1FiniteElement>(Geometry::Square, 2);
-        cube2_ = std::make_unique<H1FiniteElement>(Geometry::Cube, 2);
+        tri2_ = ReferenceElement::get(Geometry::Triangle, 2, BasisType::H1, 1);
+        tet2_ = ReferenceElement::get(Geometry::Tetrahedron, 2, BasisType::H1, 1);
+        square2_ = ReferenceElement::get(Geometry::Square, 2, BasisType::H1, 1);
+        cube2_ = ReferenceElement::get(Geometry::Cube, 2, BasisType::H1, 1);
     }
 
     struct EvalData {
@@ -165,7 +165,7 @@ protected:
         DerivMatrix derivatives;
     };
 
-    EvalData evalShape(const FiniteElement* shape, const Vector3& xi) const
+    EvalData evalShape(const ReferenceElement* shape, const Vector3& xi) const
     {
         EvalData sv;
         shape->evalShape(xi, sv.values);
@@ -173,17 +173,17 @@ protected:
         return sv;
     }
 
-    std::unique_ptr<FiniteElement> tri2_;
-    std::unique_ptr<FiniteElement> tet2_;
-    std::unique_ptr<FiniteElement> square2_;
-    std::unique_ptr<FiniteElement> cube2_;
+    const ReferenceElement* tri2_;
+    const ReferenceElement* tet2_;
+    const ReferenceElement* square2_;
+    const ReferenceElement* cube2_;
 };
 
 TEST_F(QuadraticH1FiniteElementTest, Triangle2PartitionOfUnity)
 {
     // Sum of H1 basis functions should be 1 at any point
     Vector3 xi(0.3, 0.2, 0.0);
-    auto sv = evalShape(tri2_.get(), xi);
+    auto sv = evalShape(tri2_, xi);
 
     Real sum = 0.0;
     for (int i = 0; i < tri2_->numDofs(); ++i) {
@@ -198,7 +198,7 @@ TEST_F(QuadraticH1FiniteElementTest, Triangle2KroneckerDelta)
     auto coords = tri2_->interpolationPoints();
 
     for (int i = 0; i < tri2_->numDofs(); ++i) {
-        auto sv = evalShape(tri2_.get(), coords[i]);
+        auto sv = evalShape(tri2_, coords[i]);
 
         for (int j = 0; j < tri2_->numDofs(); ++j) {
             if (i == j) {
@@ -214,7 +214,7 @@ TEST_F(QuadraticH1FiniteElementTest, Triangle2KroneckerDelta)
 TEST_F(QuadraticH1FiniteElementTest, Tetrahedron2PartitionOfUnity)
 {
     Vector3 xi(0.2, 0.3, 0.1);
-    auto sv = evalShape(tet2_.get(), xi);
+    auto sv = evalShape(tet2_, xi);
 
     Real sum = 0.0;
     for (int i = 0; i < tet2_->numDofs(); ++i) {
@@ -228,7 +228,7 @@ TEST_F(QuadraticH1FiniteElementTest, Tetrahedron2KroneckerDelta)
     auto coords = tet2_->interpolationPoints();
 
     for (int i = 0; i < tet2_->numDofs(); ++i) {
-        auto sv = evalShape(tet2_.get(), coords[i]);
+        auto sv = evalShape(tet2_, coords[i]);
 
         for (int j = 0; j < tet2_->numDofs(); ++j) {
             if (i == j) {
@@ -244,7 +244,7 @@ TEST_F(QuadraticH1FiniteElementTest, Tetrahedron2KroneckerDelta)
 TEST_F(QuadraticH1FiniteElementTest, Square2PartitionOfUnity)
 {
     Vector3 xi(0.3, -0.2, 0.0);
-    auto sv = evalShape(square2_.get(), xi);
+    auto sv = evalShape(square2_, xi);
 
     Real sum = 0.0;
     for (int i = 0; i < square2_->numDofs(); ++i) {
@@ -258,7 +258,7 @@ TEST_F(QuadraticH1FiniteElementTest, Square2KroneckerDelta)
     auto coords = square2_->interpolationPoints();
 
     for (int i = 0; i < square2_->numDofs(); ++i) {
-        auto sv = evalShape(square2_.get(), coords[i]);
+        auto sv = evalShape(square2_, coords[i]);
 
         for (int j = 0; j < square2_->numDofs(); ++j) {
             if (i == j) {
@@ -274,7 +274,7 @@ TEST_F(QuadraticH1FiniteElementTest, Square2KroneckerDelta)
 TEST_F(QuadraticH1FiniteElementTest, Cube2PartitionOfUnity)
 {
     Vector3 xi(0.3, -0.2, 0.1);
-    auto sv = evalShape(cube2_.get(), xi);
+    auto sv = evalShape(cube2_, xi);
 
     Real sum = 0.0;
     for (int i = 0; i < cube2_->numDofs(); ++i) {
@@ -288,7 +288,7 @@ TEST_F(QuadraticH1FiniteElementTest, Cube2KroneckerDelta)
     auto coords = cube2_->interpolationPoints();
 
     for (int i = 0; i < cube2_->numDofs(); ++i) {
-        auto sv = evalShape(cube2_.get(), coords[i]);
+        auto sv = evalShape(cube2_, coords[i]);
 
         for (int j = 0; j < cube2_->numDofs(); ++j) {
             if (i == j) {
@@ -464,8 +464,8 @@ TEST_F(CurvedSquareTransformTest, TransformCorners)
 {
     Vector3 x;
 
-    // Corner (-1,-1) -> (0,0)
-    Vector3 xi(-1.0, -1.0, 0.0);
+    // Corner (0,0) -> (0,0)
+    Vector3 xi(0.0, 0.0, 0.0);
     x = transform_->transform(xi);
     EXPECT_NEAR(x.x(), 0.0, 1e-12);
     EXPECT_NEAR(x.y(), 0.0, 1e-12);
@@ -480,8 +480,9 @@ TEST_F(CurvedSquareTransformTest, TransformCorners)
 TEST_F(CurvedSquareTransformTest, TransformCenter)
 {
     // Center should map to (0.5, 0.5)
+    // Center of reference square [0,1]^2 is (0.5, 0.5)
     Vector3 x;
-    Vector3 xi(0.0, 0.0, 0.0); // Center in reference coords
+    Vector3 xi(0.5, 0.5, 0.0); // Center in reference coords [0,1]^2
     x = transform_->transform(xi);
 
     EXPECT_NEAR(x.x(), 0.5, 1e-12);
@@ -517,8 +518,8 @@ TEST_F(CurvedHexahedronTransformTest, TransformCorners)
 {
     Vector3 x;
 
-    // Corner (-1,-1,-1) -> (0,0,0)
-    Vector3 xi(-1.0, -1.0, -1.0);
+    // Corner (0,0,0) -> (0,0,0)
+    Vector3 xi(0.0, 0.0, 0.0);
     x = transform_->transform(xi);
     EXPECT_NEAR(x.x(), 0.0, 1e-12);
     EXPECT_NEAR(x.y(), 0.0, 1e-12);
@@ -535,8 +536,9 @@ TEST_F(CurvedHexahedronTransformTest, TransformCorners)
 TEST_F(CurvedHexahedronTransformTest, TransformCenter)
 {
     // Volume center should map to (0.5, 0.5, 0.5)
+    // Center of reference cube [0,1]^3 is (0.5, 0.5, 0.5)
     Vector3 x;
-    Vector3 xi(0.0, 0.0, 0.0); // Center in reference coords
+    Vector3 xi(0.5, 0.5, 0.5); // Center in reference coords [0,1]^3
     x = transform_->transform(xi);
 
     EXPECT_NEAR(x.x(), 0.5, 1e-12);
@@ -548,7 +550,7 @@ TEST_F(CurvedHexahedronTransformTest, TransformEdgeMidpoint)
 {
     // Edge 0 midpoint should map to (0.55, 0.0, 0.0)
     Vector3 x;
-    Vector3 xi(0.0, -1.0, -1.0); // Midpoint of edge 0 in reference coords
+    Vector3 xi(0.5, 0.0, 0.0); // Midpoint of edge 0 in reference coords [0,1]^3
     x = transform_->transform(xi);
 
     EXPECT_NEAR(x.x(), 0.55, 1e-12);
@@ -560,7 +562,7 @@ TEST_F(CurvedHexahedronTransformTest, TransformFaceCenter)
 {
     // Face center for bottom face should map to (0.5, 0.5, 0.0)
     Vector3 x;
-    Vector3 xi(0.0, 0.0, -1.0); // Center of bottom face in reference coords
+    Vector3 xi(0.5, 0.5, 0.0); // Center of bottom face in reference coords [0,1]^3
     x = transform_->transform(xi);
 
     EXPECT_NEAR(x.x(), 0.5, 1e-12);

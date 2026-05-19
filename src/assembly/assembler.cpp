@@ -239,8 +239,7 @@ namespace mpfem {
                 if (mesh->hasTopology()) {
                     Index faceIdx = mesh->getBoundaryFaceIndex(b);
                     if (faceIdx != InvalidIndex) {
-                        const auto& faceInfo = mesh->getFaceInfo(faceIdx);
-                        btrans.setFaceInfo(faceInfo.elem1, faceInfo.localFace1);
+                        btrans.setFaceInfo(mesh->faceNeighborElem1(faceIdx), mesh->faceLocalIndex1(faceIdx));
                     }
                 }
 
@@ -441,8 +440,7 @@ namespace mpfem {
                 if (mesh->hasTopology()) {
                     Index faceIdx = mesh->getBoundaryFaceIndex(b);
                     if (faceIdx != InvalidIndex) {
-                        const auto& faceInfo = mesh->getFaceInfo(faceIdx);
-                        btrans.setFaceInfo(faceInfo.elem1, faceInfo.localFace1);
+                        btrans.setFaceInfo(mesh->faceNeighborElem1(faceIdx), mesh->faceLocalIndex1(faceIdx));
                     }
                 }
 

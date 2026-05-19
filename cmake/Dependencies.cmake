@@ -7,9 +7,9 @@
 # - Header-only libraries: CPM for downloading
 #
 # Output variables:
-#   MPFEM_MKL_FOUND        - Intel MKL available
-#   MPFEM_UMFPACK_FOUND    - SuiteSparse::UMFPACK available
-#   MPFEM_OPENMP_FOUND     - OpenMP available
+# MPFEM_MKL_FOUND        - Intel MKL available
+# MPFEM_UMFPACK_FOUND    - SuiteSparse::UMFPACK available
+# MPFEM_OPENMP_FOUND     - OpenMP available
 #
 # =============================================================================
 
@@ -20,7 +20,7 @@ include(CPM)
 # =============================================================================
 
 # Eigen3 (required)
-find_package(Eigen3 CONFIG REQUIRED)
+find_package(Eigen3 REQUIRED)
 
 # =============================================================================
 # 2. Linear algebra backends (optional, priority: MKL > OpenBLAS)
@@ -28,30 +28,19 @@ find_package(Eigen3 CONFIG REQUIRED)
 
 # --- Intel MKL ---
 option(MPFEM_USE_MKL "Use Intel MKL for BLAS/LAPACK and PARDISO solver" ON)
-# If using LLVM style compiler, abandon MKL since it may not be compatible
-if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|AppleClang")
-    message(WARNING "Intel MKL may not be compatible with Clang/AppleClang. Disabling MKL support.")
-    set(MPFEM_USE_MKL OFF)
-endif()
+
 if(MPFEM_USE_MKL)
-    set(MKL_LINK "static")          # 静态链接
-    set(MKL_INTERFACE "lp64")       # 默认整数接口（最通用）
-    set(MKL_THREADING "sequential") # 单线程（无 OpenMP 依赖，最稳定）
+    set(MKL_LINK "static") # 静态链接
+    set(MKL_INTERFACE "lp64") # 默认整数接口（最通用）
 
     if(DEFINED ENV{MKLROOT})
         set(MKL_ROOT "$ENV{MKLROOT}")
     elseif(DEFINED ENV{MKL_DIR})
         set(MKL_ROOT "$ENV{MKL_DIR}")
     endif()
-    
-    # Prefer MKL CMake config if available
-    if(MKL_ROOT AND EXISTS "${MKL_ROOT}/lib/cmake/mkl/MKLConfig.cmake")
-        find_package(MKL CONFIG QUIET)
-    else()
-        # Try system-wide search
-        find_package(MKL QUIET)
-    endif()
-    
+
+    find_package(MKL QUIET)
+
     if(MKL_FOUND)
         set(MPFEM_MKL_FOUND TRUE)
         message(STATUS "Intel MKL found: ${MKL_ROOT} (threading=${MKL_THREADING})")
@@ -69,10 +58,11 @@ endif()
 
 # ---  UMFPACK ---
 option(MPFEM_USE_UMFPACK "Use UMFPACK direct solver" ON)
+
 if(MPFEM_USE_UMFPACK)
     # Try to find SuiteSparse
-    find_package(UMFPACK CONFIG QUIET)
-    
+    find_package(UMFPACK QUIET)
+
     if(UMFPACK_FOUND)
         set(MPFEM_UMFPACK_FOUND TRUE)
         message(STATUS "UMFPACK found")
@@ -87,10 +77,11 @@ endif()
 # =============================================================================
 # 4. OpenMP for parallelization
 # =============================================================================
-
 option(MPFEM_USE_OPENMP "Use OpenMP for parallelization" ON)
+
 if(MPFEM_USE_OPENMP)
     find_package(OpenMP QUIET)
+
     if(OpenMP_FOUND)
         message(STATUS "OpenMP found")
         set(MPFEM_OPENMP_FOUND TRUE)
@@ -103,7 +94,6 @@ endif()
 # =============================================================================
 # 5. Build dependencies (downloaded via CPM)
 # =============================================================================
-
 option(MPFEM_BUILD_TESTS "Build unit tests" ON)
 option(MPFEM_BUILD_EXAMPLES "Build examples" ON)
 
@@ -116,30 +106,69 @@ CPMAddPackage(
     "BUILD_TESTING OFF"
 )
 
+# FEniCS Basix (finite element basis evaluation)
+CPMAddPackage(
+    NAME basix
+
+    # 关键：直接下载 cpp 目录，不是整个项目！
+    GITHUB_REPOSITORY FEniCS/basix
+    GIT_TAG v0.9.0
+    SOURCE_SUBDIR cpp
+    OPTIONS
+    "CMAKE_POLICY_VERSION_MINIMUM 3.21"
+    "BUILD_SHARED_LIBS OFF"
+)
+
 # GoogleTest (optional, for testing)
 if(MPFEM_BUILD_TESTS)
     enable_testing()
     CPMAddPackage(
         NAME googletest
         GITHUB_REPOSITORY google/googletest
-        GIT_TAG v1.14.0
+        GIT_TAG v1.15.2
         OPTIONS
-            "BUILD_GMOCK OFF"
-            "INSTALL_GTEST OFF"
+        " BUILD_GMOCK OFF "
+        " INSTALL_GTEST OFF "
     )
 endif()
 
 # =============================================================================
 # Summary
 # =============================================================================
+message(STATUS " ")
+message(STATUS " === mpfem Dependency Summary === ")
+message(STATUS " Eigen3: FOUND ")
+message(STATUS " Intel MKL: ${MPFEM_MKL_FOUND} ")
+message(STATUS " UMFPACK: ${MPFEM_UMFPACK_FOUND} ")
+message(STATUS " OpenMP: ${MPFEM_OPENMP_FOUND} ")
+message(STATUS " Build tests: ${MPFEM_BUILD_TESTS} ")
+message(STATUS " Build examples: ${MPFEM_BUILD_EXAMPLES} ")
+message(STATUS " ================================ ")
+message(STATUS " ")
 
-message(STATUS "")
-message(STATUS "=== mpfem Dependency Summary ===")
-message(STATUS "Eigen3:           FOUND")
-message(STATUS "Intel MKL:        ${MPFEM_MKL_FOUND}")
-message(STATUS "UMFPACK:          ${MPFEM_UMFPACK_FOUND}")
-message(STATUS "OpenMP:           ${MPFEM_OPENMP_FOUND}")
-message(STATUS "Build tests:      ${MPFEM_BUILD_TESTS}")
-message(STATUS "Build examples:   ${MPFEM_BUILD_EXAMPLES}")
-message(STATUS "================================")
-message(STATUS "")
+# =============================================================================
+# Suppress warnings from external (CPM) packages
+# =============================================================================
+if(MSVC)
+    if(CMAKE_CXX_COMPILER_ID MATCHES Clang)
+        set(EXTERNAL_WARNING_FLAGS "-w")
+    else()
+        set(EXTERNAL_WARNING_FLAGS /WX- /W0)
+    endif()
+else()
+    set(EXTERNAL_WARNING_FLAGS "-w")
+endif()
+
+# Suppress warnings for known CPM targets
+# Note: Some targets may not exist yet at this point (created by CPMAddPackage)
+set(CPM_KNOWN_TARGETS basix tinyxml2)
+
+if(MPFEM_BUILD_TESTS)
+    list(APPEND CPM_KNOWN_TARGETS gtest gtest_main gmock gmock_main)
+endif()
+
+foreach(CPM_TARGET IN LISTS CPM_KNOWN_TARGETS)
+    if(TARGET ${CPM_TARGET})
+        target_compile_options(${CPM_TARGET} PRIVATE ${EXTERNAL_WARNING_FLAGS})
+    endif()
+endforeach()

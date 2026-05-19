@@ -5,7 +5,6 @@
 #include "field/grid_function.hpp"
 #include "io/problem_input_loader.hpp"
 #include "physics/electrostatics_solver.hpp"
-#include "physics/field_values.hpp"
 #include "physics/heat_transfer_solver.hpp"
 #include "physics/structural_solver.hpp"
 #include "problem.hpp"

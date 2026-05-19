@@ -4,7 +4,7 @@
 #include "core/exception.hpp"
 #include "core/types.hpp"
 #include "fe/element_transform.hpp"
-#include "fe/finite_element.hpp"
+#include "fe/reference_element.hpp"
 
 #include <cmath>
 #include <span>
@@ -13,7 +13,7 @@ namespace mpfem {
 
     class ShapeEvaluator {
     public:
-        static void evalPhysShape(const FiniteElement& basis,
+        static void evalPhysShape(MapType mapType,
             const ElementTransform& trans,
             const ShapeMatrix& refShape,
             ShapeMatrix& physShape,
@@ -22,14 +22,14 @@ namespace mpfem {
             const int nd = refShape.rows();
             const int dim = trans.dim();
 
-            if (basis.mapType() == MapType::VALUE) {
+            if (mapType == MapType::VALUE) {
                 physShape.resize(nd, refShape.cols());
                 physShape = refShape;
                 applyOrientation(physShape, orientation);
                 return;
             }
 
-            if (basis.mapType() == MapType::COVARIANT_PIOLA) {
+            if (mapType == MapType::COVARIANT_PIOLA) {
                 physShape.setZero(nd, 3);
                 const Matrix3& invJT = trans.invJacobianT();
                 for (int i = 0; i < nd; ++i) {
@@ -45,7 +45,7 @@ namespace mpfem {
                 return;
             }
 
-            if (basis.mapType() == MapType::CONTRAVARIANT_PIOLA) {
+            if (mapType == MapType::CONTRAVARIANT_PIOLA) {
                 const Real detJ = trans.detJ();
                 if (std::abs(detJ) <= 1e-15) {
                     MPFEM_THROW(Exception, "ShapeEvaluator::evalPhysShape singular Jacobian for CONTRAVARIANT_PIOLA");
@@ -68,12 +68,12 @@ namespace mpfem {
             MPFEM_THROW(Exception, "ShapeEvaluator::evalPhysShape unsupported map type");
         }
 
-        static void evalPhysDerivatives(const FiniteElement& basis,
+        static void evalPhysDerivatives(MapType mapType,
             const ElementTransform& trans,
             const DerivMatrix& refDerivatives,
             DerivMatrix& physDerivatives)
         {
-            if (basis.mapType() != MapType::VALUE) {
+            if (mapType != MapType::VALUE) {
                 MPFEM_THROW(NotImplementedException, "ShapeEvaluator::evalPhysDerivatives supports VALUE map type only");
             }
 

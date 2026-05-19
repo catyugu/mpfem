@@ -4,7 +4,6 @@
 #include "core/types.hpp"
 #include "fe/element_transform.hpp"
 #include "fe/reference_element.hpp"
-#include <memory>
 
 namespace mpfem {
 

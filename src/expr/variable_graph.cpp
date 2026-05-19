@@ -1,12 +1,8 @@
 #include "expr/variable_graph.hpp"
-
 #include "core/exception.hpp"
 #include "expr/expression_parser.hpp"
 
-#include <algorithm>
 #include <array>
-#include <atomic>
-#include <cstdint>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -21,7 +17,8 @@ namespace mpfem {
     public:
         using Extractor = Real (*)(const Vector3&);
 
-        explicit PointScalarNode(Extractor extractor) : extractor_(extractor) { }
+        explicit PointScalarNode(Extractor extractor)
+            : extractor_(extractor) { }
 
         void evaluateBatch(const EvaluationContext& ctx, std::span<Tensor> dest) const override
         {
