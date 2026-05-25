@@ -282,16 +282,12 @@ namespace mpfem {
 
             buildSolvers(*problem);
 
-            // ==========================================
-            // KEY REFACTORING POINT: Build完毕后，统一执行compile()进行全树链接
-            // ==========================================
             LOG_INFO << "Compiling variable expression ASTs...";
             problem->globalVariables_.compile();
 
             // Initialize transient after building solvers
             if (isTransient) {
-                // BDF2 is a 2-step method requiring T^{n+1}, T^n, T^{n-1} -> historyDepth = 3
-                // BDF1 is a 1-step method requiring T^{n+1}, T^n -> historyDepth = 2
+                // BDF2 needs 3 history steps, BDF1 needs 2
                 int historyDepth = (transientProblem->scheme == TimeScheme::BDF2) ? 3 : 2;
                 transientProblem->initializeTransient(historyDepth);
             }

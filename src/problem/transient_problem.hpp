@@ -20,8 +20,7 @@ namespace mpfem {
         void addSnapshot(Real time, const FieldValues& fields)
         {
             times.push_back(time);
-            snapshots.emplace_back();
-            snapshots.back() = fields; // Copy
+            snapshots.push_back(fields); // Copy
         }
 
         int numTimeSteps() const { return static_cast<int>(times.size()); }
