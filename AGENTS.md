@@ -20,7 +20,7 @@ Multi-Physics Finite Element Method (MPFEM) library for electrostatics, heat tra
 │   ├── physics/        # PhysicsFieldSolver base, electrostatics/heat/structural
 │   └── problem/        # Problem class, transient, physics builder
 ├── tests/             # 17 gtest test files
-├── examples/          # busbar_example.cpp
+├── examples/          # fem_solver.cpp
 ├── cases/             # busbar_steady/, busbar_steady_order2/, busbar_large/, busbar_transient/
 └── cmake/             # Dependencies.cmake, Targets.cmake, CPM.cmake
 ```
@@ -44,7 +44,7 @@ cmake --build build --parallel
 
 # Run busbar example
 conda activate numerical
-build/examples/busbar_example.exe ./cases/busbar_steady_order2
+build/examples/fem_solver.exe ./cases/busbar_steady_order2
 ```
 
 ## BUILD CONFIG

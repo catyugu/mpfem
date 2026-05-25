@@ -17,7 +17,7 @@ int main(int argc, char* argv[])
     if (argc > 1)
         caseDir = argv[1];
 
-    LOG_INFO << "=== Busbar Electro-Thermal Example ===";
+    LOG_INFO << "=== FEM Electro-Thermal-Displacement Example ===";
     LOG_INFO << "Case directory: " << caseDir;
 
     try {
@@ -35,7 +35,7 @@ int main(int argc, char* argv[])
 
             // Export results
             std::filesystem::create_directories("results");
-            ResultExporter::exportVtu(result.snapshots, *setup->mesh, "results/busbar_transient.vtu");
+            ResultExporter::exportVtu(result.snapshots, *setup->mesh, "results/result_transient.vtu");
             ResultExporter::exportComsolText(result.snapshots, result.times, *setup->mesh, "results/mpfem_result.txt");
         }
         else {
@@ -77,7 +77,7 @@ int main(int argc, char* argv[])
 
             // Export results
             std::filesystem::create_directories("results");
-            ResultExporter::exportVtu(result.fields, *setup->mesh, "results/busbar_steady.vtu");
+            ResultExporter::exportVtu(result.fields, *setup->mesh, "results/result_steady.vtu");
             ResultExporter::exportComsolText(result.fields, *setup->mesh, "results/mpfem_result.txt");
         }
 

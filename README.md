@@ -16,5 +16,5 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
 
 # 运行示例
-build/examples/busbar_example.exe ./cases/busbar_steady_order2
+build/examples/fem_solver.exe ./cases/busbar_steady_order2
 ```
