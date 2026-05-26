@@ -2,25 +2,36 @@
 <archive>
   <model>
     <material tag="mat1" type="Common" component="">
-      <label label="Aluminum"/>
-      <set name="family" value="aluminum"/>
-      <propertyGroup tag="def">
-        <set name="relpermeability" value="{'1','0','0','0','1','0','0','0','1'}"/>
-        <set name="electricconductivity" value="{'3.774e7[S/m]','0','0','0','3.774e7[S/m]','0','0','0','3.774e7[S/m]'}"/>
-        <set name="relpermittivity" value="{'1','0','0','0','1','0','0','0','1'}"/>
-        <set name="thermalexpansioncoefficient" value="{'23e-6[1/K]','0','0','0','23e-6[1/K]','0','0','0','23e-6[1/K]'}"/>
-        <set name="heatcapacity" value="900[J/(kg*K)]"/>
-        <set name="density" value="2700[kg/m^3]"/>
-        <set name="thermalconductivity" value="{'238[W/(m*K)]','0','0','0','238[W/(m*K)]','0','0','0','238[W/(m*K)]'}"/>
-      </propertyGroup>
       <propertyGroup tag="Enu" descr="Young's modulus and Poisson's ratio">
         <set name="E" value="70[GPa]"/>
         <set name="nu" value="0.33"/>
       </propertyGroup>
+      <propertyGroup tag="Murnaghan" descr="Murnaghan">
+        <set name="l" value="-250[GPa]"/>
+        <set name="m" value="-330[GPa]"/>
+        <set name="n" value="-350[GPa]"/>
+      </propertyGroup>
+      <label label="Aluminum"/>
+      <set name="family" value="aluminum"/>
+      <propertyGroup tag="def">
+        <set name="relpermeability" value="{'1','0','0','0','1','0','0','0','1'}"/>
+        <set name="heatcapacity" value="900[J/(kg*K)]"/>
+        <set name="thermalconductivity" value="{'238[W/(m*K)]','0','0','0','238[W/(m*K)]','0','0','0','238[W/(m*K)]'}"/>
+        <set name="electricconductivity" value="{'3.774e7[S/m]','0','0','0','3.774e7[S/m]','0','0','0','3.774e7[S/m]'}"/>
+        <set name="relpermittivity" value="{'1','0','0','0','1','0','0','0','1'}"/>
+        <set name="thermalexpansioncoefficient" value="{'23e-6[1/K]','0','0','0','23e-6[1/K]','0','0','0','23e-6[1/K]'}"/>
+        <set name="density" value="2700[kg/m^3]"/>
+      </propertyGroup>
     </material>
     <material tag="mat2" type="Common" component="">
+      <propertyGroup tag="Enu" descr="Young's modulus and Poisson's ratio">
+        <set name="E" value="22[GPa]"/>
+        <set name="nu" value="0.15"/>
+      </propertyGroup>
       <label label="FR4 (Circuit Board)"/>
-      <set name="family" value="pcbgreen"/>
+      <set name="family" value="pcb"/>
+      <set name="color" value="custom"/>
+      <set name="customcolor" value="0 0.5019607843137255 0.25098039215686274"/>
       <propertyGroup tag="def">
         <set name="relpermeability" value="{'1','0','0','0','1','0','0','0','1'}"/>
         <set name="electricconductivity" value="{'0.004[S/m]','0','0','0','0.004[S/m]','0','0','0','0.004[S/m]'}"/>
@@ -30,43 +41,68 @@
         <set name="density" value="1900[kg/m^3]"/>
         <set name="thermalconductivity" value="{'0.3[W/(m*K)]','0','0','0','0.3[W/(m*K)]','0','0','0','0.3[W/(m*K)]'}"/>
       </propertyGroup>
-      <propertyGroup tag="Enu" descr="Young's modulus and Poisson's ratio">
-        <set name="E" value="22[GPa]"/>
-        <set name="nu" value="0.15"/>
-      </propertyGroup>
     </material>
     <material tag="mat3" type="Common" component="">
       <label label="Plastic"/>
       <propertyGroup tag="def">
-        <set name="relpermeability" value="{'1','0','0','0','1','0','0','0','1'}"/>
-        <set name="electricconductivity" value="{'1e-12[S/m]','0','0','0','1e-12[S/m]','0','0','0','1e-12[S/m]'}"/>
-        <set name="relpermittivity" value="{'1','0','0','0','1','0','0','0','1'}"/>
-        <set name="thermalexpansioncoefficient" value="{'23e-6[1/K]','0','0','0','23e-6[1/K]','0','0','0','23e-6[1/K]'}"/>
-        <set name="heatcapacity" value="900[J/(kg*K)]"/>
-        <set name="density" value="2700[kg/m^3]"/>
-        <set name="thermalconductivity" value="{'0.2[W/(m*K)]','0','0','0','0.2[W/(m*K)]','0','0','0','0.2[W/(m*K)]'}"/>
-      </propertyGroup>
-      <propertyGroup tag="Enu" descr="Young's modulus and Poisson's ratio">
-        <set name="E" value="70[GPa]"/>
-        <set name="nu" value="0.33"/>
+        <set name="density" value="2700"/>
+        <set name="heatcapacity" value="900"/>
+        <set name="thermalconductivity" value="{'0.2','0','0','0','0.2','0','0','0','0.2'}"/>
       </propertyGroup>
     </material>
     <material tag="mat4" type="Common" component="">
+      <propertyGroup tag="Enu" descr="Young's modulus and Poisson's ratio">
+        <set name="E" value="170[GPa]"/>
+        <set name="nu" value="0.28"/>
+      </propertyGroup>
+      <propertyGroup tag="RefractiveIndex" descr="Refractive index">
+        <set name="n" value="{'3.48','0','0','0','3.48','0','0','0','3.48'}"/>
+      </propertyGroup>
       <label label="Silicon"/>
       <set name="family" value="custom"/>
+      <set name="customspecular" valueDouble="{0.7843137254901961,1,1}"/>
+      <set name="diffuse" value="custom"/>
+      <set name="customdiffuse" valueDouble="{0.6666666666666666,0.6666666666666666,0.7058823529411765}"/>
+      <set name="ambient" value="custom"/>
+      <set name="customambient" valueDouble="{0.6666666666666666,0.6666666666666666,0.7058823529411765}"/>
+      <set name="noise" valueBoolean="true"/>
+      <set name="fresnel" valueDouble="0.7"/>
+      <set name="roughness" valueDouble="0.5"/>
+      <set name="diffusewrap" valueInt="0"/>
+      <set name="reflectance" valueInt="0"/>
       <propertyGroup tag="def">
         <set name="relpermeability" value="{'1','0','0','0','1','0','0','0','1'}"/>
         <set name="electricconductivity" value="{'1e-12[S/m]','0','0','0','1e-12[S/m]','0','0','0','1e-12[S/m]'}"/>
-        <set name="relpermittivity" value="{'1','0','0','0','1','0','0','0','1'}"/>
         <set name="thermalexpansioncoefficient" value="{'2.6e-6[1/K]','0','0','0','2.6e-6[1/K]','0','0','0','2.6e-6[1/K]'}"/>
         <set name="heatcapacity" value="700[J/(kg*K)]"/>
+        <set name="relpermittivity" value="{'11.7','0','0','0','11.7','0','0','0','11.7'}"/>
         <set name="density" value="2329[kg/m^3]"/>
-        <set name="thermalconductivity" value="{'148[W/(m*K)]','0','0','0','148[W/(m*K)]','0','0','0','148[W/(m*K)]'}"/>
+        <set name="thermalconductivity" value="{'130[W/(m*K)]','0','0','0','130[W/(m*K)]','0','0','0','130[W/(m*K)]'}"/>
       </propertyGroup>
+    </material>
+    <material tag="mat5" type="Common" component="">
       <propertyGroup tag="Enu" descr="Young's modulus and Poisson's ratio">
-        <set name="E" value="163[GPa]"/>
-        <set name="nu" value="0.28"/>
+        <set name="E" value="110[GPa]"/>
+        <set name="nu" value="0.35"/>
+      </propertyGroup>
+      <propertyGroup tag="linzRes" descr="Linearized resistivity">
+        <set name="rho0" value="1.72e-8[ohm*m]"/>
+        <set name="alpha" value="0.0039[1/K]"/>
+        <set name="Tref" value="298[K]"/>
+        <addInput quantity="temperature"/>
+      </propertyGroup>
+      <label label="Copper"/>
+      <set name="family" value="copper"/>
+      <propertyGroup tag="def">
+        <set name="relpermeability" value="{'1','0','0','0','1','0','0','0','1'}"/>
+        <set name="electricconductivity" value="{'5.998e7[S/m]','0','0','0','5.998e7[S/m]','0','0','0','5.998e7[S/m]'}"/>
+        <set name="thermalexpansioncoefficient" value="{'17e-6[1/K]','0','0','0','17e-6[1/K]','0','0','0','17e-6[1/K]'}"/>
+        <set name="heatcapacity" value="385[J/(kg*K)]"/>
+        <set name="relpermittivity" value="{'1','0','0','0','1','0','0','0','1'}"/>
+        <set name="density" value="8960[kg/m^3]"/>
+        <set name="thermalconductivity" value="{'400[W/(m*K)]','0','0','0','400[W/(m*K)]','0','0','0','400[W/(m*K)]'}"/>
       </propertyGroup>
     </material>
   </model>
 </archive>
+
