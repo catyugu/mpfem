@@ -8,10 +8,10 @@
 
 namespace mpfem {
 
-    Mesh MphtxtReader::read(const std::string& filename)
+    Mesh MphtxtReader::read(const std::string& filename, Real scaleFactor)
     {
         MphtxtReader reader;
-        return reader.readFile(filename);
+        return reader.readFile(filename, scaleFactor);
     }
 
     MphtxtReader::ParsedData MphtxtReader::parse(const std::string& filename)
@@ -20,7 +20,7 @@ namespace mpfem {
         return reader.parseFile(filename);
     }
 
-    Mesh MphtxtReader::readFile(const std::string& filename)
+    Mesh MphtxtReader::readFile(const std::string& filename, Real scaleFactor)
     {
         LOG_INFO << "Reading mesh from " << filename;
 
@@ -31,7 +31,7 @@ namespace mpfem {
         mesh.reserveNodes(static_cast<Index>(data.vertices.size()));
 
         for (const auto& v : data.vertices) {
-            mesh.addNode(v[0], v[1], v[2]);
+            mesh.addNode(v[0] * scaleFactor, v[1] * scaleFactor, v[2] * scaleFactor);
         }
 
         Index numVolumeElems = 0;

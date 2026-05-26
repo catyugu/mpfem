@@ -28,11 +28,11 @@ namespace mpfem {
             std::vector<ElementBlock> blocks;
         };
 
-        static Mesh read(const std::string& filename);
+        static Mesh read(const std::string& filename, Real scaleFactor = 1.0);
         static ParsedData parse(const std::string& filename);
 
     private:
-        Mesh readFile(const std::string& filename);
+        Mesh readFile(const std::string& filename, Real scaleFactor);
         ParsedData parseFile(const std::string& filename);
         ElementBlock parseElementBlock(std::ifstream& file, const std::string& headerLine);
 

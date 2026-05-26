@@ -269,6 +269,9 @@ namespace mpfem {
             if (const char* meshAttr = pathsElement->Attribute("mesh")) {
                 caseDefinition.meshPath = meshAttr;
             }
+            if (const char* meshUnitAttr = pathsElement->Attribute("mesh_unit")) {
+                caseDefinition.meshUnit = meshUnitAttr;
+            }
             if (const char* materialsAttr = pathsElement->Attribute("materials")) {
                 caseDefinition.materialsPath = materialsAttr;
             }

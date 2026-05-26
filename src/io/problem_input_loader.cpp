@@ -20,7 +20,12 @@ namespace mpfem {
                 CaseXmlReader::readFromFile(casePath, input.caseDefinition);
 
                 const std::string meshPath = caseDir + "/" + input.caseDefinition.meshPath;
-                input.mesh = std::make_unique<Mesh>(MphtxtReader::read(meshPath));
+                Real scaleFactor = 1.0;
+                if (input.caseDefinition.meshUnit == "mm") {
+                    scaleFactor = 0.001;
+                    LOG_INFO << "Mesh unit: mm, scaling coordinates by " << scaleFactor;
+                }
+                input.mesh = std::make_unique<Mesh>(MphtxtReader::read(meshPath, scaleFactor));
                 const std::string materialPath = caseDir + "/" + input.caseDefinition.materialsPath;
                 LOG_INFO << "Reading materials from " << materialPath;
                 MaterialXmlReader::readFromFile(materialPath, input.materials);

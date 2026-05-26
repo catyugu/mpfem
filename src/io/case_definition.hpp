@@ -101,6 +101,7 @@ namespace mpfem {
         std::string caseName;
         std::string studyType;
         std::string meshPath;
+        std::string meshUnit = "m";  // Mesh length unit: "m" (default) or "mm"
         std::string materialsPath;
         std::string comsolResultPath;
         std::vector<VariableEntry> variables;
