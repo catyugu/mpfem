@@ -59,7 +59,6 @@
       <param name="T_inf" value="293.15[K]"/>
     </boundary>
     <boundary kind="thermal_insulation" ids="8,15,43" />
-    <source kind="volumetric_heat_source" domains="1-7" value="joule_heating" />
   </physics>
 
   <physics kind="solid_mechanics" order="2">
