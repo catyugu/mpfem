@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<case name="surface_mount_package">
+  <paths mesh="mesh.mphtxt" materials="material.xml" comsol_result="result.txt" />
+
+  <study type="steady" />
+
+  <variables>
+    <var name="T_amb" value="303.15[K]" />
+    <var name="T_bc" value="323.15[K]" />
+    <var name="h_conv" value="50[W/m^2/K]" />
+    <var name="Q_chip" value="2e5[W/m^3]" />
+  </variables>
+
+  <materials>
+    <assign domains="1-19" material="mat1" />
+  </materials>
+
+  <physics kind="heat_transfer" order="1">
+    <SolverConfiguration>
+      <LinearSolver type="CG">
+        <Parameters>
+          <Tolerance>1e-10</Tolerance>
+          <MaxIterations>1000</MaxIterations>
+          <PrintLevel>0</PrintLevel>
+        </Parameters>
+        <Preconditioner type="Diagonal"/>
+      </LinearSolver>
+    </SolverConfiguration>
+    <boundary kind="temperature" ids="4">
+      <param name="value" value="T_bc"/>
+    </boundary>
+    <boundary kind="convection" ids="1-396">
+      <param name="h" value="h_conv"/>
+      <param name="T_inf" value="T_amb"/>
+    </boundary>
+    <source kind="volumetric_heat_source" domains="11" value="Q_chip" />
+  </physics>
+
+  <coupling method="picard" max_iter="1" tolerance="1e-6"/>
+</case>

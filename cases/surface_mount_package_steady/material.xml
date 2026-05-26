@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<archive>
+  <model>
+    <material tag="mat1" type="Common" component="">
+      <label label="Aluminum"/>
+      <set name="family" value="aluminum"/>
+      <propertyGroup tag="def">
+        <set name="relpermeability" value="{'1','0','0','0','1','0','0','0','1'}"/>
+        <set name="electricconductivity" value="{'3.774e7[S/m]','0','0','0','3.774e7[S/m]','0','0','0','3.774e7[S/m]'}"/>
+        <set name="relpermittivity" value="{'1','0','0','0','1','0','0','0','1'}"/>
+        <set name="thermalexpansioncoefficient" value="{'23e-6[1/K]','0','0','0','23e-6[1/K]','0','0','0','23e-6[1/K]'}"/>
+        <set name="heatcapacity" value="900[J/(kg*K)]"/>
+        <set name="density" value="2700[kg/m^3]"/>
+        <set name="thermalconductivity" value="{'238[W/(m*K)]','0','0','0','238[W/(m*K)]','0','0','0','238[W/(m*K)]'}"/>
+      </propertyGroup>
+      <propertyGroup tag="Enu" descr="Young's modulus and Poisson's ratio">
+        <set name="E" value="70[GPa]"/>
+        <set name="nu" value="0.33"/>
+      </propertyGroup>
+    </material>
+    <material tag="mat2" type="Common" component="">
+      <label label="FR4 (Circuit Board)"/>
+      <set name="family" value="pcbgreen"/>
+      <propertyGroup tag="def">
+        <set name="relpermeability" value="{'1','0','0','0','1','0','0','0','1'}"/>
+        <set name="electricconductivity" value="{'0.004[S/m]','0','0','0','0.004[S/m]','0','0','0','0.004[S/m]'}"/>
+        <set name="relpermittivity" value="{'4.5','0','0','0','4.5','0','0','0','4.5'}"/>
+        <set name="thermalexpansioncoefficient" value="{'18e-6[1/K]','0','0','0','18e-6[1/K]','0','0','0','18e-6[1/K]'}"/>
+        <set name="heatcapacity" value="1369[J/(kg*K)]"/>
+        <set name="density" value="1900[kg/m^3]"/>
+        <set name="thermalconductivity" value="{'0.3[W/(m*K)]','0','0','0','0.3[W/(m*K)]','0','0','0','0.3[W/(m*K)]'}"/>
+      </propertyGroup>
+      <propertyGroup tag="Enu" descr="Young's modulus and Poisson's ratio">
+        <set name="E" value="22[GPa]"/>
+        <set name="nu" value="0.15"/>
+      </propertyGroup>
+    </material>
+    <material tag="mat3" type="Common" component="">
+      <label label="Plastic"/>
+      <propertyGroup tag="def">
+        <set name="relpermeability" value="{'1','0','0','0','1','0','0','0','1'}"/>
+        <set name="electricconductivity" value="{'1e-12[S/m]','0','0','0','1e-12[S/m]','0','0','0','1e-12[S/m]'}"/>
+        <set name="relpermittivity" value="{'1','0','0','0','1','0','0','0','1'}"/>
+        <set name="thermalexpansioncoefficient" value="{'23e-6[1/K]','0','0','0','23e-6[1/K]','0','0','0','23e-6[1/K]'}"/>
+        <set name="heatcapacity" value="900[J/(kg*K)]"/>
+        <set name="density" value="2700[kg/m^3]"/>
+        <set name="thermalconductivity" value="{'0.2[W/(m*K)]','0','0','0','0.2[W/(m*K)]','0','0','0','0.2[W/(m*K)]'}"/>
+      </propertyGroup>
+      <propertyGroup tag="Enu" descr="Young's modulus and Poisson's ratio">
+        <set name="E" value="70[GPa]"/>
+        <set name="nu" value="0.33"/>
+      </propertyGroup>
+    </material>
+    <material tag="mat4" type="Common" component="">
+      <label label="Silicon"/>
+      <set name="family" value="custom"/>
+      <propertyGroup tag="def">
+        <set name="relpermeability" value="{'1','0','0','0','1','0','0','0','1'}"/>
+        <set name="electricconductivity" value="{'1e-12[S/m]','0','0','0','1e-12[S/m]','0','0','0','1e-12[S/m]'}"/>
+        <set name="relpermittivity" value="{'1','0','0','0','1','0','0','0','1'}"/>
+        <set name="thermalexpansioncoefficient" value="{'2.6e-6[1/K]','0','0','0','2.6e-6[1/K]','0','0','0','2.6e-6[1/K]'}"/>
+        <set name="heatcapacity" value="700[J/(kg*K)]"/>
+        <set name="density" value="2329[kg/m^3]"/>
+        <set name="thermalconductivity" value="{'148[W/(m*K)]','0','0','0','148[W/(m*K)]','0','0','0','148[W/(m*K)]'}"/>
+      </propertyGroup>
+      <propertyGroup tag="Enu" descr="Young's modulus and Poisson's ratio">
+        <set name="E" value="163[GPa]"/>
+        <set name="nu" value="0.28"/>
+      </propertyGroup>
+    </material>
+  </model>
+</archive>

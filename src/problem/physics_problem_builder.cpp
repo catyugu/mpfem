@@ -392,6 +392,13 @@ namespace mpfem {
                     problem.heatTransfer->addConvectionBC(bc.ids, h, tinf);
                 }
             }
+
+            for (const auto& src : physics.sources) {
+                if (src.kind == "volumetric_heat_source") {
+                    const VariableNode* Q = makeScalarExpressionNode(problem, src.valueText);
+                    problem.heatTransfer->setHeatSource(src.domainIds, Q);
+                }
+            }
         }
 
         void buildStructural(Problem& problem, CaseDefinition::Physics& physics)
