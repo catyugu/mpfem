@@ -135,11 +135,11 @@ namespace mpfem {
         std::vector<Index> vertexIds;
         vertexIds.reserve(static_cast<size_t>(mesh_->numElements() * 4 + mesh_->numBdrElements() * 4));
         for (Index elemIdx = 0; elemIdx < mesh_->numElements(); ++elemIdx) {
-            const Element elem = mesh_->element(elemIdx);
+            const EntityView elem = mesh_->element(elemIdx);
             vertexIds.insert(vertexIds.end(), elem.vertices.begin(), elem.vertices.end());
         }
         for (Index bdrIdx = 0; bdrIdx < mesh_->numBdrElements(); ++bdrIdx) {
-            const Element elem = mesh_->bdrElement(bdrIdx);
+            const EntityView elem = mesh_->bdrElement(bdrIdx);
             vertexIds.insert(vertexIds.end(), elem.vertices.begin(), elem.vertices.end());
         }
         std::sort(vertexIds.begin(), vertexIds.end());
@@ -168,7 +168,7 @@ namespace mpfem {
         };
 
         for (Index elemIdx = 0; elemIdx < mesh_->numElements(); ++elemIdx) {
-            const Element elem = mesh_->element(elemIdx);
+            const EntityView elem = mesh_->element(elemIdx);
             const ReferenceElement* refElem = fec_->get(elem.geometry);
             DofLayout layout = refElem->dofLayout();
             layout.numVertexDofs *= fieldVdim;
@@ -199,7 +199,7 @@ namespace mpfem {
         }
 
         for (Index bdrIdx = 0; bdrIdx < mesh_->numBdrElements(); ++bdrIdx) {
-            const Element elem = mesh_->bdrElement(bdrIdx);
+            const EntityView elem = mesh_->bdrElement(bdrIdx);
             const ReferenceElement* refElem = fec_->get(elem.geometry);
             DofLayout layout = refElem->dofLayout();
             layout.numVertexDofs *= fieldVdim;
@@ -293,7 +293,7 @@ namespace mpfem {
         };
 
         for (Index elemIdx = 0; elemIdx < mesh_->numElements(); ++elemIdx) {
-            const Element elem = mesh_->element(elemIdx);
+            const EntityView elem = mesh_->element(elemIdx);
             const ReferenceElement* refElem = fec_->get(elem.geometry);
             const bool useNdOrientation = refElem->basisType() == BasisType::ND;
             DofLayout layout = refElem->dofLayout();
@@ -372,7 +372,7 @@ namespace mpfem {
         }
 
         for (Index bdrIdx = 0; bdrIdx < mesh_->numBdrElements(); ++bdrIdx) {
-            const Element elem = mesh_->bdrElement(bdrIdx);
+            const EntityView elem = mesh_->bdrElement(bdrIdx);
             const ReferenceElement* refElem = fec_->get(elem.geometry);
             DofLayout layout = refElem->dofLayout();
             layout.numVertexDofs *= fieldVdim;

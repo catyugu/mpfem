@@ -105,12 +105,12 @@ namespace mpfem {
         coords_.reserve(n * dim_);
     }
 
-    Element Mesh::element(Index i) const
+    EntityView Mesh::element(Index i) const
     {
         const Index start = elementOffsets_[i];
         const Index end = elementOffsets_[i + 1];
         const Index vertexCount = static_cast<Index>(geom::numVertices(elementGeoms_[i]));
-        return Element {elementGeoms_[i],
+        return EntityView {elementGeoms_[i],
             {&elementNodes_[start], static_cast<size_t>(vertexCount)},
             {&elementNodes_[start], static_cast<size_t>(end - start)},
             elementAttributes_[i],
@@ -143,12 +143,12 @@ namespace mpfem {
         elementNodes_.reserve(n * 8); // Estimate
     }
 
-    Element Mesh::bdrElement(Index i) const
+    EntityView Mesh::bdrElement(Index i) const
     {
         const Index start = bdrElementOffsets_[i];
         const Index end = bdrElementOffsets_[i + 1];
         const Index vertexCount = static_cast<Index>(geom::numVertices(bdrElementGeoms_[i]));
-        return Element {bdrElementGeoms_[i],
+        return EntityView {bdrElementGeoms_[i],
             {&bdrElementNodes_[start], static_cast<size_t>(vertexCount)},
             {&bdrElementNodes_[start], static_cast<size_t>(end - start)},
             bdrElementAttributes_[i],
@@ -325,7 +325,7 @@ namespace mpfem {
 
         // First pass: collect all edges with their orientations
         for (Index elemIdx = 0; elemIdx < numElements(); ++elemIdx) {
-            const Element elem = element(elemIdx);
+            const EntityView elem = element(elemIdx);
             const int nEdges = elem.numEdges();
             elemEdgeOffsets_[elemIdx + 1] = elemEdgeOffsets_[elemIdx] + nEdges;
 
@@ -376,7 +376,7 @@ namespace mpfem {
 
         // First pass: collect all face candidates with sorted keys
         for (Index elemIdx = 0; elemIdx < numElements(); ++elemIdx) {
-            const Element elem = element(elemIdx);
+            const EntityView elem = element(elemIdx);
             elemFaceOffsets_[elemIdx + 1] = elemFaceOffsets_[elemIdx] + elem.numFaces();
 
             for (int f = 0; f < elem.numFaces(); ++f) {
@@ -475,7 +475,7 @@ namespace mpfem {
         bdrIdExternalCache_.clear();
 
         for (Index bdrIdx = 0; bdrIdx < numBdrElements(); ++bdrIdx) {
-            const Element bdrElem = bdrElement(bdrIdx);
+            const EntityView bdrElem = bdrElement(bdrIdx);
             FaceKey key;
             key.count = bdrElem.numVertices();
             for (int i = 0; i < key.count; ++i) {

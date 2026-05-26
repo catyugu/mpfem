@@ -1,8 +1,8 @@
 build*
 .vscode
+.claude
 results
 __pycache__
-.sisyphus
 *.log
 .cache
 vcpkg_installed

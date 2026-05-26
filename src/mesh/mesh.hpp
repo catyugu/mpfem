@@ -3,12 +3,69 @@
 
 #include "core/geometry.hpp"
 #include "core/types.hpp"
-#include "element.hpp"
 #include <span>
 #include <unordered_map>
 #include <vector>
 
 namespace mpfem {
+
+    /**
+     * @brief EntityView - a non-owning view of a mesh entity (vertex/edge/face/cell).
+     *
+     * This is the unified entity representation in the CW Complex approach.
+     * All mesh entities (0D vertices, 1D edges, 2D faces, 3D cells) are accessed
+     * through this same view type - the dimension and geometry type distinguish them.
+     */
+    struct EntityView {
+        Geometry geometry = Geometry::Invalid;
+        std::span<const Index> vertices;
+        std::span<const Index> nodes;
+        Index attribute = 0;
+        int order = 1;
+
+        int dim() const { return geom::dim(geometry); }
+        int numVertices() const { return static_cast<int>(vertices.size()); }
+        int numNodes() const { return static_cast<int>(nodes.size()); }
+        int numEdges() const { return geom::numEdges(geometry); }
+        int numFaces() const { return geom::numFaces(geometry); }
+        int numFacets() const { return geom::numFacets(geometry); }
+
+        bool isVolume() const { return geom::isVolume(geometry); }
+        bool isSurface() const { return geom::isSurface(geometry); }
+
+        Index vertex(int i) const { return vertices[i]; }
+
+        std::pair<Index, Index> edgeVertices(int edgeIdx) const
+        {
+            auto local = geom::edgeVertices(geometry, edgeIdx);
+            return {vertices[local.first], vertices[local.second]};
+        }
+
+        std::vector<Index> faceVertices(int faceIdx) const
+        {
+            std::vector<Index> result;
+            auto localVerts = geom::faceVertices(geometry, faceIdx);
+            result.reserve(localVerts.size());
+            for (int lv : localVerts) {
+                result.push_back(vertices[lv]);
+            }
+            return result;
+        }
+
+        std::vector<Index> facetVertices(int facetIdx) const
+        {
+            std::vector<Index> result;
+            auto localVerts = geom::facetVertices(geometry, facetIdx);
+            result.reserve(localVerts.size());
+            for (int lv : localVerts) {
+                result.push_back(vertices[lv]);
+            }
+            return result;
+        }
+
+        Geometry faceGeometry(int faceIdx) const { return geom::faceGeometry(geometry, faceIdx); }
+        Geometry facetGeometry(int facetIdx) const { return geom::facetGeometry(geometry, facetIdx); }
+    };
 
     /**
      * @brief Core mesh topology class
@@ -71,7 +128,7 @@ namespace mpfem {
         // -------------------------------------------------------------------------
 
         /// Get element by index (returns by value as a view)
-        Element element(Index i) const;
+        EntityView element(Index i) const;
 
         /// Get number of volume elements
         Index numElements() const { return static_cast<Index>(elementGeoms_.size()); }
@@ -88,7 +145,7 @@ namespace mpfem {
         // -------------------------------------------------------------------------
 
         /// Get boundary element by index (returns by value as a view)
-        Element bdrElement(Index i) const;
+        EntityView bdrElement(Index i) const;
 
         /// Get number of boundary elements
         Index numBdrElements() const { return static_cast<Index>(bdrElementGeoms_.size()); }

@@ -24,12 +24,12 @@ namespace mpfem {
             vertices.reserve(static_cast<size_t>(mesh.numElements() * 4 + mesh.numBdrElements() * 4));
 
             for (Index elemIdx = 0; elemIdx < mesh.numElements(); ++elemIdx) {
-                const Element elem = mesh.element(elemIdx);
+                const EntityView elem = mesh.element(elemIdx);
                 vertices.insert(vertices.end(), elem.vertices.begin(), elem.vertices.end());
             }
 
             for (Index bdrIdx = 0; bdrIdx < mesh.numBdrElements(); ++bdrIdx) {
-                const Element elem = mesh.bdrElement(bdrIdx);
+                const EntityView elem = mesh.bdrElement(bdrIdx);
                 vertices.insert(vertices.end(), elem.vertices.begin(), elem.vertices.end());
             }
 
@@ -66,7 +66,7 @@ namespace mpfem {
                 std::vector<Index> elemDofs(refElem->numDofs() * fes->vdim(), InvalidIndex);
                 fes->getElementDofs(elemIdx, elemDofs);
 
-                const Element elem = mesh->element(elemIdx);
+                const EntityView elem = mesh->element(elemIdx);
                 for (int localVertex = 0; localVertex < static_cast<int>(elem.vertices.size()); ++localVertex) {
                     const Index vertexIdx = elem.vertices[static_cast<size_t>(localVertex)];
                     if (!pending.contains(vertexIdx)) {
@@ -449,7 +449,7 @@ namespace mpfem {
         // Connectivity - remap topology vertex ids to point indices
         file << "<DataArray type=\"Int64\" Name=\"connectivity\" format=\"ascii\">\n";
         for (Index i = 0; i < mesh.numElements(); ++i) {
-            const Element elem = mesh.element(i);
+            const EntityView elem = mesh.element(i);
             for (int j = 0; j < elem.numVertices(); ++j) {
                 if (j > 0)
                     file << " ";

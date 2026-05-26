@@ -145,7 +145,7 @@ namespace mpfem {
                     continue;
                 int nd = ref->numDofs();
 
-                const Element elem = mesh->element(e);
+                const EntityView elem = mesh->element(e);
                 bindElementToTransform(trans, *mesh, e, false);
 
                 const int elemAttr = elem.attribute;
@@ -223,7 +223,7 @@ namespace mpfem {
             bbuf.ensureDynMatrixSize(maxDynSize);
 
             for (Index b = 0; b < mesh->numBdrElements(); ++b) {
-                const Element belem = mesh->bdrElement(b);
+                const EntityView belem = mesh->bdrElement(b);
                 int attr = belem.attribute;
 
                 if (!fes_->isExternalBoundaryId(attr))
@@ -355,7 +355,7 @@ namespace mpfem {
                         continue;
                     int nd = ref->numDofs();
 
-                    const Element elem = mesh->element(e);
+                    const EntityView elem = mesh->element(e);
                     bindElementToTransform(trans, *mesh, e, false);
 
                     const int elemAttr = elem.attribute;
@@ -425,7 +425,7 @@ namespace mpfem {
             ThreadBuffer bbuf;
 
             for (Index b = 0; b < mesh->numBdrElements(); ++b) {
-                const Element belem = mesh->bdrElement(b);
+                const EntityView belem = mesh->bdrElement(b);
                 int attr = belem.attribute;
 
                 if (!fes_->isExternalBoundaryId(attr))
