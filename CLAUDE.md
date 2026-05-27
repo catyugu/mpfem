@@ -68,6 +68,6 @@ ctest --test-dir build
 
 ## OTHER DOCUMENTS
 
-- [RULES](doc/RULES.md): The rules. MUST BE FOLLOWED STRICTLY.
+- [RULES](doc/RULES.md): Other rules of the project. MUST BE FOLLOWED STRICTLY.
 - [CASES](doc/CASES.md): The cases description for validation.
 - [VALIDATION](doc/VALIDATION.md): The validation workflow and standard.
