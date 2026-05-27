@@ -78,6 +78,10 @@ namespace mpfem {
     Mesh::Mesh(int dim, Index numVertices, Index numElements, Index numBdrElements)
         : dim_(dim)
     {
+        // Initialize strata dimensions
+        for (int d = 0; d < 4; ++d) {
+            strata_[d].dim = d;
+        }
         if (numVertices > 0)
             reserveNodes(numVertices);
         if (numElements > 0)
@@ -105,95 +109,67 @@ namespace mpfem {
         coords_.reserve(n * dim_);
     }
 
-    EntityView Mesh::element(Index i) const
+    // -----------------------------------------------------------------------------
+    // Stratum-based entity access
+    // -----------------------------------------------------------------------------
+
+    EntityView Mesh::entity(int dim, Index id) const
     {
-        const Index start = elementOffsets_[i];
-        const Index end = elementOffsets_[i + 1];
-        const Index vertexCount = static_cast<Index>(geom::numVertices(elementGeoms_[i]));
-        return EntityView {elementGeoms_[i],
-            {&elementNodes_[start], static_cast<size_t>(vertexCount)},
-            {&elementNodes_[start], static_cast<size_t>(end - start)},
-            elementAttributes_[i],
-            elementOrders_[i]};
+        const auto& stratum = strata_[dim];
+        const Index start = stratum.offsets[id];
+        const Index end = stratum.offsets[id + 1];
+        const Index vertexCount = static_cast<Index>(geom::numVertices(stratum.geometries[id]));
+        return EntityView {stratum.geometries[id],
+            {&stratum.nodes[start], static_cast<size_t>(vertexCount)},
+            {&stratum.nodes[start], static_cast<size_t>(end - start)},
+            stratum.attributes[id],
+            stratum.orders[id]};
     }
 
-    Index Mesh::addElement(Geometry geom, std::span<const Index> nodes, Index attr, int order)
+    Index Mesh::addEntity(int dim, Geometry geom, std::span<const Index> nodes, Index attr, int order)
     {
-        if (elementOffsets_.empty())
-            elementOffsets_.push_back(0);
-        elementGeoms_.push_back(geom);
-        elementAttributes_.push_back(attr);
-        elementOrders_.push_back(order);
-        elementNodes_.insert(elementNodes_.end(), nodes.begin(), nodes.end());
-        elementOffsets_.push_back(static_cast<Index>(elementNodes_.size()));
-        return static_cast<Index>(elementGeoms_.size() - 1);
+        auto& stratum = strata_[dim];
+        if (stratum.offsets.empty())
+            stratum.offsets.push_back(0);
+        stratum.geometries.push_back(geom);
+        stratum.attributes.push_back(attr);
+        stratum.orders.push_back(order);
+        stratum.nodes.insert(stratum.nodes.end(), nodes.begin(), nodes.end());
+        stratum.offsets.push_back(static_cast<Index>(stratum.nodes.size()));
+        return static_cast<Index>(stratum.geometries.size() - 1);
     }
 
-    Index Mesh::addElement(Geometry geom, const std::vector<Index>& nodes, Index attr, int order)
+    Index Mesh::addEntity(int dim, Geometry geom, const std::vector<Index>& nodes, Index attr, int order)
     {
-        return addElement(geom, std::span<const Index>(nodes), attr, order);
+        return addEntity(dim, geom, std::span<const Index>(nodes), attr, order);
     }
 
-    void Mesh::reserveElements(Index n)
+    void Mesh::reserveEntities(int dim, Index n)
     {
-        elementGeoms_.reserve(n);
-        elementAttributes_.reserve(n);
-        elementOrders_.reserve(n);
-        elementOffsets_.reserve(n + 1);
-        elementNodes_.reserve(n * 8); // Estimate
+        auto& stratum = strata_[dim];
+        stratum.geometries.reserve(n);
+        stratum.attributes.reserve(n);
+        stratum.orders.reserve(n);
+        stratum.offsets.reserve(n + 1);
+        stratum.nodes.reserve(n * 8); // Estimate
     }
 
-    EntityView Mesh::bdrElement(Index i) const
-    {
-        const Index start = bdrElementOffsets_[i];
-        const Index end = bdrElementOffsets_[i + 1];
-        const Index vertexCount = static_cast<Index>(geom::numVertices(bdrElementGeoms_[i]));
-        return EntityView {bdrElementGeoms_[i],
-            {&bdrElementNodes_[start], static_cast<size_t>(vertexCount)},
-            {&bdrElementNodes_[start], static_cast<size_t>(end - start)},
-            bdrElementAttributes_[i],
-            bdrElementOrders_[i]};
-    }
-
-    Index Mesh::addBdrElement(Geometry geom, std::span<const Index> nodes, Index attr, int order)
-    {
-        if (bdrElementOffsets_.empty())
-            bdrElementOffsets_.push_back(0);
-        bdrElementGeoms_.push_back(geom);
-        bdrElementAttributes_.push_back(attr);
-        bdrElementOrders_.push_back(order);
-        bdrElementNodes_.insert(bdrElementNodes_.end(), nodes.begin(), nodes.end());
-        bdrElementOffsets_.push_back(static_cast<Index>(bdrElementNodes_.size()));
-        return static_cast<Index>(bdrElementGeoms_.size() - 1);
-    }
-
-    Index Mesh::addBdrElement(Geometry geom, const std::vector<Index>& nodes, Index attr, int order)
-    {
-        return addBdrElement(geom, std::span<const Index>(nodes), attr, order);
-    }
-
-    void Mesh::reserveBdrElements(Index n)
-    {
-        bdrElementGeoms_.reserve(n);
-        bdrElementAttributes_.reserve(n);
-        bdrElementOrders_.reserve(n);
-        bdrElementOffsets_.reserve(n + 1);
-        bdrElementNodes_.reserve(n * 4); // Estimate
-    }
+    // -----------------------------------------------------------------------------
+    // Backward-compatible element/bdrElement (now delegates to strata)
+    // These are implemented inline in the header, so no definitions needed here.
+    // -----------------------------------------------------------------------------
 
     void Mesh::clear()
     {
         coords_.clear();
-        elementGeoms_.clear();
-        elementAttributes_.clear();
-        elementOrders_.clear();
-        elementOffsets_.clear();
-        elementNodes_.clear();
-        bdrElementGeoms_.clear();
-        bdrElementAttributes_.clear();
-        bdrElementOrders_.clear();
-        bdrElementOffsets_.clear();
-        bdrElementNodes_.clear();
+        for (int d = 0; d < 4; ++d) {
+            strata_[d].geometries.clear();
+            strata_[d].attributes.clear();
+            strata_[d].orders.clear();
+            strata_[d].offsets.clear();
+            strata_[d].nodes.clear();
+            strata_[d].dim = d;
+        }
         dim_ = 3;
         topologyBuilt_ = false;
 

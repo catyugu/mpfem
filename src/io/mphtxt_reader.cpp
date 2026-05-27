@@ -40,36 +40,34 @@ namespace mpfem {
         for (const auto& block : data.blocks) {
             Geometry geom = getGeometryType(block.typeName, block.numVertsPerElem, data.sdim);
 
-            if (geom == Geometry::Point || geom == Geometry::Segment) {
-                LOG_DEBUG << "Skipping " << block.elements.size() << " " << block.typeName << " elements";
+            // Determine entity dimension from geometry type
+            int entityDim = geom::dim(geom);
+
+            // Skip entities that have no FE space support (Point/Segment don't have H1 reference elements)
+            // These would be 0D points and 1D wires - the mesh strata support them but FE doesn't use them
+            if (entityDim < data.sdim - 1) {
+                LOG_DEBUG << "Skipping lower-dimensional entity " << block.typeName
+                          << " (dim=" << entityDim << ", no FE reference element)";
                 continue;
             }
 
-            const bool isBoundary = isBoundaryElement(geom, data.sdim);
-
-            if (isBoundary) {
-                mesh.reserveBdrElements(mesh.numBdrElements() + static_cast<Index>(block.elements.size()));
-                for (size_t i = 0; i < block.elements.size(); ++i) {
-                    Index attr = 0;
-                    if (i < block.geomIndices.size()) {
-                        // COMSOL boundary entity indices in mphtxt are 0-based.
-                        attr = block.geomIndices[i] + 1;
-                    }
-                    mesh.addBdrElement(geom, block.elements[i], attr, block.order);
-                    numBdrElems++;
-                }
-                continue;
-            }
-
-            mesh.reserveElements(mesh.numElements() + static_cast<Index>(block.elements.size()));
+            // All standard volume/boundary entities are loaded
             for (size_t i = 0; i < block.elements.size(); ++i) {
                 Index attr = 0;
                 if (i < block.geomIndices.size()) {
-                    // COMSOL domain indices are already 1-based in mphtxt.
                     attr = block.geomIndices[i];
                 }
-                mesh.addElement(geom, block.elements[i], attr, block.order);
-                numVolumeElems++;
+
+                // Map to volume or boundary based on dimension
+                if (entityDim == data.sdim) {
+                    // Volume element (3D in 3D, 2D in 2D)
+                    mesh.addElement(geom, block.elements[i], attr, block.order);
+                    numVolumeElems++;
+                } else {
+                    // Boundary element (2D faces in 3D, 1D edges in 2D)
+                    mesh.addBdrElement(geom, block.elements[i], attr + 1, block.order);
+                    numBdrElems++;
+                }
             }
         }
 
