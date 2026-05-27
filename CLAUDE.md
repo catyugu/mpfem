@@ -9,15 +9,16 @@
 │   ├── mesh/          # Mesh class
 │   ├── expr/          # Expression parser (Pratt), VariableNode, unit handling
 │   ├── fe/            # Finite elements: H1, ND, quadrature, transforms
-│   ├── field/          # FE spaces, grid functions, field values
-│   ├── assembly/       # BilinearFormAssembler, integrators, Dirichlet BC
-│   ├── solver/         # LinearOperator base, factory, MKL/UMFPACK/Eigen solvers
-│   ├── io/             # XML readers, material DB, COMSOL/VTK export
-│   ├── physics/        # PhysicsFieldSolver base, electrostatics/heat/structural
-│   └── problem/        # Problem class, transient, physics builder
-├── tests/             # 17 gtest test files
+│   ├── field/         # FE spaces, grid functions, field values
+│   ├── assembly/      # BilinearFormAssembler, integrators, Dirichlet BC
+│   ├── solver/        # LinearOperator base, factory, MKL/UMFPACK/Eigen solvers
+│   ├── io/            # XML readers, material DB, COMSOL/VTK export
+│   ├── physics/       # PhysicsFieldSolver base, electrostatics/heat/structural
+│   └── problem/       # Problem class, transient, physics builder
+├── tests/             # gtest test files
 ├── examples/          # fem_solver.cpp
-├── cases/             # busbar_steady/, busbar_steady_order2/, busbar_transient/
+├── cases/             # busbar_steady/, busbar_steady_order2/, busbar_transient/ ... 
+├── validation/        # Python scripts for validation on cases
 └── cmake/             # Dependencies.cmake, Targets.cmake, CPM.cmake
 ```
 
@@ -49,8 +50,9 @@ cmake --build build --parallel
 conda activate numerical
 build/examples/fem_solver.exe ./cases/busbar_steady_order2
 
-# Run ctest
-ctest --test-dir build
+# Run tests
+conda activate numerical
+python run_tests.py
 ```
 
 ## Testing Guidelines
@@ -70,4 +72,3 @@ ctest --test-dir build
 
 - [RULES](doc/RULES.md): Other rules of the project. MUST BE FOLLOWED STRICTLY.
 - [CASES](doc/CASES.md): The cases description for validation.
-- [VALIDATION](doc/VALIDATION.md): The validation workflow and standard.

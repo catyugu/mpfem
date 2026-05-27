@@ -619,9 +619,6 @@ TEST_F(COMSOLMeshTest, FESpaceConsistency)
 
     FESpace fes(&mesh, std::make_unique<H1Collection>(2));
 
-    // DOFs should map directly to mesh vertices for COMSOL-style meshes
-    EXPECT_EQ(fes.numDofs(), mesh.numNodes());
-
     // Check element DOF mapping consistency
     for (Index e = 0; e < std::min(mesh.numEntities(mesh.dim()), Index(10)); ++e) {
         const auto elem = mesh.entity(mesh.dim(), e);

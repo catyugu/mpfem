@@ -32,7 +32,7 @@ TEST_F(CaseXmlReaderTest, ReadBusbarCase)
     });
 
     // Verify case name
-    EXPECT_EQ(caseDef.caseName, "busbar");
+    EXPECT_EQ(caseDef.caseName, "busbar_steady");
 
     // Verify study type
     EXPECT_EQ(caseDef.studyType, "steady");

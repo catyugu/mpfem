@@ -23,6 +23,7 @@ int main(int argc, char* argv[])
     try {
         auto setup = PhysicsProblemBuilder::build(caseDir);
 
+        std::string exportPrefix = "results/" + setup->caseName;
         if (setup->isTransient()) {
             LOG_INFO << "Running transient solve...";
             auto& transProb = static_cast<TransientProblem&>(*setup);
@@ -35,8 +36,8 @@ int main(int argc, char* argv[])
 
             // Export results
             std::filesystem::create_directories("results");
-            ResultExporter::exportVtu(result.snapshots, *setup->mesh, "results/result_transient.vtu");
-            ResultExporter::exportComsolText(result.snapshots, result.times, *setup->mesh, "results/mpfem_result.txt");
+            ResultExporter::exportVtu(result.snapshots, *setup->mesh, exportPrefix + "_transient.vtu");
+            ResultExporter::exportComsolText(result.snapshots, result.times, *setup->mesh, exportPrefix + "_result.txt");
         }
         else {
             LOG_INFO << "Running coupled electro-thermal solve...";
@@ -77,8 +78,8 @@ int main(int argc, char* argv[])
 
             // Export results
             std::filesystem::create_directories("results");
-            ResultExporter::exportVtu(result.fields, *setup->mesh, "results/result_steady.vtu");
-            ResultExporter::exportComsolText(result.fields, *setup->mesh, "results/mpfem_result.txt");
+            ResultExporter::exportVtu(result.fields, *setup->mesh, exportPrefix + "_steady.vtu");
+            ResultExporter::exportComsolText(result.fields, *setup->mesh, exportPrefix + "_result.txt");
         }
 
         LOG_INFO << "=== Example completed successfully! ===";
