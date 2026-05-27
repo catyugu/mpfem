@@ -6,18 +6,19 @@
 ./
 ├── src/
 │   ├── core/          # Logger, exceptions, types, tensor, sparse_matrix
-│   ├── mesh/          # Mesh class, element/face/edge data
+│   ├── mesh/          # Mesh class
 │   ├── expr/          # Expression parser (Pratt), VariableNode, unit handling
 │   ├── fe/            # Finite elements: H1, ND, quadrature, transforms
-│   ├── field/          # FE spaces, grid functions, field values
-│   ├── assembly/       # BilinearFormAssembler, integrators, Dirichlet BC
-│   ├── solver/         # LinearOperator base, factory, MKL/UMFPACK/Eigen solvers
-│   ├── io/             # XML readers, material DB, COMSOL/VTK export
-│   ├── physics/        # PhysicsFieldSolver base, electrostatics/heat/structural
-│   └── problem/        # Problem class, transient, physics builder
-├── tests/             # 17 gtest test files
+│   ├── field/         # FE spaces, grid functions, field values
+│   ├── assembly/      # BilinearFormAssembler, integrators, Dirichlet BC
+│   ├── solver/        # LinearOperator base, factory, MKL/UMFPACK/Eigen solvers
+│   ├── io/            # XML readers, material DB, COMSOL/VTK export
+│   ├── physics/       # PhysicsFieldSolver base, electrostatics/heat/structural
+│   └── problem/       # Problem class, transient, physics builder
+├── tests/             # gtest test files
 ├── examples/          # fem_solver.cpp
-├── cases/             # busbar_steady/, busbar_steady_order2/, busbar_large/, busbar_transient/
+├── cases/             # busbar_steady/, busbar_steady_order2/, busbar_transient/ ... 
+├── validation/        # Python scripts for validation on cases
 └── cmake/             # Dependencies.cmake, Targets.cmake, CPM.cmake
 ```
 
@@ -49,18 +50,18 @@ cmake --build build --parallel
 conda activate numerical
 build/examples/fem_solver.exe ./cases/busbar_steady_order2
 
-# Run ctest
-ctest --test-dir build
+# Run tests
+conda activate numerical
+python run_tests.py
 ```
 
 ## Testing Guidelines
 
-- Enforce TDD for every behavior change: follow `red -> green -> refactor`.
-- Start by establishing a verifiable baseline: run the relevant existing tests before edits, and record the exact command + outcome in the PR/commit notes.
-- Add or update a failing test first that reproduces the bug or captures the new requirement; implement code only after the test fails for the expected reason.
-- Keep tests green after implementation and after any refactor; do not merge with skipped failing tests.
-- Every bug fix must include a regression test that fails before the fix and passes after it.
-- Prefer behavior-focused assertions (pipeline run successfully, results are expected...).
+- **Enforce TDD for every behavior change**: follow `red -> green -> refactor`.
+- **Start with verifiable baseline**: run the relevant existing tests before edits, and record the exact command + outcome in the PR/commit notes.
+- **Test updates goes first**: Add or update a failing test first that reproduces the bug or captures the new requirement; implement code only after the test fails for the expected reason.
+- **Keep tests green**:  Never commit if there are failing tests.
+- **Regression test**: Every bug fix must include a regression test that fails before the fix and passes after it.
 
 ## Commit & Pull Request Guidelines
 
@@ -69,6 +70,5 @@ ctest --test-dir build
 
 ## OTHER DOCUMENTS
 
-- [RULES](doc/RULES.md): The rules. MUST BE FOLLOWED STRICTLY.
+- [RULES](doc/RULES.md): Other rules of the project. MUST BE FOLLOWED STRICTLY.
 - [CASES](doc/CASES.md): The cases description for validation.
-- [VALIDATION](doc/VALIDATION.md): The validation workflow and standard.

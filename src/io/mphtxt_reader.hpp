@@ -38,7 +38,6 @@ namespace mpfem {
 
         int detectOrder(const std::string& typeName);
         Geometry getGeometryType(const std::string& typeName, int numVerts, int sdim);
-        bool isBoundaryElement(Geometry geom, int sdim);
 
         static std::string toLower(const std::string& str);
     };

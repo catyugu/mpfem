@@ -3,7 +3,6 @@
 
 #include "core/geometry.hpp"
 #include "core/types.hpp"
-#include "element.hpp"
 #include <span>
 #include <unordered_map>
 #include <vector>
@@ -11,19 +10,93 @@
 namespace mpfem {
 
     /**
+     * @brief EntityView - a non-owning view of a mesh entity (vertex/edge/face/cell).
+     *
+     * This is the unified entity representation in the CW Complex approach.
+     * All mesh entities (0D vertices, 1D edges, 2D faces, 3D cells) are accessed
+     * through this same view type - the dimension and geometry type distinguish them.
+     */
+    struct EntityView {
+        Geometry geometry = Geometry::Invalid;
+        std::span<const Index> vertices;
+        std::span<const Index> nodes;
+        Index attribute = 0;
+        int order = 1;
+
+        int dim() const { return geom::dim(geometry); }
+        int numVertices() const { return static_cast<int>(vertices.size()); }
+        int numNodes() const { return static_cast<int>(nodes.size()); }
+        int numEdges() const { return geom::numEdges(geometry); }
+        int numFaces() const { return geom::numFaces(geometry); }
+        int numFacets() const { return geom::numFacets(geometry); }
+
+        bool isVolume() const { return geom::isVolume(geometry); }
+        bool isSurface() const { return geom::isSurface(geometry); }
+
+        Index vertex(int i) const { return vertices[i]; }
+
+        std::pair<Index, Index> edgeVertices(int edgeIdx) const
+        {
+            auto local = geom::edgeVertices(geometry, edgeIdx);
+            return {vertices[local.first], vertices[local.second]};
+        }
+
+        std::vector<Index> faceVertices(int faceIdx) const
+        {
+            std::vector<Index> result;
+            auto localVerts = geom::faceVertices(geometry, faceIdx);
+            result.reserve(localVerts.size());
+            for (int lv : localVerts) {
+                result.push_back(vertices[lv]);
+            }
+            return result;
+        }
+
+        std::vector<Index> facetVertices(int facetIdx) const
+        {
+            std::vector<Index> result;
+            auto localVerts = geom::facetVertices(geometry, facetIdx);
+            result.reserve(localVerts.size());
+            for (int lv : localVerts) {
+                result.push_back(vertices[lv]);
+            }
+            return result;
+        }
+
+        Geometry faceGeometry(int faceIdx) const { return geom::faceGeometry(geometry, faceIdx); }
+        Geometry facetGeometry(int facetIdx) const { return geom::facetGeometry(geometry, facetIdx); }
+    };
+
+    /**
+     * @brief Represents all mesh entities of a given topological dimension.
+     *
+     * This is the core building block of the CW Complex approach - all mesh entities
+     * (vertices, edges, faces, cells) are stored in their respective strata by dimension.
+     */
+    struct EntityStratum {
+        int dim = -1;                          ///< Topological dimension (0=vertex, 1=edge, 2=face, 3=cell)
+        std::vector<Geometry> geometries;      ///< Geometry type per entity
+        std::vector<Index> offsets;            ///< CSR row pointers (size = count + 1)
+        std::vector<Index> nodes;              ///< Flattened node indices (CSR data)
+        std::vector<Index> attributes;         ///< Physical/domain IDs
+        std::vector<int> orders;               ///< Polynomial order for curved elements
+
+        Index count() const { return static_cast<Index>(geometries.size()); }
+    };
+
+    /**
      * @brief Core mesh topology class
      *
      * Manages:
      * - Vertex coordinates (interleaved [x,y,z,x,y,z...] for C API zero-copy)
-     * - Volume elements (tetrahedra, hexahedra)
-     * - Boundary elements (triangles, quads)
+     * - All mesh entities organized by topological dimension (stratum)
      * - Domain and boundary attributes
      * - Mesh topology for internal/external boundary detection
      * - Edge and face orientations for H(curl) and H(div) spaces
      *
      * Data Layout:
      * - Nodes: interleaved coords_[dim * nodeIdx + d] (C API zero-copy)
-     * - Elements: CSR with elementOffsets_ + elementNodes_
+     * - Stratum[dim]: CSR with offsets_ + nodes, one entry per entity
      * - Edges: flat edgeVertices_ [v0, v1, v0, v1, ...] with v0 < v1
      * - Faces: CSR with faceOffsets_ + faceNodes_
      */
@@ -33,7 +106,7 @@ namespace mpfem {
         Mesh() = default;
 
         /// Construct with pre-allocated sizes
-        Mesh(int dim, Index numVertices, Index numElements, Index numBdrElements = 0);
+        Mesh(int dim, Index numVertices, Index numElements = 0);
 
         // -------------------------------------------------------------------------
         // Dimension and size
@@ -67,38 +140,22 @@ namespace mpfem {
         const Real* nodeCoordsData() const { return coords_.data(); }
 
         // -------------------------------------------------------------------------
-        // Volume element access
+        // Unified entity access by topological dimension
         // -------------------------------------------------------------------------
 
-        /// Get element by index (returns by value as a view)
-        Element element(Index i) const;
+        /// Get number of entities in a given topological dimension
+        /// dim=0: vertices, dim=1: edges, dim=2: faces, dim=3: cells (volume elements)
+        Index numEntities(int dim) const { return strata_[dim].count(); }
 
-        /// Get number of volume elements
-        Index numElements() const { return static_cast<Index>(elementGeoms_.size()); }
+        /// Get entity by dimension and local index within that dimension
+        EntityView entity(int dim, Index id) const;
 
-        /// Add an element
-        Index addElement(Geometry geom, std::span<const Index> nodes, Index attr = 0, int order = 1);
-        Index addElement(Geometry geom, const std::vector<Index>& nodes, Index attr = 0, int order = 1);
+        /// Add an entity to a given dimension stratum
+        Index addEntity(int dim, Geometry geom, std::span<const Index> nodes, Index attr = 0, int order = 1);
+        Index addEntity(int dim, Geometry geom, const std::vector<Index>& nodes, Index attr = 0, int order = 1);
 
-        /// Reserve space for elements
-        void reserveElements(Index n);
-
-        // -------------------------------------------------------------------------
-        // Boundary element access
-        // -------------------------------------------------------------------------
-
-        /// Get boundary element by index (returns by value as a view)
-        Element bdrElement(Index i) const;
-
-        /// Get number of boundary elements
-        Index numBdrElements() const { return static_cast<Index>(bdrElementGeoms_.size()); }
-
-        /// Add a boundary element
-        Index addBdrElement(Geometry geom, std::span<const Index> nodes, Index attr = 0, int order = 1);
-        Index addBdrElement(Geometry geom, const std::vector<Index>& nodes, Index attr = 0, int order = 1);
-
-        /// Reserve space for boundary elements
-        void reserveBdrElements(Index n);
+        /// Reserve space for entities in a given dimension
+        void reserveEntities(int dim, Index n);
 
         // -------------------------------------------------------------------------
         // Topology queries
@@ -221,19 +278,9 @@ namespace mpfem {
         // Interleaved node coordinates [x0,y0,z0,x1,y1,z1,...] for zero-copy C API
         std::vector<Real> coords_;
 
-        // Flattened volume element storage
-        std::vector<Geometry> elementGeoms_;
-        std::vector<Index> elementAttributes_;
-        std::vector<int> elementOrders_;
-        std::vector<Index> elementOffsets_;
-        std::vector<Index> elementNodes_;
-
-        // Flattened boundary element storage
-        std::vector<Geometry> bdrElementGeoms_;
-        std::vector<Index> bdrElementAttributes_;
-        std::vector<int> bdrElementOrders_;
-        std::vector<Index> bdrElementOffsets_;
-        std::vector<Index> bdrElementNodes_;
+        // Stratum-based storage: entities organized by topological dimension
+        // dim 0: vertices (0D), dim 1: edges (1D), dim 2: faces (2D), dim 3: cells (3D)
+        std::array<EntityStratum, 4> strata_;
 
         // Topology data
         bool topologyBuilt_ = false;

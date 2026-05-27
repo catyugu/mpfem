@@ -29,7 +29,7 @@ protected:
         mesh.addNode(0.0, 0.0, 1.0); // Vertex 3
 
         // Add 1 tetrahedron
-        mesh.addElement(Geometry::Tetrahedron, {0, 1, 2, 3}, 1);
+        mesh.addEntity(mesh.dim(), Geometry::Tetrahedron, {0, 1, 2, 3}, 1);
 
         mesh.buildTopology();
 

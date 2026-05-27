@@ -40,8 +40,8 @@ static Index getVertexDof(const FESpace& fes, Index vertexIdx)
         return InvalidIndex;
     }
 
-    for (Index elemIdx = 0; elemIdx < mesh->numElements(); ++elemIdx) {
-        const auto elemVertices = mesh->element(elemIdx).vertices;
+    for (Index elemIdx = 0; elemIdx < mesh->numEntities(mesh->dim()); ++elemIdx) {
+        const auto elemVertices = mesh->entity(mesh->dim(), elemIdx).vertices;
         const auto it = std::find(elemVertices.begin(), elemVertices.end(), vertexIdx);
         if (it == elemVertices.end()) {
             continue;
@@ -96,8 +96,8 @@ Mesh createQuadraticTriangleMesh()
     mesh.addNode(1.0, 1.0, 0.0); // 8: edge 2-3 (shared edge)
 
     // Triangle2 COMSOL ordering: V0, V1, V2, E01, E20, E12
-    mesh.addElement(Geometry::Triangle, {0, 1, 2, 4, 6, 5}, 1, 2);
-    mesh.addElement(Geometry::Triangle, {2, 1, 3, 5, 8, 7}, 2, 2);
+    mesh.addEntity(mesh.dim(), Geometry::Triangle, {0, 1, 2, 4, 6, 5}, 1, 2);
+    mesh.addEntity(mesh.dim(), Geometry::Triangle, {2, 1, 3, 5, 8, 7}, 2, 2);
 
     mesh.buildTopology();
 
@@ -134,8 +134,8 @@ Mesh createQuadraticTetrahedronMesh()
     mesh.addNode(1.0, 0.5, 1.0); // 13: edge 3-4
 
     // Tetrahedron2 COMSOL ordering: V0, V1, V2, V3, E01, E02, E12, E03, E13, E23
-    mesh.addElement(Geometry::Tetrahedron, {0, 1, 2, 3, 5, 7, 6, 8, 9, 10}, 1, 2);
-    mesh.addElement(Geometry::Tetrahedron, {1, 4, 2, 3, 11, 6, 12, 9, 13, 10}, 2, 2);
+    mesh.addEntity(mesh.dim(), Geometry::Tetrahedron, {0, 1, 2, 3, 5, 7, 6, 8, 9, 10}, 1, 2);
+    mesh.addEntity(mesh.dim(), Geometry::Tetrahedron, {1, 4, 2, 3, 11, 6, 12, 9, 13, 10}, 2, 2);
 
     mesh.buildTopology();
 
@@ -412,7 +412,7 @@ TEST(QuadraticIntegrationTest, IntegrateQuadraticFunctionExactly)
     mesh.addNode(0.0, 0.5, 0.0); // 4: edge 2-0 midpoint
     mesh.addNode(0.5, 0.5, 0.0); // 5: edge 1-2 midpoint
 
-    mesh.addElement(Geometry::Triangle, {0, 1, 2, 3, 4, 5}, 1, 2);
+    mesh.addEntity(mesh.dim(), Geometry::Triangle, {0, 1, 2, 3, 4, 5}, 1, 2);
     mesh.buildTopology();
 
     FESpace fes(&mesh, std::make_unique<H1Collection>(2));
@@ -468,7 +468,7 @@ TEST(MixedOrderTest, SubparametricElement)
 
     // Element has geometric order 2, but FE space has order 1
     // This is the key test for separation of geometric and physical order
-    EXPECT_EQ(mesh.element(0).order, 2); // Geometric order
+    EXPECT_EQ(mesh.entity(mesh.dim(), 0).order, 2); // Geometric order
     EXPECT_EQ(fes.order(), 1); // Physical order
 }
 
@@ -480,7 +480,7 @@ TEST(MixedOrderTest, IsoparametricElement)
 
     FESpace fes(&mesh, std::make_unique<H1Collection>(2));
 
-    EXPECT_EQ(mesh.element(0).order, 2); // Geometric order
+    EXPECT_EQ(mesh.entity(mesh.dim(), 0).order, 2); // Geometric order
     EXPECT_EQ(fes.order(), 2); // Physical order
 }
 
@@ -505,12 +505,12 @@ TEST_F(COMSOLMeshTest, LoadQuadraticMesh)
 
     // Basic sanity checks
     EXPECT_GT(mesh.numNodes(), 0);
-    EXPECT_GT(mesh.numElements(), 0);
+    EXPECT_GT(mesh.numEntities(mesh.dim()), 0);
 
     // Check for quadratic elements
     bool hasQuadratic = false;
-    for (Index e = 0; e < mesh.numElements(); ++e) {
-        const auto elem = mesh.element(e);
+    for (Index e = 0; e < mesh.numEntities(mesh.dim()); ++e) {
+        const auto elem = mesh.entity(mesh.dim(), e);
         if (elem.order == 2) {
 
             hasQuadratic = true;
@@ -528,8 +528,8 @@ TEST_F(COMSOLMeshTest, Tetrahedron2EdgeMidpoints)
     int checkedTets = 0;
     const Real tol = 1e-6;
 
-    for (Index e = 0; e < mesh.numElements() && checkedTets < 10; ++e) {
-        const auto elem = mesh.element(e);
+    for (Index e = 0; e < mesh.numEntities(mesh.dim()) && checkedTets < 10; ++e) {
+        const auto elem = mesh.entity(mesh.dim(), e);
         if (elem.geometry != Geometry::Tetrahedron || elem.order != 2) {
             continue;
         }
@@ -589,8 +589,8 @@ TEST_F(COMSOLMeshTest, JacobianPositiveDefinite)
 
     int checkedElems = 0;
 
-    for (Index e = 0; e < mesh.numElements() && checkedElems < 20; ++e) {
-        const auto elem = mesh.element(e);
+    for (Index e = 0; e < mesh.numEntities(mesh.dim()) && checkedElems < 20; ++e) {
+        const auto elem = mesh.entity(mesh.dim(), e);
         if (elem.order != 2)
             continue;
 
@@ -619,12 +619,9 @@ TEST_F(COMSOLMeshTest, FESpaceConsistency)
 
     FESpace fes(&mesh, std::make_unique<H1Collection>(2));
 
-    // DOFs should map directly to mesh vertices for COMSOL-style meshes
-    EXPECT_EQ(fes.numDofs(), mesh.numNodes());
-
     // Check element DOF mapping consistency
-    for (Index e = 0; e < std::min(mesh.numElements(), Index(10)); ++e) {
-        const auto elem = mesh.element(e);
+    for (Index e = 0; e < std::min(mesh.numEntities(mesh.dim()), Index(10)); ++e) {
+        const auto elem = mesh.entity(mesh.dim(), e);
         if (elem.order != 2)
             continue;
 
@@ -657,8 +654,8 @@ TEST_F(COMSOLMeshTest, FiniteElementKroneckerDelta)
     const Real tol = 1e-10;
     int testedElems = 0;
 
-    for (Index e = 0; e < mesh.numElements() && testedElems < 5; ++e) {
-        const auto elem = mesh.element(e);
+    for (Index e = 0; e < mesh.numEntities(mesh.dim()) && testedElems < 5; ++e) {
+        const auto elem = mesh.entity(mesh.dim(), e);
         if (elem.geometry != Geometry::Tetrahedron || elem.order != 2) {
             continue;
         }

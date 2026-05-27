@@ -40,36 +40,22 @@ namespace mpfem {
         for (const auto& block : data.blocks) {
             Geometry geom = getGeometryType(block.typeName, block.numVertsPerElem, data.sdim);
 
-            if (geom == Geometry::Point || geom == Geometry::Segment) {
-                LOG_DEBUG << "Skipping " << block.elements.size() << " " << block.typeName << " elements";
-                continue;
-            }
+            // Determine entity dimension from geometry type
+            int entityDim = geom::dim(geom);
 
-            const bool isBoundary = isBoundaryElement(geom, data.sdim);
-
-            if (isBoundary) {
-                mesh.reserveBdrElements(mesh.numBdrElements() + static_cast<Index>(block.elements.size()));
-                for (size_t i = 0; i < block.elements.size(); ++i) {
-                    Index attr = 0;
-                    if (i < block.geomIndices.size()) {
-                        // COMSOL boundary entity indices in mphtxt are 0-based.
-                        attr = block.geomIndices[i] + 1;
-                    }
-                    mesh.addBdrElement(geom, block.elements[i], attr, block.order);
-                    numBdrElems++;
-                }
-                continue;
-            }
-
-            mesh.reserveElements(mesh.numElements() + static_cast<Index>(block.elements.size()));
+            // All entities (0D points, 1D edges, 2D faces, 3D volumes) are added by actual dimension
             for (size_t i = 0; i < block.elements.size(); ++i) {
                 Index attr = 0;
                 if (i < block.geomIndices.size()) {
-                    // COMSOL domain indices are already 1-based in mphtxt.
                     attr = block.geomIndices[i];
                 }
-                mesh.addElement(geom, block.elements[i], attr, block.order);
-                numVolumeElems++;
+
+                mesh.addEntity(entityDim, geom, block.elements[i], attr, block.order);
+                if (entityDim == data.sdim) {
+                    numVolumeElems++;
+                } else if (entityDim == data.sdim - 1) {
+                    numBdrElems++;
+                }
             }
         }
 
@@ -312,20 +298,6 @@ namespace mpfem {
         }
 
         return Geometry::Invalid;
-    }
-
-    bool MphtxtReader::isBoundaryElement(Geometry geom, int sdim)
-    {
-        if (sdim == 3) {
-            return geom == Geometry::Triangle || geom == Geometry::Square;
-        }
-        if (sdim == 2) {
-            return geom == Geometry::Segment;
-        }
-        if (sdim == 1) {
-            return geom == Geometry::Point;
-        }
-        return false;
     }
 
     std::string MphtxtReader::toLower(const std::string& str)

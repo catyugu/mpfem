@@ -37,15 +37,15 @@ TEST_F(MeshReadTest, ReadBusbarMesh)
     EXPECT_EQ(mesh.numNodes(), 7340); // Actual vertex count in the file
 
     // Verify we have volume elements (tetrahedra)
-    EXPECT_GT(mesh.numElements(), 0);
+    EXPECT_GT(mesh.numEntities(mesh.dim()), 0);
 
     // Verify we have boundary elements (triangles)
-    EXPECT_GT(mesh.numBdrElements(), 0);
+    EXPECT_GT(mesh.numEntities(mesh.dim() - 1), 0);
 
     // Count unique domain IDs (only from tetrahedral elements)
     std::set<Index> domains;
-    for (Index i = 0; i < mesh.numElements(); ++i) {
-        const auto elem = mesh.element(i);
+    for (Index i = 0; i < mesh.numEntities(mesh.dim()); ++i) {
+        const auto elem = mesh.entity(mesh.dim(), i);
         // Only count tetrahedra for domain IDs
         if (elem.geometry == Geometry::Tetrahedron) {
             domains.insert(elem.attribute);
@@ -55,8 +55,8 @@ TEST_F(MeshReadTest, ReadBusbarMesh)
 
     // Count unique boundary IDs
     std::set<Index> boundaries;
-    for (Index i = 0; i < mesh.numBdrElements(); ++i) {
-        boundaries.insert(mesh.bdrElement(i).attribute);
+    for (Index i = 0; i < mesh.numEntities(mesh.dim() - 1); ++i) {
+        boundaries.insert(mesh.entity(mesh.dim() - 1, i).attribute);
     }
     EXPECT_EQ(boundaries.size(), 43) << "Expected 43 boundaries";
 }
