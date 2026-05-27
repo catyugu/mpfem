@@ -38,7 +38,7 @@ namespace mpfem {
         Index numBdrElems = 0;
 
         for (const auto& block : data.blocks) {
-            Geometry geom = getGeometryType(block.typeName, block.numVertsPerElem, data.sdim);
+            Geometry geom = block.geometry;
 
             // Determine entity dimension from geometry type
             int entityDim = geom::dim(geom);
@@ -128,7 +128,7 @@ namespace mpfem {
             }
 
             if (trimmed.find("# Type #") != std::string::npos) {
-                ElementBlock block = parseElementBlock(file, trimmed);
+                ElementBlock block = parseElementBlock(file, trimmed, data.sdim);
                 if (!block.elements.empty()) {
                     data.blocks.push_back(std::move(block));
                 }
@@ -138,7 +138,7 @@ namespace mpfem {
         return data;
     }
 
-    MphtxtReader::ElementBlock MphtxtReader::parseElementBlock(std::ifstream& file, const std::string& /*headerLine*/)
+    MphtxtReader::ElementBlock MphtxtReader::parseElementBlock(std::ifstream& file, const std::string& /*headerLine*/, int sdim)
     {
         ElementBlock block;
         std::string line;
@@ -156,7 +156,9 @@ namespace mpfem {
         typeIss >> token;
         if (typeIss >> token) {
             block.typeName = token;
-            block.order = detectOrder(block.typeName);
+            const std::string lower = toLower(block.typeName);
+            block.order = detectOrder(lower);
+            block.geometry = getGeometryType(lower, block.numVertsPerElem, sdim);
         }
         LOG_DEBUG << "Parsing element block: type=" << block.typeName << ", order=" << block.order;
 
@@ -252,18 +254,16 @@ namespace mpfem {
         return block;
     }
 
-    int MphtxtReader::detectOrder(const std::string& typeName)
+    int MphtxtReader::detectOrder(const std::string& lower)
     {
-        const std::string lower = toLower(typeName);
         if (lower.find("2") != std::string::npos && (lower.find("tri2") != std::string::npos || lower.find("tet2") != std::string::npos || lower.find("edg2") != std::string::npos || lower.find("quad2") != std::string::npos || lower.find("hex2") != std::string::npos)) {
             return 2;
         }
         return 1;
     }
 
-    Geometry MphtxtReader::getGeometryType(const std::string& typeName, int numVerts, int sdim)
+    Geometry MphtxtReader::getGeometryType(const std::string& lower, int numVerts, int sdim)
     {
-        const std::string lower = toLower(typeName);
 
         if (lower.find("prism") != std::string::npos || lower.find("wedge") != std::string::npos) {
             throw MeshException("Prism/Wedge elements are not supported. Only tri/quad/tet/hex elements are supported.");

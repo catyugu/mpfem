@@ -11,7 +11,7 @@ namespace mpfem {
      */
     struct TransientResult {
         bool converged = false;
-        int timeSteps = 0;
+        Index timeSteps = 0;
         Real finalTime = 0.0;
 
         std::vector<Real> times; ///< Time at each snapshot
@@ -23,7 +23,7 @@ namespace mpfem {
             snapshots.push_back(fields); // Copy
         }
 
-        int numTimeSteps() const { return static_cast<int>(times.size()); }
+        Index numTimeSteps() const { return static_cast<Index>(times.size()); }
     };
 
     class TransientProblem : public Problem {

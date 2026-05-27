@@ -18,6 +18,7 @@ namespace mpfem {
             std::string typeName;
             int numVertsPerElem = 0;
             int order = 1;
+            Geometry geometry = Geometry::Invalid;
             std::vector<std::vector<Index>> elements;
             std::vector<Index> geomIndices;
         };
@@ -34,10 +35,10 @@ namespace mpfem {
     private:
         Mesh readFile(const std::string& filename, Real scaleFactor);
         ParsedData parseFile(const std::string& filename);
-        ElementBlock parseElementBlock(std::ifstream& file, const std::string& headerLine);
+        ElementBlock parseElementBlock(std::ifstream& file, const std::string& headerLine, int sdim);
 
-        int detectOrder(const std::string& typeName);
-        Geometry getGeometryType(const std::string& typeName, int numVerts, int sdim);
+        int detectOrder(const std::string& lower);
+        Geometry getGeometryType(const std::string& lower, int numVerts, int sdim);
 
         static std::string toLower(const std::string& str);
     };

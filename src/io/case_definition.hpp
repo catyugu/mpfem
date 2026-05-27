@@ -23,7 +23,7 @@ namespace mpfem {
      * @brief Domain to material tag mapping rule.
      */
     struct MaterialAssignment {
-        std::set<int> domainIds;
+        std::set<Index> domainIds;
         std::string materialTag;
     };
 
@@ -32,7 +32,7 @@ namespace mpfem {
      */
     struct BoundaryCondition {
         std::string type; // "Voltage", "Temperature", "Convection", "Fixed", ...
-        std::set<int> ids; // Boundary IDs this applies to
+        std::set<Index> ids; // Boundary IDs this applies to
         std::map<std::string, std::string> parameters; // Type-specific parameters
     };
 
@@ -41,7 +41,7 @@ namespace mpfem {
      */
     struct SourceDefinition {
         std::string kind;
-        std::set<int> domainIds;
+        std::set<Index> domainIds;
         std::string valueText;
     };
 
@@ -78,7 +78,7 @@ namespace mpfem {
         std::string name;
         std::string kind;
         std::vector<std::string> physicsKinds;
-        std::set<int> domainIds;
+        std::set<Index> domainIds;
     };
 
     /**
