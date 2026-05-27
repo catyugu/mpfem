@@ -33,7 +33,7 @@ Mesh createCurvedTriangleMesh()
 
     // Triangle2: 3 corners + 3 edge midpoints
     // Node ordering: V0, V1, V2, E01, E12, E20
-    mesh.addElement(Geometry::Triangle, {0, 1, 2, 3, 4, 5}, 1, 2);
+    mesh.addEntity(mesh.dim(), Geometry::Triangle, {0, 1, 2, 3, 4, 5}, 1, 2);
 
     return mesh;
 }
@@ -63,7 +63,7 @@ Mesh createCurvedTetrahedronMesh()
     // Note: COMSOL ordering is V0, V1, V2, V3, E01, E12, E02, E13, E23, E03
     // But we follow the ordering in geometry.hpp edge_table::Tetrahedron
     // which is: {0, 1}, {1, 2}, {2, 0}, {0, 3}, {1, 3}, {2, 3}
-    mesh.addElement(Geometry::Tetrahedron, {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}, 1, 2);
+    mesh.addEntity(mesh.dim(), Geometry::Tetrahedron, {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}, 1, 2);
 
     return mesh;
 }
@@ -90,7 +90,7 @@ Mesh createCurvedSquareMesh()
     mesh.addNode(0.5, 0.5, 0.0); // 8: center
 
     // Square2: 4 corners + 4 edges + 1 center = 9 nodes
-    mesh.addElement(Geometry::Square, {0, 1, 2, 3, 4, 5, 6, 7, 8}, 1, 2);
+    mesh.addEntity(mesh.dim(), Geometry::Square, {0, 1, 2, 3, 4, 5, 6, 7, 8}, 1, 2);
 
     return mesh;
 }
@@ -141,7 +141,7 @@ Mesh createCurvedHexahedronMesh()
         8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, // edges
         20, 21, 22, 23, 24, 25, // faces
         26}; // center
-    mesh.addElement(Geometry::Cube, nodes, 1, 2);
+    mesh.addEntity(mesh.dim(), Geometry::Cube, nodes, 1, 2);
 
     return mesh;
 }
@@ -633,7 +633,7 @@ TEST(ElementComparisonTest, LinearVsQuadraticTriangle)
     linearMesh.addNode(0.0, 0.0, 0.0);
     linearMesh.addNode(1.0, 0.0, 0.0);
     linearMesh.addNode(0.0, 1.0, 0.0);
-    linearMesh.addElement(Geometry::Triangle, {0, 1, 2}, 1, 1);
+    linearMesh.addEntity(linearMesh.dim(), Geometry::Triangle, {0, 1, 2}, 1, 1);
 
     // Quadratic triangle with curved edge
     Mesh quadraticMesh = createCurvedTriangleMesh();

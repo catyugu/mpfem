@@ -26,7 +26,7 @@ Mesh createSingleTetMesh()
     mesh.addNode(0.0, 0.0, 1.0); // 3
 
     // Tetrahedron
-    mesh.addElement(Geometry::Tetrahedron, {0, 1, 2, 3});
+    mesh.addEntity(mesh.dim(), Geometry::Tetrahedron, {0, 1, 2, 3});
 
     return mesh;
 }
@@ -41,7 +41,7 @@ Mesh createSingleTriBdrMesh()
     mesh.addNode(1.0, 0.0, 0.0); // 1
     mesh.addNode(0.0, 1.0, 0.0); // 2
 
-    mesh.addBdrElement(Geometry::Triangle, {0, 1, 2});
+    mesh.addEntity(mesh.dim() - 1, Geometry::Triangle, {0, 1, 2});
 
     return mesh;
 }
@@ -66,7 +66,7 @@ Mesh createSingleHexMesh()
     // Reference cube node order: (-1,-1,-1), (1,-1,-1), (1,1,-1), (-1,1,-1), (-1,-1,1), (1,-1,1), (1,1,1), (-1,1,1)
     // Physical coords:           (0,0,0),    (1,0,0),   (1,1,0),  (0,1,0),   (0,0,1),   (1,0,1),  (1,1,1), (0,1,1)
     // Vertex indices:            0,          1,         2,        3,         4,        5,        6,       7
-    mesh.addElement(Geometry::Cube, {0, 1, 2, 3, 4, 5, 6, 7});
+    mesh.addEntity(mesh.dim(), Geometry::Cube, {0, 1, 2, 3, 4, 5, 6, 7});
 
     return mesh;
 }
@@ -86,7 +86,7 @@ Mesh createSingleSquareBdrMesh()
     // Reference square node order: (-1,-1), (1,-1), (1,1), (-1,1)
     // Physical coords:             (0,0),   (1,0),  (1,1), (0,1)
     // Vertex indices:              0,       1,      2,     3
-    mesh.addBdrElement(Geometry::Square, {0, 1, 2, 3});
+    mesh.addEntity(mesh.dim() - 1, Geometry::Square, {0, 1, 2, 3});
 
     return mesh;
 }
@@ -428,7 +428,7 @@ TEST(ScaledElementTest, ScaledTetrahedron)
     mesh.addNode(2.0, 0.0, 0.0);
     mesh.addNode(0.0, 2.0, 0.0);
     mesh.addNode(0.0, 0.0, 2.0);
-    mesh.addElement(Geometry::Tetrahedron, {0, 1, 2, 3});
+    mesh.addEntity(mesh.dim(), Geometry::Tetrahedron, {0, 1, 2, 3});
 
     ElementTransform trans;
     bindElementToTransform(trans, mesh, 0);
@@ -451,7 +451,7 @@ TEST(ScaledElementTest, ScaledTriangleBoundary)
     mesh.addNode(0.0, 0.0, 0.0);
     mesh.addNode(2.0, 0.0, 0.0);
     mesh.addNode(0.0, 2.0, 0.0);
-    mesh.addBdrElement(Geometry::Triangle, {0, 1, 2});
+    mesh.addEntity(mesh.dim() - 1, Geometry::Triangle, {0, 1, 2});
 
     ElementTransform trans;
     bindElementToTransform(trans, mesh, 0, true);
@@ -481,7 +481,7 @@ TEST(GradientTransformTest, NumericalVerification)
     mesh.addNode(1.0, 0.0, 0.0);
     mesh.addNode(0.3, 0.8, 0.1);
     mesh.addNode(0.2, 0.1, 0.9);
-    mesh.addElement(Geometry::Tetrahedron, {0, 1, 2, 3});
+    mesh.addEntity(mesh.dim(), Geometry::Tetrahedron, {0, 1, 2, 3});
 
     ElementTransform trans;
     bindElementToTransform(trans, mesh, 0);

@@ -21,12 +21,12 @@ Mesh createTriMesh2D()
     mesh.addNode(0.0, 1.0, 0.0); // 2
     mesh.addNode(1.0, 1.0, 0.0); // 3
 
-    mesh.addElement(Geometry::Triangle, {0, 1, 2}); // Element 0
-    mesh.addElement(Geometry::Triangle, {1, 3, 2}); // Element 1
+    mesh.addEntity(mesh.dim(), Geometry::Triangle, {0, 1, 2}); // Element 0
+    mesh.addEntity(mesh.dim(), Geometry::Triangle, {1, 3, 2}); // Element 1
 
     // Boundary edges
-    mesh.addBdrElement(Geometry::Segment, {0, 1}); // Bottom
-    mesh.addBdrElement(Geometry::Segment, {1, 3}); // Right
+    mesh.addEntity(mesh.dim() - 1, Geometry::Segment, {0, 1}); // Bottom
+    mesh.addEntity(mesh.dim() - 1, Geometry::Segment, {1, 3}); // Right
 
     mesh.buildTopology();
 
@@ -45,14 +45,14 @@ Mesh createTetMesh3D()
     mesh.addNode(0.0, 0.0, 1.0); // 3
     mesh.addNode(1.0, 1.0, 1.0); // 4
 
-    mesh.addElement(Geometry::Tetrahedron, {0, 1, 2, 3}); // Element 0
-    mesh.addElement(Geometry::Tetrahedron, {1, 2, 3, 4}); // Element 1
+    mesh.addEntity(mesh.dim(), Geometry::Tetrahedron, {0, 1, 2, 3}); // Element 0
+    mesh.addEntity(mesh.dim(), Geometry::Tetrahedron, {1, 2, 3, 4}); // Element 1
 
     // Boundary faces (triangles)
-    mesh.addBdrElement(Geometry::Triangle, {0, 1, 2});
-    mesh.addBdrElement(Geometry::Triangle, {0, 1, 3});
-    mesh.addBdrElement(Geometry::Triangle, {0, 2, 3});
-    mesh.addBdrElement(Geometry::Triangle, {1, 2, 4});
+    mesh.addEntity(mesh.dim() - 1, Geometry::Triangle, {0, 1, 2});
+    mesh.addEntity(mesh.dim() - 1, Geometry::Triangle, {0, 1, 3});
+    mesh.addEntity(mesh.dim() - 1, Geometry::Triangle, {0, 2, 3});
+    mesh.addEntity(mesh.dim() - 1, Geometry::Triangle, {1, 2, 4});
 
     mesh.buildTopology();
 
@@ -76,16 +76,16 @@ Mesh createQuadMesh2D()
     mesh.addNode(2.0, 2.0, 0.0); // 8
 
     // Quads (counter-clockwise)
-    mesh.addElement(Geometry::Square, {0, 1, 4, 3}); // Element 0
-    mesh.addElement(Geometry::Square, {1, 2, 5, 4}); // Element 1
-    mesh.addElement(Geometry::Square, {3, 4, 7, 6}); // Element 2
-    mesh.addElement(Geometry::Square, {4, 5, 8, 7}); // Element 3
+    mesh.addEntity(mesh.dim(), Geometry::Square, {0, 1, 4, 3}); // Element 0
+    mesh.addEntity(mesh.dim(), Geometry::Square, {1, 2, 5, 4}); // Element 1
+    mesh.addEntity(mesh.dim(), Geometry::Square, {3, 4, 7, 6}); // Element 2
+    mesh.addEntity(mesh.dim(), Geometry::Square, {4, 5, 8, 7}); // Element 3
 
     // Boundary edges
-    mesh.addBdrElement(Geometry::Segment, {0, 1});
-    mesh.addBdrElement(Geometry::Segment, {1, 2});
-    mesh.addBdrElement(Geometry::Segment, {2, 5});
-    mesh.addBdrElement(Geometry::Segment, {5, 8});
+    mesh.addEntity(mesh.dim() - 1, Geometry::Segment, {0, 1});
+    mesh.addEntity(mesh.dim() - 1, Geometry::Segment, {1, 2});
+    mesh.addEntity(mesh.dim() - 1, Geometry::Segment, {2, 5});
+    mesh.addEntity(mesh.dim() - 1, Geometry::Segment, {5, 8});
 
     mesh.buildTopology();
 
@@ -104,14 +104,14 @@ Mesh createMixedMesh2D()
     mesh.addNode(2.0, 0.0, 0.0); // 4
     mesh.addNode(2.0, 1.0, 0.0); // 5
 
-    mesh.addElement(Geometry::Square, {0, 1, 2, 3});
-    mesh.addElement(Geometry::Triangle, {1, 4, 2});
+    mesh.addEntity(mesh.dim(), Geometry::Square, {0, 1, 2, 3});
+    mesh.addEntity(mesh.dim(), Geometry::Triangle, {1, 4, 2});
 
-    mesh.addBdrElement(Geometry::Segment, {0, 1});
-    mesh.addBdrElement(Geometry::Segment, {1, 4});
-    mesh.addBdrElement(Geometry::Segment, {4, 2});
-    mesh.addBdrElement(Geometry::Segment, {2, 3});
-    mesh.addBdrElement(Geometry::Segment, {3, 0});
+    mesh.addEntity(mesh.dim() - 1, Geometry::Segment, {0, 1});
+    mesh.addEntity(mesh.dim() - 1, Geometry::Segment, {1, 4});
+    mesh.addEntity(mesh.dim() - 1, Geometry::Segment, {4, 2});
+    mesh.addEntity(mesh.dim() - 1, Geometry::Segment, {2, 3});
+    mesh.addEntity(mesh.dim() - 1, Geometry::Segment, {3, 0});
 
     mesh.buildTopology();
     return mesh;
@@ -132,7 +132,7 @@ Mesh createHexMesh3D()
     mesh.addNode(1.0, 1.0, 1.0); // 6
     mesh.addNode(0.0, 1.0, 1.0); // 7
 
-    mesh.addElement(Geometry::Cube, {0, 1, 2, 3, 4, 5, 6, 7});
+    mesh.addEntity(mesh.dim(), Geometry::Cube, {0, 1, 2, 3, 4, 5, 6, 7});
 
     mesh.buildTopology();
 

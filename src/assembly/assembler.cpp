@@ -145,7 +145,7 @@ namespace mpfem {
                     continue;
                 int nd = ref->numDofs();
 
-                const EntityView elem = mesh->element(e);
+                const EntityView elem = mesh->entity(mesh->dim(), e);
                 bindElementToTransform(trans, *mesh, e, false);
 
                 const int elemAttr = elem.attribute;
@@ -355,7 +355,7 @@ namespace mpfem {
                         continue;
                     int nd = ref->numDofs();
 
-                    const EntityView elem = mesh->element(e);
+                    const EntityView elem = mesh->entity(mesh->dim(), e);
                     bindElementToTransform(trans, *mesh, e, false);
 
                     const int elemAttr = elem.attribute;
