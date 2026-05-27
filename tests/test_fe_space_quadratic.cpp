@@ -468,7 +468,7 @@ TEST(MixedOrderTest, SubparametricElement)
 
     // Element has geometric order 2, but FE space has order 1
     // This is the key test for separation of geometric and physical order
-    EXPECT_EQ(mesh.element(0).order, 2); // Geometric order
+    EXPECT_EQ(mesh.entity(mesh.dim(), 0).order, 2); // Geometric order
     EXPECT_EQ(fes.order(), 1); // Physical order
 }
 
@@ -480,7 +480,7 @@ TEST(MixedOrderTest, IsoparametricElement)
 
     FESpace fes(&mesh, std::make_unique<H1Collection>(2));
 
-    EXPECT_EQ(mesh.element(0).order, 2); // Geometric order
+    EXPECT_EQ(mesh.entity(mesh.dim(), 0).order, 2); // Geometric order
     EXPECT_EQ(fes.order(), 2); // Physical order
 }
 
@@ -510,7 +510,7 @@ TEST_F(COMSOLMeshTest, LoadQuadraticMesh)
     // Check for quadratic elements
     bool hasQuadratic = false;
     for (Index e = 0; e < mesh.numElements(); ++e) {
-        const auto elem = mesh.element(e);
+        const auto elem = mesh.entity(mesh.dim(), e);
         if (elem.order == 2) {
 
             hasQuadratic = true;
@@ -529,7 +529,7 @@ TEST_F(COMSOLMeshTest, Tetrahedron2EdgeMidpoints)
     const Real tol = 1e-6;
 
     for (Index e = 0; e < mesh.numElements() && checkedTets < 10; ++e) {
-        const auto elem = mesh.element(e);
+        const auto elem = mesh.entity(mesh.dim(), e);
         if (elem.geometry != Geometry::Tetrahedron || elem.order != 2) {
             continue;
         }
@@ -590,7 +590,7 @@ TEST_F(COMSOLMeshTest, JacobianPositiveDefinite)
     int checkedElems = 0;
 
     for (Index e = 0; e < mesh.numElements() && checkedElems < 20; ++e) {
-        const auto elem = mesh.element(e);
+        const auto elem = mesh.entity(mesh.dim(), e);
         if (elem.order != 2)
             continue;
 
@@ -624,7 +624,7 @@ TEST_F(COMSOLMeshTest, FESpaceConsistency)
 
     // Check element DOF mapping consistency
     for (Index e = 0; e < std::min(mesh.numElements(), Index(10)); ++e) {
-        const auto elem = mesh.element(e);
+        const auto elem = mesh.entity(mesh.dim(), e);
         if (elem.order != 2)
             continue;
 
@@ -658,7 +658,7 @@ TEST_F(COMSOLMeshTest, FiniteElementKroneckerDelta)
     int testedElems = 0;
 
     for (Index e = 0; e < mesh.numElements() && testedElems < 5; ++e) {
-        const auto elem = mesh.element(e);
+        const auto elem = mesh.entity(mesh.dim(), e);
         if (elem.geometry != Geometry::Tetrahedron || elem.order != 2) {
             continue;
         }

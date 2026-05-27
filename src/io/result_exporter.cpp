@@ -24,12 +24,12 @@ namespace mpfem {
             vertices.reserve(static_cast<size_t>(mesh.numElements() * 4 + mesh.numBdrElements() * 4));
 
             for (Index elemIdx = 0; elemIdx < mesh.numElements(); ++elemIdx) {
-                const EntityView elem = mesh.element(elemIdx);
+                const EntityView elem = mesh.entity(mesh.dim(), elemIdx);
                 vertices.insert(vertices.end(), elem.vertices.begin(), elem.vertices.end());
             }
 
             for (Index bdrIdx = 0; bdrIdx < mesh.numBdrElements(); ++bdrIdx) {
-                const EntityView elem = mesh.bdrElement(bdrIdx);
+                const EntityView elem = mesh.entity(mesh.dim() - 1, bdrIdx);
                 vertices.insert(vertices.end(), elem.vertices.begin(), elem.vertices.end());
             }
 
@@ -66,7 +66,7 @@ namespace mpfem {
                 std::vector<Index> elemDofs(refElem->numDofs() * fes->vdim(), InvalidIndex);
                 fes->getElementDofs(elemIdx, elemDofs);
 
-                const EntityView elem = mesh->element(elemIdx);
+                const EntityView elem = mesh->entity(mesh->dim(), elemIdx);
                 for (int localVertex = 0; localVertex < static_cast<int>(elem.vertices.size()); ++localVertex) {
                     const Index vertexIdx = elem.vertices[static_cast<size_t>(localVertex)];
                     if (!pending.contains(vertexIdx)) {
@@ -449,7 +449,7 @@ namespace mpfem {
         // Connectivity - remap topology vertex ids to point indices
         file << "<DataArray type=\"Int64\" Name=\"connectivity\" format=\"ascii\">\n";
         for (Index i = 0; i < mesh.numElements(); ++i) {
-            const EntityView elem = mesh.element(i);
+            const EntityView elem = mesh.entity(mesh.dim(), i);
             for (int j = 0; j < elem.numVertices(); ++j) {
                 if (j > 0)
                     file << " ";
@@ -463,7 +463,7 @@ namespace mpfem {
         file << "<DataArray type=\"Int64\" Name=\"offsets\" format=\"ascii\">\n";
         Index offset = 0;
         for (Index i = 0; i < mesh.numElements(); ++i) {
-            offset += mesh.element(i).numVertices();
+            offset += mesh.entity(mesh.dim(), i).numVertices();
             file << offset << " ";
         }
         file << "\n</DataArray>\n";
@@ -471,7 +471,7 @@ namespace mpfem {
         // Types
         file << "<DataArray type=\"UInt8\" Name=\"types\" format=\"ascii\">\n";
         for (Index i = 0; i < mesh.numElements(); ++i) {
-            Geometry geom = mesh.element(i).geometry;
+            Geometry geom = mesh.entity(mesh.dim(), i).geometry;
             int vtkType = 0;
             switch (geom) {
             case Geometry::Segment:

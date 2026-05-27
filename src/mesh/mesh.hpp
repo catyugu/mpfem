@@ -158,7 +158,7 @@ namespace mpfem {
         void reserveEntities(int dim, Index n);
 
         // -------------------------------------------------------------------------
-        // Volume element access (delegates to strata_[meshDim])
+        // Volume element access
         // -------------------------------------------------------------------------
 
         /// Get element by index (returns by value as a view)
@@ -167,7 +167,7 @@ namespace mpfem {
         /// Get number of volume elements
         Index numElements() const { return numEntities(dim_); }
 
-        /// Add an element (delegates to addEntity for current mesh dimension)
+        /// Add an element
         Index addElement(Geometry geom, std::span<const Index> nodes, Index attr = 0, int order = 1)
         {
             return addEntity(dim_, geom, nodes, attr, order);
@@ -181,7 +181,7 @@ namespace mpfem {
         void reserveElements(Index n) { reserveEntities(dim_, n); }
 
         // -------------------------------------------------------------------------
-        // Boundary element access (delegates to strata_[meshDim-1])
+        // Boundary element access
         // -------------------------------------------------------------------------
 
         /// Get boundary element by index (returns by value as a view)
@@ -190,7 +190,7 @@ namespace mpfem {
         /// Get number of boundary elements
         Index numBdrElements() const { return numEntities(dim_ - 1); }
 
-        /// Add a boundary element (delegates to addEntity for meshDim-1)
+        /// Add a boundary element
         Index addBdrElement(Geometry geom, std::span<const Index> nodes, Index attr = 0, int order = 1)
         {
             return addEntity(dim_ - 1, geom, nodes, attr, order);

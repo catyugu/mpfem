@@ -18,7 +18,8 @@ namespace mpfem {
      */
     inline void bindElementToTransform(ElementTransform& trans, const Mesh& mesh, Index elemIdx, bool isBoundary = false)
     {
-        const EntityView elem = isBoundary ? mesh.bdrElement(elemIdx) : mesh.element(elemIdx);
+        const int dim = isBoundary ? mesh.dim() - 1 : mesh.dim();
+        const EntityView elem = mesh.entity(dim, elemIdx);
         std::array<Vector3, MaxNodesPerElement> nodeCoords;
         for (size_t i = 0; i < elem.nodes.size(); ++i) {
             Index nodeIdx = elem.nodes[i];

@@ -29,7 +29,7 @@ namespace {
         uniqueAttrs.reserve(static_cast<size_t>(mesh.numElements()));
 
         for (mpfem::Index e = 0; e < mesh.numElements(); ++e) {
-            uniqueAttrs.insert(mesh.element(e).attribute);
+            uniqueAttrs.insert(mesh.entity(mesh.dim(), e).attribute);
         }
 
         DomainIntegratorMap attrMap;

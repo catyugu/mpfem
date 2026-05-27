@@ -36,7 +36,7 @@ namespace mpfem {
                 continue;
 
             for (Index b = 0; b < mesh.numBdrElements(); ++b) {
-                const EntityView belem = mesh.bdrElement(b);
+                const EntityView belem = mesh.entity(mesh.dim() - 1, b);
                 if (belem.attribute != bid)
                     continue;
 
