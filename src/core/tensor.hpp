@@ -116,8 +116,8 @@ namespace mpfem {
 
         // Element access
         Real scalar() const { return data_[0]; }
-        Real operator[](int i) const { return data_[i]; }
-        Real& operator[](int i) { return data_[i]; }
+        Real operator[](Index i) const { return data_[i]; }
+        Real& operator[](Index i) { return data_[i]; }
 
         Real operator()(int r, int c) const
         {
