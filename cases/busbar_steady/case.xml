@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<case name="busbar">
+<case name="busbar_steady">
   <paths mesh="mesh.mphtxt" materials="material.xml" comsol_result="result.txt" />
 
   <study type="steady" />
@@ -27,18 +27,18 @@
           <MaxIterations>1000</MaxIterations>
           <PrintLevel>0</PrintLevel>
         </Parameters>
-        <Preconditioner type="Diagonal"/>
+        <Preconditioner type="Diagonal" />
       </LinearSolver>
     </SolverConfiguration>
     <!-- Split voltage boundaries to test new structure -->
     <boundary kind="voltage" ids="43">
-      <param name="value" value="Vtot"/>
+      <param name="value" value="Vtot" />
     </boundary>
     <boundary kind="voltage" ids="8">
-      <param name="value" value="0[V]"/>
+      <param name="value" value="0[V]" />
     </boundary>
     <boundary kind="voltage" ids="15">
-      <param name="value" value="0[V]"/>
+      <param name="value" value="0[V]" />
     </boundary>
     <boundary kind="electric_insulation" ids="1-7,9-14,16-42" />
   </physics>
@@ -55,26 +55,26 @@
           <Parameters>
             <Overlap>1</Overlap>
           </Parameters>
-          <LocalSolver type="Diagonal"/>
+          <LocalSolver type="Diagonal" />
         </Preconditioner>
       </LinearSolver>
     </SolverConfiguration>
     <!-- Split convection into multiple groups to test new structure -->
     <boundary kind="convection" ids="1-7">
-      <param name="h" value="htc"/>
-      <param name="T_inf" value="293.15[K]"/>
+      <param name="h" value="htc" />
+      <param name="T_inf" value="293.15[K]" />
     </boundary>
     <boundary kind="convection" ids="9-14">
-      <param name="h" value="htc"/>
-      <param name="T_inf" value="293.15[K]"/>
+      <param name="h" value="htc" />
+      <param name="T_inf" value="293.15[K]" />
     </boundary>
     <boundary kind="convection" ids="16-28">
-      <param name="h" value="htc"/>
-      <param name="T_inf" value="293.15[K]"/>
+      <param name="h" value="htc" />
+      <param name="T_inf" value="293.15[K]" />
     </boundary>
     <boundary kind="convection" ids="29-42">
-      <param name="h" value="htc"/>
-      <param name="T_inf" value="293.15[K]"/>
+      <param name="h" value="htc" />
+      <param name="T_inf" value="293.15[K]" />
     </boundary>
     <boundary kind="thermal_insulation" ids="8,15,43" />
   </physics>
@@ -96,8 +96,10 @@
     <boundary kind="free_boundary" ids="1-7,9-14,16-42" />
   </physics>
 
-  <coupledPhysics name="joule_heat" kind="joule_heating" physics="electrostatics,heat_transfer" domains="1-7" />
-  <coupledPhysics name="thermal_expansion" kind="thermal_expansion" physics="heat_transfer,solid_mechanics" domains="1-7" />
+  <coupledPhysics name="joule_heat" kind="joule_heating" physics="electrostatics,heat_transfer"
+    domains="1-7" />
+  <coupledPhysics name="thermal_expansion" kind="thermal_expansion"
+    physics="heat_transfer,solid_mechanics" domains="1-7" />
 
-  <coupling method="picard" max_iter="20" tolerance="1e-4"/>
+  <coupling method="picard" max_iter="20" tolerance="1e-4" />
 </case>

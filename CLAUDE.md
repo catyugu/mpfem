@@ -17,7 +17,7 @@
 │   └── problem/        # Problem class, transient, physics builder
 ├── tests/             # 17 gtest test files
 ├── examples/          # fem_solver.cpp
-├── cases/             # busbar_steady/, busbar_steady_order2/, busbar_large/, busbar_transient/
+├── cases/             # busbar_steady/, busbar_steady_order2/, busbar_transient/
 └── cmake/             # Dependencies.cmake, Targets.cmake, CPM.cmake
 ```
 
