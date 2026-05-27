@@ -35,7 +35,7 @@ namespace mpfem {
             if (!fes.isExternalBoundaryId(bid))
                 continue;
 
-            for (Index b = 0; b < mesh.numBdrElements(); ++b) {
+            for (Index b = 0; b < mesh.numEntities(mesh.dim() - 1); ++b) {
                 const EntityView belem = mesh.entity(mesh.dim() - 1, b);
                 if (belem.attribute != bid)
                     continue;

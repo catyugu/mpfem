@@ -21,14 +21,14 @@ namespace mpfem {
         std::vector<Index> collectTopologyVertices(const Mesh& mesh)
         {
             std::vector<Index> vertices;
-            vertices.reserve(static_cast<size_t>(mesh.numElements() * 4 + mesh.numBdrElements() * 4));
+            vertices.reserve(static_cast<size_t>(mesh.numEntities(mesh.dim()) * 4 + mesh.numEntities(mesh.dim() - 1) * 4));
 
-            for (Index elemIdx = 0; elemIdx < mesh.numElements(); ++elemIdx) {
+            for (Index elemIdx = 0; elemIdx < mesh.numEntities(mesh.dim()); ++elemIdx) {
                 const EntityView elem = mesh.entity(mesh.dim(), elemIdx);
                 vertices.insert(vertices.end(), elem.vertices.begin(), elem.vertices.end());
             }
 
-            for (Index bdrIdx = 0; bdrIdx < mesh.numBdrElements(); ++bdrIdx) {
+            for (Index bdrIdx = 0; bdrIdx < mesh.numEntities(mesh.dim() - 1); ++bdrIdx) {
                 const EntityView elem = mesh.entity(mesh.dim() - 1, bdrIdx);
                 vertices.insert(vertices.end(), elem.vertices.begin(), elem.vertices.end());
             }
@@ -52,7 +52,7 @@ namespace mpfem {
             std::unordered_set<Index> pending(vertexIndices.begin(), vertexIndices.end());
             dofMap.reserve(vertexIndices.size());
 
-            for (Index elemIdx = 0; elemIdx < mesh->numElements() && !pending.empty(); ++elemIdx) {
+            for (Index elemIdx = 0; elemIdx < mesh->numEntities(mesh->dim()) && !pending.empty(); ++elemIdx) {
                 const ReferenceElement* refElem = fes->elementRefElement(elemIdx);
                 if (!refElem) {
                     continue;
@@ -373,7 +373,7 @@ namespace mpfem {
         file << "<VTKFile type=\"UnstructuredGrid\" version=\"0.1\" byte_order=\"LittleEndian\">\n";
         file << "<UnstructuredGrid>\n";
         file << "<Piece NumberOfPoints=\"" << numExportPoints
-             << "\" NumberOfCells=\"" << mesh.numElements() << "\">\n";
+             << "\" NumberOfCells=\"" << mesh.numEntities(mesh.dim()) << "\">\n";
 
         const GridFunction* V = fields.hasField("V")
             ? &fields.current("V")
@@ -448,7 +448,7 @@ namespace mpfem {
 
         // Connectivity - remap topology vertex ids to point indices
         file << "<DataArray type=\"Int64\" Name=\"connectivity\" format=\"ascii\">\n";
-        for (Index i = 0; i < mesh.numElements(); ++i) {
+        for (Index i = 0; i < mesh.numEntities(mesh.dim()); ++i) {
             const EntityView elem = mesh.entity(mesh.dim(), i);
             for (int j = 0; j < elem.numVertices(); ++j) {
                 if (j > 0)
@@ -462,7 +462,7 @@ namespace mpfem {
         // Offsets
         file << "<DataArray type=\"Int64\" Name=\"offsets\" format=\"ascii\">\n";
         Index offset = 0;
-        for (Index i = 0; i < mesh.numElements(); ++i) {
+        for (Index i = 0; i < mesh.numEntities(mesh.dim()); ++i) {
             offset += mesh.entity(mesh.dim(), i).numVertices();
             file << offset << " ";
         }
@@ -470,7 +470,7 @@ namespace mpfem {
 
         // Types
         file << "<DataArray type=\"UInt8\" Name=\"types\" format=\"ascii\">\n";
-        for (Index i = 0; i < mesh.numElements(); ++i) {
+        for (Index i = 0; i < mesh.numEntities(mesh.dim()); ++i) {
             Geometry geom = mesh.entity(mesh.dim(), i).geometry;
             int vtkType = 0;
             switch (geom) {

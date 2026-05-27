@@ -31,33 +31,33 @@ namespace mpfem {
     {
         if (!mesh_)
             MPFEM_THROW(Exception, "mesh not set");
-        if (elemIdx >= mesh_->numElements())
+        if (elemIdx >= mesh_->numEntities(mesh_->dim()))
             MPFEM_THROW(RangeException, "invalid element index");
-        return refElement(mesh_->element(elemIdx).geometry);
+        return refElement(mesh_->entity(mesh_->dim(), elemIdx).geometry);
     }
 
     const ReferenceElement* FESpace::bdrElementRefElement(Index bdrIdx) const
     {
         if (!mesh_)
             MPFEM_THROW(Exception, "mesh not set");
-        if (bdrIdx >= mesh_->numBdrElements())
+        if (bdrIdx >= mesh_->numEntities(mesh_->dim() - 1))
             MPFEM_THROW(RangeException, "invalid boundary element index");
-        return refElement(mesh_->bdrElement(bdrIdx).geometry);
+        return refElement(mesh_->entity(mesh_->dim() - 1, bdrIdx).geometry);
     }
 
     int FESpace::elementGeoOrder(Index elemIdx) const
     {
-        return mesh_ ? mesh_->element(elemIdx).order : 1;
+        return mesh_ ? mesh_->entity(mesh_->dim(), elemIdx).order : 1;
     }
 
     int FESpace::bdrElementGeoOrder(Index bdrIdx) const
     {
-        return mesh_ ? mesh_->bdrElement(bdrIdx).order : 1;
+        return mesh_ ? mesh_->entity(mesh_->dim() - 1, bdrIdx).order : 1;
     }
 
     void FESpace::getElementDofs(Index elemIdx, std::span<Index> dofs) const
     {
-        if (!mesh_ || !fec_ || elemIdx >= mesh_->numElements())
+        if (!mesh_ || !fec_ || elemIdx >= mesh_->numEntities(mesh_->dim()))
             return;
 
         const int count = numElementDofs(elemIdx);
@@ -69,7 +69,7 @@ namespace mpfem {
 
     std::span<const int> FESpace::getElementOrientations(Index elemIdx) const
     {
-        if (!mesh_ || !fec_ || elemIdx >= mesh_->numElements())
+        if (!mesh_ || !fec_ || elemIdx >= mesh_->numEntities(mesh_->dim()))
             return {};
         const Index base = elemIdx * maxDofsPerElem_;
         return {&elemOrientations_[base], static_cast<size_t>(numElementDofs(elemIdx))};
@@ -77,7 +77,7 @@ namespace mpfem {
 
     void FESpace::getBdrElementDofs(Index bdrIdx, std::span<Index> dofs) const
     {
-        if (!mesh_ || !fec_ || bdrIdx >= mesh_->numBdrElements())
+        if (!mesh_ || !fec_ || bdrIdx >= mesh_->numEntities(mesh_->dim() - 1))
             return;
 
         const int count = numBdrElementDofs(bdrIdx);
@@ -107,7 +107,7 @@ namespace mpfem {
         if (!mesh_->hasTopology()) {
             MPFEM_THROW(Exception, "FESpace::buildDofTable requires mesh topology; call Mesh::buildTopology() first");
         }
-        if (mesh_->numElements() == 0) {
+        if (mesh_->numEntities(mesh_->dim()) == 0) {
             MPFEM_THROW(Exception, "FESpace::buildDofTable requires non-empty mesh");
         }
 
@@ -117,15 +117,15 @@ namespace mpfem {
         maxDofsPerElem_ = 0;
         maxDofsPerBdrElem_ = 0;
 
-        for (Index i = 0; i < mesh_->numElements(); ++i) {
-            const ReferenceElement* refElem = fec_->get(mesh_->element(i).geometry);
+        for (Index i = 0; i < mesh_->numEntities(mesh_->dim()); ++i) {
+            const ReferenceElement* refElem = fec_->get(mesh_->entity(mesh_->dim(), i).geometry);
             if (!refElem) {
                 MPFEM_THROW(Exception, "FESpace::buildDofTable missing volume reference element");
             }
             maxDofsPerElem_ = std::max(maxDofsPerElem_, refElem->numDofs() * fieldVdim);
         }
-        for (Index i = 0; i < mesh_->numBdrElements(); ++i) {
-            const ReferenceElement* refElem = fec_->get(mesh_->bdrElement(i).geometry);
+        for (Index i = 0; i < mesh_->numEntities(mesh_->dim() - 1); ++i) {
+            const ReferenceElement* refElem = fec_->get(mesh_->entity(mesh_->dim() - 1, i).geometry);
             if (!refElem) {
                 MPFEM_THROW(Exception, "FESpace::buildDofTable missing boundary reference element");
             }
@@ -133,13 +133,13 @@ namespace mpfem {
         }
 
         std::vector<Index> vertexIds;
-        vertexIds.reserve(static_cast<size_t>(mesh_->numElements() * 4 + mesh_->numBdrElements() * 4));
-        for (Index elemIdx = 0; elemIdx < mesh_->numElements(); ++elemIdx) {
-            const EntityView elem = mesh_->element(elemIdx);
+        vertexIds.reserve(static_cast<size_t>(mesh_->numEntities(mesh_->dim()) * 4 + mesh_->numEntities(mesh_->dim() - 1) * 4));
+        for (Index elemIdx = 0; elemIdx < mesh_->numEntities(mesh_->dim()); ++elemIdx) {
+            const EntityView elem = mesh_->entity(mesh_->dim(), elemIdx);
             vertexIds.insert(vertexIds.end(), elem.vertices.begin(), elem.vertices.end());
         }
-        for (Index bdrIdx = 0; bdrIdx < mesh_->numBdrElements(); ++bdrIdx) {
-            const EntityView elem = mesh_->bdrElement(bdrIdx);
+        for (Index bdrIdx = 0; bdrIdx < mesh_->numEntities(mesh_->dim() - 1); ++bdrIdx) {
+            const EntityView elem = mesh_->entity(mesh_->dim() - 1, bdrIdx);
             vertexIds.insert(vertexIds.end(), elem.vertices.begin(), elem.vertices.end());
         }
         std::sort(vertexIds.begin(), vertexIds.end());
@@ -157,7 +157,7 @@ namespace mpfem {
         if (meshDim == 3) {
             faceDofs.assign(static_cast<size_t>(mesh_->numFaces()), 0);
         }
-        std::vector<int> cellDofs(static_cast<size_t>(mesh_->numElements()), 0);
+        std::vector<int> cellDofs(static_cast<size_t>(mesh_->numEntities(mesh_->dim())), 0);
 
         const auto vertexIndex = [&](Index vId) -> size_t {
             const auto it = vertexSlot.find(vId);
@@ -167,8 +167,8 @@ namespace mpfem {
             return it->second;
         };
 
-        for (Index elemIdx = 0; elemIdx < mesh_->numElements(); ++elemIdx) {
-            const EntityView elem = mesh_->element(elemIdx);
+        for (Index elemIdx = 0; elemIdx < mesh_->numEntities(mesh_->dim()); ++elemIdx) {
+            const EntityView elem = mesh_->entity(mesh_->dim(), elemIdx);
             const ReferenceElement* refElem = fec_->get(elem.geometry);
             DofLayout layout = refElem->dofLayout();
             layout.numVertexDofs *= fieldVdim;
@@ -198,8 +198,8 @@ namespace mpfem {
             }
         }
 
-        for (Index bdrIdx = 0; bdrIdx < mesh_->numBdrElements(); ++bdrIdx) {
-            const EntityView elem = mesh_->bdrElement(bdrIdx);
+        for (Index bdrIdx = 0; bdrIdx < mesh_->numEntities(mesh_->dim() - 1); ++bdrIdx) {
+            const EntityView elem = mesh_->entity(mesh_->dim() - 1, bdrIdx);
             const ReferenceElement* refElem = fec_->get(elem.geometry);
             DofLayout layout = refElem->dofLayout();
             layout.numVertexDofs *= fieldVdim;
@@ -254,9 +254,9 @@ namespace mpfem {
 
         numDofs_ = offset;
 
-        elemDofs_.assign(mesh_->numElements() * maxDofsPerElem_, InvalidIndex);
-        elemOrientations_.assign(mesh_->numElements() * maxDofsPerElem_, 1);
-        bdrElemDofs_.assign(mesh_->numBdrElements() * maxDofsPerBdrElem_, InvalidIndex);
+        elemDofs_.assign(mesh_->numEntities(mesh_->dim()) * maxDofsPerElem_, InvalidIndex);
+        elemOrientations_.assign(mesh_->numEntities(mesh_->dim()) * maxDofsPerElem_, 1);
+        bdrElemDofs_.assign(mesh_->numEntities(mesh_->dim() - 1) * maxDofsPerBdrElem_, InvalidIndex);
 
         const auto mapVertexDof = [&](Index vertexId, int k) -> Index {
             const auto it = vertexSlot.find(vertexId);
@@ -292,8 +292,8 @@ namespace mpfem {
             return cellOffset[idx] + k;
         };
 
-        for (Index elemIdx = 0; elemIdx < mesh_->numElements(); ++elemIdx) {
-            const EntityView elem = mesh_->element(elemIdx);
+        for (Index elemIdx = 0; elemIdx < mesh_->numEntities(mesh_->dim()); ++elemIdx) {
+            const EntityView elem = mesh_->entity(mesh_->dim(), elemIdx);
             const ReferenceElement* refElem = fec_->get(elem.geometry);
             const bool useNdOrientation = refElem->basisType() == BasisType::ND;
             DofLayout layout = refElem->dofLayout();
@@ -371,8 +371,8 @@ namespace mpfem {
             }
         }
 
-        for (Index bdrIdx = 0; bdrIdx < mesh_->numBdrElements(); ++bdrIdx) {
-            const EntityView elem = mesh_->bdrElement(bdrIdx);
+        for (Index bdrIdx = 0; bdrIdx < mesh_->numEntities(mesh_->dim() - 1); ++bdrIdx) {
+            const EntityView elem = mesh_->entity(mesh_->dim() - 1, bdrIdx);
             const ReferenceElement* refElem = fec_->get(elem.geometry);
             DofLayout layout = refElem->dofLayout();
             layout.numVertexDofs *= fieldVdim;

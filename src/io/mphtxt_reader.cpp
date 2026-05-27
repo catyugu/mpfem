@@ -61,11 +61,12 @@ namespace mpfem {
                 // Map to volume or boundary based on dimension
                 if (entityDim == data.sdim) {
                     // Volume element (3D in 3D, 2D in 2D)
-                    mesh.addElement(geom, block.elements[i], attr, block.order);
+                    mesh.addEntity(data.sdim, geom, block.elements[i], attr, block.order);
                     numVolumeElems++;
-                } else {
+                }
+                else {
                     // Boundary element (2D faces in 3D, 1D edges in 2D)
-                    mesh.addBdrElement(geom, block.elements[i], attr + 1, block.order);
+                    mesh.addEntity(data.sdim - 1, geom, block.elements[i], attr + 1, block.order);
                     numBdrElems++;
                 }
             }

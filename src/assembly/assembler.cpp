@@ -26,9 +26,9 @@ namespace {
         const mpfem::Mesh& mesh)
     {
         std::unordered_set<int> uniqueAttrs;
-        uniqueAttrs.reserve(static_cast<size_t>(mesh.numElements()));
+        uniqueAttrs.reserve(static_cast<size_t>(mesh.numEntities(mesh.dim())));
 
-        for (mpfem::Index e = 0; e < mesh.numElements(); ++e) {
+        for (mpfem::Index e = 0; e < mesh.numEntities(mesh.dim()); ++e) {
             uniqueAttrs.insert(mesh.entity(mesh.dim(), e).attribute);
         }
 
@@ -89,7 +89,7 @@ namespace mpfem {
         if (fes_) {
             const Mesh* mesh = fes_->mesh();
             if (mesh) {
-                triplets_.reserve(mesh->numElements() * MaxDofsPerElement * MaxDofsPerElement / 2);
+                triplets_.reserve(mesh->numEntities(mesh->dim()) * MaxDofsPerElement * MaxDofsPerElement / 2);
             }
         }
     }
@@ -105,7 +105,7 @@ namespace mpfem {
 
         mat_.setZero();
 
-        const Index numElements = mesh->numElements();
+        const Index numElements = mesh->numEntities(mesh->dim());
         const int vdim = fes_->vdim();
         const DomainIntegratorMap activeDomains = buildDomainIntegratorMap(domainSets_, *mesh);
 
@@ -222,8 +222,8 @@ namespace mpfem {
             const int maxDynSize = MaxDofsPerElement * vdim;
             bbuf.ensureDynMatrixSize(maxDynSize);
 
-            for (Index b = 0; b < mesh->numBdrElements(); ++b) {
-                const EntityView belem = mesh->bdrElement(b);
+            for (Index b = 0; b < mesh->numEntities(mesh->dim() - 1); ++b) {
+                const EntityView belem = mesh->entity(mesh->dim() - 1, b);
                 int attr = belem.attribute;
 
                 if (!fes_->isExternalBoundaryId(attr))
@@ -331,7 +331,7 @@ namespace mpfem {
 #endif
 
         if (!domainIntegs_.empty()) {
-            const Index numElements = mesh->numElements();
+            const Index numElements = mesh->numEntities(mesh->dim());
 
 #ifdef _OPENMP
 #pragma omp parallel
@@ -424,8 +424,8 @@ namespace mpfem {
             ElementTransform btrans;
             ThreadBuffer bbuf;
 
-            for (Index b = 0; b < mesh->numBdrElements(); ++b) {
-                const EntityView belem = mesh->bdrElement(b);
+            for (Index b = 0; b < mesh->numEntities(mesh->dim() - 1); ++b) {
+                const EntityView belem = mesh->entity(mesh->dim() - 1, b);
                 int attr = belem.attribute;
 
                 if (!fes_->isExternalBoundaryId(attr))

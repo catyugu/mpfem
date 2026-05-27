@@ -85,9 +85,9 @@ namespace mpfem {
         if (numVertices > 0)
             reserveNodes(numVertices);
         if (numElements > 0)
-            reserveElements(numElements);
+            reserveEntities(dim_, numElements);
         if (numBdrElements > 0)
-            reserveBdrElements(numBdrElements);
+            reserveEntities(dim_ - 1, numBdrElements);
     }
 
     void Mesh::setDim(int dim)
@@ -203,7 +203,7 @@ namespace mpfem {
 
     std::span<const Index> Mesh::elementEdges(Index elemIdx) const
     {
-        if (!topologyBuilt_ || elemIdx >= numElements()) {
+        if (!topologyBuilt_ || elemIdx >= numEntities(dim_)) {
             return {};
         }
         const Index start = elemEdgeOffsets_[elemIdx];
@@ -213,7 +213,7 @@ namespace mpfem {
 
     std::span<const int> Mesh::elementEdgeOrientations(Index elemIdx) const
     {
-        if (!topologyBuilt_ || elemIdx >= numElements()) {
+        if (!topologyBuilt_ || elemIdx >= numEntities(dim_)) {
             return {};
         }
         const Index start = elemEdgeOffsets_[elemIdx];
@@ -223,7 +223,7 @@ namespace mpfem {
 
     std::span<const Index> Mesh::elementFaces(Index elemIdx) const
     {
-        if (!topologyBuilt_ || elemIdx >= numElements()) {
+        if (!topologyBuilt_ || elemIdx >= numEntities(dim_)) {
             return {};
         }
         const Index start = elemFaceOffsets_[elemIdx];
@@ -233,7 +233,7 @@ namespace mpfem {
 
     std::span<const int> Mesh::elementFaceOrientations(Index elemIdx) const
     {
-        if (!topologyBuilt_ || elemIdx >= numElements()) {
+        if (!topologyBuilt_ || elemIdx >= numEntities(dim_)) {
             return {};
         }
         const Index start = elemFaceOffsets_[elemIdx];
@@ -297,11 +297,11 @@ namespace mpfem {
     void Mesh::buildEdgeTopology()
     {
         std::vector<EdgeEntry> allEdges;
-        elemEdgeOffsets_.assign(numElements() + 1, 0);
+        elemEdgeOffsets_.assign(numEntities(dim_) + 1, 0);
 
         // First pass: collect all edges with their orientations
-        for (Index elemIdx = 0; elemIdx < numElements(); ++elemIdx) {
-            const EntityView elem = element(elemIdx);
+        for (Index elemIdx = 0; elemIdx < numEntities(dim_); ++elemIdx) {
+            const EntityView elem = entity(dim_, elemIdx);
             const int nEdges = elem.numEdges();
             elemEdgeOffsets_[elemIdx + 1] = elemEdgeOffsets_[elemIdx] + nEdges;
 
@@ -348,11 +348,11 @@ namespace mpfem {
     void Mesh::buildFaceTopology()
     {
         std::vector<FaceEntry> candidates;
-        elemFaceOffsets_.assign(numElements() + 1, 0);
+        elemFaceOffsets_.assign(numEntities(dim_) + 1, 0);
 
         // First pass: collect all face candidates with sorted keys
-        for (Index elemIdx = 0; elemIdx < numElements(); ++elemIdx) {
-            const EntityView elem = element(elemIdx);
+        for (Index elemIdx = 0; elemIdx < numEntities(dim_); ++elemIdx) {
+            const EntityView elem = entity(dim_, elemIdx);
             elemFaceOffsets_[elemIdx + 1] = elemFaceOffsets_[elemIdx] + elem.numFaces();
 
             for (int f = 0; f < elem.numFaces(); ++f) {
@@ -450,8 +450,8 @@ namespace mpfem {
         // --- Boundary element mapping (local, replaces member variable sortedFaceKeys_) ---
         bdrIdExternalCache_.clear();
 
-        for (Index bdrIdx = 0; bdrIdx < numBdrElements(); ++bdrIdx) {
-            const EntityView bdrElem = bdrElement(bdrIdx);
+        for (Index bdrIdx = 0; bdrIdx < numEntities(dim_ - 1); ++bdrIdx) {
+            const EntityView bdrElem = entity(dim_ - 1, bdrIdx);
             FaceKey key;
             key.count = bdrElem.numVertices();
             for (int i = 0; i < key.count; ++i) {
