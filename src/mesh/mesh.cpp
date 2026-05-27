@@ -75,7 +75,7 @@ namespace mpfem {
     // Constructor and basic accessors
     // -----------------------------------------------------------------------------
 
-    Mesh::Mesh(int dim, Index numVertices, Index numElements, Index numBdrElements)
+    Mesh::Mesh(int dim, Index numVertices, Index numElements)
         : dim_(dim)
     {
         // Initialize strata dimensions
@@ -86,8 +86,6 @@ namespace mpfem {
             reserveNodes(numVertices);
         if (numElements > 0)
             reserveEntities(dim_, numElements);
-        if (numBdrElements > 0)
-            reserveEntities(dim_ - 1, numBdrElements);
     }
 
     void Mesh::setDim(int dim)

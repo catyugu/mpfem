@@ -106,7 +106,7 @@ namespace mpfem {
         Mesh() = default;
 
         /// Construct with pre-allocated sizes
-        Mesh(int dim, Index numVertices, Index numElements, Index numBdrElements = 0);
+        Mesh(int dim, Index numVertices, Index numElements = 0);
 
         // -------------------------------------------------------------------------
         // Dimension and size
