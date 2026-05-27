@@ -313,20 +313,6 @@ namespace mpfem {
         return Geometry::Invalid;
     }
 
-    bool MphtxtReader::isBoundaryElement(Geometry geom, int sdim)
-    {
-        if (sdim == 3) {
-            return geom == Geometry::Triangle || geom == Geometry::Square;
-        }
-        if (sdim == 2) {
-            return geom == Geometry::Segment;
-        }
-        if (sdim == 1) {
-            return geom == Geometry::Point;
-        }
-        return false;
-    }
-
     std::string MphtxtReader::toLower(const std::string& str)
     {
         std::string result = str;
