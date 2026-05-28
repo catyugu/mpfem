@@ -608,3 +608,37 @@ TEST_F(FESpaceLinearTest, ReferenceElementAccess)
     EXPECT_EQ(refElem->geometry(), Geometry::Triangle);
     EXPECT_EQ(refElem->numDofs(), 3);
 }
+
+// =============================================================================
+// Point H1Collection Tests
+// =============================================================================
+
+TEST(FECollectionTest, PointGeometrySupported)
+{
+    H1Collection fec(1);
+
+    // Point should be supported in H1Collection
+    EXPECT_NE(fec.get(Geometry::Point), nullptr);
+    EXPECT_EQ(fec.get(Geometry::Point)->numDofs(), 1);
+}
+
+TEST(FECollectionTest, PointGeometryQuadraticOrder)
+{
+    H1Collection fec(2);
+
+    // Point only has 1 DOF regardless of order
+    EXPECT_NE(fec.get(Geometry::Point), nullptr);
+    EXPECT_EQ(fec.get(Geometry::Point)->numDofs(), 1);
+}
+
+TEST(FECollectionTest, PointGeometryAllOrders)
+{
+    // Verify Point is accessible for both supported orders
+    H1Collection fec1(1);
+    H1Collection fec2(2);
+
+    EXPECT_NE(fec1.get(Geometry::Point), nullptr);
+    EXPECT_NE(fec2.get(Geometry::Point), nullptr);
+    EXPECT_EQ(fec1.get(Geometry::Point)->numDofs(), 1);
+    EXPECT_EQ(fec2.get(Geometry::Point)->numDofs(), 1);
+}

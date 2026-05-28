@@ -50,6 +50,7 @@ namespace mpfem {
                 MPFEM_THROW(ArgumentException, "H1Collection requires vdim >= 1");
             }
 
+            elements_[Geometry::Point] = ReferenceElement::get(Geometry::Point, order_, BasisType::H1);
             elements_[Geometry::Segment] = ReferenceElement::get(Geometry::Segment, order_, BasisType::H1);
             elements_[Geometry::Triangle] = ReferenceElement::get(Geometry::Triangle, order_, BasisType::H1);
             elements_[Geometry::Square] = ReferenceElement::get(Geometry::Square, order_, BasisType::H1);

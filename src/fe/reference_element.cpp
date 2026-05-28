@@ -14,6 +14,8 @@ namespace mpfem {
         basix::cell::type toBasixCell(Geometry geom)
         {
             switch (geom) {
+            case Geometry::Point:
+                return basix::cell::type::point;
             case Geometry::Segment:
                 return basix::cell::type::interval;
             case Geometry::Triangle:
@@ -47,6 +49,8 @@ namespace mpfem {
         std::vector<int> getBaseVertexPermutation(Geometry geom)
         {
             switch (geom) {
+            case Geometry::Point:
+                return {0};
             case Geometry::Segment:
                 return {0, 1};
             case Geometry::Triangle:
@@ -92,11 +96,21 @@ namespace mpfem {
 
     void ReferenceElement::initialize()
     {
-        basixElement_ = std::make_unique<basix::FiniteElement<double>>(
-            basix::create_element<double>(
-                toBasixFamily(basisType_), toBasixCell(geometry_), order_,
-                basix::element::lagrange_variant::equispaced,
-                basix::element::dpc_variant::unset, false));
+        // Special case: Point geometry only supports order 0 in basix
+        if (geometry_ == Geometry::Point) {
+            basixElement_ = std::make_unique<basix::FiniteElement<double>>(
+                basix::create_element<double>(
+                    toBasixFamily(basisType_), toBasixCell(geometry_), 0,
+                    basix::element::lagrange_variant::equispaced,
+                    basix::element::dpc_variant::unset, false));
+        }
+        else {
+            basixElement_ = std::make_unique<basix::FiniteElement<double>>(
+                basix::create_element<double>(
+                    toBasixFamily(basisType_), toBasixCell(geometry_), order_,
+                    basix::element::lagrange_variant::equispaced,
+                    basix::element::dpc_variant::unset, false));
+        }
 
         buildPermutation();
         quadrature_ = quadrature::get(geometry_, std::max(1, 2 * order_));

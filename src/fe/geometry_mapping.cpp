@@ -16,6 +16,12 @@ namespace mpfem {
         const Real z = xi.z();
 
         switch (geom) {
+        case Geometry::Point:
+            // Point has only 1 DOF, shape function is always 1
+            shape.setZero();
+            shape(0, 0) = 1.0;
+            return;
+
         case Geometry::Segment:
             if (order == 1) {
                 shape.setZero();
@@ -181,6 +187,11 @@ namespace mpfem {
         const Real z = xi.z();
 
         switch (geom) {
+        case Geometry::Point:
+            // Point has only 1 DOF, no derivatives (0D)
+            derivatives.setZero();
+            return;
+
         case Geometry::Segment:
             if (order == 1) {
                 derivatives.setZero();
