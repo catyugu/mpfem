@@ -1,14 +1,6 @@
 #!/usr/bin/env python3
-"""Regression tests for MPFEM busbar validation cases.
-
-These tests verify that:
-1. The solver runs without crashing
-2. Results are within reasonable physical bounds
-3. The code is stable (same inputs -> same outputs)
-
-Known issues: The electrostatics solver has a pre-existing bug where V is
-consistently 0 everywhere instead of showing the expected 0-0.02V range.
-This affects V field accuracy but the solver still converges.
+"""
+Regression tests for MPFEM busbar validation cases.
 """
 
 from __future__ import annotations
@@ -97,13 +89,17 @@ def parse_result_file(file_path: Path) -> dict:
     return rows
 
 
-def compare_steady(reference_file: Path, current_file: Path, tol_v, tol_t, tol_disp) -> dict:
+def compare_steady(
+    reference_file: Path, current_file: Path, tol_v, tol_t, tol_disp
+) -> dict:
     """Compare steady-state results. Returns dict with field metrics."""
     ref_rows = parse_result_file(reference_file)
     cur_rows = parse_result_file(current_file)
 
     if len(ref_rows) != len(cur_rows):
-        raise ValueError(f"Point count mismatch: ref={len(ref_rows)}, cur={len(cur_rows)}")
+        raise ValueError(
+            f"Point count mismatch: ref={len(ref_rows)}, cur={len(cur_rows)}"
+        )
 
     keys = sorted(ref_rows.keys())
     ref_v = [ref_rows[k]["v"] for k in keys]
@@ -127,30 +123,18 @@ def compare_steady(reference_file: Path, current_file: Path, tol_v, tol_t, tol_d
     }
 
 
-# ---------------------------------------------------------------------------
-# Tolerances
-# ---------------------------------------------------------------------------
-# These tolerances are set to verify the solver is working correctly.
-# A "regression" here means the code has changed behavior, not that it
-# matches the COMSOL reference exactly.
-#
-# Known physics issue: V (voltage) is consistently 0 due to a pre-existing
-# electrostatics solver bug. The tolerance for V is set high to allow the
-# test to pass while still catching major regressions.
-# ---------------------------------------------------------------------------
+# L2 tolerance
+STEADY_ORDER1_TOL_V = 2e-6
+STEADY_ORDER1_TOL_T = 8e-8
+STEADY_ORDER1_TOL_DISP = 1e-6
 
-# 1st-order steady-state tolerances
-# V: The code produces V≈0 everywhere (bug). Max reference V is 0.02, so
-#    max_rel=1.0 and L2_rel=1.0 are expected. Tolerance allows up to 2.0
-#    (200% relative error) to catch complete failure modes.
-STEADY_ORDER1_TOL_V = 2.0
-STEADY_ORDER1_TOL_T = 0.15  # 15% relative error for temperature
-STEADY_ORDER1_TOL_DISP = 2.0  # 200% for displacement (reference near zero)
+STEADY_ORDER2_TOL_V = 2e-6
+STEADY_ORDER2_TOL_T = 2e-7
+STEADY_ORDER2_TOL_DISP = 1e-3
 
-# 2nd-order steady-state tolerances
-STEADY_ORDER2_TOL_V = 2.0
-STEADY_ORDER2_TOL_T = 0.15
-STEADY_ORDER2_TOL_DISP = 2.0
+TRANS_TOL_V = 1e-5
+TRANS_TOL_T = 2e-4
+TRANS_TOL_DISP = 5e-2
 
 
 class TestBusbarSteadyOrder1:
@@ -161,13 +145,13 @@ class TestBusbarSteadyOrder1:
     CUR_FILE = RESULTS_DIR / "busbar_steady_result.txt"
 
     def test_solver_runs(self):
-        """Solver completes without error."""
         result = run_solver(self.CASE_DIR)
         if result.returncode != 0:
-            pytest.fail(f"Solver failed:\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}")
+            pytest.fail(
+                f"Solver failed:\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+            )
 
     def test_results_match_reference(self):
-        """Results are within tolerance of reference values."""
         if not self.CUR_FILE.exists():
             pytest.skip("Solver run not available")
         metrics = compare_steady(
@@ -180,9 +164,15 @@ class TestBusbarSteadyOrder1:
         print(f"V metrics: {metrics['V']}")
         print(f"T metrics: {metrics['T']}")
         print(f"disp metrics: {metrics['disp']}")
-        assert metrics["v_ok"], f"V L2_rel={metrics['V'][3]:.2e} exceeds {STEADY_ORDER1_TOL_V:.2e}"
-        assert metrics["t_ok"], f"T L2_rel={metrics['T'][3]:.2e} exceeds {STEADY_ORDER1_TOL_T:.2e}"
-        assert metrics["d_ok"], f"disp L2_rel={metrics['disp'][3]:.2e} exceeds {STEADY_ORDER1_TOL_DISP:.2e}"
+        assert metrics[
+            "v_ok"
+        ], f"V L2_rel={metrics['V'][3]:.2e} exceeds {STEADY_ORDER1_TOL_V:.2e}"
+        assert metrics[
+            "t_ok"
+        ], f"T L2_rel={metrics['T'][3]:.2e} exceeds {STEADY_ORDER1_TOL_T:.2e}"
+        assert metrics[
+            "d_ok"
+        ], f"disp L2_rel={metrics['disp'][3]:.2e} exceeds {STEADY_ORDER1_TOL_DISP:.2e}"
 
 
 class TestBusbarSteadyOrder2:
@@ -193,13 +183,13 @@ class TestBusbarSteadyOrder2:
     CUR_FILE = RESULTS_DIR / "busbar_steady_order2_result.txt"
 
     def test_solver_runs(self):
-        """Solver completes without error."""
         result = run_solver(self.CASE_DIR)
         if result.returncode != 0:
-            pytest.fail(f"Solver failed:\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}")
+            pytest.fail(
+                f"Solver failed:\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+            )
 
     def test_results_match_reference(self):
-        """Results are within tolerance of reference values."""
         if not self.CUR_FILE.exists():
             pytest.skip("Solver run not available")
         metrics = compare_steady(
@@ -212,9 +202,15 @@ class TestBusbarSteadyOrder2:
         print(f"V metrics: {metrics['V']}")
         print(f"T metrics: {metrics['T']}")
         print(f"disp metrics: {metrics['disp']}")
-        assert metrics["v_ok"], f"V L2_rel={metrics['V'][3]:.2e} exceeds {STEADY_ORDER2_TOL_V:.2e}"
-        assert metrics["t_ok"], f"T L2_rel={metrics['T'][3]:.2e} exceeds {STEADY_ORDER2_TOL_T:.2e}"
-        assert metrics["d_ok"], f"disp L2_rel={metrics['disp'][3]:.2e} exceeds {STEADY_ORDER2_TOL_DISP:.2e}"
+        assert metrics[
+            "v_ok"
+        ], f"V L2_rel={metrics['V'][3]:.2e} exceeds {STEADY_ORDER2_TOL_V:.2e}"
+        assert metrics[
+            "t_ok"
+        ], f"T L2_rel={metrics['T'][3]:.2e} exceeds {STEADY_ORDER2_TOL_T:.2e}"
+        assert metrics[
+            "d_ok"
+        ], f"disp L2_rel={metrics['disp'][3]:.2e} exceeds {STEADY_ORDER2_TOL_DISP:.2e}"
 
 
 class TestBusbarTransient:
@@ -225,13 +221,13 @@ class TestBusbarTransient:
     CUR_FILE = RESULTS_DIR / "busbar_transient_result.txt"
 
     def test_solver_runs(self):
-        """Solver completes without error."""
         result = run_solver(self.CASE_DIR)
         if result.returncode != 0:
-            pytest.fail(f"Solver failed:\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}")
+            pytest.fail(
+                f"Solver failed:\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+            )
 
     def test_results_match_reference(self):
-        """Results are within tolerance of reference values."""
         from scripts.compare_transient_results import (
             align_by_coordinates,
             compute_metrics as trans_compute_metrics,
@@ -245,11 +241,6 @@ class TestBusbarTransient:
         cur_rows, cur_times = parse_comsol_combined_file(self.CUR_FILE)
 
         ref_rows, cur_rows = align_by_coordinates(ref_rows, cur_rows)
-
-        # Tolerances - same logic as steady-state
-        tol_v = 2.0
-        tol_t = 0.15
-        tol_disp = 2.0
 
         import math
 
@@ -265,17 +256,22 @@ class TestBusbarTransient:
             t_l2, t_max, t_rel, t_l2_rel = trans_compute_metrics(ref_t_vals, cur_t_vals)
             d_l2, d_max, d_rel, d_l2_rel = trans_compute_metrics(ref_d, cur_d)
 
-            ref_d_mag = math.sqrt(sum(d * d for d in ref_d) / len(ref_d)) if ref_d else 0.0
+            # For displacement, use absolute tolerance when reference near zero
+            ref_d_mag = (
+                math.sqrt(sum(d * d for d in ref_d) / len(ref_d)) if ref_d else 0.0
+            )
             if ref_d_mag < 1e-8:
                 d_ok = d_l2 < 1e-6
             else:
-                d_ok = d_l2_rel < tol_disp
+                d_ok = d_l2_rel < TRANS_TOL_DISP
 
-            v_ok = v_l2_rel < tol_v
-            t_ok = t_l2_rel < tol_t
+            v_ok = v_l2_rel < TRANS_TOL_V
+            t_ok = t_l2_rel < TRANS_TOL_T
 
             status = "PASS" if (v_ok and t_ok and d_ok) else "FAIL"
-            print(f"t={cur_t:.0f}: V_rel={v_l2_rel:.2e}, T_rel={t_l2_rel:.2e}, Disp_rel={d_l2_rel:.2e} -> {status}")
-            assert v_ok, f"t={cur_t}: V L2_rel={v_l2_rel:.2e} > {tol_v:.2e}"
-            assert t_ok, f"t={cur_t}: T L2_rel={t_l2_rel:.2e} > {tol_t:.2e}"
-            assert d_ok, f"t={cur_t}: disp L2_rel={d_l2_rel:.2e} > {tol_disp:.2e}"
+            print(
+                f"t={cur_t:.0f}: V_rel={v_l2_rel:.2e}, T_rel={t_l2_rel:.2e}, Disp_rel={d_l2_rel:.2e} -> {status}"
+            )
+            assert v_ok, f"t={cur_t}: V L2_rel={v_l2_rel:.2e} > {TRANS_TOL_V:.2e}"
+            assert t_ok, f"t={cur_t}: T L2_rel={t_l2_rel:.2e} > {TRANS_TOL_T:.2e}"
+            assert d_ok, f"t={cur_t}: disp L2_rel={d_l2_rel:.2e} > {TRANS_TOL_DISP:.2e}"
