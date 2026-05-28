@@ -27,9 +27,6 @@ namespace mpfem {
         int vdim() const { return fec_ ? fec_->vdim() : 1; }
         int dim() const;
 
-        bool isExternalBoundary(Index bdrElemIdx) const;
-        bool isExternalBoundaryId(Index bdrId) const;
-
         Index numDofs() const { return numDofs_; }
 
         void getElementDofs(Index elemIdx, std::span<Index> dofs) const;

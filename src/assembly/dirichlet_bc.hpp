@@ -32,7 +32,7 @@ namespace mpfem {
         ElementTransform trans;
 
         for (const auto& [bid, coef] : bcValues) {
-            if (!fes.isExternalBoundaryId(bid))
+            if (!mesh.isExternalBoundaryId(bid))
                 continue;
 
             for (Index b = 0; b < mesh.numEntities(mesh.dim() - 1); ++b) {

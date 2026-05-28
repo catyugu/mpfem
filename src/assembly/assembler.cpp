@@ -226,7 +226,7 @@ namespace mpfem {
                 const EntityView belem = mesh->entity(mesh->dim() - 1, b);
                 int attr = belem.attribute;
 
-                if (!fes_->isExternalBoundaryId(attr))
+                if (!mesh->isExternalBoundaryId(attr))
                     continue;
 
                 const ReferenceElement* ref = fes_->bdrElementRefElement(b);
@@ -428,7 +428,7 @@ namespace mpfem {
                 const EntityView belem = mesh->entity(mesh->dim() - 1, b);
                 int attr = belem.attribute;
 
-                if (!fes_->isExternalBoundaryId(attr))
+                if (!mesh->isExternalBoundaryId(attr))
                     continue;
 
                 const ReferenceElement* ref = fes_->bdrElementRefElement(b);

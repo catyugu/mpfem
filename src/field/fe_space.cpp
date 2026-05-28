@@ -12,16 +12,6 @@ namespace mpfem {
         return mesh_ ? mesh_->dim() : 0;
     }
 
-    bool FESpace::isExternalBoundary(Index bdrElemIdx) const
-    {
-        return mesh_ ? mesh_->isExternalBoundary(bdrElemIdx) : true;
-    }
-
-    bool FESpace::isExternalBoundaryId(Index bdrId) const
-    {
-        return mesh_ ? mesh_->isExternalBoundaryId(bdrId) : true;
-    }
-
     const ReferenceElement* FESpace::refElement(Geometry geom) const
     {
         return fec_ ? fec_->get(geom) : nullptr;
