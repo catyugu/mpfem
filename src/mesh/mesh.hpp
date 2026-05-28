@@ -74,12 +74,12 @@ namespace mpfem {
      * (vertices, edges, faces, cells) are stored in their respective strata by dimension.
      */
     struct EntityStratum {
-        int dim = -1;                          ///< Topological dimension (0=vertex, 1=edge, 2=face, 3=cell)
-        std::vector<Geometry> geometries;      ///< Geometry type per entity
-        std::vector<Index> offsets;            ///< CSR row pointers (size = count + 1)
-        std::vector<Index> nodes;              ///< Flattened node indices (CSR data)
-        std::vector<Index> attributes;         ///< Physical/domain IDs
-        std::vector<int> orders;               ///< Polynomial order for curved elements
+        int dim = -1; ///< Topological dimension (0=vertex, 1=edge, 2=face, 3=cell)
+        std::vector<Geometry> geometries; ///< Geometry type per entity
+        std::vector<Index> offsets; ///< CSR row pointers (size = count + 1)
+        std::vector<Index> nodes; ///< Flattened node indices (CSR data)
+        std::vector<Index> attributes; ///< Physical/domain IDs
+        std::vector<int> orders; ///< Polynomial order for curved elements
 
         Index count() const { return static_cast<Index>(geometries.size()); }
     };
@@ -106,7 +106,7 @@ namespace mpfem {
         Mesh() = default;
 
         /// Construct with pre-allocated sizes
-        Mesh(int dim, Index numVertices, Index numElements = 0);
+        Mesh(int dim, Index numVertices);
 
         // -------------------------------------------------------------------------
         // Dimension and size
@@ -153,9 +153,6 @@ namespace mpfem {
         /// Add an entity to a given dimension stratum
         Index addEntity(int dim, Geometry geom, std::span<const Index> nodes, Index attr = 0, int order = 1);
         Index addEntity(int dim, Geometry geom, const std::vector<Index>& nodes, Index attr = 0, int order = 1);
-
-        /// Reserve space for entities in a given dimension
-        void reserveEntities(int dim, Index n);
 
         // -------------------------------------------------------------------------
         // Topology queries

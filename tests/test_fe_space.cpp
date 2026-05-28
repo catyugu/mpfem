@@ -13,7 +13,7 @@ using namespace mpfem;
 /// Create a simple 2D triangular mesh
 Mesh createTriMesh2D()
 {
-    Mesh mesh(2, 4, 2);
+    Mesh mesh(2, 4);
 
     // Two triangles sharing an edge
     mesh.addNode(0.0, 0.0, 0.0); // 0
@@ -36,7 +36,7 @@ Mesh createTriMesh2D()
 /// Create a simple 3D tetrahedral mesh
 Mesh createTetMesh3D()
 {
-    Mesh mesh(3, 5, 4);
+    Mesh mesh(3, 5);
 
     // Two tetrahedra sharing a face
     mesh.addNode(0.0, 0.0, 0.0); // 0
@@ -62,7 +62,7 @@ Mesh createTetMesh3D()
 /// Create a simple 2D quadrilateral mesh
 Mesh createQuadMesh2D()
 {
-    Mesh mesh(2, 9, 4);
+    Mesh mesh(2, 9);
 
     // 2x2 grid of quads
     mesh.addNode(0.0, 0.0, 0.0); // 0
@@ -95,7 +95,7 @@ Mesh createQuadMesh2D()
 /// Create a mixed 2D mesh: one quad + one triangle sharing an edge
 Mesh createMixedMesh2D()
 {
-    Mesh mesh(2, 6, 2);
+    Mesh mesh(2, 6);
 
     mesh.addNode(0.0, 0.0, 0.0); // 0
     mesh.addNode(1.0, 0.0, 0.0); // 1
@@ -120,7 +120,7 @@ Mesh createMixedMesh2D()
 /// Create a 3D hexahedral mesh
 Mesh createHexMesh3D()
 {
-    Mesh mesh(3, 8, 0);
+    Mesh mesh(3, 8);
 
     // Single cube
     mesh.addNode(0.0, 0.0, 0.0); // 0

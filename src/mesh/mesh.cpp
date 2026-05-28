@@ -75,7 +75,7 @@ namespace mpfem {
     // Constructor and basic accessors
     // -----------------------------------------------------------------------------
 
-    Mesh::Mesh(int dim, Index numVertices, Index numElements)
+    Mesh::Mesh(int dim, Index numVertices)
         : dim_(dim)
     {
         // Initialize strata dimensions
@@ -84,8 +84,6 @@ namespace mpfem {
         }
         if (numVertices > 0)
             reserveNodes(numVertices);
-        if (numElements > 0)
-            reserveEntities(dim_, numElements);
     }
 
     void Mesh::setDim(int dim)
@@ -140,16 +138,6 @@ namespace mpfem {
     Index Mesh::addEntity(int dim, Geometry geom, const std::vector<Index>& nodes, Index attr, int order)
     {
         return addEntity(dim, geom, std::span<const Index>(nodes), attr, order);
-    }
-
-    void Mesh::reserveEntities(int dim, Index n)
-    {
-        auto& stratum = strata_[dim];
-        stratum.geometries.reserve(n);
-        stratum.attributes.reserve(n);
-        stratum.orders.reserve(n);
-        stratum.offsets.reserve(n + 1);
-        stratum.nodes.reserve(n * 8); // Estimate
     }
 
     // -----------------------------------------------------------------------------
