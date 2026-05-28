@@ -14,9 +14,9 @@ namespace mpfem {
         explicit QuadratureRule(std::vector<IntegrationPoint> points)
             : points_(std::move(points)) { }
 
-        int size() const { return static_cast<int>(points_.size()); }
-        const IntegrationPoint& operator[](int i) const { return points_[i]; }
-        IntegrationPoint& operator[](int i) { return points_[i]; }
+        Index size() const { return static_cast<Index>(points_.size()); }
+        const IntegrationPoint& operator[](Index i) const { return points_[i]; }
+        IntegrationPoint& operator[](Index i) { return points_[i]; }
 
         const std::vector<IntegrationPoint>& points() const { return points_; }
         std::vector<IntegrationPoint>& points() { return points_; }

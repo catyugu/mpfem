@@ -33,38 +33,38 @@ namespace mpfem {
         bool isVolume() const { return geom::isVolume(geometry); }
         bool isSurface() const { return geom::isSurface(geometry); }
 
-        Index vertex(int i) const { return vertices[i]; }
+        Index vertex(Index i) const { return vertices[i]; }
 
-        std::pair<Index, Index> edgeVertices(int edgeIdx) const
+        std::pair<Index, Index> edgeVertices(Index edgeIdx) const
         {
             auto local = geom::edgeVertices(geometry, edgeIdx);
             return {vertices[local.first], vertices[local.second]};
         }
 
-        std::vector<Index> faceVertices(int faceIdx) const
+        std::vector<Index> faceVertices(Index faceIdx) const
         {
             std::vector<Index> result;
             auto localVerts = geom::faceVertices(geometry, faceIdx);
             result.reserve(localVerts.size());
-            for (int lv : localVerts) {
+            for (LocalIndex lv : localVerts) {
                 result.push_back(vertices[lv]);
             }
             return result;
         }
 
-        std::vector<Index> facetVertices(int facetIdx) const
+        std::vector<Index> facetVertices(Index facetIdx) const
         {
             std::vector<Index> result;
             auto localVerts = geom::facetVertices(geometry, facetIdx);
             result.reserve(localVerts.size());
-            for (int lv : localVerts) {
+            for (LocalIndex lv : localVerts) {
                 result.push_back(vertices[lv]);
             }
             return result;
         }
 
-        Geometry faceGeometry(int faceIdx) const { return geom::faceGeometry(geometry, faceIdx); }
-        Geometry facetGeometry(int facetIdx) const { return geom::facetGeometry(geometry, facetIdx); }
+        Geometry faceGeometry(Index faceIdx) const { return geom::faceGeometry(geometry, faceIdx); }
+        Geometry facetGeometry(Index facetIdx) const { return geom::facetGeometry(geometry, facetIdx); }
     };
 
     /**

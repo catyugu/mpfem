@@ -22,12 +22,12 @@ namespace mpfem {
 
         // Empty domain set means all domains.
         void addDomainIntegrator(std::unique_ptr<DomainBilinearIntegratorBase> integ,
-            const std::set<int>& domains = {})
+            const std::set<Index>& domains = {})
         {
             domainIntegs_.push_back(std::move(integ));
             domainSets_.emplace_back(domains.begin(), domains.end());
         }
-        void addBoundaryIntegrator(std::unique_ptr<FacetBilinearIntegratorBase> integ, int bid = -1)
+        void addBoundaryIntegrator(std::unique_ptr<FacetBilinearIntegratorBase> integ, Index bid = -1)
         {
             bdrIntegs_.push_back(std::move(integ));
             bdrIds_.push_back(bid);
@@ -51,9 +51,9 @@ namespace mpfem {
     private:
         const FESpace* fes_;
         std::vector<std::unique_ptr<DomainBilinearIntegratorBase>> domainIntegs_;
-        std::vector<std::vector<int>> domainSets_;
+        std::vector<std::vector<Index>> domainSets_;
         std::vector<std::unique_ptr<FacetBilinearIntegratorBase>> bdrIntegs_;
-        std::vector<int> bdrIds_;
+        std::vector<Index> bdrIds_;
         SparseMatrix mat_;
         std::vector<SparseMatrix::Triplet> triplets_;
     };
@@ -68,12 +68,12 @@ namespace mpfem {
 
         // Empty domain set means all domains.
         void addDomainIntegrator(std::unique_ptr<DomainLinearIntegratorBase> integ,
-            const std::set<int>& domains = {})
+            const std::set<Index>& domains = {})
         {
             domainIntegs_.push_back(std::move(integ));
             domainSets_.emplace_back(domains.begin(), domains.end());
         }
-        void addBoundaryIntegrator(std::unique_ptr<FacetLinearIntegratorBase> integ, int bid = -1)
+        void addBoundaryIntegrator(std::unique_ptr<FacetLinearIntegratorBase> integ, Index bid = -1)
         {
             bdrIntegs_.push_back(std::move(integ));
             bdrIds_.push_back(bid);
@@ -95,9 +95,9 @@ namespace mpfem {
     private:
         const FESpace* fes_;
         std::vector<std::unique_ptr<DomainLinearIntegratorBase>> domainIntegs_;
-        std::vector<std::vector<int>> domainSets_;
+        std::vector<std::vector<Index>> domainSets_;
         std::vector<std::unique_ptr<FacetLinearIntegratorBase>> bdrIntegs_;
-        std::vector<int> bdrIds_;
+        std::vector<Index> bdrIds_;
         Vector vec_;
         std::vector<Vector> threadVectors_;
     };

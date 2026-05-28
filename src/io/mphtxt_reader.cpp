@@ -38,22 +38,35 @@ namespace mpfem {
         Index numBdrElems = 0;
 
         for (const auto& block : data.blocks) {
-            Geometry geom = getGeometryType(block.typeName, block.numVertsPerElem, data.sdim);
+            Geometry geom = block.geometry;
 
             // Determine entity dimension from geometry type
             int entityDim = geom::dim(geom);
 
-            // All entities (0D points, 1D edges, 2D faces, 3D volumes) are added by actual dimension
+            // Skip entities that have no FE space support (Point/Segment don't have H1 reference elements)
+            // These would be 0D points and 1D wires - the mesh strata support them but FE doesn't use them
+            if (entityDim < data.sdim - 1) {
+                LOG_DEBUG << "Skipping lower-dimensional entity " << block.typeName
+                          << " (dim=" << entityDim << ", no FE reference element)";
+                continue;
+            }
+
+            // All standard volume/boundary entities are loaded
             for (size_t i = 0; i < block.elements.size(); ++i) {
                 Index attr = 0;
                 if (i < block.geomIndices.size()) {
                     attr = block.geomIndices[i];
                 }
 
-                mesh.addEntity(entityDim, geom, block.elements[i], attr, block.order);
+                // Map to volume or boundary based on dimension
                 if (entityDim == data.sdim) {
+                    // Volume element (3D in 3D, 2D in 2D)
+                    mesh.addEntity(data.sdim, geom, block.elements[i], attr, block.order);
                     numVolumeElems++;
-                } else if (entityDim == data.sdim - 1) {
+                }
+                else {
+                    // Boundary element (2D faces in 3D, 1D edges in 2D)
+                    mesh.addEntity(data.sdim - 1, geom, block.elements[i], attr + 1, block.order);
                     numBdrElems++;
                 }
             }
@@ -128,7 +141,7 @@ namespace mpfem {
             }
 
             if (trimmed.find("# Type #") != std::string::npos) {
-                ElementBlock block = parseElementBlock(file, trimmed);
+                ElementBlock block = parseElementBlock(file, trimmed, data.sdim);
                 if (!block.elements.empty()) {
                     data.blocks.push_back(std::move(block));
                 }
@@ -138,7 +151,7 @@ namespace mpfem {
         return data;
     }
 
-    MphtxtReader::ElementBlock MphtxtReader::parseElementBlock(std::ifstream& file, const std::string& /*headerLine*/)
+    MphtxtReader::ElementBlock MphtxtReader::parseElementBlock(std::ifstream& file, const std::string& /*headerLine*/, int sdim)
     {
         ElementBlock block;
         std::string line;
@@ -156,7 +169,9 @@ namespace mpfem {
         typeIss >> token;
         if (typeIss >> token) {
             block.typeName = token;
-            block.order = detectOrder(block.typeName);
+            const std::string lower = toLower(block.typeName);
+            block.order = detectOrder(lower);
+            block.geometry = getGeometryType(lower, block.numVertsPerElem, sdim);
         }
         LOG_DEBUG << "Parsing element block: type=" << block.typeName << ", order=" << block.order;
 
@@ -252,18 +267,16 @@ namespace mpfem {
         return block;
     }
 
-    int MphtxtReader::detectOrder(const std::string& typeName)
+    int MphtxtReader::detectOrder(const std::string& lower)
     {
-        const std::string lower = toLower(typeName);
         if (lower.find("2") != std::string::npos && (lower.find("tri2") != std::string::npos || lower.find("tet2") != std::string::npos || lower.find("edg2") != std::string::npos || lower.find("quad2") != std::string::npos || lower.find("hex2") != std::string::npos)) {
             return 2;
         }
         return 1;
     }
 
-    Geometry MphtxtReader::getGeometryType(const std::string& typeName, int numVerts, int sdim)
+    Geometry MphtxtReader::getGeometryType(const std::string& lower, int numVerts, int sdim)
     {
-        const std::string lower = toLower(typeName);
 
         if (lower.find("prism") != std::string::npos || lower.find("wedge") != std::string::npos) {
             throw MeshException("Prism/Wedge elements are not supported. Only tri/quad/tet/hex elements are supported.");
