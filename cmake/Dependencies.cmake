@@ -15,46 +15,35 @@
 
 include(CPM)
 
-# =============================================================================
-# 1. Core dependencies (required)
-# =============================================================================
-
-# Eigen3 (required)
-find_package(Eigen3 REQUIRED)
-
-# =============================================================================
-# 2. Linear algebra backends (optional, priority: MKL > OpenBLAS)
-# =============================================================================
-
 # --- Intel MKL ---
 option(MPFEM_USE_MKL "Use Intel MKL for BLAS/LAPACK and PARDISO solver" ON)
 
 if(MPFEM_USE_MKL)
-    set(MKL_LINK "static") # 静态链接
-    set(MKL_INTERFACE "lp64") # 默认整数接口（最通用）
-
-    if(DEFINED ENV{MKLROOT})
-        set(MKL_ROOT "$ENV{MKLROOT}")
-    elseif(DEFINED ENV{MKL_DIR})
-        set(MKL_ROOT "$ENV{MKL_DIR}")
-    endif()
-
+    set(MKL_LINK "sdl" CACHE STRING "MKL link type (sdl|static|dynamic)")
+    set(MKL_THREADING "intel_thread" CACHE STRING "MKL threading runtime")
+    set(MKL_INTERFACE "lp64" CACHE STRING "MKL index interface (lp64|ilp64)")
     find_package(MKL QUIET)
 
-    if(MKL_FOUND)
-        set(MPFEM_MKL_FOUND TRUE)
-        message(STATUS "Intel MKL found: ${MKL_ROOT} (threading=${MKL_THREADING})")
+    if(TARGET MKL::MKL)
+        set(MPFEM_MKL_FOUND TRUE CACHE INTERNAL "" FORCE)
+
+        if(TARGET MKL::mkl_rt)
+            get_target_property(_mkl_rt_loc MKL::mkl_rt LOCATION)
+            get_filename_component(MKL_BIN_DIR "${_mkl_rt_loc}" DIRECTORY)
+            message(STATUS "MKL FOUND!")
+        else()
+            message(WARNING
+                "oneMKL was found without MKL::mkl_rt; runtime DLLs will not "
+                "be copied automatically")
+        endif()
     else()
-        message(STATUS "Intel MKL not found")
-        set(MPFEM_MKL_FOUND FALSE)
+        message(WARNING
+            "USE_MKL=ON but oneMKL was not found; disabling Pardiso and "
+            "falling back to Eigen EigenSparseLU")
     endif()
 else()
     set(MPFEM_MKL_FOUND FALSE)
 endif()
-
-# =============================================================================
-# 3. Direct solvers (optional)
-# =============================================================================
 
 # ---  UMFPACK ---
 option(MPFEM_USE_UMFPACK "Use UMFPACK direct solver" ON)
@@ -74,9 +63,6 @@ else()
     set(MPFEM_UMFPACK_FOUND FALSE)
 endif()
 
-# =============================================================================
-# 4. OpenMP for parallelization
-# =============================================================================
 option(MPFEM_USE_OPENMP "Use OpenMP for parallelization" ON)
 
 if(MPFEM_USE_OPENMP)
@@ -91,11 +77,17 @@ if(MPFEM_USE_OPENMP)
     endif()
 endif()
 
-# =============================================================================
-# 5. Build dependencies (downloaded via CPM)
-# =============================================================================
 option(MPFEM_BUILD_TESTS "Build unit tests" ON)
 option(MPFEM_BUILD_EXAMPLES "Build examples" ON)
+
+CPMAddPackage(
+    GITLAB_REPOSITORY libeigen/eigen
+    GIT_TAG 5.0.0
+    OPTIONS
+    "EIGEN_BUILD_DOC OFF"
+    "EIGEN_BUILD_TESTING OFF"
+    "EIGEN_BUILD_PKGCONFIG OFF"
+)
 
 # tinyxml2 (required for XML parsing)
 CPMAddPackage(
